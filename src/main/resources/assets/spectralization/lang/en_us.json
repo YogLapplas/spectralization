@@ -1,3 +1,6 @@
 {
-  "itemGroup.spectralization": "Spectralization"
+  "itemGroup.spectralization": "Spectralization",
+  "item.spectralization.lens": "Lens",
+  "block.spectralization.lens_holder": "Lens Holder",
+  "block.spectralization.mirror": "Mirror"
 }

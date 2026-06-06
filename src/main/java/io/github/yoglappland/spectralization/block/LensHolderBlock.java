@@ -1,0 +1,182 @@
+package io.github.yoglappland.spectralization.block;
+
+import io.github.yoglappland.spectralization.blockentity.LensHolderBlockEntity;
+import io.github.yoglappland.spectralization.tag.SpectralItemTags;
+import javax.annotation.Nullable;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.ItemInteractionResult;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.EntityBlock;
+import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.Rotation;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.DirectionProperty;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.shapes.VoxelShape;
+
+public class LensHolderBlock extends Block implements EntityBlock {
+    public static final DirectionProperty FACING = BlockStateProperties.HORIZONTAL_FACING;
+
+    private static final double[][] BASE_BOXES = {
+            {5.0, 0.0, 4.0, 11.0, 2.0, 12.0},
+            {4.0, 0.0, 5.0, 12.0, 2.0, 11.0},
+            {7.0, 2.0, 7.0, 9.0, 8.0, 9.0},
+            {4.0, 8.0, 7.0, 6.0, 16.0, 9.0},
+            {10.0, 8.0, 7.0, 12.0, 16.0, 9.0},
+            {5.0, 8.0, 7.0, 11.0, 10.0, 9.0},
+            {5.0, 14.0, 7.0, 11.0, 16.0, 9.0}
+    };
+
+    private static final VoxelShape NORTH_SHAPE = buildShape(0.0);
+    private static final VoxelShape EAST_SHAPE = buildShape(90.0);
+    private static final VoxelShape SOUTH_SHAPE = buildShape(180.0);
+    private static final VoxelShape WEST_SHAPE = buildShape(270.0);
+
+    public LensHolderBlock(Properties properties) {
+        super(properties);
+        this.registerDefaultState(this.stateDefinition.any().setValue(FACING, Direction.NORTH));
+    }
+
+    @Nullable
+    @Override
+    public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
+        return new LensHolderBlockEntity(pos, state);
+    }
+
+    @Override
+    public BlockState getStateForPlacement(BlockPlaceContext context) {
+        return this.defaultBlockState().setValue(FACING, context.getHorizontalDirection().getOpposite());
+    }
+
+    @Override
+    protected RenderShape getRenderShape(BlockState state) {
+        return RenderShape.MODEL;
+    }
+
+    @Override
+    protected VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
+        return getShapeForFacing(state.getValue(FACING));
+    }
+
+    @Override
+    protected VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
+        return getShapeForFacing(state.getValue(FACING));
+    }
+
+    @Override
+    protected ItemInteractionResult useItemOn(
+            ItemStack stack,
+            BlockState state,
+            Level level,
+            BlockPos pos,
+            Player player,
+            InteractionHand hand,
+            BlockHitResult hitResult
+    ) {
+        if (level.getBlockEntity(pos) instanceof LensHolderBlockEntity lensHolder && lensHolder.hasLens()) {
+            if (!level.isClientSide) {
+                ItemStack removedLens = lensHolder.removeLens();
+
+                if (!player.addItem(removedLens)) {
+                    Block.popResource(level, pos, removedLens);
+                }
+            }
+
+            return ItemInteractionResult.sidedSuccess(level.isClientSide);
+        }
+
+        if (!stack.is(SpectralItemTags.LENS)) {
+            return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+        }
+
+        if (!(level.getBlockEntity(pos) instanceof LensHolderBlockEntity lensHolder)) {
+            return ItemInteractionResult.SKIP_DEFAULT_BLOCK_INTERACTION;
+        }
+
+        if (!level.isClientSide) {
+            lensHolder.setLens(stack);
+
+            if (!player.getAbilities().instabuild) {
+                stack.shrink(1);
+            }
+        }
+
+        return ItemInteractionResult.sidedSuccess(level.isClientSide);
+    }
+
+    @Override
+    protected void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean movedByPiston) {
+        if (!state.is(newState.getBlock()) && level.getBlockEntity(pos) instanceof LensHolderBlockEntity lensHolder && lensHolder.hasLens()) {
+            Block.popResource(level, pos, lensHolder.getLens().copy());
+        }
+
+        super.onRemove(state, level, pos, newState, movedByPiston);
+    }
+
+    @Override
+    protected BlockState rotate(BlockState state, Rotation rotation) {
+        return state.setValue(FACING, rotation.rotate(state.getValue(FACING)));
+    }
+
+    @Override
+    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+        builder.add(FACING);
+    }
+
+    private static VoxelShape getShapeForFacing(Direction facing) {
+        return switch (facing) {
+            case EAST -> EAST_SHAPE;
+            case SOUTH -> SOUTH_SHAPE;
+            case WEST -> WEST_SHAPE;
+            default -> NORTH_SHAPE;
+        };
+    }
+
+    private static VoxelShape buildShape(double degrees) {
+        VoxelShape shape = Shapes.empty();
+
+        for (double[] box : BASE_BOXES) {
+            shape = Shapes.or(shape, rotateBox(box, degrees));
+        }
+
+        return shape.optimize();
+    }
+
+    private static VoxelShape rotateBox(double[] box, double degrees) {
+        double radians = Math.toRadians(degrees);
+        double sin = Math.sin(radians);
+        double cos = Math.cos(radians);
+        double minX = 16.0;
+        double minZ = 16.0;
+        double maxX = 0.0;
+        double maxZ = 0.0;
+
+        for (double x : new double[]{box[0], box[3]}) {
+            for (double z : new double[]{box[2], box[5]}) {
+                double centeredX = x - 8.0;
+                double centeredZ = z - 8.0;
+                double rotatedX = centeredX * cos - centeredZ * sin + 8.0;
+                double rotatedZ = centeredX * sin + centeredZ * cos + 8.0;
+
+                minX = Math.min(minX, rotatedX);
+                minZ = Math.min(minZ, rotatedZ);
+                maxX = Math.max(maxX, rotatedX);
+                maxZ = Math.max(maxZ, rotatedZ);
+            }
+        }
+
+        return Block.box(minX, box[1], minZ, maxX, box[4], maxZ);
+    }
+}

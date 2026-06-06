@@ -58,10 +58,7 @@ public class LensHolderBlockEntity extends BlockEntity {
     @Override
     protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.saveAdditional(tag, registries);
-
-        if (!this.lens.isEmpty()) {
-            tag.put(LENS_TAG, this.lens.save(registries));
-        }
+        tag.put(LENS_TAG, this.lens.saveOptional(registries));
     }
 
     @Nullable

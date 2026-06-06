@@ -6,6 +6,7 @@ import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.ItemInteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -86,14 +87,7 @@ public class LensHolderBlock extends Block implements EntityBlock {
             BlockHitResult hitResult
     ) {
         if (level.getBlockEntity(pos) instanceof LensHolderBlockEntity lensHolder && lensHolder.hasLens()) {
-            if (!level.isClientSide) {
-                ItemStack removedLens = lensHolder.removeLens();
-
-                if (!player.addItem(removedLens)) {
-                    Block.popResource(level, pos, removedLens);
-                }
-            }
-
+            removeLens(level, pos, player, lensHolder);
             return ItemInteractionResult.sidedSuccess(level.isClientSide);
         }
 
@@ -117,6 +111,16 @@ public class LensHolderBlock extends Block implements EntityBlock {
     }
 
     @Override
+    protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
+        if (level.getBlockEntity(pos) instanceof LensHolderBlockEntity lensHolder && lensHolder.hasLens()) {
+            removeLens(level, pos, player, lensHolder);
+            return InteractionResult.sidedSuccess(level.isClientSide);
+        }
+
+        return InteractionResult.PASS;
+    }
+
+    @Override
     protected void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean movedByPiston) {
         if (!state.is(newState.getBlock()) && level.getBlockEntity(pos) instanceof LensHolderBlockEntity lensHolder && lensHolder.hasLens()) {
             Block.popResource(level, pos, lensHolder.getLens().copy());
@@ -133,6 +137,18 @@ public class LensHolderBlock extends Block implements EntityBlock {
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
         builder.add(FACING);
+    }
+
+    private static void removeLens(Level level, BlockPos pos, Player player, LensHolderBlockEntity lensHolder) {
+        if (level.isClientSide) {
+            return;
+        }
+
+        ItemStack removedLens = lensHolder.removeLens();
+
+        if (!player.addItem(removedLens)) {
+            Block.popResource(level, pos, removedLens);
+        }
     }
 
     private static VoxelShape getShapeForFacing(Direction facing) {

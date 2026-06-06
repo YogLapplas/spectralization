@@ -1,0 +1,14 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "spectralization:item/phosphor_tube_dark"
+  },
+  "overrides": [
+    {
+      "predicate": {
+        "custom_model_data": 1
+      },
+      "model": "spectralization:item/phosphor_tube_lightened"
+    }
+  ]
+}

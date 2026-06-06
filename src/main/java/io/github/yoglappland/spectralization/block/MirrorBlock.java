@@ -1,10 +1,13 @@
 package io.github.yoglappland.spectralization.block;
 
+import io.github.yoglappland.spectralization.optics.BeamPacket;
+import io.github.yoglappland.spectralization.optics.OpticalElement;
+import io.github.yoglappland.spectralization.optics.OpticalResult;
+import io.github.yoglappland.spectralization.optics.OutputBeam;
 import java.util.EnumSet;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.ItemInteractionResult;
@@ -23,8 +26,9 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
-public class MirrorBlock extends Block {
+public class MirrorBlock extends Block implements OpticalElement {
     public static final IntegerProperty ROTATION = IntegerProperty.create("rotation", 0, 7);
+    private static final double REFLECTANCE = 0.9;
 
     private static final double[][] BASE_BOXES = {
             {5.0, 0.0, 4.0, 11.0, 2.0, 12.0},
@@ -75,6 +79,33 @@ public class MirrorBlock extends Block {
                 default -> incoming;
             };
         };
+    }
+
+    @Override
+    public OpticalResult interact(
+            BeamPacket input,
+            Direction incomingDirection,
+            BlockState state,
+            Level level,
+            BlockPos pos
+    ) {
+        if (input.isEmpty()) {
+            return OpticalResult.empty();
+        }
+
+        if (!getConnectedDirections(state).contains(incomingDirection)) {
+            return OpticalResult.absorbed(input.totalPower());
+        }
+
+        Direction outgoingDirection = getReflectedDirection(state, incomingDirection);
+        BeamPacket reflectedBeam = input.withDirection(outgoingDirection).scalePower(REFLECTANCE);
+        double absorbedPower = input.totalPower() - reflectedBeam.totalPower();
+
+        return OpticalResult.single(
+                new OutputBeam(outgoingDirection, reflectedBeam),
+                absorbedPower,
+                absorbedPower
+        );
     }
 
     @Override

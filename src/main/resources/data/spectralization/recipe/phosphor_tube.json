@@ -1,0 +1,21 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "G": {
+      "item": "minecraft:glass_pane"
+    },
+    "P": {
+      "item": "spectralization:phosphor_dust"
+    }
+  },
+  "pattern": [
+    " G ",
+    "GPG",
+    " G "
+  ],
+  "result": {
+    "count": 1,
+    "id": "spectralization:phosphor_tube"
+  }
+}

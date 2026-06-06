@@ -1,0 +1,27 @@
+{
+  "variants": {
+    "facing=north": {
+      "model": "spectralization:block/creative_light_source",
+      "y": 180
+    },
+    "facing=east": {
+      "model": "spectralization:block/creative_light_source",
+      "y": 270
+    },
+    "facing=south": {
+      "model": "spectralization:block/creative_light_source"
+    },
+    "facing=west": {
+      "model": "spectralization:block/creative_light_source",
+      "y": 90
+    },
+    "facing=up": {
+      "model": "spectralization:block/creative_light_source",
+      "x": 90
+    },
+    "facing=down": {
+      "model": "spectralization:block/creative_light_source",
+      "x": 270
+    }
+  }
+}

@@ -1,6 +1,11 @@
 {
   "itemGroup.spectralization": "Spectralization",
   "item.spectralization.lens": "Lens",
+  "item.spectralization.phosphor_dust": "Phosphor Dust",
+  "item.spectralization.phosphor_tube": "Phosphor Tube",
   "block.spectralization.lens_holder": "Lens Holder",
-  "block.spectralization.mirror": "Mirror"
+  "block.spectralization.mirror": "Mirror",
+  "block.spectralization.creative_light_source": "Creative Light Source",
+  "block.spectralization.photodetector": "Photodetector",
+  "death.attack.spectralization.laser": "%1$s was burned through by a laser"
 }

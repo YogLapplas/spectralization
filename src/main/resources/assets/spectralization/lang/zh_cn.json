@@ -1,6 +1,11 @@
 {
   "itemGroup.spectralization": "Spectralization",
-  "item.spectralization.lens": "透镜",
-  "block.spectralization.lens_holder": "透镜支架",
-  "block.spectralization.mirror": "镜子"
+  "item.spectralization.lens": "\u900f\u955c",
+  "item.spectralization.phosphor_dust": "\u8367\u5149\u7c89",
+  "item.spectralization.phosphor_tube": "\u8367\u5149\u7ba1",
+  "block.spectralization.lens_holder": "\u900f\u955c\u652f\u67b6",
+  "block.spectralization.mirror": "\u955c\u5b50",
+  "block.spectralization.creative_light_source": "\u521b\u9020\u6a21\u5f0f\u5149\u6e90",
+  "block.spectralization.photodetector": "\u5149\u7535\u63a2\u6d4b\u5668",
+  "death.attack.spectralization.laser": "%1$s\u88ab\u6fc0\u5149\u70e7\u7a7f\u4e86"
 }

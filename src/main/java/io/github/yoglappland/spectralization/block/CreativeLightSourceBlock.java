@@ -1,19 +1,16 @@
 package io.github.yoglappland.spectralization.block;
 
 import io.github.yoglappland.spectralization.blockentity.CreativeLightSourceBlockEntity;
-import io.github.yoglappland.spectralization.optics.BeamEnvelope;
-import io.github.yoglappland.spectralization.optics.BeamPacket;
-import io.github.yoglappland.spectralization.optics.CoherenceKind;
-import io.github.yoglappland.spectralization.optics.FrequencyKey;
+import io.github.yoglappland.spectralization.menu.CreativeLightSourceMenu;
 import io.github.yoglappland.spectralization.optics.OpticalSource;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
-import io.github.yoglappland.spectralization.optics.PlaneWaveComponent;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
 import java.util.List;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.context.BlockPlaceContext;
@@ -32,15 +29,6 @@ import net.minecraft.world.phys.BlockHitResult;
 
 public class CreativeLightSourceBlock extends Block implements EntityBlock, OpticalSource {
     public static final DirectionProperty FACING = BlockStateProperties.FACING;
-    private static final Direction[] ROTATION_ORDER = {
-            Direction.NORTH,
-            Direction.EAST,
-            Direction.SOUTH,
-            Direction.WEST,
-            Direction.UP,
-            Direction.DOWN
-    };
-    public static final double OUTPUT_POWER = 100.0;
 
     public CreativeLightSourceBlock(Properties properties) {
         super(properties);
@@ -55,12 +43,13 @@ public class CreativeLightSourceBlock extends Block implements EntityBlock, Opti
     @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
         if (!level.isClientSide) {
-            Direction nextFacing = getNextFacing(state.getValue(FACING));
-            level.setBlock(pos, state.setValue(FACING, nextFacing), 3);
-            player.displayClientMessage(
-                    Component.literal("Creative light source facing: " + nextFacing.getSerializedName()),
-                    true
-            );
+            if (level.getBlockEntity(pos) instanceof CreativeLightSourceBlockEntity source) {
+                player.openMenu(new SimpleMenuProvider(
+                        (containerId, inventory, menuPlayer) ->
+                                new CreativeLightSourceMenu(containerId, inventory, source),
+                        Component.translatable("container.spectralization.creative_light_source")
+                ));
+            }
         }
 
         return InteractionResult.sidedSuccess(level.isClientSide);
@@ -86,15 +75,12 @@ public class CreativeLightSourceBlock extends Block implements EntityBlock, Opti
     @Override
     public List<OutputBeam> getOutputBeams(BlockState state, Level level, BlockPos pos) {
         Direction direction = state.getValue(FACING);
-        PlaneWaveComponent component = new PlaneWaveComponent(
-                FrequencyKey.DEBUG_VISIBLE,
-                OUTPUT_POWER,
-                direction,
-                CoherenceKind.COHERENT
-        );
-        BeamPacket beam = BeamPacket.single(component, BeamEnvelope.DEFAULT_COLLIMATED);
 
-        return List.of(new OutputBeam(direction, beam));
+        if (level.getBlockEntity(pos) instanceof CreativeLightSourceBlockEntity source) {
+            return List.of(source.createOutputBeam(direction));
+        }
+
+        return List.of();
     }
 
     @Override
@@ -107,13 +93,4 @@ public class CreativeLightSourceBlock extends Block implements EntityBlock, Opti
         builder.add(FACING);
     }
 
-    private static Direction getNextFacing(Direction facing) {
-        for (int i = 0; i < ROTATION_ORDER.length; i++) {
-            if (ROTATION_ORDER[i] == facing) {
-                return ROTATION_ORDER[(i + 1) % ROTATION_ORDER.length];
-            }
-        }
-
-        return Direction.NORTH;
-    }
 }

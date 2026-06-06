@@ -1,14 +1,19 @@
 package io.github.yoglappland.spectralization;
 
 import com.mojang.logging.LogUtils;
+import io.github.yoglappland.spectralization.block.BeamSplitterBlock;
+import io.github.yoglappland.spectralization.block.CmosSensorBlock;
 import io.github.yoglappland.spectralization.block.CreativeLightSourceBlock;
 import io.github.yoglappland.spectralization.block.LensHolderBlock;
 import io.github.yoglappland.spectralization.block.MirrorBlock;
-import io.github.yoglappland.spectralization.block.PhotodetectorBlock;
+import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
 import io.github.yoglappland.spectralization.client.renderer.LensHolderRenderer;
+import io.github.yoglappland.spectralization.client.screen.CreativeLightSourceScreen;
 import io.github.yoglappland.spectralization.command.SpectralCommands;
+import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.item.PhosphorTubeItem;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
+import io.github.yoglappland.spectralization.registry.SpectralMenus;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
@@ -26,8 +31,11 @@ import net.minecraft.world.level.material.MapColor;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.config.ModConfig;
+import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
@@ -80,6 +88,18 @@ public class Spectralization {
     public static final DeferredItem<BlockItem> MIRROR_ITEM =
             ITEMS.registerSimpleBlockItem("mirror", MIRROR);
 
+    public static final DeferredBlock<BeamSplitterBlock> BEAM_SPLITTER = BLOCKS.register(
+            "beam_splitter",
+            () -> new BeamSplitterBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(0.0F)
+                    .sound(SoundType.METAL)
+                    .noOcclusion())
+    );
+
+    public static final DeferredItem<BlockItem> BEAM_SPLITTER_ITEM =
+            ITEMS.registerSimpleBlockItem("beam_splitter", BEAM_SPLITTER);
+
     public static final DeferredBlock<CreativeLightSourceBlock> CREATIVE_LIGHT_SOURCE = BLOCKS.register(
             "creative_light_source",
             () -> new CreativeLightSourceBlock(BlockBehaviour.Properties.of()
@@ -93,17 +113,29 @@ public class Spectralization {
     public static final DeferredItem<BlockItem> CREATIVE_LIGHT_SOURCE_ITEM =
             ITEMS.registerSimpleBlockItem("creative_light_source", CREATIVE_LIGHT_SOURCE);
 
-    public static final DeferredBlock<PhotodetectorBlock> PHOTODETECTOR = BLOCKS.register(
-            "photodetector",
-            () -> new PhotodetectorBlock(BlockBehaviour.Properties.of()
+    public static final DeferredBlock<CmosSensorBlock> CMOS_SENSOR = BLOCKS.register(
+            "cmos_sensor",
+            () -> new CmosSensorBlock(BlockBehaviour.Properties.of()
                     .mapColor(MapColor.METAL)
                     .strength(0.0F)
                     .sound(SoundType.METAL)
                     .noOcclusion())
     );
 
-    public static final DeferredItem<BlockItem> PHOTODETECTOR_ITEM =
-            ITEMS.registerSimpleBlockItem("photodetector", PHOTODETECTOR);
+    public static final DeferredItem<BlockItem> CMOS_SENSOR_ITEM =
+            ITEMS.registerSimpleBlockItem("cmos_sensor", CMOS_SENSOR);
+
+    public static final DeferredBlock<PassThroughSensorBlock> PASS_THROUGH_SENSOR = BLOCKS.register(
+            "pass_through_sensor",
+            () -> new PassThroughSensorBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(0.0F)
+                    .sound(SoundType.METAL)
+                    .noOcclusion())
+    );
+
+    public static final DeferredItem<BlockItem> PASS_THROUGH_SENSOR_ITEM =
+            ITEMS.registerSimpleBlockItem("pass_through_sensor", PASS_THROUGH_SENSOR);
 
     public static final DeferredHolder<CreativeModeTab, CreativeModeTab> SPECTRALIZATION_TAB =
             CREATIVE_MODE_TABS.register("spectralization", () -> CreativeModeTab.builder()
@@ -116,16 +148,21 @@ public class Spectralization {
                         output.accept(PHOSPHOR_TUBE.get());
                         output.accept(LENS_HOLDER_ITEM.get());
                         output.accept(MIRROR_ITEM.get());
+                        output.accept(BEAM_SPLITTER_ITEM.get());
                         output.accept(CREATIVE_LIGHT_SOURCE_ITEM.get());
-                        output.accept(PHOTODETECTOR_ITEM.get());
+                        output.accept(CMOS_SENSOR_ITEM.get());
+                        output.accept(PASS_THROUGH_SENSOR_ITEM.get());
                     })
                     .build());
 
-    public Spectralization(IEventBus modEventBus) {
+    public Spectralization(IEventBus modEventBus, ModContainer modContainer) {
+        modContainer.registerConfig(ModConfig.Type.COMMON, SpectralizationConfig.SPEC);
+
         BLOCKS.register(modEventBus);
         ITEMS.register(modEventBus);
         CREATIVE_MODE_TABS.register(modEventBus);
         SpectralBlockEntities.register(modEventBus);
+        SpectralMenus.register(modEventBus);
 
         NeoForge.EVENT_BUS.register(this);
         LOGGER.info("Spectralization initialized");
@@ -160,6 +197,11 @@ public class Spectralization {
         @SubscribeEvent
         static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
             event.registerBlockEntityRenderer(SpectralBlockEntities.LENS_HOLDER.get(), LensHolderRenderer::new);
+        }
+
+        @SubscribeEvent
+        static void registerScreens(RegisterMenuScreensEvent event) {
+            event.register(SpectralMenus.CREATIVE_LIGHT_SOURCE.get(), CreativeLightSourceScreen::new);
         }
     }
 }

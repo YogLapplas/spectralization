@@ -5,7 +5,16 @@
   "item.spectralization.phosphor_tube": "Phosphor Tube",
   "block.spectralization.lens_holder": "Lens Holder",
   "block.spectralization.mirror": "Mirror",
+  "block.spectralization.beam_splitter": "Beam Splitter",
   "block.spectralization.creative_light_source": "Creative Light Source",
-  "block.spectralization.photodetector": "Photodetector",
+  "block.spectralization.cmos_sensor": "CMOS Sensor",
+  "block.spectralization.pass_through_sensor": "Pass-through Sensor",
+  "container.spectralization.creative_light_source": "Creative Light Source",
+  "config.jade.plugin_spectralization.pass_through_sensor": "Pass-through Sensor Optical Power",
+  "jade.spectralization.pass_through_sensor.directional_power": "Power toward %s: %s",
+  "direction.spectralization.north": "North",
+  "direction.spectralization.south": "South",
+  "direction.spectralization.east": "East",
+  "direction.spectralization.west": "West",
   "death.attack.spectralization.laser": "%1$s was burned through by a laser"
 }

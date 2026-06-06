@@ -1,5 +1,6 @@
 package io.github.yoglappland.spectralization.optics;
 
+import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.registry.SpectralDamageTypes;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
@@ -17,6 +18,22 @@ public final class OpticalEntityInteractions {
     private static final double LOOKING_INTO_BEAM_DOT = -0.82;
     private static final double ENTITY_TRANSMISSION_FACTOR = 0.35;
     private static final int BLINDNESS_TICKS = 50;
+
+    public static boolean isLaserDamageEnabled() {
+        return SpectralizationConfig.laserDamage();
+    }
+
+    public static void setLaserDamageEnabled(boolean enabled) {
+        SpectralizationConfig.setLaserDamage(enabled);
+    }
+
+    public static boolean isLaserBlindnessEnabled() {
+        return SpectralizationConfig.laserBlindness();
+    }
+
+    public static void setLaserBlindnessEnabled(boolean enabled) {
+        SpectralizationConfig.setLaserBlindness(enabled);
+    }
 
     public static BeamPacket interact(
             Level level,
@@ -41,7 +58,10 @@ public final class OpticalEntityInteractions {
                 continue;
             }
 
-            applyLaserExposure(level, livingEntity, remainingBeam.totalPower());
+            if (isLaserDamageEnabled() || isLaserBlindnessEnabled()) {
+                applyLaserExposure(level, livingEntity, remainingBeam.totalPower());
+            }
+
             remainingBeam = remainingBeam.scalePower(ENTITY_TRANSMISSION_FACTOR);
 
             if (remainingBeam.isEmpty()) {
@@ -60,8 +80,13 @@ public final class OpticalEntityInteractions {
     }
 
     private static void applyLaserExposure(Level level, LivingEntity livingEntity, double power) {
-        livingEntity.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, BLINDNESS_TICKS, 0, false, true, true));
-        livingEntity.hurt(level.damageSources().source(SpectralDamageTypes.LASER), damageFromPower(power));
+        if (isLaserBlindnessEnabled()) {
+            livingEntity.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, BLINDNESS_TICKS, 0, false, true, true));
+        }
+
+        if (isLaserDamageEnabled()) {
+            livingEntity.hurt(level.damageSources().source(SpectralDamageTypes.LASER), damageFromPower(power));
+        }
     }
 
     private static float damageFromPower(double power) {

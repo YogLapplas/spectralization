@@ -65,19 +65,22 @@ public final class OpticalPathTracer {
             Block block = state.getBlock();
 
             if (!(block instanceof OpticalElement opticalElement)) {
-                OpticalTransmission transmission = OpticalBlockProperties.transmissionFor(state, interactingBeam);
+                if (!state.isAir()) {
+                    Direction incomingDirection = current.direction.getOpposite();
+                    VisitKey visitKey = VisitKey.from(current.pos, incomingDirection, interactingBeam);
 
-                if (transmission.transmits()) {
-                    enqueueNext(
-                            level,
-                            pending,
-                            current.pos,
-                            current.direction,
-                            interactingBeam.scalePower(transmission.powerFactor()),
-                            current.segments
-                    );
+                    if (!visited.add(visitKey)) {
+                        continue;
+                    }
                 }
 
+                enqueueOutputs(
+                        level,
+                        pending,
+                        current.pos,
+                        OpticalBlockProperties.interact(state, interactingBeam, current.direction),
+                        current.segments
+                );
                 continue;
             }
 
@@ -96,10 +99,20 @@ public final class OpticalPathTracer {
                     current.pos
             );
 
-            for (OutputBeam output : result.outputs()) {
-                if (!output.beam().isEmpty() && output.beam().totalPower() >= MIN_POWER) {
-                    enqueueNext(level, pending, current.pos, output.outgoingDirection(), output.beam(), current.segments);
-                }
+            enqueueOutputs(level, pending, current.pos, result, current.segments);
+        }
+    }
+
+    private static void enqueueOutputs(
+            Level level,
+            Queue<TravelState> pending,
+            BlockPos pos,
+            OpticalResult result,
+            int segments
+    ) {
+        for (OutputBeam output : result.outputs()) {
+            if (!output.beam().isEmpty() && output.beam().totalPower() >= MIN_POWER) {
+                enqueueNext(level, pending, pos, output.outgoingDirection(), output.beam(), segments);
             }
         }
     }

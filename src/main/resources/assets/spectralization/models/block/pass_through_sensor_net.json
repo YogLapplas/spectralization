@@ -1,0 +1,93 @@
+﻿{
+    "format_version":  "1.21.11",
+    "credit":  "Split translucent net generated from pass_through_sensor.json",
+    "texture_size":  [
+                         32,
+                         32
+                     ],
+    "render_type":  "minecraft:translucent",
+    "textures":  {
+                     "7":  "spectralization:block/pass_through_net",
+                     "particle":  "spectralization:block/pass_through_net"
+                 },
+    "elements":  [
+                     {
+                         "name":  "net",
+                         "from":  [
+                                      3,
+                                      3,
+                                      7.5
+                                  ],
+                         "to":  [
+                                    13,
+                                    13,
+                                    8.5
+                                ],
+                         "rotation":  {
+                                          "angle":  0,
+                                          "axis":  "y",
+                                          "origin":  [
+                                                         7,
+                                                         3,
+                                                         7
+                                                     ]
+                                      },
+                         "faces":  {
+                                       "north":  {
+                                                     "uv":  [
+                                                                0,
+                                                                0,
+                                                                5,
+                                                                5
+                                                            ],
+                                                     "texture":  "#7"
+                                                 },
+                                       "east":  {
+                                                    "uv":  [
+                                                               5,
+                                                               0,
+                                                               5.5,
+                                                               5
+                                                           ],
+                                                    "texture":  "#7"
+                                                },
+                                       "south":  {
+                                                     "uv":  [
+                                                                0,
+                                                                5,
+                                                                5,
+                                                                10
+                                                            ],
+                                                     "texture":  "#7"
+                                                 },
+                                       "west":  {
+                                                    "uv":  [
+                                                               5,
+                                                               5,
+                                                               5.5,
+                                                               10
+                                                           ],
+                                                    "texture":  "#7"
+                                                },
+                                       "up":  {
+                                                  "uv":  [
+                                                             10.5,
+                                                             0.5,
+                                                             5.5,
+                                                             0
+                                                         ],
+                                                  "texture":  "#7"
+                                              },
+                                       "down":  {
+                                                    "uv":  [
+                                                               10.5,
+                                                               0.5,
+                                                               5.5,
+                                                               1
+                                                           ],
+                                                    "texture":  "#7"
+                                                }
+                                   }
+                     }
+                 ]
+}

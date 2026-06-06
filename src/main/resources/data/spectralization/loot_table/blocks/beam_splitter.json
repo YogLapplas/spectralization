@@ -6,7 +6,7 @@
       "entries": [
         {
           "type": "minecraft:item",
-          "name": "spectralization:photodetector"
+          "name": "spectralization:beam_splitter"
         }
       ],
       "rolls": 1.0

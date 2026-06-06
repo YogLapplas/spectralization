@@ -46,9 +46,9 @@ public class MirrorBlock extends Block implements OpticalElement {
 
     public static Set<Direction> getConnectedDirections(BlockState state) {
         return switch (state.getValue(ROTATION)) {
-            case 2, 6 -> EnumSet.of(Direction.EAST, Direction.WEST);
+            case 2, 6 -> EnumSet.of(Direction.NORTH, Direction.SOUTH);
             case 1, 3, 5, 7 -> EnumSet.of(Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST);
-            default -> EnumSet.of(Direction.NORTH, Direction.SOUTH);
+            default -> EnumSet.of(Direction.EAST, Direction.WEST);
         };
     }
 
@@ -62,8 +62,8 @@ public class MirrorBlock extends Block implements OpticalElement {
                 default -> incoming;
             };
             case 2, 6 -> switch (incoming) {
-                case EAST -> Direction.WEST;
-                case WEST -> Direction.EAST;
+                case NORTH -> Direction.NORTH;
+                case SOUTH -> Direction.SOUTH;
                 default -> incoming;
             };
             case 3, 7 -> switch (incoming) {
@@ -74,8 +74,8 @@ public class MirrorBlock extends Block implements OpticalElement {
                 default -> incoming;
             };
             default -> switch (incoming) {
-                case NORTH -> Direction.SOUTH;
-                case SOUTH -> Direction.NORTH;
+                case EAST -> Direction.EAST;
+                case WEST -> Direction.WEST;
                 default -> incoming;
             };
         };
@@ -94,7 +94,12 @@ public class MirrorBlock extends Block implements OpticalElement {
         }
 
         if (!getConnectedDirections(state).contains(incomingDirection)) {
-            return OpticalResult.absorbed(input.totalPower());
+            Direction outgoingDirection = incomingDirection.getOpposite();
+            return OpticalResult.single(
+                    new OutputBeam(outgoingDirection, input.withDirection(outgoingDirection)),
+                    0.0,
+                    0.0
+            );
         }
 
         Direction outgoingDirection = getReflectedDirection(state, incomingDirection);

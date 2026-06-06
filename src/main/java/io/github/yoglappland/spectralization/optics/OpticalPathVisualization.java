@@ -1,5 +1,6 @@
 package io.github.yoglappland.spectralization.optics;
 
+import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.server.level.ServerLevel;
@@ -9,18 +10,17 @@ import org.joml.Vector3f;
 public final class OpticalPathVisualization {
     private static final DustParticleOptions DEBUG_RED_LIGHT =
             new DustParticleOptions(new Vector3f(1.0F, 0.05F, 0.02F), 0.65F);
-    private static boolean enabled = true;
 
     public static boolean isEnabled() {
-        return enabled;
+        return SpectralizationConfig.lightPathsVisible();
     }
 
     public static void setEnabled(boolean enabled) {
-        OpticalPathVisualization.enabled = enabled;
+        SpectralizationConfig.setLightPathsVisible(enabled);
     }
 
     public static void spawn(Level level, BlockPos pos, BeamPacket beam) {
-        if (!enabled || !(level instanceof ServerLevel serverLevel) || beam.isEmpty()) {
+        if (!isEnabled() || !(level instanceof ServerLevel serverLevel) || beam.isEmpty()) {
             return;
         }
 

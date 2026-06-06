@@ -1,11 +1,11 @@
 package io.github.yoglappland.spectralization.block;
 
-import io.github.yoglappland.spectralization.blockentity.PhotodetectorBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.CmosSensorBlockEntity;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
 import io.github.yoglappland.spectralization.optics.OpticalReceiver;
 import io.github.yoglappland.spectralization.optics.OpticalResult;
+import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
-import java.util.List;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -35,7 +35,7 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
-public class PhotodetectorBlock extends Block implements EntityBlock, OpticalReceiver {
+public class CmosSensorBlock extends Block implements EntityBlock, OpticalReceiver {
     public static final DirectionProperty FACING = BlockStateProperties.FACING;
     public static final IntegerProperty POWER = BlockStateProperties.POWER;
     public static final BooleanProperty LOGARITHMIC = BooleanProperty.create("logarithmic");
@@ -48,7 +48,7 @@ public class PhotodetectorBlock extends Block implements EntityBlock, OpticalRec
     private static final VoxelShape SOUTH_SHAPE = Block.box(0.0, 0.0, 0.0, 16.0, 16.0, 3.0);
     private static final VoxelShape WEST_SHAPE = Block.box(13.0, 0.0, 0.0, 16.0, 16.0, 16.0);
 
-    public PhotodetectorBlock(Properties properties) {
+    public CmosSensorBlock(Properties properties) {
         super(properties);
         this.registerDefaultState(this.stateDefinition.any()
                 .setValue(FACING, Direction.DOWN)
@@ -68,13 +68,13 @@ public class PhotodetectorBlock extends Block implements EntityBlock, OpticalRec
             BlockState nextState = state.setValue(LOGARITHMIC, logarithmic);
             double currentPower = 0.0;
 
-            if (level.getBlockEntity(pos) instanceof PhotodetectorBlockEntity photodetector) {
-                currentPower = photodetector.getPowerForSignal();
+            if (level.getBlockEntity(pos) instanceof CmosSensorBlockEntity cmosSensor) {
+                currentPower = cmosSensor.getPowerForSignal();
             }
 
             setSignalFromPower(level, pos, nextState, currentPower);
             player.displayClientMessage(
-                    Component.literal("Photodetector scale: " + (logarithmic ? "logarithmic" : "linear")),
+                    Component.literal("CMOS sensor scale: " + (logarithmic ? "logarithmic" : "linear")),
                     true
             );
         }
@@ -85,18 +85,18 @@ public class PhotodetectorBlock extends Block implements EntityBlock, OpticalRec
     @Nullable
     @Override
     public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
-        return new PhotodetectorBlockEntity(pos, state);
+        return new CmosSensorBlockEntity(pos, state);
     }
 
     @Nullable
     @Override
     public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level level, BlockState state, BlockEntityType<T> blockEntityType) {
-        if (level.isClientSide || blockEntityType != SpectralBlockEntities.PHOTODETECTOR.get()) {
+        if (level.isClientSide || blockEntityType != SpectralBlockEntities.CMOS_SENSOR.get()) {
             return null;
         }
 
         return (tickerLevel, pos, tickerState, blockEntity) ->
-                PhotodetectorBlockEntity.tick(tickerLevel, pos, tickerState, (PhotodetectorBlockEntity) blockEntity);
+                CmosSensorBlockEntity.tick(tickerLevel, pos, tickerState, (CmosSensorBlockEntity) blockEntity);
     }
 
     @Override
@@ -111,17 +111,26 @@ public class PhotodetectorBlock extends Block implements EntityBlock, OpticalRec
             return OpticalResult.empty();
         }
 
-        double absorbedPower = input.totalPower();
+        Direction receivingSide = getReceivingSide(state);
 
-        if (incomingDirection == getReceivingSide(state)) {
-            if (level.getBlockEntity(pos) instanceof PhotodetectorBlockEntity photodetector) {
-                photodetector.receivePower(absorbedPower);
+        if (incomingDirection == receivingSide) {
+            double detectedPower = input.totalPower();
+
+            if (level.getBlockEntity(pos) instanceof CmosSensorBlockEntity cmosSensor) {
+                cmosSensor.receivePower(detectedPower);
             } else {
-                setSignalFromPower(level, pos, state, absorbedPower);
+                setSignalFromPower(level, pos, state, detectedPower);
             }
+
+            return OpticalResult.absorbed(input.totalPower());
         }
 
-        return new OpticalResult(List.of(), absorbedPower, 0.0);
+        if (incomingDirection == state.getValue(FACING)) {
+            return OpticalResult.absorbed(input.totalPower());
+        }
+
+        Direction outgoingDirection = incomingDirection.getOpposite();
+        return OpticalResult.single(new OutputBeam(outgoingDirection, input.withDirection(outgoingDirection)), 0.0, 0.0);
     }
 
     @Override

@@ -5,7 +5,7 @@
         "facing": "down"
       },
       "apply": {
-        "model": "spectralization:block/photodetector"
+        "model": "spectralization:block/cmos_sensor"
       }
     },
     {
@@ -13,7 +13,7 @@
         "facing": "up"
       },
       "apply": {
-        "model": "spectralization:block/photodetector",
+        "model": "spectralization:block/cmos_sensor",
         "x": 180
       }
     },
@@ -22,7 +22,7 @@
         "facing": "north"
       },
       "apply": {
-        "model": "spectralization:block/photodetector",
+        "model": "spectralization:block/cmos_sensor",
         "x": 90,
         "y": 180
       }
@@ -32,7 +32,7 @@
         "facing": "east"
       },
       "apply": {
-        "model": "spectralization:block/photodetector",
+        "model": "spectralization:block/cmos_sensor",
         "x": 90,
         "y": 270
       }
@@ -42,7 +42,7 @@
         "facing": "south"
       },
       "apply": {
-        "model": "spectralization:block/photodetector",
+        "model": "spectralization:block/cmos_sensor",
         "x": 90
       }
     },
@@ -51,7 +51,7 @@
         "facing": "west"
       },
       "apply": {
-        "model": "spectralization:block/photodetector",
+        "model": "spectralization:block/cmos_sensor",
         "x": 90,
         "y": 90
       }

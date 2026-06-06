@@ -1,0 +1,36 @@
+{
+  "multipart": [
+    {
+      "when": { "facing": "north" },
+      "apply": { "model": "spectralization:block/pass_through_sensor_frame", "y": 180 }
+    },
+    {
+      "when": { "facing": "north" },
+      "apply": { "model": "spectralization:block/pass_through_sensor_net", "y": 180 }
+    },
+    {
+      "when": { "facing": "east" },
+      "apply": { "model": "spectralization:block/pass_through_sensor_frame", "y": 270 }
+    },
+    {
+      "when": { "facing": "east" },
+      "apply": { "model": "spectralization:block/pass_through_sensor_net", "y": 270 }
+    },
+    {
+      "when": { "facing": "south" },
+      "apply": { "model": "spectralization:block/pass_through_sensor_frame" }
+    },
+    {
+      "when": { "facing": "south" },
+      "apply": { "model": "spectralization:block/pass_through_sensor_net" }
+    },
+    {
+      "when": { "facing": "west" },
+      "apply": { "model": "spectralization:block/pass_through_sensor_frame", "y": 90 }
+    },
+    {
+      "when": { "facing": "west" },
+      "apply": { "model": "spectralization:block/pass_through_sensor_net", "y": 90 }
+    }
+  ]
+}

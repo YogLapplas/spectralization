@@ -2,14 +2,14 @@
 	"format_version": "1.21.11",
 	"credit": "Simplified from Blockbench model",
 	"textures": {
-		"glass": "spectralization:block/photodetector_glass",
-		"body_a": "spectralization:block/photodetector_body1",
-		"body_b": "spectralization:block/photodetector_body2",
-		"body_c": "spectralization:block/photodetector_body3",
-		"body_d": "spectralization:block/photodetector_body4",
-		"particle": "spectralization:block/photodetector_board",
-		"board": "spectralization:block/photodetector_board",
-		"array_glass": "spectralization:block/photodetector_array_glass"
+		"glass": "spectralization:block/cmos_sensor_glass",
+		"body_a": "spectralization:block/cmos_sensor_body1",
+		"body_b": "spectralization:block/cmos_sensor_body2",
+		"body_c": "spectralization:block/cmos_sensor_body3",
+		"body_d": "spectralization:block/cmos_sensor_body4",
+		"particle": "spectralization:block/cmos_sensor_board",
+		"board": "spectralization:block/cmos_sensor_board",
+		"array_glass": "spectralization:block/cmos_sensor_array_glass"
 	},
 	"elements": [
 		{

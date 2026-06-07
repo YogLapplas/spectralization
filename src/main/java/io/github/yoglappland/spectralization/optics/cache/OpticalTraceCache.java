@@ -6,6 +6,7 @@ import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalTrace;
 import io.github.yoglappland.spectralization.optics.OpticalPort;
+import io.github.yoglappland.spectralization.optics.OpticalElement;
 import io.github.yoglappland.spectralization.optics.OpticalPathTracer;
 import io.github.yoglappland.spectralization.optics.OpticalTraceStep;
 import io.github.yoglappland.spectralization.optics.OpticalTraceTermination;
@@ -28,12 +29,15 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.WeakHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -41,11 +45,18 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelAccessor;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
 public final class OpticalTraceCache {
     private static final Map<Level, LevelTraceCache> CACHES = new WeakHashMap<>();
     private static final int MAX_DISCOVERED_SYSTEM_SOURCES = 32;
+    private static final int MIN_DIRECT_GEOMETRY_CACHE_ENTRIES = 512;
+    private static final int MAX_DIRECT_GEOMETRY_CACHE_ENTRIES = 4096;
+    private static final int GEOMETRY_POSITIONS_PER_EXTRA_CACHE_ENTRY = 3;
+    private static final int MAX_GEOMETRY_SIGNATURE_POSITIONS = 8192;
+    private static final long GEOMETRY_SIGNATURE_SEED = 0x9E3779B97F4A7C15L;
 
     public static void requestOrApply(Level level, BlockPos sourcePos, OutputBeam sourceOutput) {
         if (level.isClientSide || !(level instanceof ServerLevel serverLevel) || sourceOutput.beam().isEmpty()) {
@@ -55,12 +66,12 @@ public final class OpticalTraceCache {
         LevelTraceCache cache = cacheFor(serverLevel);
         SourceTraceKey key = new SourceTraceKey(sourcePos, sourceOutput.outgoingDirection());
         int networkId = cache.networkIdFor(key);
-        CachedOpticalTrace cachedTrace = cache.cachedTracesByNetwork.get(networkId);
+            CachedOpticalTrace cachedTrace = cache.cachedTracesByNetwork.get(networkId);
 
         if (cachedTrace != null
                 && cachedTrace.matches(sourceOutput)
                 && !cache.dependencyIndex.isDirty(networkId)) {
-            cachedTrace.applyOutputs(level);
+            applyCachedOutputs(level, cache, networkId, cachedTrace);
             return;
         }
 
@@ -77,6 +88,10 @@ public final class OpticalTraceCache {
         }
 
         LevelTraceCache cache = cacheFor(serverLevel);
+        if (dirtyKind == OpticalDirtyKind.PARAMETER) {
+            return cache.markParameterChanged(serverLevel, pos);
+        }
+
         return cache.markChanged(pos, dirtyKind);
     }
 
@@ -104,27 +119,47 @@ public final class OpticalTraceCache {
                 continue;
             }
 
-            CompiledOpticalTrace trace = OpticalPathTracer.trace(level, request.sourcePos(), request.sourceOutput());
             SourceTraceKey sourceKey = new SourceTraceKey(request.sourcePos(), request.sourceOutput().outgoingDirection());
+            GeometrySignature geometrySignature = cache.geometrySignatureFor(level, request.networkId());
+            DirectCompilationKey directCompilationKey = geometrySignature == null
+                    ? null
+                    : new DirectCompilationKey(sourceKey, request.sourceOutput(), geometrySignature);
+            DirectCompilation directCompilation = directCompilationKey == null
+                    ? null
+                    : cache.directCompilationCache.get(directCompilationKey);
+            boolean directGeometryCacheHit = directCompilation != null;
 
-            if (!SpectralizationConfig.opticalCompilerDebugLog()
-                    || !cache.shouldRunCompilerDebug(sourceKey, level.getGameTime())) {
-                cacheLegacyTrace(level, cache, request, trace);
-                processed++;
-                continue;
-            }
-
-            CompiledPortGraph observedGraph = PortGraphCompiler.compileObservedTrace(trace);
-            CompiledPortGraph directGraph = PortGraphCompiler.compileDirect(
+            CompiledOpticalTrace trace = OpticalPathTracer.traceEffects(
                     level,
                     request.sourcePos(),
-                    request.sourceOutput()
+                    request.sourceOutput(),
+                    SpectralizationConfig.opticalEffectTraceMaxStates()
             );
-            ScalarPowerSolution scalarPowerSolution = ScalarPowerSolver.solve(
-                    directGraph,
-                    request.sourceOutput().beam().totalPower()
-            );
-            CompiledReadoutLayer directReadoutLayer = OpticalReadoutLayerCompiler.compile(level, directGraph);
+            boolean shouldLogCompilerDebug = SpectralizationConfig.opticalCompilerDebugLog()
+                    && cache.shouldRunCompilerDebug(sourceKey, level.getGameTime());
+            CompiledPortGraph observedGraph = shouldLogCompilerDebug
+                    ? PortGraphCompiler.compileObservedTrace(trace)
+                    : null;
+            CompiledPortGraph directGraph;
+            ScalarPowerSolution scalarPowerSolution;
+            CompiledReadoutLayer directReadoutLayer;
+
+            if (directCompilation != null) {
+                directGraph = directCompilation.graph();
+                scalarPowerSolution = directCompilation.solution();
+                directReadoutLayer = directCompilation.readoutLayer();
+            } else {
+                directGraph = PortGraphCompiler.compileDirect(
+                        level,
+                        request.sourcePos(),
+                        request.sourceOutput()
+                );
+                scalarPowerSolution = ScalarPowerSolver.solve(
+                        directGraph,
+                        request.sourceOutput().beam().totalPower()
+                );
+                directReadoutLayer = OpticalReadoutLayerCompiler.compile(level, directGraph);
+            }
             CachedOpticalTrace cachedTrace = buildCachedTrace(
                     level,
                     request,
@@ -133,6 +168,17 @@ public final class OpticalTraceCache {
                     directReadoutLayer,
                     scalarPowerSolution
             );
+            GeometrySignature updatedGeometrySignature = cache.rememberGeometrySignaturePositions(
+                    level,
+                    request.networkId(),
+                    cachedTrace.dependencies()
+            );
+            if (updatedGeometrySignature != null) {
+                cache.directCompilationCache.put(
+                        new DirectCompilationKey(sourceKey, request.sourceOutput(), updatedGeometrySignature),
+                        new DirectCompilation(directGraph, directReadoutLayer, scalarPowerSolution)
+                );
+            }
             List<ReceiverOutput> directReceiverOutputs = directReadoutLayer.sample(scalarPowerSolution);
             CachedOpticalSystem cachedSystem = null;
             ScalarPowerSolution networkSolution = null;
@@ -183,29 +229,36 @@ public final class OpticalTraceCache {
                 networkReadoutBindingCount = cachedSystem.readoutLayer().size();
             }
 
-            OpticalCompilerDebugLogger.logObservedDirectAndNetwork(
-                    level,
-                    trace,
-                    observedGraph,
-                    directGraph,
-                    scalarPowerSolution,
-                    cachedSystem == null ? null : cachedSystem.graph(),
-                    networkSolution,
-                    networkSourceCount,
-                    networkSystemId,
-                    networkStructurallyFresh,
-                    networkParametricallyFresh,
-                    networkUsableForGameplay,
-                    cachedTrace.receiverOutputs(),
-                    directReceiverOutputs,
-                    networkReceiverOutputs,
-                    !cachedTrace.unstable(),
-                    directReadoutLayer.size(),
-                    networkReadoutBindingCount,
-                    systemLegacyReadout.receiverOutputs(),
-                    systemLegacyReadout.complete(),
-                    systemLegacyReadout.comparable()
-            );
+            if (shouldLogCompilerDebug && observedGraph != null) {
+                OpticalCompilerDebugLogger.logObservedDirectAndNetwork(
+                        level,
+                        trace,
+                        observedGraph,
+                        directGraph,
+                        scalarPowerSolution,
+                        directGeometryCacheHit,
+                        updatedGeometrySignature == null ? 0 : updatedGeometrySignature.positionCount(),
+                        cache.directCompilationCache.size(),
+                        cache.directCompilationCacheEntryLimit,
+                        cache.lastReliableReceiverOutputsByReadout.size(),
+                        cachedSystem == null ? null : cachedSystem.graph(),
+                        networkSolution,
+                        networkSourceCount,
+                        networkSystemId,
+                        networkStructurallyFresh,
+                        networkParametricallyFresh,
+                        networkUsableForGameplay,
+                        cachedTrace.receiverOutputs(),
+                        directReceiverOutputs,
+                        networkReceiverOutputs,
+                        !cachedTrace.unstable(),
+                        directReadoutLayer.size(),
+                        networkReadoutBindingCount,
+                        systemLegacyReadout.receiverOutputs(),
+                        systemLegacyReadout.complete(),
+                        systemLegacyReadout.comparable()
+                );
+            }
             cache.cachedTracesByNetwork.put(request.networkId(), cachedTrace);
             cache.dependencyIndex.replaceDependencies(request.networkId(), cachedTrace.dependencies());
             cache.dependencyIndex.clearDirty(request.networkId());
@@ -213,6 +266,55 @@ public final class OpticalTraceCache {
                 OpticalTraceValidator.validate(level, request.sourcePos(), request.sourceOutput(), trace);
             }
             processed++;
+        }
+    }
+
+    private static void applyCachedOutputs(
+            Level level,
+            LevelTraceCache cache,
+            int networkId,
+            CachedOpticalTrace cachedTrace
+    ) {
+        CachedOpticalSystem cachedSystem = cache.systemForNetwork(networkId);
+        long readoutStep = cache.nextReadoutStep();
+
+        if (cachedSystem != null) {
+            if (cachedSystem.usableForGameplay()) {
+                if (cache.markSystemApplied(cachedSystem.systemId(), level.getGameTime())) {
+                    cachedSystem.applyOutputs(level, true, readoutStep);
+                }
+                return;
+            }
+
+            CachedOpticalSystem heldSystem = cache.lastUsableSystemForNetwork(networkId);
+            if (heldSystem != null && cache.markSystemApplied(heldSystem.systemId(), level.getGameTime())) {
+                heldSystem.applyOutputs(level, false, readoutStep);
+                return;
+            }
+
+            List<ReceiverOutput> heldReceiverOutputs = cache.lastReliableReceiverOutputsFor(cachedSystem);
+            if (!heldReceiverOutputs.isEmpty() && cache.markHeldReadoutApplied(cachedSystem, level.getGameTime())) {
+                applyReceiverOutputs(level, heldReceiverOutputs, false, readoutStep);
+                return;
+            }
+
+            if (cache.markSystemApplied(cachedSystem.systemId(), level.getGameTime())) {
+                cachedSystem.applyOutputs(level, false, readoutStep);
+                return;
+            }
+        }
+
+        cachedTrace.applyOutputs(level, cachedTrace.scalarPowerSolution().reliableForReadout(), readoutStep);
+    }
+
+    private static void applyReceiverOutputs(
+            Level level,
+            List<ReceiverOutput> receiverOutputs,
+            boolean reliable,
+            long step
+    ) {
+        for (ReceiverOutput receiverOutput : receiverOutputs) {
+            receiverOutput.apply(level, reliable, step);
         }
     }
 
@@ -272,6 +374,8 @@ public final class OpticalTraceCache {
             addDependency(level, termination.pos(), dependencies);
         }
 
+        addGraphDependencies(level, portGraph, dependencies);
+
         return new CachedOpticalTrace(
                 request.networkId(),
                 request.sourceOutput(),
@@ -287,6 +391,41 @@ public final class OpticalTraceCache {
     private static void addDependency(ServerLevel level, BlockPos pos, LongSet dependencies) {
         dependencies.add(pos.asLong());
         OpticalFieldSources.addPotentialFieldSourceDependencies(level, pos, dependencies);
+    }
+
+    private static void addGraphDependencies(ServerLevel level, CompiledPortGraph portGraph, LongSet dependencies) {
+        for (PortGraphNode node : portGraph.nodes()) {
+            addDependency(level, node.pos(), dependencies);
+        }
+
+        for (var edge : portGraph.edges()) {
+            addEdgePathDependencies(level, edge.from().pos(), edge.to().pos(), dependencies);
+        }
+    }
+
+    private static void addEdgePathDependencies(
+            ServerLevel level,
+            BlockPos from,
+            BlockPos to,
+            LongSet dependencies
+    ) {
+        int dx = Integer.compare(to.getX(), from.getX());
+        int dy = Integer.compare(to.getY(), from.getY());
+        int dz = Integer.compare(to.getZ(), from.getZ());
+        int changedAxes = (dx == 0 ? 0 : 1) + (dy == 0 ? 0 : 1) + (dz == 0 ? 0 : 1);
+
+        if (changedAxes != 1) {
+            addDependency(level, from, dependencies);
+            addDependency(level, to, dependencies);
+            return;
+        }
+
+        BlockPos.MutableBlockPos cursor = from.mutable();
+
+        while (!cursor.equals(to)) {
+            cursor.move(dx, dy, dz);
+            addDependency(level, cursor, dependencies);
+        }
     }
 
     private static void collectReceiverOutput(
@@ -337,7 +476,7 @@ public final class OpticalTraceCache {
     }
 
     private static boolean canUseForGameplay(CompiledPortGraph graph, ScalarPowerSolution solution) {
-        return graph.beta1() == 0 && solution.converged() && !solution.unstable();
+        return !graph.nodes().isEmpty() && solution.reliableForReadout();
     }
 
     private static SystemLegacyReadout collectSystemLegacyReadout(
@@ -473,8 +612,7 @@ public final class OpticalTraceCache {
         ScalarPowerSolution solution = ScalarPowerSolver.solve(graph, sourcePowersByNode);
         CompiledReadoutLayer readoutLayer = OpticalReadoutLayerCompiler.compile(level, graph);
         List<ReceiverOutput> receiverOutputs = readoutLayer.sample(solution);
-
-        return new CachedOpticalSystem(
+        CachedOpticalSystem system = new CachedOpticalSystem(
                 systemId,
                 graph,
                 sourcePowersByNode,
@@ -487,6 +625,12 @@ public final class OpticalTraceCache {
                 parametricallyFresh,
                 structurallyFresh && parametricallyFresh && canUseForGameplay(graph, solution)
         );
+
+        if (system.usableForGameplay()) {
+            cache.rememberUsableSystem(system);
+        }
+
+        return system;
     }
 
     private static List<CompiledPortGraph> expandGraphsWithDiscoveredSources(
@@ -612,6 +756,14 @@ public final class OpticalTraceCache {
         return networkIds;
     }
 
+    private static int directGeometryCacheLimitFor(int signaturePositions) {
+        int extraEntries = Math.max(0, signaturePositions + GEOMETRY_POSITIONS_PER_EXTRA_CACHE_ENTRY - 1)
+                / GEOMETRY_POSITIONS_PER_EXTRA_CACHE_ENTRY;
+        int proposedLimit = MIN_DIRECT_GEOMETRY_CACHE_ENTRIES + extraEntries;
+
+        return Math.min(MAX_DIRECT_GEOMETRY_CACHE_ENTRIES, Math.max(MIN_DIRECT_GEOMETRY_CACHE_ENTRIES, proposedLimit));
+    }
+
     private static boolean sharesAnyNode(CompiledPortGraph left, CompiledPortGraph right) {
         Set<PortGraphNode> leftNodes = new HashSet<>(left.nodes());
 
@@ -688,6 +840,114 @@ public final class OpticalTraceCache {
         }
     }
 
+    private record GeometrySignature(long hash, int positionCount) {
+        private static GeometrySignature capture(ServerLevel level, LongSet positions) {
+            if (positions == null || positions.isEmpty()) {
+                return null;
+            }
+
+            long[] sortedPositions = new long[positions.size()];
+            int index = 0;
+
+            for (long position : positions) {
+                sortedPositions[index++] = position;
+            }
+
+            Arrays.sort(sortedPositions);
+
+            long hash = GEOMETRY_SIGNATURE_SEED;
+
+            for (long positionLong : sortedPositions) {
+                BlockPos pos = BlockPos.of(positionLong);
+                int stateId = 0;
+
+                if (level.isLoaded(pos)) {
+                    BlockState state = level.getBlockState(pos);
+                    stateId = normalizedOpticalStateId(level, pos, state);
+                }
+
+                hash = mix(hash, positionLong);
+                hash = mix(hash, stateId);
+            }
+
+            return new GeometrySignature(hash, sortedPositions.length);
+        }
+
+        private static int normalizedOpticalStateId(ServerLevel level, BlockPos pos, BlockState state) {
+            if (state.getBlock() instanceof CmosSensorBlock) {
+                state = state
+                        .setValue(CmosSensorBlock.POWER, 0)
+                        .setValue(CmosSensorBlock.LOGARITHMIC, false);
+            }
+
+            int stateId = Block.getId(state);
+
+            if (state.is(Blocks.GLOWSTONE) && level.hasNeighborSignal(pos)) {
+                stateId ^= 0x40000000;
+            }
+
+            return stateId;
+        }
+
+        private static long mix(long hash, long value) {
+            long mixedValue = value + 0x9E3779B97F4A7C15L + (hash << 6) + (hash >>> 2);
+            return hash ^ mixedValue;
+        }
+    }
+
+    private record DirectCompilationKey(
+            SourceTraceKey sourceKey,
+            OutputBeam sourceOutput,
+            GeometrySignature geometrySignature
+    ) {
+        private DirectCompilationKey {
+            Objects.requireNonNull(sourceKey, "sourceKey");
+            Objects.requireNonNull(sourceOutput, "sourceOutput");
+            Objects.requireNonNull(geometrySignature, "geometrySignature");
+        }
+    }
+
+    private record DirectCompilation(
+            CompiledPortGraph graph,
+            CompiledReadoutLayer readoutLayer,
+            ScalarPowerSolution solution
+    ) {
+        private DirectCompilation {
+            Objects.requireNonNull(graph, "graph");
+            Objects.requireNonNull(readoutLayer, "readoutLayer");
+            Objects.requireNonNull(solution, "solution");
+        }
+    }
+
+    private record ReadoutSignature(String key) {
+        private static ReadoutSignature of(List<ReceiverOutput> receiverOutputs) {
+            if (receiverOutputs.isEmpty()) {
+                return new ReadoutSignature("");
+            }
+
+            TreeSet<String> keys = new TreeSet<>();
+
+            for (ReceiverOutput receiverOutput : receiverOutputs) {
+                ReceiverOutput.ReceiverOutputKey outputKey = receiverOutput.key();
+                keys.add(outputKey.kind()
+                        + "@"
+                        + outputKey.pos().getX()
+                        + ","
+                        + outputKey.pos().getY()
+                        + ","
+                        + outputKey.pos().getZ()
+                        + ":"
+                        + outputKey.positiveZ());
+            }
+
+            return new ReadoutSignature(String.join("|", keys));
+        }
+
+        private boolean empty() {
+            return key.isEmpty();
+        }
+    }
+
     private record SystemLegacyReadout(List<ReceiverOutput> receiverOutputs, boolean complete, boolean comparable) {
         private SystemLegacyReadout {
             Objects.requireNonNull(receiverOutputs, "receiverOutputs");
@@ -700,16 +960,31 @@ public final class OpticalTraceCache {
         private final Map<SourceTraceKey, Integer> networkIdsBySource = new HashMap<>();
         private final Map<Integer, CachedOpticalTrace> cachedTracesByNetwork = new HashMap<>();
         private final Map<Integer, CachedOpticalSystem> cachedSystemsBySystem = new HashMap<>();
+        private final Map<Integer, CachedOpticalSystem> lastUsableSystemsBySystem = new HashMap<>();
+        private final Map<ReadoutSignature, List<ReceiverOutput>> lastReliableReceiverOutputsByReadout = new HashMap<>();
         private final Map<Integer, Integer> systemIdsByNetwork = new HashMap<>();
         private final Map<Integer, IntSet> networkIdsBySystem = new HashMap<>();
         private final Map<SourceTraceKey, DirectSourceRecord> directSourcesByKey = new HashMap<>();
+        private final Map<Integer, LongSet> geometrySignaturePositionsByNetwork = new HashMap<>();
+        private final Map<DirectCompilationKey, DirectCompilation> directCompilationCache =
+                new LinkedHashMap<>(128, 0.75F, true) {
+                    @Override
+                    protected boolean removeEldestEntry(Map.Entry<DirectCompilationKey, DirectCompilation> eldest) {
+                        return size() > directCompilationCacheEntryLimit;
+                    }
+                };
         private final Map<SourceTraceKey, Long> lastCompilerDebugTickBySource = new HashMap<>();
         private final ArrayDeque<TraceRequest> pendingRequests = new ArrayDeque<>();
         private final IntSet queuedNetworkIds = new IntOpenHashSet();
+        private final IntSet appliedSystemIdsThisTick = new IntOpenHashSet();
+        private final Set<ReadoutSignature> appliedHeldReadoutsThisTick = new HashSet<>();
         private int nextNetworkId = 1;
+        private int directCompilationCacheEntryLimit = MIN_DIRECT_GEOMETRY_CACHE_ENTRIES;
         private OpticalEpochs epochs = OpticalEpochs.ZERO;
         private long compilerDebugRunTick = Long.MIN_VALUE;
         private int compilerDebugRunsThisTick = 0;
+        private long systemApplyTick = Long.MIN_VALUE;
+        private long nextReadoutStep = 1L;
 
         int networkIdFor(SourceTraceKey key) {
             return networkIdsBySource.computeIfAbsent(key, ignored -> nextNetworkId++);
@@ -743,6 +1018,10 @@ public final class OpticalTraceCache {
             return true;
         }
 
+        long nextReadoutStep() {
+            return nextReadoutStep++;
+        }
+
         boolean markChanged(BlockPos pos, OpticalDirtyKind dirtyKind) {
             IntSet affectedNetworkIds = dependencyIndex.markChangedAndGet(pos);
 
@@ -753,10 +1032,48 @@ public final class OpticalTraceCache {
             epochs = epochs.advance(dirtyKind);
 
             for (int networkId : affectedNetworkIds) {
-                markSystemDirty(networkId);
+                markSystemDirty(networkId, dirtyKind);
             }
 
             return true;
+        }
+
+        boolean markParameterChanged(ServerLevel level, BlockPos pos) {
+            boolean changed = false;
+
+            if (isDirectOpticalParameterDependency(level, pos)) {
+                changed |= markChanged(pos, OpticalDirtyKind.PARAMETER);
+            }
+
+            for (Direction direction : Direction.values()) {
+                BlockPos neighborPos = pos.relative(direction);
+
+                if (isPoweredMaterialParameterDependency(level, neighborPos)) {
+                    changed |= markChanged(neighborPos, OpticalDirtyKind.PARAMETER);
+                }
+            }
+
+            return changed;
+        }
+
+        private static boolean isDirectOpticalParameterDependency(ServerLevel level, BlockPos pos) {
+            if (!level.isLoaded(pos)) {
+                return false;
+            }
+
+            BlockState state = level.getBlockState(pos);
+
+            if (state.getBlock() instanceof CmosSensorBlock || state.getBlock() instanceof PassThroughSensorBlock) {
+                return false;
+            }
+
+            return state.is(Blocks.GLOWSTONE)
+                    || state.getBlock() instanceof OpticalSource
+                    || state.getBlock() instanceof OpticalElement;
+        }
+
+        private static boolean isPoweredMaterialParameterDependency(ServerLevel level, BlockPos pos) {
+            return level.isLoaded(pos) && level.getBlockState(pos).is(Blocks.GLOWSTONE);
         }
 
         CachedOpticalSystem systemForNetwork(int networkId) {
@@ -769,7 +1086,95 @@ public final class OpticalTraceCache {
             return cachedSystemsBySystem.get(systemId);
         }
 
-        private void markSystemDirty(int networkId) {
+        CachedOpticalSystem lastUsableSystemForNetwork(int networkId) {
+            Integer systemId = systemIdsByNetwork.get(networkId);
+
+            if (systemId == null) {
+                return null;
+            }
+
+            return lastUsableSystemsBySystem.get(systemId);
+        }
+
+        void rememberUsableSystem(CachedOpticalSystem system) {
+            lastUsableSystemsBySystem.put(system.systemId(), system);
+            rememberReliableReceiverOutputs(system.receiverOutputs());
+        }
+
+        List<ReceiverOutput> lastReliableReceiverOutputsFor(CachedOpticalSystem system) {
+            ReadoutSignature signature = ReadoutSignature.of(system.receiverOutputs());
+
+            if (signature.empty()) {
+                return List.of();
+            }
+
+            return lastReliableReceiverOutputsByReadout.getOrDefault(signature, List.of());
+        }
+
+        boolean markHeldReadoutApplied(CachedOpticalSystem system, long gameTime) {
+            if (systemApplyTick != gameTime) {
+                systemApplyTick = gameTime;
+                appliedSystemIdsThisTick.clear();
+                appliedHeldReadoutsThisTick.clear();
+            }
+
+            ReadoutSignature signature = ReadoutSignature.of(system.receiverOutputs());
+
+            return !signature.empty() && appliedHeldReadoutsThisTick.add(signature);
+        }
+
+        GeometrySignature geometrySignatureFor(ServerLevel level, int networkId) {
+            LongSet positions = geometrySignaturePositionsByNetwork.get(networkId);
+
+            if (positions == null || positions.isEmpty()) {
+                positions = dependencyIndex.dependenciesFor(networkId);
+            }
+
+            return GeometrySignature.capture(level, positions);
+        }
+
+        GeometrySignature rememberGeometrySignaturePositions(ServerLevel level, int networkId, LongSet dependencies) {
+            LongSet positions = geometrySignaturePositionsByNetwork.computeIfAbsent(
+                    networkId,
+                    ignored -> new LongOpenHashSet()
+            );
+
+            if (positions.size() + dependencies.size() > MAX_GEOMETRY_SIGNATURE_POSITIONS) {
+                positions.clear();
+            }
+
+            positions.addAll(dependencies);
+            updateDirectCompilationCacheEntryLimit(positions.size());
+            return GeometrySignature.capture(level, positions);
+        }
+
+        private void updateDirectCompilationCacheEntryLimit(int signaturePositions) {
+            int nextLimit = directGeometryCacheLimitFor(signaturePositions);
+
+            if (nextLimit > directCompilationCacheEntryLimit) {
+                directCompilationCacheEntryLimit = nextLimit;
+            }
+        }
+
+        boolean markSystemApplied(int systemId, long gameTime) {
+            if (systemApplyTick != gameTime) {
+                systemApplyTick = gameTime;
+                appliedSystemIdsThisTick.clear();
+                appliedHeldReadoutsThisTick.clear();
+            }
+
+            return appliedSystemIdsThisTick.add(systemId);
+        }
+
+        private void rememberReliableReceiverOutputs(List<ReceiverOutput> receiverOutputs) {
+            ReadoutSignature signature = ReadoutSignature.of(receiverOutputs);
+
+            if (!signature.empty()) {
+                lastReliableReceiverOutputsByReadout.put(signature, List.copyOf(receiverOutputs));
+            }
+        }
+
+        private void markSystemDirty(int networkId, OpticalDirtyKind dirtyKind) {
             Integer systemId = systemIdsByNetwork.get(networkId);
 
             if (systemId == null) {
@@ -778,6 +1183,9 @@ public final class OpticalTraceCache {
             }
 
             cachedSystemsBySystem.remove(systemId);
+            if (dirtyKind == OpticalDirtyKind.STRUCTURE) {
+                lastUsableSystemsBySystem.remove(systemId);
+            }
             IntSet systemNetworkIds = networkIdsBySystem.get(systemId);
 
             if (systemNetworkIds == null || systemNetworkIds.isEmpty()) {

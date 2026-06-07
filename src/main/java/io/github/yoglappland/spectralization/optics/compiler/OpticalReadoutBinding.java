@@ -21,10 +21,6 @@ public record OpticalReadoutBinding(
     public ReceiverOutput sample(ScalarPowerSolution solution) {
         double power = solution.powerAt(inputNode);
 
-        if (power <= 0.0) {
-            return null;
-        }
-
         return switch (kind) {
             case CMOS -> ReceiverOutput.cmos(pos, power);
             case PASS_THROUGH_SENSOR -> ReceiverOutput.passThroughSensor(pos, positiveZ, power);

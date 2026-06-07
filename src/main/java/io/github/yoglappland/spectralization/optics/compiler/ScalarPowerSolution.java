@@ -5,16 +5,22 @@ import java.util.Map;
 import java.util.Objects;
 
 public record ScalarPowerSolution(
+        ScalarSolverKind solverKind,
+        ScalarSolverPlan solverPlan,
         boolean converged,
         boolean unstable,
         int iterations,
         double residual,
         double maxNodePower,
         double totalNodePower,
-        Map<PortGraphNode, Double> powerByNode
+        Map<PortGraphNode, Double> powerByNode,
+        List<ScalarSolverRegionResult> regionResults
 ) {
     public ScalarPowerSolution {
+        Objects.requireNonNull(solverKind, "solverKind");
+        Objects.requireNonNull(solverPlan, "solverPlan");
         Objects.requireNonNull(powerByNode, "powerByNode");
+        Objects.requireNonNull(regionResults, "regionResults");
 
         if (iterations < 0) {
             throw new IllegalArgumentException("Power solution iterations must be non-negative");
@@ -33,10 +39,11 @@ public record ScalarPowerSolution(
         }
 
         powerByNode = Map.copyOf(powerByNode);
+        regionResults = List.copyOf(regionResults);
     }
 
     public static ScalarPowerSolution empty() {
-        return new ScalarPowerSolution(true, false, 0, 0.0, 0.0, 0.0, Map.of());
+        return ScalarPowerSolutions.empty(ScalarSolverKind.NONE, ScalarSolverPlan.empty());
     }
 
     public double powerAt(PortGraphNode node) {

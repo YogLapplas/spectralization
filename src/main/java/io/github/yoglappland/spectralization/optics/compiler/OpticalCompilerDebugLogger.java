@@ -57,6 +57,9 @@ public final class OpticalCompilerDebugLogger {
                 .append(" direction=").append(trace.sourceOutput().outgoingDirection())
                 .append(" power=").append(formatPower(trace.sourceOutput().beam().totalPower()))
                 .append('\n');
+        builder.append("effect_trace_max_states=")
+                .append(SpectralizationConfig.opticalEffectTraceMaxStates())
+                .append('\n');
         builder.append("nodes=").append(graph.nodes().size())
                 .append(" edges=").append(graph.edges().size())
                 .append(" sccs=").append(graph.sccs().size())
@@ -88,6 +91,11 @@ public final class OpticalCompilerDebugLogger {
                 observedGraph,
                 directGraph,
                 scalarPowerSolution,
+                false,
+                0,
+                0,
+                0,
+                0,
                 null,
                 null,
                 0,
@@ -113,6 +121,11 @@ public final class OpticalCompilerDebugLogger {
             CompiledPortGraph observedGraph,
             CompiledPortGraph directGraph,
             ScalarPowerSolution scalarPowerSolution,
+            boolean directGeometryCacheHit,
+            int directGeometrySignaturePositions,
+            int directGeometryCacheEntries,
+            int directGeometryCacheLimit,
+            int heldReadoutCacheEntries,
             CompiledPortGraph networkGraph,
             ScalarPowerSolution networkSolution,
             int networkSourceCount,
@@ -144,10 +157,19 @@ public final class OpticalCompilerDebugLogger {
                 .append(" direction=").append(trace.sourceOutput().outgoingDirection())
                 .append(" power=").append(formatPower(trace.sourceOutput().beam().totalPower()))
                 .append('\n');
+        builder.append("effect_trace_max_states=")
+                .append(SpectralizationConfig.opticalEffectTraceMaxStates())
+                .append('\n');
         appendGraphSummary(builder, "observed", observedGraph, trace.steps().size(), trace.terminations().size());
         appendGraphSummary(builder, "direct", directGraph, -1, directGraph.terminationCount());
         appendTemplateSummary(builder, "direct", level, directGraph);
         appendScalarSolution(builder, "direct_scalar", scalarPowerSolution);
+        builder.append("direct_geometry_cache hit=").append(directGeometryCacheHit)
+                .append(" signature_positions=").append(directGeometrySignaturePositions)
+                .append(" entries=").append(directGeometryCacheEntries)
+                .append(" limit=").append(directGeometryCacheLimit)
+                .append('\n');
+        builder.append("held_readout_cache entries=").append(heldReadoutCacheEntries).append('\n');
 
         if (networkGraph != null && networkSolution != null) {
             builder.append("network sources=").append(networkSourceCount).append(' ');
@@ -457,6 +479,7 @@ public final class OpticalCompilerDebugLogger {
             ScalarPowerSolution solution
     ) {
         builder.append(label)
+                .append(" solver=").append(solution.solverKind())
                 .append(" converged=").append(solution.converged())
                 .append(" unstable=").append(solution.unstable())
                 .append(" readout_reliable=").append(solution.reliableForReadout())
@@ -464,6 +487,175 @@ public final class OpticalCompilerDebugLogger {
                 .append(" residual=").append(formatPower(solution.residual()))
                 .append(" max_node_power=").append(formatPower(solution.maxNodePower()))
                 .append(" total_node_power=").append(formatPower(solution.totalNodePower()))
+                .append('\n');
+        appendSolverPlan(builder, label, solution.solverPlan());
+        appendSolverRegionResults(builder, label, solution);
+    }
+
+    private static void appendSolverPlan(
+            StringBuilder builder,
+            String label,
+            ScalarSolverPlan solverPlan
+    ) {
+        builder.append(label)
+                .append("_solver_plan primary=").append(solverPlan.primarySolverKind())
+                .append(" regions=").append(solverPlan.regions().size())
+                .append(" dag_regions=").append(solverPlan.dagRegionCount())
+                .append(" feedback_regions=").append(solverPlan.feedbackRegionCount())
+                .append(" fallback_regions=").append(solverPlan.fallbackRegionCount())
+                .append(" max_beta1=").append(solverPlan.maxBeta1())
+                .append('\n');
+        appendSolverCapabilities(builder, label);
+        appendChordFeedbackPlan(builder, label, solverPlan.chordFeedbackPlan());
+
+        if (solverPlan.regions().isEmpty()) {
+            return;
+        }
+
+        builder.append(label).append("_solver_regions:\n");
+        int maxRows = Math.max(1, Math.min(16, SpectralizationConfig.opticalCompilerDebugMaxEdges()));
+        int rowCount = 0;
+
+        for (ScalarSolverRegion region : solverPlan.regions()) {
+            if (rowCount >= maxRows) {
+                builder.append("  ... ").append(solverPlan.regions().size() - rowCount).append(" more regions\n");
+                return;
+            }
+
+            builder.append("  #").append(region.id())
+                    .append(" scc=").append(region.graphSccId())
+                    .append(" nodes=").append(region.nodes().size())
+                    .append(" edges=").append(region.edgeIds().size())
+                    .append(" beta1=").append(region.beta1())
+                    .append(" feedback=").append(region.feedback())
+                    .append(" preferred=").append(region.preferredSolverKind())
+                    .append(" execution=").append(region.executionSolverKind())
+                    .append(" fallback=").append(region.fallback())
+                    .append('\n');
+            rowCount++;
+        }
+    }
+
+    private static void appendSolverRegionResults(
+            StringBuilder builder,
+            String label,
+            ScalarPowerSolution solution
+    ) {
+        if (solution.regionResults().isEmpty()) {
+            return;
+        }
+
+        builder.append(label).append("_solver_region_results:\n");
+        int maxRows = Math.max(1, Math.min(16, SpectralizationConfig.opticalCompilerDebugMaxEdges()));
+        int rowCount = 0;
+
+        for (ScalarSolverRegionResult result : solution.regionResults()) {
+            if (rowCount >= maxRows) {
+                builder.append("  ... ").append(solution.regionResults().size() - rowCount)
+                        .append(" more region results\n");
+                return;
+            }
+
+            builder.append("  #").append(result.regionId())
+                    .append(" scc=").append(result.graphSccId())
+                    .append(" solver=").append(result.solverKind())
+                    .append(" converged=").append(result.converged())
+                    .append(" unstable=").append(result.unstable())
+                    .append(" iterations=").append(result.iterations())
+                    .append(" residual=").append(formatPower(result.residual()))
+                    .append(" max_node_power=").append(formatPower(result.maxNodePower()))
+                    .append(" total_node_power=").append(formatPower(result.totalNodePower()))
+                    .append('\n');
+            rowCount++;
+        }
+    }
+
+    private static void appendChordFeedbackPlan(
+            StringBuilder builder,
+            String label,
+            ChordFeedbackPlan chordPlan
+    ) {
+        builder.append(label)
+                .append("_chord_plan systems=").append(chordPlan.systemCount())
+                .append(" variables=").append(chordPlan.variableCount())
+                .append(" max_beta1=").append(chordPlan.maxBeta1())
+                .append(" complete=").append(chordPlan.complete())
+                .append('\n');
+
+        if (chordPlan.systems().isEmpty()) {
+            return;
+        }
+
+        builder.append(label).append("_chord_systems:\n");
+        int maxRows = Math.max(1, Math.min(16, SpectralizationConfig.opticalCompilerDebugMaxEdges()));
+        int rowCount = 0;
+
+        for (ChordFeedbackSystem system : chordPlan.systems()) {
+            if (rowCount >= maxRows) {
+                builder.append("  ... ").append(chordPlan.systems().size() - rowCount)
+                        .append(" more chord systems\n");
+                return;
+            }
+
+            builder.append("  scc=").append(system.graphSccId())
+                    .append(" nodes=").append(system.nodeCount())
+                    .append(" edges=").append(system.edgeCount())
+                    .append(" beta1=").append(system.beta1())
+                    .append(" variables=").append(system.variableCount())
+                    .append(" compilable=").append(system.compilable())
+                    .append('\n');
+            appendChordVariables(builder, system);
+            rowCount++;
+        }
+    }
+
+    private static void appendChordVariables(StringBuilder builder, ChordFeedbackSystem system) {
+        if (system.variables().isEmpty()) {
+            return;
+        }
+
+        int maxRows = Math.max(1, Math.min(8, SpectralizationConfig.opticalCompilerDebugMaxEdges()));
+        int rowCount = 0;
+
+        for (ChordFeedbackVariable variable : system.variables()) {
+            if (rowCount >= maxRows) {
+                builder.append("    ... ").append(system.variables().size() - rowCount)
+                        .append(" more chord variables\n");
+                return;
+            }
+
+            builder.append("    var#").append(variable.id())
+                    .append(" chord=").append(variable.chordId())
+                    .append(" edge=").append(variable.edgeId())
+                    .append(" graph_from=").append(variable.fromGraphNodeId())
+                    .append(" graph_to=").append(variable.toGraphNodeId())
+                    .append(" local_from=").append(variable.fromLocalNodeId())
+                    .append(" local_to=").append(variable.toLocalNodeId())
+                    .append(" gain=").append(formatPower(variable.gain()))
+                    .append(' ')
+                    .append(formatNode(variable.from()))
+                    .append(" -> ")
+                    .append(formatNode(variable.to()))
+                    .append('\n');
+            rowCount++;
+        }
+    }
+
+    private static void appendSolverCapabilities(StringBuilder builder, String label) {
+        builder.append(label)
+                .append("_solver_capabilities")
+                .append(" topological=true")
+                .append(" fixed_point=true")
+                .append(" feedback_scc_exact=").append(FeedbackSccScalarSolver.implemented())
+                .append(" chord_planning=").append(ChordFeedbackScalarSolver.planningImplemented())
+                .append(" chord=").append(ChordFeedbackScalarSolver.implemented())
+                .append(" mixed_region=").append(MixedRegionScalarSolver.implemented())
+                .append(" weighted_bfs=").append(WeightedBfsAttentionScalarSolver.implemented())
+                .append(" magnitude_bucket=").append(MagnitudeBucketScalarSolver.implemented())
+                .append(" residual_correction=").append(ResidualCorrectionScalarSolver.implemented())
+                .append(" loop_macro=").append(LoopMacroScalarSolver.implemented())
+                .append(" symmetry=").append(SymmetryReductionScalarSolver.implemented())
+                .append(" debug_oracle=").append(DebugOracleScalarSolver.implemented())
                 .append('\n');
     }
 

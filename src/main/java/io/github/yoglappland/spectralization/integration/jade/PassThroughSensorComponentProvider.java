@@ -24,12 +24,14 @@ public class PassThroughSensorComponentProvider implements IBlockComponentProvid
         tooltip.add(Component.translatable(
                 "jade.spectralization.pass_through_sensor.directional_power",
                 directionName(positiveZDirection),
-                formatPower(sensor.getPositiveZPower())
+                formatPower(sensor.getPositiveZPower()),
+                reliabilityName(sensor.isPositiveZReliable())
         ));
         tooltip.add(Component.translatable(
                 "jade.spectralization.pass_through_sensor.directional_power",
                 directionName(positiveZDirection.getOpposite()),
-                formatPower(sensor.getNegativeZPower())
+                formatPower(sensor.getNegativeZPower()),
+                reliabilityName(sensor.isNegativeZReliable())
         ));
     }
 
@@ -50,5 +52,9 @@ public class PassThroughSensorComponentProvider implements IBlockComponentProvid
 
     private static Component directionName(Direction direction) {
         return Component.translatable("direction.spectralization." + direction.getSerializedName());
+    }
+
+    private static Component reliabilityName(boolean reliable) {
+        return Component.translatable("jade.spectralization.sensor.reliability." + (reliable ? "reliable" : "unstable"));
     }
 }

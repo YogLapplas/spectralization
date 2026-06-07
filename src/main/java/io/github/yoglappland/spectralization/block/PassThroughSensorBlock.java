@@ -61,20 +61,7 @@ public class PassThroughSensorBlock extends Block implements EntityBlock, Optica
             }
         }
 
-        return builder
-                .interactionEffect((input, incomingDirection, result) -> {
-                    Direction outgoingDirection = incomingDirection.getOpposite();
-
-                    if (result.outputs().isEmpty()
-                            || outgoingDirection != positiveZDirection && outgoingDirection != negativeZDirection) {
-                        return;
-                    }
-
-                    if (level.getBlockEntity(pos) instanceof PassThroughSensorBlockEntity sensor) {
-                        sensor.receivePower(outgoingDirection == positiveZDirection, input.totalPower());
-                    }
-                })
-                .build();
+        return builder.build();
     }
 
     @Override

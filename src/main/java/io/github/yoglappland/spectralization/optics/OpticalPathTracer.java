@@ -20,6 +20,24 @@ public final class OpticalPathTracer {
     private static final double AIR_PROPAGATION_FACTOR = 0.995;
 
     public static CompiledOpticalTrace trace(Level level, BlockPos sourcePos, OutputBeam sourceOutput) {
+        return trace(level, sourcePos, sourceOutput, MAX_STATES_PER_TRACE, true);
+    }
+
+    public static CompiledOpticalTrace traceEffects(Level level, BlockPos sourcePos, OutputBeam sourceOutput, int maxStates) {
+        return trace(level, sourcePos, sourceOutput, maxStates, true);
+    }
+
+    public static CompiledOpticalTrace traceForDebug(Level level, BlockPos sourcePos, OutputBeam sourceOutput, int maxStates) {
+        return trace(level, sourcePos, sourceOutput, maxStates, false);
+    }
+
+    private static CompiledOpticalTrace trace(
+            Level level,
+            BlockPos sourcePos,
+            OutputBeam sourceOutput,
+            int maxStates,
+            boolean applyWorldEffects
+    ) {
         CompiledOpticalTrace.Builder trace = CompiledOpticalTrace.builder(sourcePos, sourceOutput);
 
         if (level.isClientSide || sourceOutput.beam().isEmpty()) {
@@ -45,7 +63,7 @@ public final class OpticalPathTracer {
 
             processedStates++;
 
-            if (processedStates > MAX_STATES_PER_TRACE) {
+            if (processedStates > Math.max(0, maxStates)) {
                 trace.addTermination(termination(current, OpticalTraceTerminationReason.MAX_STATES));
                 break;
             }
@@ -65,19 +83,23 @@ public final class OpticalPathTracer {
                 continue;
             }
 
-            OpticalPathExposure.mark(level, current.pos, current.beam);
+            if (applyWorldEffects) {
+                OpticalPathExposure.mark(level, current.pos, current.beam);
+            }
 
-            if (OpticalFieldSources.hasEffect(level, current.pos, OpticalFieldEffectType.SCATTERING)) {
+            if (applyWorldEffects && OpticalFieldSources.hasEffect(level, current.pos, OpticalFieldEffectType.SCATTERING)) {
                 OpticalPathVisualization.spawn(level, current.pos, current.beam);
             }
 
-            BeamPacket interactingBeam = OpticalEntityInteractions.interact(
+            BeamPacket interactingBeam = applyWorldEffects
+                    ? OpticalEntityInteractions.interact(
                     level,
                     current.pos,
                     current.direction,
                     current.beam,
                     affectedEntityIds
-            );
+            )
+                    : current.beam;
 
             if (interactingBeam.totalPower() < MIN_POWER) {
                 trace.addTermination(termination(current, interactingBeam, OpticalTraceTerminationReason.LOW_POWER));
@@ -90,7 +112,7 @@ public final class OpticalPathTracer {
             boolean opticalElement = block instanceof OpticalElement;
             OpticalInteractionKind interactionKind = interactionKind(state, opticalElement);
 
-            if (!opticalElement && !state.isAir()) {
+            if (applyWorldEffects && !opticalElement && !state.isAir()) {
                 OpticalSpotTracker.markMaterialSpot(
                         level,
                         current.pos,
@@ -113,7 +135,7 @@ public final class OpticalPathTracer {
                     result
             ));
 
-            if (opticalElement) {
+            if (applyWorldEffects && opticalElement) {
                 OpticalSpotTracker.markAbsorbedSpot(
                         level,
                         current.pos,

@@ -118,19 +118,6 @@ public class CmosSensorBlock extends Block implements EntityBlock, OpticalReceiv
         }
 
         return builder
-                .interactionEffect((input, incomingDirection, result) -> {
-                    if (incomingDirection != receivingSide) {
-                        return;
-                    }
-
-                    double detectedPower = input.totalPower();
-
-                    if (level.getBlockEntity(pos) instanceof CmosSensorBlockEntity cmosSensor) {
-                        cmosSensor.receivePower(detectedPower);
-                    } else {
-                        setSignalFromPower(level, pos, state, detectedPower);
-                    }
-                })
                 .build();
     }
 

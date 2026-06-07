@@ -42,13 +42,15 @@ public record CachedOpticalSystem(
         receiverOutputs = List.copyOf(receiverOutputs);
     }
 
-    public void applyOutputs(Level level) {
-        if (!usableForGameplay) {
+    public void applyOutputs(Level level, boolean reliable, long step) {
+        if (reliable && !usableForGameplay) {
             return;
         }
 
+        boolean sampleReliable = reliable && usableForGameplay;
+
         for (ReceiverOutput receiverOutput : receiverOutputs) {
-            receiverOutput.apply(level);
+            receiverOutput.apply(level, sampleReliable, step);
         }
     }
 }

@@ -90,4 +90,8 @@ public final class OpticalDependencyIndex {
     public boolean hasDependencies(int networkId) {
         return dependencyPositionsByNetwork.containsKey(networkId);
     }
+
+    public LongSet dependenciesFor(int networkId) {
+        return dependencyPositionsByNetwork.get(networkId);
+    }
 }

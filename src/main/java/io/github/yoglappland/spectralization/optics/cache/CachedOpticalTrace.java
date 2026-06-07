@@ -33,9 +33,14 @@ public record CachedOpticalTrace(
         return sourceOutput.equals(outputBeam);
     }
 
-    public void applyOutputs(Level level) {
+    public void applyOutputs(Level level, boolean reliable, long step) {
+        if (readoutLayer.size() > 0) {
+            applyCompiledOutputs(level, reliable && scalarPowerSolution.reliableForReadout(), step);
+            return;
+        }
+
         for (ReceiverOutput receiverOutput : receiverOutputs) {
-            receiverOutput.apply(level);
+            receiverOutput.apply(level, reliable && !unstable, step);
         }
     }
 
@@ -43,9 +48,9 @@ public record CachedOpticalTrace(
         return readoutLayer.sample(scalarPowerSolution);
     }
 
-    public void applyCompiledOutputs(Level level) {
+    public void applyCompiledOutputs(Level level, boolean reliable, long step) {
         for (ReceiverOutput receiverOutput : sampleCompiledOutputs()) {
-            receiverOutput.apply(level);
+            receiverOutput.apply(level, reliable, step);
         }
     }
 }

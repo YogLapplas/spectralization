@@ -14,6 +14,7 @@ public final class SpectralizationConfig {
     private static final ModConfigSpec.DoubleValue SCATTERING_FIELD_PROPAGATION_FACTOR;
     private static final ModConfigSpec.IntValue OPTICAL_SOLVER_MAX_REQUESTS_PER_TICK;
     private static final ModConfigSpec.IntValue OPTICAL_SOLVER_BUDGET_MICROS;
+    private static final ModConfigSpec.IntValue OPTICAL_EFFECT_TRACE_MAX_STATES;
     private static final ModConfigSpec.BooleanValue OPTICAL_COMPILER_DEBUG_LOG;
     private static final ModConfigSpec.IntValue OPTICAL_COMPILER_DEBUG_MAX_EDGES;
     private static final ModConfigSpec.IntValue OPTICAL_COMPILER_MAX_DIRECT_OUTGOING_NODES;
@@ -60,6 +61,9 @@ public final class SpectralizationConfig {
         OPTICAL_SOLVER_BUDGET_MICROS = builder
                 .comment("Soft server-tick budget for dirty optical trace processing, in microseconds.")
                 .defineInRange("budget_micros", 2000, 100, 50_000);
+        OPTICAL_EFFECT_TRACE_MAX_STATES = builder
+                .comment("Maximum legacy effect-trace states per dirty source. The compiler solver is not limited by this; it only caps particles, spots, entity exposure, and debug observed traces.")
+                .defineInRange("effect_trace_max_states", 384, 0, 4096);
         builder.pop();
 
         builder.push("optical_compiler");
@@ -135,6 +139,10 @@ public final class SpectralizationConfig {
 
     public static int opticalSolverBudgetMicros() {
         return OPTICAL_SOLVER_BUDGET_MICROS.get();
+    }
+
+    public static int opticalEffectTraceMaxStates() {
+        return OPTICAL_EFFECT_TRACE_MAX_STATES.get();
     }
 
     public static boolean opticalCompilerDebugLog() {

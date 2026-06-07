@@ -1,5 +1,6 @@
 package io.github.yoglappland.spectralization.blockentity;
 
+import io.github.yoglappland.spectralization.optics.cache.ReadoutSample;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
@@ -12,36 +13,23 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
 public class PassThroughSensorBlockEntity extends BlockEntity {
-    private static final long SIGNAL_HOLD_TICKS = 1L;
+    private static final long SAMPLE_HOLD_TICKS = 1L;
+    private static final int REQUIRED_STABLE_STEPS = 8;
     private static final double POWER_EPSILON = 1.0E-6;
     private static final String POSITIVE_Z_POWER_TAG = "positive_z_power";
     private static final String NEGATIVE_Z_POWER_TAG = "negative_z_power";
+    private static final String POSITIVE_Z_RELIABLE_TAG = "positive_z_reliable";
+    private static final String NEGATIVE_Z_RELIABLE_TAG = "negative_z_reliable";
 
-    private long lastPositiveZGameTime = Long.MIN_VALUE;
-    private long lastNegativeZGameTime = Long.MIN_VALUE;
-    private double positiveZPowerThisTick = 0.0;
-    private double negativeZPowerThisTick = 0.0;
-    private double lastSyncedPositiveZPower = 0.0;
-    private double lastSyncedNegativeZPower = 0.0;
+    private final StablePowerChannel positiveZChannel = new StablePowerChannel();
+    private final StablePowerChannel negativeZChannel = new StablePowerChannel();
 
     public PassThroughSensorBlockEntity(BlockPos pos, BlockState blockState) {
         super(SpectralBlockEntities.PASS_THROUGH_SENSOR.get(), pos, blockState);
     }
 
     public static void tick(Level level, BlockPos pos, PassThroughSensorBlockEntity sensor) {
-        boolean needsSync = false;
-
-        if (sensor.positiveZPowerThisTick > 0.0
-                && level.getGameTime() - sensor.lastPositiveZGameTime > SIGNAL_HOLD_TICKS) {
-            sensor.positiveZPowerThisTick = 0.0;
-            needsSync |= sensor.markSyncedPowerIfChanged(true);
-        }
-
-        if (sensor.negativeZPowerThisTick > 0.0
-                && level.getGameTime() - sensor.lastNegativeZGameTime > SIGNAL_HOLD_TICKS) {
-            sensor.negativeZPowerThisTick = 0.0;
-            needsSync |= sensor.markSyncedPowerIfChanged(false);
-        }
+        boolean needsSync = sensor.positiveZChannel.tick(level) | sensor.negativeZChannel.tick(level);
 
         if (needsSync) {
             sensor.syncToClient();
@@ -49,60 +37,62 @@ public class PassThroughSensorBlockEntity extends BlockEntity {
     }
 
     public void receivePower(boolean positiveZ, double power) {
-        if (this.level == null || this.level.isClientSide || power <= 0.0) {
+        if (this.level == null) {
+            return;
+        }
+
+        receiveSample(positiveZ, new ReadoutSample(power, true, this.level.getGameTime()));
+    }
+
+    public void receiveSample(boolean positiveZ, ReadoutSample sample) {
+        if (this.level == null || this.level.isClientSide) {
             return;
         }
 
         long gameTime = this.level.getGameTime();
 
         if (positiveZ) {
-            if (this.lastPositiveZGameTime == gameTime) {
-                this.positiveZPowerThisTick += power;
-            } else {
-                this.lastPositiveZGameTime = gameTime;
-                this.positiveZPowerThisTick = power;
-            }
+            this.positiveZChannel.receive(gameTime, sample);
         } else {
-            if (this.lastNegativeZGameTime == gameTime) {
-                this.negativeZPowerThisTick += power;
-            } else {
-                this.lastNegativeZGameTime = gameTime;
-                this.negativeZPowerThisTick = power;
-            }
-        }
-
-        if (markSyncedPowerIfChanged(positiveZ)) {
-            syncToClient();
+            this.negativeZChannel.receive(gameTime, sample);
         }
     }
 
     public double getPositiveZPower() {
-        return this.positiveZPowerThisTick;
+        return this.positiveZChannel.committedPower();
     }
 
     public double getNegativeZPower() {
-        return this.negativeZPowerThisTick;
+        return this.negativeZChannel.committedPower();
+    }
+
+    public boolean isPositiveZReliable() {
+        return this.positiveZChannel.reliable();
+    }
+
+    public boolean isNegativeZReliable() {
+        return this.negativeZChannel.reliable();
     }
 
     @Override
     protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
-        this.positiveZPowerThisTick = tag.getDouble(POSITIVE_Z_POWER_TAG);
-        this.negativeZPowerThisTick = tag.getDouble(NEGATIVE_Z_POWER_TAG);
+        this.positiveZChannel.load(tag, POSITIVE_Z_POWER_TAG, POSITIVE_Z_RELIABLE_TAG);
+        this.negativeZChannel.load(tag, NEGATIVE_Z_POWER_TAG, NEGATIVE_Z_RELIABLE_TAG);
     }
 
     @Override
     protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.saveAdditional(tag, registries);
-        tag.putDouble(POSITIVE_Z_POWER_TAG, this.positiveZPowerThisTick);
-        tag.putDouble(NEGATIVE_Z_POWER_TAG, this.negativeZPowerThisTick);
+        this.positiveZChannel.save(tag, POSITIVE_Z_POWER_TAG, POSITIVE_Z_RELIABLE_TAG);
+        this.negativeZChannel.save(tag, NEGATIVE_Z_POWER_TAG, NEGATIVE_Z_RELIABLE_TAG);
     }
 
     @Override
     public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
         CompoundTag tag = super.getUpdateTag(registries);
-        tag.putDouble(POSITIVE_Z_POWER_TAG, this.positiveZPowerThisTick);
-        tag.putDouble(NEGATIVE_Z_POWER_TAG, this.negativeZPowerThisTick);
+        this.positiveZChannel.save(tag, POSITIVE_Z_POWER_TAG, POSITIVE_Z_RELIABLE_TAG);
+        this.negativeZChannel.save(tag, NEGATIVE_Z_POWER_TAG, NEGATIVE_Z_RELIABLE_TAG);
         return tag;
     }
 
@@ -121,21 +111,103 @@ public class PassThroughSensorBlockEntity extends BlockEntity {
         this.level.sendBlockUpdated(this.worldPosition, state, state, 3);
     }
 
-    private boolean markSyncedPowerIfChanged(boolean positiveZ) {
-        if (positiveZ) {
-            if (Math.abs(this.lastSyncedPositiveZPower - this.positiveZPowerThisTick) <= POWER_EPSILON) {
+    private static boolean closeEnough(double left, double right) {
+        return Math.abs(left - right) <= Math.max(POWER_EPSILON, Math.max(Math.abs(left), Math.abs(right)) * 1.0E-4);
+    }
+
+    private static final class StablePowerChannel {
+        private long lastReceivedGameTime = Long.MIN_VALUE;
+        private long lastReceivedSampleStep = Long.MIN_VALUE;
+        private long lastObservedSampleStep = Long.MIN_VALUE;
+        private double receivedPowerThisStep = 0.0;
+        private boolean receivedReliableThisStep = false;
+        private double committedPower = 0.0;
+        private double candidatePower = 0.0;
+        private int stableCandidateSteps = 0;
+        private boolean reliable = false;
+
+        void receive(long gameTime, ReadoutSample sample) {
+            this.lastReceivedGameTime = gameTime;
+
+            if (this.lastReceivedSampleStep == sample.step()) {
+                this.receivedPowerThisStep += sample.power();
+                this.receivedReliableThisStep &= sample.reliable();
+            } else {
+                this.lastReceivedSampleStep = sample.step();
+                this.receivedPowerThisStep = sample.power();
+                this.receivedReliableThisStep = sample.reliable();
+            }
+        }
+
+        boolean tick(Level level) {
+            if (level.getGameTime() - this.lastReceivedGameTime > SAMPLE_HOLD_TICKS) {
+                return markUnreliable();
+            }
+
+            if (this.lastReceivedSampleStep == this.lastObservedSampleStep) {
                 return false;
             }
 
-            this.lastSyncedPositiveZPower = this.positiveZPowerThisTick;
-            return true;
-        }
+            this.lastObservedSampleStep = this.lastReceivedSampleStep;
 
-        if (Math.abs(this.lastSyncedNegativeZPower - this.negativeZPowerThisTick) <= POWER_EPSILON) {
+            if (!this.receivedReliableThisStep) {
+                return markUnreliable();
+            }
+
+            double observedPower = this.receivedPowerThisStep;
+
+            if (closeEnough(observedPower, this.candidatePower)) {
+                this.stableCandidateSteps++;
+                this.candidatePower = observedPower;
+            } else {
+                this.candidatePower = observedPower;
+                this.stableCandidateSteps = 1;
+            }
+
+            if (this.stableCandidateSteps >= REQUIRED_STABLE_STEPS) {
+                boolean changed = !this.reliable || !closeEnough(this.committedPower, this.candidatePower);
+                this.committedPower = this.candidatePower;
+                this.reliable = true;
+                return changed;
+            }
+
+            if (this.reliable && !closeEnough(observedPower, this.committedPower)) {
+                this.reliable = false;
+                return true;
+            }
+
             return false;
         }
 
-        this.lastSyncedNegativeZPower = this.negativeZPowerThisTick;
-        return true;
+        private boolean markUnreliable() {
+            this.stableCandidateSteps = 0;
+
+            if (!this.reliable) {
+                return false;
+            }
+
+            this.reliable = false;
+            return true;
+        }
+
+        double committedPower() {
+            return this.committedPower;
+        }
+
+        boolean reliable() {
+            return this.reliable;
+        }
+
+        void load(CompoundTag tag, String powerTag, String reliableTag) {
+            this.committedPower = tag.getDouble(powerTag);
+            this.candidatePower = this.committedPower;
+            this.reliable = tag.getBoolean(reliableTag);
+            this.stableCandidateSteps = this.reliable ? REQUIRED_STABLE_STEPS : 0;
+        }
+
+        void save(CompoundTag tag, String powerTag, String reliableTag) {
+            tag.putDouble(powerTag, this.committedPower);
+            tag.putBoolean(reliableTag, this.reliable);
+        }
     }
 }

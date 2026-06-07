@@ -34,6 +34,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
+import net.minecraft.world.level.material.PushReaction;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.bus.api.IEventBus;
@@ -139,6 +140,7 @@ public class Spectralization {
                     .mapColor(MapColor.METAL)
                     .strength(0.0F)
                     .sound(SoundType.METAL)
+                    .pushReaction(PushReaction.BLOCK)
                     .noOcclusion())
     );
 
@@ -151,6 +153,7 @@ public class Spectralization {
                     .mapColor(MapColor.METAL)
                     .strength(0.0F)
                     .sound(SoundType.METAL)
+                    .pushReaction(PushReaction.BLOCK)
                     .noOcclusion())
     );
 

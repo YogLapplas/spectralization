@@ -30,22 +30,36 @@ public record ReceiverOutput(
         return new ReceiverOutput(pos, ReceiverOutputKind.PASS_THROUGH_SENSOR, power, positiveZ);
     }
 
-    public void apply(Level level) {
-        if (power <= 0.0D || !level.isLoaded(pos)) {
+    public ReceiverOutputKey key() {
+        return new ReceiverOutputKey(pos, kind, positiveZ);
+    }
+
+    public void apply(Level level, boolean reliable, long step) {
+        if (!level.isLoaded(pos)) {
             return;
         }
+
+        ReadoutSample sample = new ReadoutSample(power, reliable, step);
 
         switch (kind) {
             case CMOS -> {
                 if (level.getBlockEntity(pos) instanceof CmosSensorBlockEntity cmosSensor) {
-                    cmosSensor.receivePower(power);
+                    cmosSensor.receiveSample(sample);
                 }
             }
             case PASS_THROUGH_SENSOR -> {
                 if (level.getBlockEntity(pos) instanceof PassThroughSensorBlockEntity passThroughSensor) {
-                    passThroughSensor.receivePower(positiveZ, power);
+                    passThroughSensor.receiveSample(positiveZ, sample);
                 }
             }
+        }
+    }
+
+    public record ReceiverOutputKey(BlockPos pos, ReceiverOutputKind kind, boolean positiveZ) {
+        public ReceiverOutputKey {
+            Objects.requireNonNull(pos, "pos");
+            Objects.requireNonNull(kind, "kind");
+            pos = pos.immutable();
         }
     }
 }

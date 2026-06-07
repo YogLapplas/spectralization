@@ -215,7 +215,7 @@ public class CmosSensorBlock extends Block implements EntityBlock, OpticalReceiv
         level.updateNeighborsAt(pos, state.getBlock());
     }
 
-    private static int calculateSignal(double power, boolean logarithmic) {
+    public static int calculateSignal(double power, boolean logarithmic) {
         if (power <= 0.0) {
             return 0;
         }

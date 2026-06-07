@@ -1,0 +1,52 @@
+package io.github.yoglappland.spectralization.optics.cache;
+
+import io.github.yoglappland.spectralization.optics.compiler.CompiledPortGraph;
+import io.github.yoglappland.spectralization.optics.compiler.CompiledReadoutLayer;
+import io.github.yoglappland.spectralization.optics.compiler.PortGraphNode;
+import io.github.yoglappland.spectralization.optics.compiler.ScalarPowerSolution;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import net.minecraft.world.level.Level;
+
+public record CachedOpticalSystem(
+        int systemId,
+        CompiledPortGraph graph,
+        Map<PortGraphNode, Double> sourcePowersByNode,
+        CompiledReadoutLayer readoutLayer,
+        ScalarPowerSolution solution,
+        List<ReceiverOutput> receiverOutputs,
+        int sourceCount,
+        long structureEpoch,
+        boolean structurallyFresh,
+        boolean usableForGameplay
+) {
+    public CachedOpticalSystem {
+        if (systemId <= 0) {
+            throw new IllegalArgumentException("Optical system id must be positive");
+        }
+
+        Objects.requireNonNull(graph, "graph");
+        Objects.requireNonNull(sourcePowersByNode, "sourcePowersByNode");
+        Objects.requireNonNull(readoutLayer, "readoutLayer");
+        Objects.requireNonNull(solution, "solution");
+        Objects.requireNonNull(receiverOutputs, "receiverOutputs");
+
+        if (sourceCount < 0) {
+            throw new IllegalArgumentException("Optical system source count must be non-negative");
+        }
+
+        sourcePowersByNode = Map.copyOf(sourcePowersByNode);
+        receiverOutputs = List.copyOf(receiverOutputs);
+    }
+
+    public void applyOutputs(Level level) {
+        if (!usableForGameplay) {
+            return;
+        }
+
+        for (ReceiverOutput receiverOutput : receiverOutputs) {
+            receiverOutput.apply(level);
+        }
+    }
+}

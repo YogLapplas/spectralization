@@ -1,0 +1,53 @@
+package io.github.yoglappland.spectralization.optics.compiler;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+
+public record ScalarPowerSolution(
+        boolean converged,
+        boolean unstable,
+        int iterations,
+        double residual,
+        double maxNodePower,
+        double totalNodePower,
+        Map<PortGraphNode, Double> powerByNode
+) {
+    public ScalarPowerSolution {
+        Objects.requireNonNull(powerByNode, "powerByNode");
+
+        if (iterations < 0) {
+            throw new IllegalArgumentException("Power solution iterations must be non-negative");
+        }
+
+        if (!Double.isFinite(residual) || residual < 0.0) {
+            throw new IllegalArgumentException("Power solution residual must be finite and non-negative");
+        }
+
+        if (!Double.isFinite(maxNodePower) || maxNodePower < 0.0) {
+            throw new IllegalArgumentException("Power solution max node power must be finite and non-negative");
+        }
+
+        if (!Double.isFinite(totalNodePower) || totalNodePower < 0.0) {
+            throw new IllegalArgumentException("Power solution total node power must be finite and non-negative");
+        }
+
+        powerByNode = Map.copyOf(powerByNode);
+    }
+
+    public static ScalarPowerSolution empty() {
+        return new ScalarPowerSolution(true, false, 0, 0.0, 0.0, 0.0, Map.of());
+    }
+
+    public double powerAt(PortGraphNode node) {
+        return powerByNode.getOrDefault(node, 0.0);
+    }
+
+    public List<Map.Entry<PortGraphNode, Double>> strongestNodes(int limit) {
+        return powerByNode.entrySet().stream()
+                .filter(entry -> entry.getValue() > 0.0)
+                .sorted((left, right) -> Double.compare(right.getValue(), left.getValue()))
+                .limit(Math.max(0, limit))
+                .toList();
+    }
+}

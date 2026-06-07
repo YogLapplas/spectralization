@@ -9,9 +9,11 @@ import net.minecraft.world.level.block.state.BlockState;
 
 public class CmosSensorBlockEntity extends BlockEntity {
     private static final long SIGNAL_HOLD_TICKS = 1L;
+    private static final double POWER_EPSILON = 1.0E-6;
 
     private long lastReceivedGameTime = Long.MIN_VALUE;
     private double receivedPowerThisTick = 0.0;
+    private double lastAppliedPower = 0.0;
 
     public CmosSensorBlockEntity(BlockPos pos, BlockState blockState) {
         super(SpectralBlockEntities.CMOS_SENSOR.get(), pos, blockState);
@@ -33,7 +35,6 @@ public class CmosSensorBlockEntity extends BlockEntity {
         }
 
         long gameTime = this.level.getGameTime();
-
         if (this.lastReceivedGameTime == gameTime) {
             this.receivedPowerThisTick += power;
         } else {
@@ -41,13 +42,26 @@ public class CmosSensorBlockEntity extends BlockEntity {
             this.receivedPowerThisTick = power;
         }
 
-        CmosSensorBlock.setSignalFromPower(
-                this.level,
-                this.worldPosition,
-                this.level.getBlockState(this.worldPosition),
-                this.receivedPowerThisTick
+        BlockState state = this.level.getBlockState(this.worldPosition);
+        int currentSignal = state.getValue(CmosSensorBlock.POWER);
+        int nextSignal = CmosSensorBlock.calculateSignal(
+                this.receivedPowerThisTick,
+                state.getValue(CmosSensorBlock.LOGARITHMIC)
         );
-        this.setChanged();
+
+        if (currentSignal != nextSignal) {
+            CmosSensorBlock.setSignalFromPower(
+                    this.level,
+                    this.worldPosition,
+                    state,
+                    this.receivedPowerThisTick
+            );
+            this.setChanged();
+            this.lastAppliedPower = this.receivedPowerThisTick;
+        } else if (Math.abs(this.lastAppliedPower - this.receivedPowerThisTick) > POWER_EPSILON) {
+            this.setChanged();
+            this.lastAppliedPower = this.receivedPowerThisTick;
+        }
     }
 
     public double getPowerForSignal() {

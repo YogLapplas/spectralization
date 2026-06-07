@@ -14,6 +14,7 @@ import io.github.yoglappland.spectralization.command.SpectralCommands;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.item.PhosphorTubeItem;
 import io.github.yoglappland.spectralization.network.SpectralNetwork;
+import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
 import io.github.yoglappland.spectralization.optics.topology.OpticalNetworkIndex;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
@@ -45,6 +46,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.level.BlockDropsEvent;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
@@ -214,19 +216,27 @@ public class Spectralization {
     @SubscribeEvent
     public void onBlockPlaced(BlockEvent.EntityPlaceEvent event) {
         OpticalFieldSources.invalidate(event.getLevel());
+        OpticalTraceCache.markChanged(event.getLevel(), event.getPos());
         OpticalNetworkIndex.markDirty(event.getLevel());
     }
 
     @SubscribeEvent
     public void onBlockBroken(BlockEvent.BreakEvent event) {
         OpticalFieldSources.invalidate(event.getLevel());
+        OpticalTraceCache.markChanged(event.getLevel(), event.getPos());
         OpticalNetworkIndex.markDirty(event.getLevel());
     }
 
     @SubscribeEvent
     public void onNeighborNotified(BlockEvent.NeighborNotifyEvent event) {
         OpticalFieldSources.invalidate(event.getLevel());
+        OpticalTraceCache.markChanged(event.getLevel(), event.getPos());
         OpticalNetworkIndex.markDirty(event.getLevel());
+    }
+
+    @SubscribeEvent
+    public void onServerTickPost(ServerTickEvent.Post event) {
+        OpticalTraceCache.processQueues(event.getServer());
     }
 
     @EventBusSubscriber(modid = Spectralization.MODID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)

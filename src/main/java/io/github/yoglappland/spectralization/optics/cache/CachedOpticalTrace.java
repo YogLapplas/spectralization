@@ -1,0 +1,51 @@
+package io.github.yoglappland.spectralization.optics.cache;
+
+import io.github.yoglappland.spectralization.optics.OutputBeam;
+import io.github.yoglappland.spectralization.optics.compiler.CompiledReadoutLayer;
+import io.github.yoglappland.spectralization.optics.compiler.CompiledPortGraph;
+import io.github.yoglappland.spectralization.optics.compiler.ScalarPowerSolution;
+import it.unimi.dsi.fastutil.longs.LongSet;
+import java.util.List;
+import java.util.Objects;
+import net.minecraft.world.level.Level;
+
+public record CachedOpticalTrace(
+        int networkId,
+        OutputBeam sourceOutput,
+        List<ReceiverOutput> receiverOutputs,
+        LongSet dependencies,
+        CompiledPortGraph portGraph,
+        CompiledReadoutLayer readoutLayer,
+        ScalarPowerSolution scalarPowerSolution,
+        boolean unstable
+) {
+    public CachedOpticalTrace {
+        Objects.requireNonNull(sourceOutput, "sourceOutput");
+        Objects.requireNonNull(receiverOutputs, "receiverOutputs");
+        Objects.requireNonNull(dependencies, "dependencies");
+        Objects.requireNonNull(portGraph, "portGraph");
+        Objects.requireNonNull(readoutLayer, "readoutLayer");
+        Objects.requireNonNull(scalarPowerSolution, "scalarPowerSolution");
+        receiverOutputs = List.copyOf(receiverOutputs);
+    }
+
+    public boolean matches(OutputBeam outputBeam) {
+        return sourceOutput.equals(outputBeam);
+    }
+
+    public void applyOutputs(Level level) {
+        for (ReceiverOutput receiverOutput : receiverOutputs) {
+            receiverOutput.apply(level);
+        }
+    }
+
+    public List<ReceiverOutput> sampleCompiledOutputs() {
+        return readoutLayer.sample(scalarPowerSolution);
+    }
+
+    public void applyCompiledOutputs(Level level) {
+        for (ReceiverOutput receiverOutput : sampleCompiledOutputs()) {
+            receiverOutput.apply(level);
+        }
+    }
+}

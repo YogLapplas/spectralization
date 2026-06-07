@@ -5,12 +5,11 @@ import io.github.yoglappland.spectralization.optics.BeamModel;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
 import io.github.yoglappland.spectralization.optics.CoherenceKind;
 import io.github.yoglappland.spectralization.optics.FrequencyKey;
-import io.github.yoglappland.spectralization.optics.OpticalPathTracer;
 import io.github.yoglappland.spectralization.optics.OpticalSource;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.PlaneWaveComponent;
 import io.github.yoglappland.spectralization.optics.SpectralRegion;
-import io.github.yoglappland.spectralization.optics.validation.OpticalTraceValidator;
+import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -56,8 +55,7 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
         }
 
         for (OutputBeam outputBeam : opticalSource.getOutputBeams(state, level, pos)) {
-            var legacyTrace = OpticalPathTracer.trace(level, pos, outputBeam);
-            OpticalTraceValidator.validate(level, pos, outputBeam, legacyTrace);
+            OpticalTraceCache.requestOrApply(level, pos, outputBeam);
         }
     }
 

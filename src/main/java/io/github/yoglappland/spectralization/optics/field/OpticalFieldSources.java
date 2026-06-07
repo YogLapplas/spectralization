@@ -2,6 +2,7 @@ package io.github.yoglappland.spectralization.optics.field;
 
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.optics.OpticalMaterialProfiles;
+import it.unimi.dsi.fastutil.longs.LongSet;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -31,6 +32,24 @@ public final class OpticalFieldSources {
 
     public static boolean isScatteringFieldSource(BlockState state) {
         return OpticalMaterialProfiles.isScatteringMarker(state);
+    }
+
+    public static void addPotentialFieldSourceDependencies(Level level, BlockPos center, LongSet dependencies) {
+        if (!SpectralizationConfig.scatteringFieldEnabled()) {
+            return;
+        }
+
+        int radius = SpectralizationConfig.scatteringFieldRadius();
+        BlockPos.MutableBlockPos mutablePos = new BlockPos.MutableBlockPos();
+
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dy = -radius; dy <= radius; dy++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    mutablePos.set(center.getX() + dx, center.getY() + dy, center.getZ() + dz);
+                    dependencies.add(mutablePos.asLong());
+                }
+            }
+        }
     }
 
     public static void invalidate(LevelAccessor level) {

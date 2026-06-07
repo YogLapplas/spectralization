@@ -12,6 +12,10 @@ public final class SpectralizationConfig {
     private static final ModConfigSpec.BooleanValue SCATTERING_FIELD_ENABLED;
     private static final ModConfigSpec.IntValue SCATTERING_FIELD_RADIUS;
     private static final ModConfigSpec.DoubleValue SCATTERING_FIELD_PROPAGATION_FACTOR;
+    private static final ModConfigSpec.IntValue OPTICAL_SOLVER_MAX_REQUESTS_PER_TICK;
+    private static final ModConfigSpec.IntValue OPTICAL_SOLVER_BUDGET_MICROS;
+    private static final ModConfigSpec.BooleanValue OPTICAL_COMPILER_DEBUG_LOG;
+    private static final ModConfigSpec.IntValue OPTICAL_COMPILER_DEBUG_MAX_EDGES;
 
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
@@ -43,6 +47,24 @@ public final class SpectralizationConfig {
                 .comment("Propagation multiplier applied to beams inside a scattering field.")
                 .defineInRange("propagation_factor", 0.82D, 0.0D, 1.0D);
         builder.pop();
+        builder.pop();
+
+        builder.push("optical_solver");
+        OPTICAL_SOLVER_MAX_REQUESTS_PER_TICK = builder
+                .comment("Maximum dirty optical trace requests processed per server tick.")
+                .defineInRange("max_requests_per_tick", 2, 1, 128);
+        OPTICAL_SOLVER_BUDGET_MICROS = builder
+                .comment("Soft server-tick budget for dirty optical trace processing, in microseconds.")
+                .defineInRange("budget_micros", 2000, 100, 50_000);
+        builder.pop();
+
+        builder.push("optical_compiler");
+        OPTICAL_COMPILER_DEBUG_LOG = builder
+                .comment("Whether every optical compiler run writes a debug entry to logs/spectralization/optical_compiler.log.")
+                .define("debug_log", false);
+        OPTICAL_COMPILER_DEBUG_MAX_EDGES = builder
+                .comment("Maximum edge lines written for each optical compiler debug entry.")
+                .defineInRange("debug_log_max_edges", 128, 0, 4096);
         builder.pop();
 
         SPEC = builder.build();
@@ -89,6 +111,27 @@ public final class SpectralizationConfig {
 
     public static double scatteringFieldPropagationFactor() {
         return SCATTERING_FIELD_PROPAGATION_FACTOR.get();
+    }
+
+    public static int opticalSolverMaxRequestsPerTick() {
+        return OPTICAL_SOLVER_MAX_REQUESTS_PER_TICK.get();
+    }
+
+    public static int opticalSolverBudgetMicros() {
+        return OPTICAL_SOLVER_BUDGET_MICROS.get();
+    }
+
+    public static boolean opticalCompilerDebugLog() {
+        return OPTICAL_COMPILER_DEBUG_LOG.get();
+    }
+
+    public static void setOpticalCompilerDebugLog(boolean enabled) {
+        OPTICAL_COMPILER_DEBUG_LOG.set(enabled);
+        SPEC.save();
+    }
+
+    public static int opticalCompilerDebugMaxEdges() {
+        return OPTICAL_COMPILER_DEBUG_MAX_EDGES.get();
     }
 
     private SpectralizationConfig() {

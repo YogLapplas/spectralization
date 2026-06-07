@@ -2,6 +2,7 @@ package io.github.yoglappland.spectralization.command;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.network.NetworkOverlayPayload;
 import io.github.yoglappland.spectralization.optics.OpticalEntityInteractions;
 import io.github.yoglappland.spectralization.optics.OpticalPathVisualization;
@@ -59,6 +60,17 @@ public final class SpectralCommands {
                                 .executes(context -> setLaserBlindness(
                                         context.getSource(),
                                         !OpticalEntityInteractions.isLaserBlindnessEnabled()
+                                ))))
+                .then(Commands.literal("compilerdebug")
+                        .executes(context -> reportCompilerDebugState(context.getSource()))
+                        .then(Commands.literal("on")
+                                .executes(context -> setCompilerDebug(context.getSource(), true)))
+                        .then(Commands.literal("off")
+                                .executes(context -> setCompilerDebug(context.getSource(), false)))
+                        .then(Commands.literal("toggle")
+                                .executes(context -> setCompilerDebug(
+                                        context.getSource(),
+                                        !SpectralizationConfig.opticalCompilerDebugLog()
                                 ))))
                 .then(Commands.literal("networks")
                         .executes(context -> reportNetworkStatus(context.getSource()))
@@ -154,6 +166,17 @@ public final class SpectralCommands {
     private static int reportLaserBlindnessState(CommandSourceStack source) {
         String state = OpticalEntityInteractions.isLaserBlindnessEnabled() ? "on" : "off";
         source.sendSuccess(() -> Component.literal("Spectralization laser blindness: " + state), true);
+        return 1;
+    }
+
+    private static int setCompilerDebug(CommandSourceStack source, boolean enabled) {
+        SpectralizationConfig.setOpticalCompilerDebugLog(enabled);
+        return reportCompilerDebugState(source);
+    }
+
+    private static int reportCompilerDebugState(CommandSourceStack source) {
+        String state = SpectralizationConfig.opticalCompilerDebugLog() ? "on" : "off";
+        source.sendSuccess(() -> Component.literal("Spectralization optical compiler debug log: " + state), true);
         return 1;
     }
 

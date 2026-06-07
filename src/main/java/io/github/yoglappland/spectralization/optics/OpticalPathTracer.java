@@ -1,5 +1,8 @@
 package io.github.yoglappland.spectralization.optics;
 
+import io.github.yoglappland.spectralization.optics.field.OpticalFieldEffectType;
+import io.github.yoglappland.spectralization.optics.field.OpticalFieldInfluence;
+import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
 import java.util.ArrayDeque;
 import java.util.HashSet;
 import java.util.Queue;
@@ -8,23 +11,22 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
 public final class OpticalPathTracer {
     private static final int MAX_SEGMENTS = 128;
-    private static final int SCATTER_VISUALIZATION_RADIUS = 2;
+    private static final int MAX_STATES_PER_TRACE = 2048;
     private static final double MIN_POWER = 0.01;
     private static final double AIR_PROPAGATION_FACTOR = 0.995;
-    private static final double SCATTER_PROPAGATION_FACTOR = 0.82;
 
-    public static void trace(Level level, BlockPos sourcePos, OutputBeam sourceOutput) {
+    public static CompiledOpticalTrace trace(Level level, BlockPos sourcePos, OutputBeam sourceOutput) {
+        CompiledOpticalTrace.Builder trace = CompiledOpticalTrace.builder(sourcePos, sourceOutput);
+
         if (level.isClientSide || sourceOutput.beam().isEmpty()) {
-            return;
+            return trace.build();
         }
 
         Queue<TravelState> pending = new ArrayDeque<>();
-        Set<VisitKey> visited = new HashSet<>();
         Set<Integer> affectedEntityIds = new HashSet<>();
         Direction direction = sourceOutput.outgoingDirection();
         BlockPos firstPos = sourcePos.relative(direction);
@@ -36,16 +38,36 @@ public final class OpticalPathTracer {
                 1
         ));
 
+        int processedStates = 0;
+
         while (!pending.isEmpty()) {
             TravelState current = pending.remove();
 
-            if (current.segments > MAX_SEGMENTS || current.beam.totalPower() < MIN_POWER || !level.isLoaded(current.pos)) {
+            processedStates++;
+
+            if (processedStates > MAX_STATES_PER_TRACE) {
+                trace.addTermination(termination(current, OpticalTraceTerminationReason.MAX_STATES));
+                break;
+            }
+
+            if (current.segments > MAX_SEGMENTS) {
+                trace.addTermination(termination(current, OpticalTraceTerminationReason.MAX_SEGMENTS));
+                continue;
+            }
+
+            if (current.beam.totalPower() < MIN_POWER) {
+                trace.addTermination(termination(current, OpticalTraceTerminationReason.LOW_POWER));
+                continue;
+            }
+
+            if (!level.isLoaded(current.pos)) {
+                trace.addTermination(termination(current, OpticalTraceTerminationReason.UNLOADED_CHUNK));
                 continue;
             }
 
             OpticalPathExposure.mark(level, current.pos, current.beam);
 
-            if (isNearScatteringBlock(level, current.pos)) {
+            if (OpticalFieldSources.hasEffect(level, current.pos, OpticalFieldEffectType.SCATTERING)) {
                 OpticalPathVisualization.spawn(level, current.pos, current.beam);
             }
 
@@ -58,49 +80,83 @@ public final class OpticalPathTracer {
             );
 
             if (interactingBeam.totalPower() < MIN_POWER) {
+                trace.addTermination(termination(current, interactingBeam, OpticalTraceTerminationReason.LOW_POWER));
                 continue;
             }
 
             BlockState state = level.getBlockState(current.pos);
             Block block = state.getBlock();
-
-            if (!(block instanceof OpticalElement opticalElement)) {
-                if (!state.isAir()) {
-                    Direction incomingDirection = current.direction.getOpposite();
-                    VisitKey visitKey = VisitKey.from(current.pos, incomingDirection, interactingBeam);
-
-                    if (!visited.add(visitKey)) {
-                        continue;
-                    }
-                }
-
-                enqueueOutputs(
-                        level,
-                        pending,
-                        current.pos,
-                        OpticalBlockProperties.interact(state, interactingBeam, current.direction),
-                        current.segments
-                );
-                continue;
-            }
-
             Direction incomingDirection = current.direction.getOpposite();
-            VisitKey visitKey = VisitKey.from(current.pos, incomingDirection, interactingBeam);
+            boolean opticalElement = block instanceof OpticalElement;
+            OpticalInteractionKind interactionKind = interactionKind(state, opticalElement);
 
-            if (!visited.add(visitKey)) {
-                continue;
+            if (!opticalElement && !state.isAir()) {
+                OpticalSpotTracker.markMaterialSpot(
+                        level,
+                        current.pos,
+                        incomingDirection,
+                        interactingBeam,
+                        state
+                );
             }
 
-            OpticalResult result = opticalElement.interact(
-                    interactingBeam,
+            CompiledOpticalNetwork compiledNetwork = OpticalNetworkCompiler.compile(level, current.pos, state);
+            OpticalResult result = compiledNetwork.interact(interactingBeam, incomingDirection);
+
+            trace.addStep(new OpticalTraceStep(
+                    current.pos,
+                    current.direction,
                     incomingDirection,
-                    state,
-                    level,
-                    current.pos
-            );
+                    interactionKind,
+                    current.beam,
+                    interactingBeam,
+                    result
+            ));
+
+            if (opticalElement) {
+                OpticalSpotTracker.markAbsorbedSpot(
+                        level,
+                        current.pos,
+                        incomingDirection,
+                        state,
+                        interactingBeam,
+                        result.absorbedPower()
+                );
+            }
 
             enqueueOutputs(level, pending, current.pos, result, current.segments);
         }
+
+        return trace.build();
+    }
+
+    private static OpticalTraceTermination termination(
+            TravelState state,
+            OpticalTraceTerminationReason reason
+    ) {
+        return termination(state, state.beam, reason);
+    }
+
+    private static OpticalTraceTermination termination(
+            TravelState state,
+            BeamPacket beam,
+            OpticalTraceTerminationReason reason
+    ) {
+        return new OpticalTraceTermination(
+                state.pos,
+                state.direction,
+                state.direction.getOpposite(),
+                beam,
+                reason
+        );
+    }
+
+    private static OpticalInteractionKind interactionKind(BlockState state, boolean opticalElement) {
+        if (opticalElement) {
+            return OpticalInteractionKind.OPTICAL_ELEMENT;
+        }
+
+        return state.isAir() ? OpticalInteractionKind.AIR : OpticalInteractionKind.MATERIAL;
     }
 
     private static void enqueueOutputs(
@@ -112,7 +168,14 @@ public final class OpticalPathTracer {
     ) {
         for (OutputBeam output : result.outputs()) {
             if (!output.beam().isEmpty() && output.beam().totalPower() >= MIN_POWER) {
-                enqueueNext(level, pending, pos, output.outgoingDirection(), output.beam(), segments);
+                enqueueNext(
+                        level,
+                        pending,
+                        pos,
+                        output.outgoingDirection(),
+                        output.beam(),
+                        segments
+                );
             }
         }
     }
@@ -136,53 +199,19 @@ public final class OpticalPathTracer {
     }
 
     private static double propagationFactor(Level level, BlockPos pos) {
-        return isNearScatteringBlock(level, pos) ? SCATTER_PROPAGATION_FACTOR : AIR_PROPAGATION_FACTOR;
+        OpticalFieldInfluence fieldInfluence = OpticalFieldSources.influenceAt(level, pos);
+
+        return fieldInfluence.has(OpticalFieldEffectType.SCATTERING)
+                ? fieldInfluence.propagationFactor()
+                : AIR_PROPAGATION_FACTOR;
     }
 
-    private static boolean isNearScatteringBlock(Level level, BlockPos center) {
-        BlockPos.MutableBlockPos mutablePos = new BlockPos.MutableBlockPos();
-
-        for (int x = -SCATTER_VISUALIZATION_RADIUS; x <= SCATTER_VISUALIZATION_RADIUS; x++) {
-            for (int y = -SCATTER_VISUALIZATION_RADIUS; y <= SCATTER_VISUALIZATION_RADIUS; y++) {
-                for (int z = -SCATTER_VISUALIZATION_RADIUS; z <= SCATTER_VISUALIZATION_RADIUS; z++) {
-                    mutablePos.set(center.getX() + x, center.getY() + y, center.getZ() + z);
-
-                    if (!level.isLoaded(mutablePos)) {
-                        continue;
-                    }
-
-                    BlockState state = level.getBlockState(mutablePos);
-
-                    if (state.is(Blocks.SAND) || state.is(Blocks.RED_SAND) || state.is(Blocks.GRAVEL)) {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        return false;
-    }
-
-    private static String profileKey(BeamPacket beam) {
-        StringBuilder key = new StringBuilder();
-
-        for (PlaneWaveComponent component : beam.components()) {
-            key.append(component.frequency().id())
-                    .append('/')
-                    .append(component.coherence().name())
-                    .append(';');
-        }
-
-        return key.toString();
-    }
-
-    private record TravelState(BlockPos pos, Direction direction, BeamPacket beam, int segments) {
-    }
-
-    private record VisitKey(BlockPos pos, Direction incomingDirection, String profileKey) {
-        static VisitKey from(BlockPos pos, Direction incomingDirection, BeamPacket beam) {
-            return new VisitKey(pos.immutable(), incomingDirection, OpticalPathTracer.profileKey(beam));
-        }
+    private record TravelState(
+            BlockPos pos,
+            Direction direction,
+            BeamPacket beam,
+            int segments
+    ) {
     }
 
     private OpticalPathTracer() {

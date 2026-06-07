@@ -1,10 +1,10 @@
 package io.github.yoglappland.spectralization.block;
 
 import io.github.yoglappland.spectralization.optics.BeamPacket;
+import io.github.yoglappland.spectralization.optics.CompiledOpticalNetwork;
+import io.github.yoglappland.spectralization.optics.HorizontalOpticalOrientation;
 import io.github.yoglappland.spectralization.optics.OpticalElement;
 import io.github.yoglappland.spectralization.optics.OpticalResult;
-import io.github.yoglappland.spectralization.optics.OutputBeam;
-import java.util.EnumSet;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -45,40 +45,35 @@ public class MirrorBlock extends Block implements OpticalElement {
     }
 
     public static Set<Direction> getConnectedDirections(BlockState state) {
-        return switch (state.getValue(ROTATION)) {
-            case 2, 6 -> EnumSet.of(Direction.NORTH, Direction.SOUTH);
-            case 1, 3, 5, 7 -> EnumSet.of(Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST);
-            default -> EnumSet.of(Direction.EAST, Direction.WEST);
-        };
+        return HorizontalOpticalOrientation.mirrorActiveSides(state.getValue(ROTATION));
     }
 
     public static Direction getReflectedDirection(BlockState state, Direction incoming) {
-        return switch (state.getValue(ROTATION)) {
-            case 1, 5 -> switch (incoming) {
-                case NORTH -> Direction.EAST;
-                case EAST -> Direction.NORTH;
-                case SOUTH -> Direction.WEST;
-                case WEST -> Direction.SOUTH;
-                default -> incoming;
-            };
-            case 2, 6 -> switch (incoming) {
-                case NORTH -> Direction.NORTH;
-                case SOUTH -> Direction.SOUTH;
-                default -> incoming;
-            };
-            case 3, 7 -> switch (incoming) {
-                case NORTH -> Direction.WEST;
-                case WEST -> Direction.NORTH;
-                case SOUTH -> Direction.EAST;
-                case EAST -> Direction.SOUTH;
-                default -> incoming;
-            };
-            default -> switch (incoming) {
-                case EAST -> Direction.EAST;
-                case WEST -> Direction.WEST;
-                default -> incoming;
-            };
-        };
+        return HorizontalOpticalOrientation.reflectMirror(state.getValue(ROTATION), incoming);
+    }
+
+    @Override
+    public CompiledOpticalNetwork compileOpticalNetwork(BlockState state, Level level, BlockPos pos) {
+        Set<Direction> connectedDirections = getConnectedDirections(state);
+        CompiledOpticalNetwork.Builder builder = CompiledOpticalNetwork.builder();
+
+        for (Direction incomingDirection : Direction.values()) {
+            if (connectedDirections.contains(incomingDirection)) {
+                builder.addRule(
+                        incomingDirection,
+                        getReflectedDirection(state, incomingDirection),
+                        CompiledOpticalNetwork.scale(REFLECTANCE)
+                );
+            } else {
+                builder.addRule(
+                        incomingDirection,
+                        incomingDirection.getOpposite(),
+                        CompiledOpticalNetwork.passThrough()
+                );
+            }
+        }
+
+        return builder.build();
     }
 
     @Override
@@ -89,28 +84,7 @@ public class MirrorBlock extends Block implements OpticalElement {
             Level level,
             BlockPos pos
     ) {
-        if (input.isEmpty()) {
-            return OpticalResult.empty();
-        }
-
-        if (!getConnectedDirections(state).contains(incomingDirection)) {
-            Direction outgoingDirection = incomingDirection.getOpposite();
-            return OpticalResult.single(
-                    new OutputBeam(outgoingDirection, input.withDirection(outgoingDirection)),
-                    0.0,
-                    0.0
-            );
-        }
-
-        Direction outgoingDirection = getReflectedDirection(state, incomingDirection);
-        BeamPacket reflectedBeam = input.withDirection(outgoingDirection).scalePower(REFLECTANCE);
-        double absorbedPower = input.totalPower() - reflectedBeam.totalPower();
-
-        return OpticalResult.single(
-                new OutputBeam(outgoingDirection, reflectedBeam),
-                absorbedPower,
-                absorbedPower
-        );
+        return compileOpticalNetwork(state, level, pos).interact(input, incomingDirection);
     }
 
     @Override
@@ -165,12 +139,7 @@ public class MirrorBlock extends Block implements OpticalElement {
     }
 
     private static int getPlacementRotation(Direction direction) {
-        return switch (direction) {
-            case EAST -> 2;
-            case SOUTH -> 4;
-            case WEST -> 6;
-            default -> 0;
-        };
+        return HorizontalOpticalOrientation.rotationForHorizontalFacing(direction);
     }
 
     private static VoxelShape[] buildShapes() {

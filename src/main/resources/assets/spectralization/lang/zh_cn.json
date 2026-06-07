@@ -5,6 +5,7 @@
   "item.spectralization.phosphor_tube": "\u8367\u5149\u7ba1",
   "block.spectralization.lens_holder": "\u900f\u955c\u652f\u67b6",
   "block.spectralization.mirror": "\u955c\u5b50",
+  "block.spectralization.dynamic_mirror": "\u52a8\u6001\u955c",
   "block.spectralization.beam_splitter": "\u5206\u675f\u5668",
   "block.spectralization.creative_light_source": "\u521b\u9020\u6a21\u5f0f\u5149\u6e90",
   "block.spectralization.cmos_sensor": "CMOS \u4f20\u611f\u5668",

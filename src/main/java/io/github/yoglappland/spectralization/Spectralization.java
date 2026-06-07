@@ -4,6 +4,7 @@ import com.mojang.logging.LogUtils;
 import io.github.yoglappland.spectralization.block.BeamSplitterBlock;
 import io.github.yoglappland.spectralization.block.CmosSensorBlock;
 import io.github.yoglappland.spectralization.block.CreativeLightSourceBlock;
+import io.github.yoglappland.spectralization.block.DynamicMirrorBlock;
 import io.github.yoglappland.spectralization.block.LensHolderBlock;
 import io.github.yoglappland.spectralization.block.MirrorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
@@ -12,6 +13,9 @@ import io.github.yoglappland.spectralization.client.screen.CreativeLightSourceSc
 import io.github.yoglappland.spectralization.command.SpectralCommands;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.item.PhosphorTubeItem;
+import io.github.yoglappland.spectralization.network.SpectralNetwork;
+import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
+import io.github.yoglappland.spectralization.optics.topology.OpticalNetworkIndex;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
 import io.github.yoglappland.spectralization.registry.SpectralMenus;
 import net.minecraft.core.BlockPos;
@@ -39,6 +43,7 @@ import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.level.BlockDropsEvent;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
@@ -87,6 +92,18 @@ public class Spectralization {
 
     public static final DeferredItem<BlockItem> MIRROR_ITEM =
             ITEMS.registerSimpleBlockItem("mirror", MIRROR);
+
+    public static final DeferredBlock<DynamicMirrorBlock> DYNAMIC_MIRROR = BLOCKS.register(
+            "dynamic_mirror",
+            () -> new DynamicMirrorBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(0.0F)
+                    .sound(SoundType.METAL)
+                    .noOcclusion())
+    );
+
+    public static final DeferredItem<BlockItem> DYNAMIC_MIRROR_ITEM =
+            ITEMS.registerSimpleBlockItem("dynamic_mirror", DYNAMIC_MIRROR);
 
     public static final DeferredBlock<BeamSplitterBlock> BEAM_SPLITTER = BLOCKS.register(
             "beam_splitter",
@@ -148,6 +165,7 @@ public class Spectralization {
                         output.accept(PHOSPHOR_TUBE.get());
                         output.accept(LENS_HOLDER_ITEM.get());
                         output.accept(MIRROR_ITEM.get());
+                        output.accept(DYNAMIC_MIRROR_ITEM.get());
                         output.accept(BEAM_SPLITTER_ITEM.get());
                         output.accept(CREATIVE_LIGHT_SOURCE_ITEM.get());
                         output.accept(CMOS_SENSOR_ITEM.get());
@@ -163,6 +181,7 @@ public class Spectralization {
         CREATIVE_MODE_TABS.register(modEventBus);
         SpectralBlockEntities.register(modEventBus);
         SpectralMenus.register(modEventBus);
+        modEventBus.addListener(SpectralNetwork::register);
 
         NeoForge.EVENT_BUS.register(this);
         LOGGER.info("Spectralization initialized");
@@ -190,6 +209,24 @@ public class Spectralization {
     @SubscribeEvent
     public void onRegisterCommands(RegisterCommandsEvent event) {
         SpectralCommands.register(event.getDispatcher());
+    }
+
+    @SubscribeEvent
+    public void onBlockPlaced(BlockEvent.EntityPlaceEvent event) {
+        OpticalFieldSources.invalidate(event.getLevel());
+        OpticalNetworkIndex.markDirty(event.getLevel());
+    }
+
+    @SubscribeEvent
+    public void onBlockBroken(BlockEvent.BreakEvent event) {
+        OpticalFieldSources.invalidate(event.getLevel());
+        OpticalNetworkIndex.markDirty(event.getLevel());
+    }
+
+    @SubscribeEvent
+    public void onNeighborNotified(BlockEvent.NeighborNotifyEvent event) {
+        OpticalFieldSources.invalidate(event.getLevel());
+        OpticalNetworkIndex.markDirty(event.getLevel());
     }
 
     @EventBusSubscriber(modid = Spectralization.MODID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)

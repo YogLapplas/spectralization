@@ -10,6 +10,7 @@ import io.github.yoglappland.spectralization.optics.OpticalSource;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.PlaneWaveComponent;
 import io.github.yoglappland.spectralization.optics.SpectralRegion;
+import io.github.yoglappland.spectralization.optics.validation.OpticalTraceValidator;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -55,7 +56,8 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
         }
 
         for (OutputBeam outputBeam : opticalSource.getOutputBeams(state, level, pos)) {
-            OpticalPathTracer.trace(level, pos, outputBeam);
+            var legacyTrace = OpticalPathTracer.trace(level, pos, outputBeam);
+            OpticalTraceValidator.validate(level, pos, outputBeam, legacyTrace);
         }
     }
 

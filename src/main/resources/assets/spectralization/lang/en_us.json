@@ -5,6 +5,7 @@
   "item.spectralization.phosphor_tube": "Phosphor Tube",
   "block.spectralization.lens_holder": "Lens Holder",
   "block.spectralization.mirror": "Mirror",
+  "block.spectralization.dynamic_mirror": "Dynamic Mirror",
   "block.spectralization.beam_splitter": "Beam Splitter",
   "block.spectralization.creative_light_source": "Creative Light Source",
   "block.spectralization.cmos_sensor": "CMOS Sensor",

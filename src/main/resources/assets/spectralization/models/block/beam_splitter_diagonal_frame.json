@@ -957,7 +957,7 @@
                                     9
                                 ],
                          "rotation":  {
-                                          "angle":  45,
+                                                   "angle":  -45,
                                           "axis":  "y",
                                           "origin":  [
                                                          8,
@@ -1034,7 +1034,7 @@
                                     9
                                 ],
                          "rotation":  {
-                                          "angle":  45,
+                                                   "angle":  -45,
                                           "axis":  "y",
                                           "origin":  [
                                                          8,
@@ -1111,7 +1111,7 @@
                                     9
                                 ],
                          "rotation":  {
-                                          "angle":  45,
+                                                   "angle":  -45,
                                           "axis":  "y",
                                           "origin":  [
                                                          8,
@@ -1188,7 +1188,7 @@
                                     9
                                 ],
                          "rotation":  {
-                                          "angle":  45,
+                                                   "angle":  -45,
                                           "axis":  "y",
                                           "origin":  [
                                                          8,

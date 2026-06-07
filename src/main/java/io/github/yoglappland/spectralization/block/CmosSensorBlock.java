@@ -2,9 +2,9 @@ package io.github.yoglappland.spectralization.block;
 
 import io.github.yoglappland.spectralization.blockentity.CmosSensorBlockEntity;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
+import io.github.yoglappland.spectralization.optics.CompiledOpticalNetwork;
 import io.github.yoglappland.spectralization.optics.OpticalReceiver;
 import io.github.yoglappland.spectralization.optics.OpticalResult;
-import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
@@ -100,6 +100,41 @@ public class CmosSensorBlock extends Block implements EntityBlock, OpticalReceiv
     }
 
     @Override
+    public CompiledOpticalNetwork compileOpticalNetwork(BlockState state, Level level, BlockPos pos) {
+        Direction receivingSide = getReceivingSide(state);
+        Direction blockedBackSide = state.getValue(FACING);
+        CompiledOpticalNetwork.Builder builder = CompiledOpticalNetwork.builder();
+
+        for (Direction incomingDirection : Direction.values()) {
+            if (incomingDirection == receivingSide || incomingDirection == blockedBackSide) {
+                continue;
+            }
+
+            builder.addRule(
+                    incomingDirection,
+                    incomingDirection.getOpposite(),
+                    CompiledOpticalNetwork.passThrough()
+            );
+        }
+
+        return builder
+                .interactionEffect((input, incomingDirection, result) -> {
+                    if (incomingDirection != receivingSide) {
+                        return;
+                    }
+
+                    double detectedPower = input.totalPower();
+
+                    if (level.getBlockEntity(pos) instanceof CmosSensorBlockEntity cmosSensor) {
+                        cmosSensor.receivePower(detectedPower);
+                    } else {
+                        setSignalFromPower(level, pos, state, detectedPower);
+                    }
+                })
+                .build();
+    }
+
+    @Override
     public OpticalResult receiveBeam(
             BeamPacket input,
             Direction incomingDirection,
@@ -107,30 +142,7 @@ public class CmosSensorBlock extends Block implements EntityBlock, OpticalReceiv
             Level level,
             BlockPos pos
     ) {
-        if (input.isEmpty()) {
-            return OpticalResult.empty();
-        }
-
-        Direction receivingSide = getReceivingSide(state);
-
-        if (incomingDirection == receivingSide) {
-            double detectedPower = input.totalPower();
-
-            if (level.getBlockEntity(pos) instanceof CmosSensorBlockEntity cmosSensor) {
-                cmosSensor.receivePower(detectedPower);
-            } else {
-                setSignalFromPower(level, pos, state, detectedPower);
-            }
-
-            return OpticalResult.absorbed(input.totalPower());
-        }
-
-        if (incomingDirection == state.getValue(FACING)) {
-            return OpticalResult.absorbed(input.totalPower());
-        }
-
-        Direction outgoingDirection = incomingDirection.getOpposite();
-        return OpticalResult.single(new OutputBeam(outgoingDirection, input.withDirection(outgoingDirection)), 0.0, 0.0);
+        return compileOpticalNetwork(state, level, pos).interact(input, incomingDirection);
     }
 
     @Override

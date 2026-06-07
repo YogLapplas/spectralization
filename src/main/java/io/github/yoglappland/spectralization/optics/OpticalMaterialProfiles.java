@@ -2,7 +2,9 @@ package io.github.yoglappland.spectralization.optics;
 
 import java.util.Map;
 import java.util.Set;
+import net.minecraft.core.BlockPos;
 import net.minecraft.tags.FluidTags;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -31,6 +33,10 @@ public final class OpticalMaterialProfiles {
             sample(SpectralRegion.VISIBLE, 32, 0.88, 0.02, 0.08),
             sample(SpectralRegion.ULTRAVIOLET, 16, 0.35, 0.02, 0.55)
     );
+    private static final OpticalMaterialProfile POWERED_GLOWSTONE_GAIN_MEDIUM = OpticalMaterialProfile.constant(
+            OpticalMaterialResponse.of(0.86, 0.05, 0.02)
+    );
+    private static final double POWERED_GLOWSTONE_GAIN_FACTOR = 1.25;
 
     private static final Set<Block> AIR_LIKE_BLOCKS = Set.of(
             Blocks.REDSTONE_WIRE,
@@ -101,7 +107,7 @@ public final class OpticalMaterialProfiles {
     public static OpticalMaterialProfile profileFor(BlockState state) {
         Block block = state.getBlock();
 
-        if (state.isAir() || AIR_LIKE_BLOCKS.contains(block)) {
+        if (isAirLike(state)) {
             return AIR;
         }
 
@@ -132,6 +138,44 @@ public final class OpticalMaterialProfiles {
         }
 
         return OPAQUE;
+    }
+
+    public static boolean isAirLike(BlockState state) {
+        return state.isAir() || AIR_LIKE_BLOCKS.contains(state.getBlock());
+    }
+
+    public static boolean isExplicitOpticalMaterial(BlockState state) {
+        Block block = state.getBlock();
+
+        return state.getFluidState().is(FluidTags.WATER)
+                || CLEAR_GLASS_BLOCKS.contains(block)
+                || block == Blocks.TINTED_GLASS
+                || STAINED_GLASS_BLOCKS.containsKey(block)
+                || METAL_BLOCKS.contains(block)
+                || block == Blocks.GLOWSTONE;
+    }
+
+    public static boolean isScatteringMarker(BlockState state) {
+        return SAND_BLOCKS.contains(state.getBlock());
+    }
+
+    public static OpticalMaterialProfile profileFor(Level level, BlockPos pos, BlockState state) {
+        if (isPoweredGlowstone(level, pos, state)) {
+            return POWERED_GLOWSTONE_GAIN_MEDIUM;
+        }
+
+        return profileFor(state);
+    }
+
+    public static double gainFactorFor(Level level, BlockPos pos, BlockState state) {
+        return isPoweredGlowstone(level, pos, state) ? POWERED_GLOWSTONE_GAIN_FACTOR : 1.0;
+    }
+
+    private static boolean isPoweredGlowstone(Level level, BlockPos pos, BlockState state) {
+        return level != null
+                && pos != null
+                && state.is(Blocks.GLOWSTONE)
+                && level.hasNeighborSignal(pos);
     }
 
     private static OpticalMaterialProfile coloredGlass(int centerBin) {

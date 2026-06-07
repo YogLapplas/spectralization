@@ -2,67 +2,67 @@
   "multipart": [
     {
       "when": { "rotation": "0" },
-      "apply": { "model": "spectralization:block/beam_splitter_straight_frame", "y": 90 }
-    },
-    {
-      "when": { "rotation": "0" },
-      "apply": { "model": "spectralization:block/beam_splitter_straight_mirror", "y": 90 }
-    },
-    {
-      "when": { "rotation": "1" },
-      "apply": { "model": "spectralization:block/beam_splitter_diagonal_frame", "y": 90 }
-    },
-    {
-      "when": { "rotation": "1" },
-      "apply": { "model": "spectralization:block/beam_splitter_diagonal_mirror", "y": 90 }
-    },
-    {
-      "when": { "rotation": "2" },
-      "apply": { "model": "spectralization:block/beam_splitter_straight_frame", "y": 180 }
-    },
-    {
-      "when": { "rotation": "2" },
-      "apply": { "model": "spectralization:block/beam_splitter_straight_mirror", "y": 180 }
-    },
-    {
-      "when": { "rotation": "3" },
-      "apply": { "model": "spectralization:block/beam_splitter_diagonal_frame", "y": 180 }
-    },
-    {
-      "when": { "rotation": "3" },
-      "apply": { "model": "spectralization:block/beam_splitter_diagonal_mirror", "y": 180 }
-    },
-    {
-      "when": { "rotation": "4" },
-      "apply": { "model": "spectralization:block/beam_splitter_straight_frame", "y": 270 }
-    },
-    {
-      "when": { "rotation": "4" },
-      "apply": { "model": "spectralization:block/beam_splitter_straight_mirror", "y": 270 }
-    },
-    {
-      "when": { "rotation": "5" },
-      "apply": { "model": "spectralization:block/beam_splitter_diagonal_frame", "y": 270 }
-    },
-    {
-      "when": { "rotation": "5" },
-      "apply": { "model": "spectralization:block/beam_splitter_diagonal_mirror", "y": 270 }
-    },
-    {
-      "when": { "rotation": "6" },
       "apply": { "model": "spectralization:block/beam_splitter_straight_frame" }
     },
     {
-      "when": { "rotation": "6" },
+      "when": { "rotation": "0" },
       "apply": { "model": "spectralization:block/beam_splitter_straight_mirror" }
     },
     {
-      "when": { "rotation": "7" },
+      "when": { "rotation": "1" },
       "apply": { "model": "spectralization:block/beam_splitter_diagonal_frame" }
     },
     {
-      "when": { "rotation": "7" },
+      "when": { "rotation": "1" },
       "apply": { "model": "spectralization:block/beam_splitter_diagonal_mirror" }
+    },
+    {
+      "when": { "rotation": "2" },
+      "apply": { "model": "spectralization:block/beam_splitter_straight_frame", "y": 90 }
+    },
+    {
+      "when": { "rotation": "2" },
+      "apply": { "model": "spectralization:block/beam_splitter_straight_mirror", "y": 90 }
+    },
+    {
+      "when": { "rotation": "3" },
+      "apply": { "model": "spectralization:block/beam_splitter_diagonal_frame", "y": 90 }
+    },
+    {
+      "when": { "rotation": "3" },
+      "apply": { "model": "spectralization:block/beam_splitter_diagonal_mirror", "y": 90 }
+    },
+    {
+      "when": { "rotation": "4" },
+      "apply": { "model": "spectralization:block/beam_splitter_straight_frame", "y": 180 }
+    },
+    {
+      "when": { "rotation": "4" },
+      "apply": { "model": "spectralization:block/beam_splitter_straight_mirror", "y": 180 }
+    },
+    {
+      "when": { "rotation": "5" },
+      "apply": { "model": "spectralization:block/beam_splitter_diagonal_frame", "y": 180 }
+    },
+    {
+      "when": { "rotation": "5" },
+      "apply": { "model": "spectralization:block/beam_splitter_diagonal_mirror", "y": 180 }
+    },
+    {
+      "when": { "rotation": "6" },
+      "apply": { "model": "spectralization:block/beam_splitter_straight_frame", "y": 270 }
+    },
+    {
+      "when": { "rotation": "6" },
+      "apply": { "model": "spectralization:block/beam_splitter_straight_mirror", "y": 270 }
+    },
+    {
+      "when": { "rotation": "7" },
+      "apply": { "model": "spectralization:block/beam_splitter_diagonal_frame", "y": 270 }
+    },
+    {
+      "when": { "rotation": "7" },
+      "apply": { "model": "spectralization:block/beam_splitter_diagonal_mirror", "y": 270 }
     }
   ]
 }

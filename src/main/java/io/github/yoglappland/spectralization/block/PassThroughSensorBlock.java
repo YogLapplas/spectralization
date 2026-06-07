@@ -2,9 +2,9 @@ package io.github.yoglappland.spectralization.block;
 
 import io.github.yoglappland.spectralization.blockentity.PassThroughSensorBlockEntity;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
+import io.github.yoglappland.spectralization.optics.CompiledOpticalNetwork;
 import io.github.yoglappland.spectralization.optics.OpticalElement;
 import io.github.yoglappland.spectralization.optics.OpticalResult;
-import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
@@ -48,6 +48,36 @@ public class PassThroughSensorBlock extends Block implements EntityBlock, Optica
     }
 
     @Override
+    public CompiledOpticalNetwork compileOpticalNetwork(BlockState state, Level level, BlockPos pos) {
+        Direction positiveZDirection = state.getValue(FACING);
+        Direction negativeZDirection = positiveZDirection.getOpposite();
+        CompiledOpticalNetwork.Builder builder = CompiledOpticalNetwork.builder();
+
+        for (Direction incomingDirection : Direction.values()) {
+            Direction outgoingDirection = incomingDirection.getOpposite();
+
+            if (outgoingDirection == positiveZDirection || outgoingDirection == negativeZDirection) {
+                builder.addRule(incomingDirection, outgoingDirection, CompiledOpticalNetwork.passThrough());
+            }
+        }
+
+        return builder
+                .interactionEffect((input, incomingDirection, result) -> {
+                    Direction outgoingDirection = incomingDirection.getOpposite();
+
+                    if (result.outputs().isEmpty()
+                            || outgoingDirection != positiveZDirection && outgoingDirection != negativeZDirection) {
+                        return;
+                    }
+
+                    if (level.getBlockEntity(pos) instanceof PassThroughSensorBlockEntity sensor) {
+                        sensor.receivePower(outgoingDirection == positiveZDirection, input.totalPower());
+                    }
+                })
+                .build();
+    }
+
+    @Override
     public OpticalResult interact(
             BeamPacket input,
             Direction incomingDirection,
@@ -55,26 +85,7 @@ public class PassThroughSensorBlock extends Block implements EntityBlock, Optica
             Level level,
             BlockPos pos
     ) {
-        if (input.isEmpty()) {
-            return OpticalResult.empty();
-        }
-
-        Direction outgoingDirection = incomingDirection.getOpposite();
-        Direction positiveZDirection = state.getValue(FACING);
-
-        if (outgoingDirection != positiveZDirection && outgoingDirection != positiveZDirection.getOpposite()) {
-            return OpticalResult.absorbed(input.totalPower());
-        }
-
-        if (level.getBlockEntity(pos) instanceof PassThroughSensorBlockEntity sensor) {
-            sensor.receivePower(outgoingDirection == positiveZDirection, input.totalPower());
-        }
-
-        return OpticalResult.single(
-                new OutputBeam(outgoingDirection, input.withDirection(outgoingDirection)),
-                0.0,
-                0.0
-        );
+        return compileOpticalNetwork(state, level, pos).interact(input, incomingDirection);
     }
 
     @Override

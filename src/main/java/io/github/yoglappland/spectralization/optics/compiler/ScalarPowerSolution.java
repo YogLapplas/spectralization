@@ -43,6 +43,10 @@ public record ScalarPowerSolution(
         return powerByNode.getOrDefault(node, 0.0);
     }
 
+    public boolean reliableForReadout() {
+        return converged && !unstable;
+    }
+
     public List<Map.Entry<PortGraphNode, Double>> strongestNodes(int limit) {
         return powerByNode.entrySet().stream()
                 .filter(entry -> entry.getValue() > 0.0)

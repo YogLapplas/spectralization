@@ -18,9 +18,11 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
@@ -91,14 +93,17 @@ public final class OpticalCompilerDebugLogger {
                 0,
                 0,
                 true,
+                true,
                 false,
                 List.of(),
                 List.of(),
                 List.of(),
+                isLegacyTraceComparable(trace),
                 0,
                 0,
                 List.of(),
-                true
+                true,
+                isLegacyTraceComparable(trace)
         );
     }
 
@@ -113,14 +118,17 @@ public final class OpticalCompilerDebugLogger {
             int networkSourceCount,
             int networkSystemId,
             boolean networkStructurallyFresh,
+            boolean networkParametricallyFresh,
             boolean networkUsableForGameplay,
             List<ReceiverOutput> legacyReceiverOutputs,
             List<ReceiverOutput> directReceiverOutputs,
             List<ReceiverOutput> networkReceiverOutputs,
+            boolean legacyComparable,
             int directReadoutBindingCount,
             int networkReadoutBindingCount,
             List<ReceiverOutput> systemLegacyReceiverOutputs,
-            boolean systemLegacyComplete
+            boolean systemLegacyComplete,
+            boolean systemLegacyComparable
     ) {
         if (!SpectralizationConfig.opticalCompilerDebugLog()) {
             return;
@@ -138,16 +146,22 @@ public final class OpticalCompilerDebugLogger {
                 .append('\n');
         appendGraphSummary(builder, "observed", observedGraph, trace.steps().size(), trace.terminations().size());
         appendGraphSummary(builder, "direct", directGraph, -1, directGraph.terminationCount());
+        appendTemplateSummary(builder, "direct", level, directGraph);
         appendScalarSolution(builder, "direct_scalar", scalarPowerSolution);
 
         if (networkGraph != null && networkSolution != null) {
             builder.append("network sources=").append(networkSourceCount).append(' ');
             appendGraphSummary(builder, "", networkGraph, -1, networkGraph.terminationCount());
+            appendTemplateSummary(builder, "network", level, networkGraph);
+            appendSourceVectorSummary(builder, level, networkGraph, networkSourceCount);
             builder.append("network_cache system_id=").append(networkSystemId)
                     .append(" structurally_fresh=").append(networkStructurallyFresh)
+                    .append(" parametrically_fresh=").append(networkParametricallyFresh)
                     .append(" usable_for_gameplay=").append(networkUsableForGameplay)
                     .append('\n');
             appendScalarSolution(builder, "network_scalar", networkSolution);
+        } else {
+            builder.append("network_skipped=true\n");
         }
 
         appendReceiverOutputs(
@@ -155,6 +169,9 @@ public final class OpticalCompilerDebugLogger {
                 legacyReceiverOutputs,
                 directReceiverOutputs,
                 networkReceiverOutputs,
+                legacyComparable,
+                scalarPowerSolution.reliableForReadout(),
+                networkSolution != null && networkSolution.reliableForReadout(),
                 directReadoutBindingCount,
                 networkReadoutBindingCount
         );
@@ -162,7 +179,9 @@ public final class OpticalCompilerDebugLogger {
                 builder,
                 systemLegacyReceiverOutputs,
                 networkReceiverOutputs,
-                systemLegacyComplete
+                systemLegacyComplete,
+                systemLegacyComparable,
+                networkSolution != null && networkSolution.reliableForReadout()
         );
 
         builder.append("delta direct_minus_observed")
@@ -192,11 +211,92 @@ public final class OpticalCompilerDebugLogger {
         write(builder.toString());
     }
 
+    private static void appendTemplateSummary(
+            StringBuilder builder,
+            String label,
+            Level level,
+            CompiledPortGraph graph
+    ) {
+        Map<OpticalComponentTemplate, Integer> counts = new EnumMap<>(OpticalComponentTemplate.class);
+        Set<BlockPos> positions = new HashSet<>();
+        positions.add(graph.sourcePos());
+
+        for (PortGraphNode node : graph.nodes()) {
+            positions.add(node.pos());
+        }
+
+        for (BlockPos pos : positions) {
+            OpticalComponentTemplate template = OpticalComponentTemplateClassifier.classify(level, pos);
+            counts.merge(template, 1, Integer::sum);
+        }
+
+        builder.append(label).append("_templates=");
+
+        if (counts.isEmpty()) {
+            builder.append("none\n");
+            return;
+        }
+
+        boolean first = true;
+
+        for (OpticalComponentTemplate template : OpticalComponentTemplate.values()) {
+            Integer count = counts.get(template);
+
+            if (count == null || count <= 0) {
+                continue;
+            }
+
+            if (!first) {
+                builder.append(", ");
+            }
+
+            builder.append(template.name().toLowerCase(Locale.ROOT)).append(':').append(count);
+            first = false;
+        }
+
+        builder.append('\n');
+    }
+
+    private static void appendSourceVectorSummary(
+            StringBuilder builder,
+            Level level,
+            CompiledPortGraph graph,
+            int activeSourceCount
+    ) {
+        int graphSourceCount = countTemplate(level, graph, OpticalComponentTemplate.SOURCE);
+
+        builder.append("network_source_vector")
+                .append(" active_sources=").append(activeSourceCount)
+                .append(" graph_source_templates=").append(graphSourceCount)
+                .append('\n');
+    }
+
+    private static int countTemplate(Level level, CompiledPortGraph graph, OpticalComponentTemplate targetTemplate) {
+        Set<BlockPos> positions = new HashSet<>();
+        int count = 0;
+        positions.add(graph.sourcePos());
+
+        for (PortGraphNode node : graph.nodes()) {
+            positions.add(node.pos());
+        }
+
+        for (BlockPos pos : positions) {
+            if (OpticalComponentTemplateClassifier.classify(level, pos) == targetTemplate) {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
     private static void appendReceiverOutputs(
             StringBuilder builder,
             List<ReceiverOutput> legacyReceiverOutputs,
             List<ReceiverOutput> directReceiverOutputs,
             List<ReceiverOutput> networkReceiverOutputs,
+            boolean legacyComparable,
+            boolean directReliable,
+            boolean networkReliable,
             int directReadoutBindingCount,
             int networkReadoutBindingCount
     ) {
@@ -206,6 +306,9 @@ public final class OpticalCompilerDebugLogger {
 
         builder.append("receiver_outputs")
                 .append(" legacy_count=").append(legacyReceiverOutputs.size())
+                .append(" legacy_comparable=").append(legacyComparable)
+                .append(" direct_reliable=").append(directReliable)
+                .append(" network_reliable=").append(networkReliable)
                 .append(" direct_bindings=").append(directReadoutBindingCount)
                 .append(" direct_count=").append(directReceiverOutputs.size())
                 .append(" network_bindings=").append(networkReadoutBindingCount)
@@ -256,13 +359,17 @@ public final class OpticalCompilerDebugLogger {
             StringBuilder builder,
             List<ReceiverOutput> systemLegacyReceiverOutputs,
             List<ReceiverOutput> networkReceiverOutputs,
-            boolean systemLegacyComplete
+            boolean systemLegacyComplete,
+            boolean systemLegacyComparable,
+            boolean networkReliable
     ) {
         Map<String, Double> systemLegacyPowers = aggregateReceiverOutputs(systemLegacyReceiverOutputs);
         Map<String, Double> networkPowers = aggregateReceiverOutputs(networkReceiverOutputs);
 
         builder.append("system_receiver_outputs")
                 .append(" legacy_complete=").append(systemLegacyComplete)
+                .append(" legacy_comparable=").append(systemLegacyComparable)
+                .append(" network_reliable=").append(networkReliable)
                 .append(" legacy_count=").append(systemLegacyReceiverOutputs.size())
                 .append(" network_count=").append(networkReceiverOutputs.size())
                 .append(" legacy_total=").append(formatPower(total(systemLegacyPowers)))
@@ -352,6 +459,7 @@ public final class OpticalCompilerDebugLogger {
         builder.append(label)
                 .append(" converged=").append(solution.converged())
                 .append(" unstable=").append(solution.unstable())
+                .append(" readout_reliable=").append(solution.reliableForReadout())
                 .append(" iterations=").append(solution.iterations())
                 .append(" residual=").append(formatPower(solution.residual()))
                 .append(" max_node_power=").append(formatPower(solution.maxNodePower()))
@@ -430,6 +538,17 @@ public final class OpticalCompilerDebugLogger {
         }
 
         builder.append('\n');
+    }
+
+    private static boolean isLegacyTraceComparable(CompiledOpticalTrace trace) {
+        for (OpticalTraceTermination termination : trace.terminations()) {
+            if (termination.reason() == OpticalTraceTerminationReason.MAX_SEGMENTS
+                    || termination.reason() == OpticalTraceTerminationReason.MAX_STATES) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static void appendSccs(StringBuilder builder, CompiledPortGraph graph) {

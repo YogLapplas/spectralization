@@ -16,6 +16,10 @@ public final class SpectralizationConfig {
     private static final ModConfigSpec.IntValue OPTICAL_SOLVER_BUDGET_MICROS;
     private static final ModConfigSpec.BooleanValue OPTICAL_COMPILER_DEBUG_LOG;
     private static final ModConfigSpec.IntValue OPTICAL_COMPILER_DEBUG_MAX_EDGES;
+    private static final ModConfigSpec.IntValue OPTICAL_COMPILER_MAX_DIRECT_OUTGOING_NODES;
+    private static final ModConfigSpec.IntValue OPTICAL_COMPILER_DEBUG_SAMPLE_INTERVAL_TICKS;
+    private static final ModConfigSpec.IntValue OPTICAL_COMPILER_DEBUG_MAX_RUNS_PER_TICK;
+    private static final ModConfigSpec.IntValue OPTICAL_COMPILER_DEBUG_FULL_NETWORK_MAX_NODES;
 
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
@@ -65,6 +69,18 @@ public final class SpectralizationConfig {
         OPTICAL_COMPILER_DEBUG_MAX_EDGES = builder
                 .comment("Maximum edge lines written for each optical compiler debug entry.")
                 .defineInRange("debug_log_max_edges", 128, 0, 4096);
+        OPTICAL_COMPILER_MAX_DIRECT_OUTGOING_NODES = builder
+                .comment("Maximum outgoing port nodes explored by one direct optical compiler run.")
+                .defineInRange("max_direct_outgoing_nodes", 1024, 64, 16384);
+        OPTICAL_COMPILER_DEBUG_SAMPLE_INTERVAL_TICKS = builder
+                .comment("Minimum ticks between full optical compiler debug samples for the same source.")
+                .defineInRange("debug_sample_interval_ticks", 20, 1, 1200);
+        OPTICAL_COMPILER_DEBUG_MAX_RUNS_PER_TICK = builder
+                .comment("Maximum optical compiler debug samples processed per server tick.")
+                .defineInRange("debug_max_runs_per_tick", 1, 1, 16);
+        OPTICAL_COMPILER_DEBUG_FULL_NETWORK_MAX_NODES = builder
+                .comment("Maximum direct graph nodes allowed before network-level debug expansion is skipped.")
+                .defineInRange("debug_full_network_max_nodes", 2048, 64, 65536);
         builder.pop();
 
         SPEC = builder.build();
@@ -132,6 +148,22 @@ public final class SpectralizationConfig {
 
     public static int opticalCompilerDebugMaxEdges() {
         return OPTICAL_COMPILER_DEBUG_MAX_EDGES.get();
+    }
+
+    public static int opticalCompilerMaxDirectOutgoingNodes() {
+        return OPTICAL_COMPILER_MAX_DIRECT_OUTGOING_NODES.get();
+    }
+
+    public static int opticalCompilerDebugSampleIntervalTicks() {
+        return OPTICAL_COMPILER_DEBUG_SAMPLE_INTERVAL_TICKS.get();
+    }
+
+    public static int opticalCompilerDebugMaxRunsPerTick() {
+        return OPTICAL_COMPILER_DEBUG_MAX_RUNS_PER_TICK.get();
+    }
+
+    public static int opticalCompilerDebugFullNetworkMaxNodes() {
+        return OPTICAL_COMPILER_DEBUG_FULL_NETWORK_MAX_NODES.get();
     }
 
     private SpectralizationConfig() {

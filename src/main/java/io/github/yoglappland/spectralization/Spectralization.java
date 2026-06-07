@@ -14,6 +14,7 @@ import io.github.yoglappland.spectralization.command.SpectralCommands;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.item.PhosphorTubeItem;
 import io.github.yoglappland.spectralization.network.SpectralNetwork;
+import io.github.yoglappland.spectralization.optics.cache.OpticalDirtyKind;
 import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
 import io.github.yoglappland.spectralization.optics.topology.OpticalNetworkIndex;
@@ -216,22 +217,20 @@ public class Spectralization {
     @SubscribeEvent
     public void onBlockPlaced(BlockEvent.EntityPlaceEvent event) {
         OpticalFieldSources.invalidate(event.getLevel());
-        OpticalTraceCache.markChanged(event.getLevel(), event.getPos());
+        OpticalTraceCache.markChanged(event.getLevel(), event.getPos(), OpticalDirtyKind.STRUCTURE);
         OpticalNetworkIndex.markDirty(event.getLevel());
     }
 
     @SubscribeEvent
     public void onBlockBroken(BlockEvent.BreakEvent event) {
         OpticalFieldSources.invalidate(event.getLevel());
-        OpticalTraceCache.markChanged(event.getLevel(), event.getPos());
+        OpticalTraceCache.markChanged(event.getLevel(), event.getPos(), OpticalDirtyKind.STRUCTURE);
         OpticalNetworkIndex.markDirty(event.getLevel());
     }
 
     @SubscribeEvent
     public void onNeighborNotified(BlockEvent.NeighborNotifyEvent event) {
-        OpticalFieldSources.invalidate(event.getLevel());
-        OpticalTraceCache.markChanged(event.getLevel(), event.getPos());
-        OpticalNetworkIndex.markDirty(event.getLevel());
+        OpticalTraceCache.markChanged(event.getLevel(), event.getPos(), OpticalDirtyKind.PARAMETER);
     }
 
     @SubscribeEvent

@@ -1,5 +1,6 @@
 package io.github.yoglappland.spectralization.optics.compiler;
 
+import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalNetwork;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalTrace;
@@ -37,7 +38,6 @@ import net.minecraft.world.level.block.state.BlockState;
 
 public final class PortGraphCompiler {
     private static final int MAX_DIRECT_SCAN_DISTANCE = 128;
-    private static final int MAX_DIRECT_OUTGOING_NODES = 4096;
     private static final double AIR_PROPAGATION_FACTOR = 0.995;
     private static final Comparator<PortGraphNode> NODE_COMPARATOR = Comparator
             .comparingInt((PortGraphNode node) -> node.pos().getX())
@@ -149,12 +149,13 @@ public final class PortGraphCompiler {
         BeamPacket sampleBeam = normalizedSampleBeam(sourceOutput);
         ArrayDeque<PortGraphNode> pendingOutgoingNodes = new ArrayDeque<>();
         Set<PortGraphNode> processedOutgoingNodes = new HashSet<>();
+        int maxOutgoingNodes = SpectralizationConfig.opticalCompilerMaxDirectOutgoingNodes();
         int terminationCount = 0;
 
         interestingNodes.add(sourceNode);
         pendingOutgoingNodes.add(sourceNode);
 
-        while (!pendingOutgoingNodes.isEmpty() && processedOutgoingNodes.size() < MAX_DIRECT_OUTGOING_NODES) {
+        while (!pendingOutgoingNodes.isEmpty() && processedOutgoingNodes.size() < maxOutgoingNodes) {
             PortGraphNode outgoingNode = pendingOutgoingNodes.removeFirst();
 
             if (outgoingNode.waveKind() != PortWaveKind.OUTGOING || !processedOutgoingNodes.add(outgoingNode)) {

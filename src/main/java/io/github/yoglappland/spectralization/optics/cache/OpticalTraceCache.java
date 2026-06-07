@@ -5,12 +5,13 @@ import io.github.yoglappland.spectralization.block.CmosSensorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalTrace;
+import io.github.yoglappland.spectralization.optics.OpticalPort;
 import io.github.yoglappland.spectralization.optics.OpticalPathTracer;
 import io.github.yoglappland.spectralization.optics.OpticalTraceStep;
 import io.github.yoglappland.spectralization.optics.OpticalTraceTermination;
 import io.github.yoglappland.spectralization.optics.OpticalTraceTerminationReason;
-import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.OpticalSource;
+import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledPortGraph;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledReadoutLayer;
@@ -44,6 +45,7 @@ import net.minecraft.world.level.block.state.BlockState;
 
 public final class OpticalTraceCache {
     private static final Map<Level, LevelTraceCache> CACHES = new WeakHashMap<>();
+    private static final int MAX_DISCOVERED_SYSTEM_SOURCES = 32;
 
     public static void requestOrApply(Level level, BlockPos sourcePos, OutputBeam sourceOutput) {
         if (level.isClientSide || !(level instanceof ServerLevel serverLevel) || sourceOutput.beam().isEmpty()) {
@@ -65,13 +67,17 @@ public final class OpticalTraceCache {
         cache.enqueue(new TraceRequest(networkId, sourcePos, sourceOutput));
     }
 
-    public static void markChanged(LevelAccessor level, BlockPos pos) {
+    public static boolean markChanged(LevelAccessor level, BlockPos pos) {
+        return markChanged(level, pos, OpticalDirtyKind.STRUCTURE);
+    }
+
+    public static boolean markChanged(LevelAccessor level, BlockPos pos, OpticalDirtyKind dirtyKind) {
         if (!(level instanceof ServerLevel serverLevel)) {
-            return;
+            return false;
         }
 
         LevelTraceCache cache = cacheFor(serverLevel);
-        cache.markChanged(pos);
+        return cache.markChanged(pos, dirtyKind);
     }
 
     public static void processQueues(MinecraftServer server) {
@@ -99,6 +105,15 @@ public final class OpticalTraceCache {
             }
 
             CompiledOpticalTrace trace = OpticalPathTracer.trace(level, request.sourcePos(), request.sourceOutput());
+            SourceTraceKey sourceKey = new SourceTraceKey(request.sourcePos(), request.sourceOutput().outgoingDirection());
+
+            if (!SpectralizationConfig.opticalCompilerDebugLog()
+                    || !cache.shouldRunCompilerDebug(sourceKey, level.getGameTime())) {
+                cacheLegacyTrace(level, cache, request, trace);
+                processed++;
+                continue;
+            }
+
             CompiledPortGraph observedGraph = PortGraphCompiler.compileObservedTrace(trace);
             CompiledPortGraph directGraph = PortGraphCompiler.compileDirect(
                     level,
@@ -109,25 +124,6 @@ public final class OpticalTraceCache {
                     directGraph,
                     request.sourceOutput().beam().totalPower()
             );
-            SourceTraceKey sourceKey = new SourceTraceKey(request.sourcePos(), request.sourceOutput().outgoingDirection());
-            cache.directSourcesByKey.put(
-                    sourceKey,
-                    new DirectSourceRecord(
-                            request.networkId(),
-                            directGraph,
-                            request.sourceOutput(),
-                            cache.structureEpoch
-                    )
-            );
-            pruneInactiveSources(level, cache);
-            rebuildDirectSystems(level, cache);
-            CachedOpticalSystem cachedSystem = cache.systemForNetwork(request.networkId());
-
-            if (cachedSystem == null) {
-                cachedSystem = buildSingleSourceSystem(level, cache, sourceKey);
-            }
-
-            ScalarPowerSolution networkSolution = cachedSystem.solution();
             CompiledReadoutLayer directReadoutLayer = OpticalReadoutLayerCompiler.compile(level, directGraph);
             CachedOpticalTrace cachedTrace = buildCachedTrace(
                     level,
@@ -138,39 +134,120 @@ public final class OpticalTraceCache {
                     scalarPowerSolution
             );
             List<ReceiverOutput> directReceiverOutputs = directReadoutLayer.sample(scalarPowerSolution);
-            List<ReceiverOutput> networkReceiverOutputs = cachedSystem.receiverOutputs();
-            SystemLegacyReadout systemLegacyReadout = collectSystemLegacyReadout(
-                    cache,
-                    cachedSystem.systemId(),
-                    request.networkId(),
-                    cachedTrace
+            CachedOpticalSystem cachedSystem = null;
+            ScalarPowerSolution networkSolution = null;
+            List<ReceiverOutput> networkReceiverOutputs = List.of();
+            SystemLegacyReadout systemLegacyReadout = new SystemLegacyReadout(
+                    cachedTrace.receiverOutputs(),
+                    true,
+                    !cachedTrace.unstable()
             );
+            int networkSourceCount = 0;
+            int networkSystemId = 0;
+            boolean networkStructurallyFresh = true;
+            boolean networkParametricallyFresh = true;
+            boolean networkUsableForGameplay = false;
+            int networkReadoutBindingCount = 0;
+
+            if (directGraph.nodes().size() <= SpectralizationConfig.opticalCompilerDebugFullNetworkMaxNodes()) {
+                cache.directSourcesByKey.put(
+                        sourceKey,
+                        new DirectSourceRecord(
+                                request.networkId(),
+                                directGraph,
+                                request.sourceOutput(),
+                                cache.epochs
+                        )
+                );
+                pruneInactiveSources(level, cache);
+                rebuildDirectSystems(level, cache);
+                cachedSystem = cache.systemForNetwork(request.networkId());
+
+                if (cachedSystem == null) {
+                    cachedSystem = buildSingleSourceSystem(level, cache, sourceKey);
+                }
+
+                networkSolution = cachedSystem.solution();
+                networkReceiverOutputs = cachedSystem.receiverOutputs();
+                systemLegacyReadout = collectSystemLegacyReadout(
+                        cache,
+                        cachedSystem.systemId(),
+                        request.networkId(),
+                        cachedTrace
+                );
+                networkSourceCount = cachedSystem.sourceCount();
+                networkSystemId = cachedSystem.systemId();
+                networkStructurallyFresh = cachedSystem.structurallyFresh();
+                networkParametricallyFresh = cachedSystem.parametricallyFresh();
+                networkUsableForGameplay = cachedSystem.usableForGameplay();
+                networkReadoutBindingCount = cachedSystem.readoutLayer().size();
+            }
+
             OpticalCompilerDebugLogger.logObservedDirectAndNetwork(
                     level,
                     trace,
                     observedGraph,
                     directGraph,
                     scalarPowerSolution,
-                    cachedSystem.graph(),
+                    cachedSystem == null ? null : cachedSystem.graph(),
                     networkSolution,
-                    cachedSystem.sourceCount(),
-                    cachedSystem.systemId(),
-                    cachedSystem.structurallyFresh(),
-                    cachedSystem.usableForGameplay(),
+                    networkSourceCount,
+                    networkSystemId,
+                    networkStructurallyFresh,
+                    networkParametricallyFresh,
+                    networkUsableForGameplay,
                     cachedTrace.receiverOutputs(),
                     directReceiverOutputs,
                     networkReceiverOutputs,
+                    !cachedTrace.unstable(),
                     directReadoutLayer.size(),
-                    cachedSystem.readoutLayer().size(),
+                    networkReadoutBindingCount,
                     systemLegacyReadout.receiverOutputs(),
-                    systemLegacyReadout.complete()
+                    systemLegacyReadout.complete(),
+                    systemLegacyReadout.comparable()
             );
             cache.cachedTracesByNetwork.put(request.networkId(), cachedTrace);
             cache.dependencyIndex.replaceDependencies(request.networkId(), cachedTrace.dependencies());
             cache.dependencyIndex.clearDirty(request.networkId());
-            OpticalTraceValidator.validate(level, request.sourcePos(), request.sourceOutput(), trace);
+            if (cachedSystem != null) {
+                OpticalTraceValidator.validate(level, request.sourcePos(), request.sourceOutput(), trace);
+            }
             processed++;
         }
+    }
+
+    private static void cacheLegacyTrace(
+            ServerLevel level,
+            LevelTraceCache cache,
+            TraceRequest request,
+            CompiledOpticalTrace trace
+    ) {
+        CachedOpticalTrace cachedTrace = buildCachedTrace(
+                level,
+                request,
+                trace,
+                minimalPortGraph(request.sourcePos(), request.sourceOutput().outgoingDirection()),
+                CompiledReadoutLayer.EMPTY,
+                ScalarPowerSolution.empty()
+        );
+        cache.cachedTracesByNetwork.put(request.networkId(), cachedTrace);
+        cache.dependencyIndex.replaceDependencies(request.networkId(), cachedTrace.dependencies());
+        cache.dependencyIndex.clearDirty(request.networkId());
+    }
+
+    private static CompiledPortGraph minimalPortGraph(BlockPos sourcePos, Direction sourceDirection) {
+        PortGraphNode sourceNode = PortGraphNode.outgoing(new OpticalPort(sourcePos, sourceDirection));
+
+        return new CompiledPortGraph(
+                sourcePos,
+                sourceDirection,
+                sourceNode,
+                List.of(sourceNode),
+                List.of(),
+                List.of(),
+                List.of(),
+                0
+        );
     }
 
     private static CachedOpticalTrace buildCachedTrace(
@@ -272,11 +349,12 @@ public final class OpticalTraceCache {
         IntSet networkIds = cache.networkIdsBySystem.get(systemId);
 
         if (networkIds == null || networkIds.isEmpty()) {
-            return new SystemLegacyReadout(currentTrace.receiverOutputs(), true);
+            return new SystemLegacyReadout(currentTrace.receiverOutputs(), true, !currentTrace.unstable());
         }
 
         List<ReceiverOutput> receiverOutputs = new ArrayList<>();
         boolean complete = true;
+        boolean comparable = true;
 
         for (int networkId : networkIds) {
             CachedOpticalTrace trace = networkId == currentNetworkId
@@ -285,13 +363,15 @@ public final class OpticalTraceCache {
 
             if (trace == null) {
                 complete = false;
+                comparable = false;
                 continue;
             }
 
+            comparable &= !trace.unstable();
             receiverOutputs.addAll(trace.receiverOutputs());
         }
 
-        return new SystemLegacyReadout(receiverOutputs, complete);
+        return new SystemLegacyReadout(receiverOutputs, complete, complete && comparable);
     }
 
     private static void rebuildDirectSystems(ServerLevel level, LevelTraceCache cache) {
@@ -364,8 +444,9 @@ public final class OpticalTraceCache {
     ) {
         int systemId = Integer.MAX_VALUE;
         boolean structurallyFresh = true;
+        boolean parametricallyFresh = true;
+        OpticalEpochs currentEpochs = cache.epochs;
         List<CompiledPortGraph> graphs = new ArrayList<>();
-        Map<PortGraphNode, Double> sourcePowersByNode = new HashMap<>();
 
         for (SourceTraceKey sourceKey : sourceKeys) {
             DirectSourceRecord record = cache.directSourcesByKey.get(sourceKey);
@@ -375,18 +456,20 @@ public final class OpticalTraceCache {
             }
 
             systemId = Math.min(systemId, record.networkId());
-            structurallyFresh &= record.structureEpoch() == cache.structureEpoch;
+            structurallyFresh &= record.epochs().structurallyMatches(currentEpochs);
+            parametricallyFresh &= record.epochs().parametersMatch(currentEpochs);
             graphs.add(record.graph());
-            sourcePowersByNode.merge(record.graph().sourceNode(), record.sourceOutput().beam().totalPower(), Double::sum);
         }
 
         if (graphs.isEmpty()) {
             throw new IllegalStateException("Cannot build an optical system without direct source graphs");
         }
 
+        graphs = expandGraphsWithDiscoveredSources(level, graphs);
         CompiledPortGraph graph = graphs.size() == 1
                 ? graphs.getFirst()
                 : PortGraphCompiler.unionDirectGraphs(graphs);
+        Map<PortGraphNode, Double> sourcePowersByNode = collectGraphSourcePowers(level, graph);
         ScalarPowerSolution solution = ScalarPowerSolver.solve(graph, sourcePowersByNode);
         CompiledReadoutLayer readoutLayer = OpticalReadoutLayerCompiler.compile(level, graph);
         List<ReceiverOutput> receiverOutputs = readoutLayer.sample(solution);
@@ -399,10 +482,106 @@ public final class OpticalTraceCache {
                 solution,
                 receiverOutputs,
                 sourcePowersByNode.size(),
-                cache.structureEpoch,
+                currentEpochs,
                 structurallyFresh,
-                structurallyFresh && canUseForGameplay(graph, solution)
+                parametricallyFresh,
+                structurallyFresh && parametricallyFresh && canUseForGameplay(graph, solution)
         );
+    }
+
+    private static List<CompiledPortGraph> expandGraphsWithDiscoveredSources(
+            ServerLevel level,
+            List<CompiledPortGraph> initialGraphs
+    ) {
+        List<CompiledPortGraph> graphs = new ArrayList<>(initialGraphs);
+        Set<SourceTraceKey> compiledSourceKeys = new HashSet<>();
+
+        for (CompiledPortGraph graph : graphs) {
+            compiledSourceKeys.add(new SourceTraceKey(graph.sourcePos(), graph.sourceDirection()));
+        }
+
+        boolean added;
+
+        do {
+            added = false;
+            CompiledPortGraph graph = graphs.size() == 1
+                    ? graphs.getFirst()
+                    : PortGraphCompiler.unionDirectGraphs(graphs);
+
+            for (GraphSourceOutput sourceOutput : discoverGraphSourceOutputs(level, graph)) {
+                if (compiledSourceKeys.size() >= MAX_DISCOVERED_SYSTEM_SOURCES) {
+                    return graphs;
+                }
+
+                if (!compiledSourceKeys.add(sourceOutput.key())) {
+                    continue;
+                }
+
+                graphs.add(PortGraphCompiler.compileDirect(
+                        level,
+                        sourceOutput.key().sourcePos(),
+                        sourceOutput.outputBeam()
+                ));
+                added = true;
+            }
+        } while (added);
+
+        return graphs;
+    }
+
+    private static Map<PortGraphNode, Double> collectGraphSourcePowers(ServerLevel level, CompiledPortGraph graph) {
+        Map<PortGraphNode, Double> sourcePowersByNode = new HashMap<>();
+        Set<PortGraphNode> graphNodes = new HashSet<>(graph.nodes());
+
+        for (GraphSourceOutput sourceOutput : discoverGraphSourceOutputs(level, graph)) {
+            PortGraphNode sourceNode = sourceOutput.sourceNode();
+
+            if (!graphNodes.contains(sourceNode)) {
+                continue;
+            }
+
+            sourcePowersByNode.merge(
+                    sourceNode,
+                    sourceOutput.outputBeam().beam().totalPower(),
+                    Double::sum
+            );
+        }
+
+        return sourcePowersByNode;
+    }
+
+    private static List<GraphSourceOutput> discoverGraphSourceOutputs(ServerLevel level, CompiledPortGraph graph) {
+        Set<BlockPos> positions = new HashSet<>();
+        List<GraphSourceOutput> sourceOutputs = new ArrayList<>();
+        positions.add(graph.sourcePos());
+
+        for (PortGraphNode node : graph.nodes()) {
+            positions.add(node.pos());
+        }
+
+        for (BlockPos pos : positions) {
+            if (!level.isLoaded(pos)) {
+                continue;
+            }
+
+            BlockState state = level.getBlockState(pos);
+
+            if (!(state.getBlock() instanceof OpticalSource source)) {
+                continue;
+            }
+
+            for (OutputBeam outputBeam : source.getOutputBeams(state, level, pos)) {
+                if (outputBeam.beam().isEmpty()) {
+                    continue;
+                }
+
+                SourceTraceKey key = new SourceTraceKey(pos, outputBeam.outgoingDirection());
+                PortGraphNode sourceNode = PortGraphNode.outgoing(new OpticalPort(pos, outputBeam.outgoingDirection()));
+                sourceOutputs.add(new GraphSourceOutput(key, sourceNode, outputBeam));
+            }
+        }
+
+        return sourceOutputs;
     }
 
     private static CachedOpticalSystem buildSingleSourceSystem(
@@ -488,7 +667,7 @@ public final class OpticalTraceCache {
             int networkId,
             CompiledPortGraph graph,
             OutputBeam sourceOutput,
-            long structureEpoch
+            OpticalEpochs epochs
     ) {
         private DirectSourceRecord {
             if (networkId <= 0) {
@@ -497,10 +676,19 @@ public final class OpticalTraceCache {
 
             Objects.requireNonNull(graph, "graph");
             Objects.requireNonNull(sourceOutput, "sourceOutput");
+            Objects.requireNonNull(epochs, "epochs");
         }
     }
 
-    private record SystemLegacyReadout(List<ReceiverOutput> receiverOutputs, boolean complete) {
+    private record GraphSourceOutput(SourceTraceKey key, PortGraphNode sourceNode, OutputBeam outputBeam) {
+        private GraphSourceOutput {
+            Objects.requireNonNull(key, "key");
+            Objects.requireNonNull(sourceNode, "sourceNode");
+            Objects.requireNonNull(outputBeam, "outputBeam");
+        }
+    }
+
+    private record SystemLegacyReadout(List<ReceiverOutput> receiverOutputs, boolean complete, boolean comparable) {
         private SystemLegacyReadout {
             Objects.requireNonNull(receiverOutputs, "receiverOutputs");
             receiverOutputs = List.copyOf(receiverOutputs);
@@ -515,10 +703,13 @@ public final class OpticalTraceCache {
         private final Map<Integer, Integer> systemIdsByNetwork = new HashMap<>();
         private final Map<Integer, IntSet> networkIdsBySystem = new HashMap<>();
         private final Map<SourceTraceKey, DirectSourceRecord> directSourcesByKey = new HashMap<>();
+        private final Map<SourceTraceKey, Long> lastCompilerDebugTickBySource = new HashMap<>();
         private final ArrayDeque<TraceRequest> pendingRequests = new ArrayDeque<>();
         private final IntSet queuedNetworkIds = new IntOpenHashSet();
         private int nextNetworkId = 1;
-        private long structureEpoch = 0L;
+        private OpticalEpochs epochs = OpticalEpochs.ZERO;
+        private long compilerDebugRunTick = Long.MIN_VALUE;
+        private int compilerDebugRunsThisTick = 0;
 
         int networkIdFor(SourceTraceKey key) {
             return networkIdsBySource.computeIfAbsent(key, ignored -> nextNetworkId++);
@@ -530,18 +721,42 @@ public final class OpticalTraceCache {
             }
         }
 
-        void markChanged(BlockPos pos) {
+        boolean shouldRunCompilerDebug(SourceTraceKey key, long gameTime) {
+            if (compilerDebugRunTick != gameTime) {
+                compilerDebugRunTick = gameTime;
+                compilerDebugRunsThisTick = 0;
+            }
+
+            if (compilerDebugRunsThisTick >= SpectralizationConfig.opticalCompilerDebugMaxRunsPerTick()) {
+                return false;
+            }
+
+            long lastRun = lastCompilerDebugTickBySource.getOrDefault(key, Long.MIN_VALUE);
+
+            if (lastRun != Long.MIN_VALUE
+                    && gameTime - lastRun < SpectralizationConfig.opticalCompilerDebugSampleIntervalTicks()) {
+                return false;
+            }
+
+            lastCompilerDebugTickBySource.put(key, gameTime);
+            compilerDebugRunsThisTick++;
+            return true;
+        }
+
+        boolean markChanged(BlockPos pos, OpticalDirtyKind dirtyKind) {
             IntSet affectedNetworkIds = dependencyIndex.markChangedAndGet(pos);
 
             if (affectedNetworkIds.isEmpty()) {
-                return;
+                return false;
             }
 
-            structureEpoch++;
+            epochs = epochs.advance(dirtyKind);
 
             for (int networkId : affectedNetworkIds) {
                 markSystemDirty(networkId);
             }
+
+            return true;
         }
 
         CachedOpticalSystem systemForNetwork(int networkId) {

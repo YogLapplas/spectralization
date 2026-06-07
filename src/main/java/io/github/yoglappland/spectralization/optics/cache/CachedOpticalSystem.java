@@ -17,8 +17,9 @@ public record CachedOpticalSystem(
         ScalarPowerSolution solution,
         List<ReceiverOutput> receiverOutputs,
         int sourceCount,
-        long structureEpoch,
+        OpticalEpochs epochs,
         boolean structurallyFresh,
+        boolean parametricallyFresh,
         boolean usableForGameplay
 ) {
     public CachedOpticalSystem {
@@ -31,6 +32,7 @@ public record CachedOpticalSystem(
         Objects.requireNonNull(readoutLayer, "readoutLayer");
         Objects.requireNonNull(solution, "solution");
         Objects.requireNonNull(receiverOutputs, "receiverOutputs");
+        Objects.requireNonNull(epochs, "epochs");
 
         if (sourceCount < 0) {
             throw new IllegalArgumentException("Optical system source count must be non-negative");

@@ -1,6 +1,10 @@
 package io.github.yoglappland.spectralization.block;
 
 import io.github.yoglappland.spectralization.blockentity.LensHolderBlockEntity;
+import io.github.yoglappland.spectralization.optics.BeamPacket;
+import io.github.yoglappland.spectralization.optics.CompiledOpticalNetwork;
+import io.github.yoglappland.spectralization.optics.OpticalElement;
+import io.github.yoglappland.spectralization.optics.OpticalResult;
 import io.github.yoglappland.spectralization.tag.SpectralItemTags;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
@@ -27,8 +31,10 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
-public class LensHolderBlock extends Block implements EntityBlock {
+public class LensHolderBlock extends Block implements EntityBlock, OpticalElement {
     public static final DirectionProperty FACING = BlockStateProperties.HORIZONTAL_FACING;
+    private static final double LENS_TRANSMITTANCE = 0.96;
+    private static final double LENS_REFLECTANCE = 0.02;
 
     private static final double[][] BASE_BOXES = {
             {5.0, 0.0, 4.0, 11.0, 2.0, 12.0},
@@ -59,6 +65,42 @@ public class LensHolderBlock extends Block implements EntityBlock {
     @Override
     public BlockState getStateForPlacement(BlockPlaceContext context) {
         return this.defaultBlockState().setValue(FACING, context.getHorizontalDirection().getOpposite());
+    }
+
+    @Override
+    public CompiledOpticalNetwork compileOpticalNetwork(BlockState state, Level level, BlockPos pos) {
+        Direction positiveDirection = state.getValue(FACING);
+        Direction negativeDirection = positiveDirection.getOpposite();
+        boolean hasLens = level.getBlockEntity(pos) instanceof LensHolderBlockEntity lensHolder && lensHolder.hasLens();
+        CompiledOpticalNetwork.Builder builder = CompiledOpticalNetwork.builder();
+
+        for (Direction incomingDirection : Direction.values()) {
+            Direction transmittedDirection = incomingDirection.getOpposite();
+
+            if (transmittedDirection != positiveDirection && transmittedDirection != negativeDirection) {
+                continue;
+            }
+
+            if (hasLens) {
+                builder.addRule(incomingDirection, transmittedDirection, CompiledOpticalNetwork.scale(LENS_TRANSMITTANCE));
+                builder.addRule(incomingDirection, incomingDirection, CompiledOpticalNetwork.scale(LENS_REFLECTANCE));
+            } else {
+                builder.addRule(incomingDirection, transmittedDirection, CompiledOpticalNetwork.passThrough());
+            }
+        }
+
+        return builder.build();
+    }
+
+    @Override
+    public OpticalResult interact(
+            BeamPacket input,
+            Direction incomingDirection,
+            BlockState state,
+            Level level,
+            BlockPos pos
+    ) {
+        return compileOpticalNetwork(state, level, pos).interact(input, incomingDirection);
     }
 
     @Override

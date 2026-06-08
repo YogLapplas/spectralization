@@ -219,8 +219,11 @@ public final class OpticalWorldIndex {
         }
 
         derivedDataEpoch++;
-        lastHighPriorityUpdateTick = level.getGameTime();
-        derivedInterrupted = true;
+
+        if (layer == OpticalIndexLayer.GEOMETRY || layer == OpticalIndexLayer.TOPOLOGY) {
+            lastHighPriorityUpdateTick = level.getGameTime();
+            derivedInterrupted = true;
+        }
     }
 
     private boolean canRunDerivedNow(ServerLevel level) {

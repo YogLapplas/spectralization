@@ -7,6 +7,7 @@ import io.github.yoglappland.spectralization.optics.OpticalTraceTermination;
 import io.github.yoglappland.spectralization.optics.OpticalTraceTerminationReason;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.cache.ReceiverOutput;
+import io.github.yoglappland.spectralization.optics.compiler.gain.GainSchedule;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -426,6 +427,42 @@ public final class OpticalCompilerDebugLogger {
                 .append(" solution_reliable=").append(systemSolutionReliable)
                 .append('\n');
         builder.append("held_readout_cache entries=").append(heldReadoutCacheEntries).append('\n');
+        builder.append('\n');
+        write(builder.toString());
+    }
+
+    public static void logGainSchedule(Level level, CompiledPortGraph graph, GainSchedule schedule) {
+        if (!SpectralizationConfig.opticalCompilerDebugLog() || schedule.gainSourceCount() <= 0) {
+            return;
+        }
+
+        StringBuilder builder = new StringBuilder(1024);
+        builder.append("=== spectralization optical compiler ===\n");
+        builder.append("session_log=").append(SESSION_LOG_FILE_NAME).append('\n');
+        builder.append("stage=gain_schedule\n");
+        builder.append("time=").append(Instant.now()).append('\n');
+        builder.append("dimension=").append(level.dimension().location()).append('\n');
+        builder.append("source=").append(formatPos(graph.sourcePos()))
+                .append(" direction=").append(graph.sourceDirection())
+                .append(" nodes=").append(graph.nodes().size())
+                .append(" edges=").append(graph.edges().size())
+                .append(" feedback_sccs=").append(graph.feedbackSccCount())
+                .append(" beta1=").append(graph.beta1())
+                .append('\n');
+        builder.append("gain_schedule")
+                .append(" sources=").append(schedule.gainSourceCount())
+                .append(" scheduled=").append(schedule.scheduled())
+                .append(" stable=").append(schedule.stable())
+                .append(" passive_rho=").append(formatPower(schedule.passiveRho()))
+                .append(" rho_hard=").append(formatPower(schedule.rhoHard()))
+                .append(" rho_before=").append(formatPower(schedule.rhoBefore()))
+                .append(" rho_after=").append(formatPower(schedule.rhoAfter()))
+                .append(" total_gain_headroom=").append(formatPower(schedule.totalGainHeadroom()))
+                .append(" max_mode_weight=").append(formatPower(schedule.maxModeWeight()))
+                .append(" max_source_cap=").append(formatPower(schedule.maxSourceCap()))
+                .append(" max_base_gain=").append(formatPower(schedule.maxBaseGain()))
+                .append(" max_effective_gain=").append(formatPower(schedule.maxEffectiveGain()))
+                .append('\n');
         builder.append('\n');
         write(builder.toString());
     }

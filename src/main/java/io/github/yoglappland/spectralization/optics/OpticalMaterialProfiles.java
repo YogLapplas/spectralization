@@ -46,8 +46,11 @@ public final class OpticalMaterialProfiles {
             sample(SpectralRegion.VISIBLE, 32, 0.88, 0.02, 0.08),
             sample(SpectralRegion.ULTRAVIOLET, 16, 0.35, 0.02, 0.55)
     );
-    private static final double RUBY_COHERENT_POWER_BUDGET_PER_PUMP_RATE = 0.30;
+    private static final double RUBY_COHERENT_POWER_BUDGET_PER_PUMP_RATE = 0.45;
     private static final double RUBY_COHERENT_SEED_SATURATION_POWER = 0.35;
+    private static final double RUBY_SCHEDULED_GAIN_PER_PUMP_RATE = 0.35;
+    private static final double RUBY_MAX_SCHEDULED_GAIN = 4.0;
+    private static final double RUBY_GAIN_MATERIAL_WEIGHT = 2.0;
 
     private static final Set<Block> AIR_LIKE_BLOCKS = Set.of(
             Blocks.REDSTONE_WIRE,
@@ -190,6 +193,28 @@ public final class OpticalMaterialProfiles {
 
     public static double gainFactorFor(Level level, BlockPos pos, BlockState state, FrequencyKey frequency) {
         return 1.0;
+    }
+
+    public static double scheduledCoherentBaseGainFor(Level level, BlockPos pos, BlockState state) {
+        if (state.getBlock() != Spectralization.RUBY_BLOCK.get()) {
+            return 1.0;
+        }
+
+        int pumpRate = OpticalPumpSources.adjacentPumpRate(level, pos);
+
+        if (pumpRate <= 0) {
+            return 1.0;
+        }
+
+        return Math.min(RUBY_MAX_SCHEDULED_GAIN, 1.0 + RUBY_SCHEDULED_GAIN_PER_PUMP_RATE * pumpRate);
+    }
+
+    public static double gainMaterialWeightFor(BlockState state) {
+        if (state.getBlock() == Spectralization.RUBY_BLOCK.get()) {
+            return RUBY_GAIN_MATERIAL_WEIGHT;
+        }
+
+        return 0.0;
     }
 
     public static double saturatedCoherentEmissionFor(Level level, BlockPos pos, BlockState state, double seedPower) {

@@ -12,6 +12,8 @@ import net.minecraft.world.level.Level;
 public record CachedOpticalSystem(
         int systemId,
         CompiledPortGraph graph,
+        CompiledPortGraph passiveGraph,
+        CompiledPortGraph coherentGraph,
         Map<PortGraphNode, Double> sourcePowersByNode,
         CompiledReadoutLayer readoutLayer,
         ScalarPowerSolution solution,
@@ -28,6 +30,8 @@ public record CachedOpticalSystem(
         }
 
         Objects.requireNonNull(graph, "graph");
+        Objects.requireNonNull(passiveGraph, "passiveGraph");
+        Objects.requireNonNull(coherentGraph, "coherentGraph");
         Objects.requireNonNull(sourcePowersByNode, "sourcePowersByNode");
         Objects.requireNonNull(readoutLayer, "readoutLayer");
         Objects.requireNonNull(solution, "solution");
@@ -64,6 +68,8 @@ public record CachedOpticalSystem(
         return new CachedOpticalSystem(
                 systemId,
                 graph,
+                passiveGraph,
+                coherentGraph,
                 sourcePowersByNode,
                 readoutLayer,
                 solution,

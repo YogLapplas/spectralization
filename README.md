@@ -18,8 +18,11 @@ The current prototype is focused on the first optical runtime experiments:
 - CMOS and pass-through sensors can receive cached optical outputs.
 - Ruby blocks act as experimental solid-state laser media. Adjacent glowstone
   provides weak incoherent seed light, charged glowstone provides pump rate, and
-  pumped ruby converts seed light into coherent ruby-line output with a
-  soft-capped pump budget instead of multiplicative matrix gain.
+  pumped ruby converts seed light into coherent ruby-line output.
+- Coherent ruby gain is scheduled per axial mode. The compiler estimates
+  feedback participation, applies a smooth effective-gain softcap with a hard
+  stability limit, and keeps unrelated cavity axes from sharing hidden gain
+  state.
 - The experimental optical compiler builds port graphs, groups source graphs
   into optical systems, solves acyclic and feedback regions, emits readout-layer
   diagnostics, and writes timestamped debug logs when enabled.
@@ -41,6 +44,7 @@ Useful validation lines:
 
 ```text
 network_cache system_id=... structurally_fresh=... usable_for_gameplay=...
+gain_schedule sources=... passive_rho=... rho_after=... max_effective_gain=...
 direct_templates=...
 network_templates=...
 receiver_outputs ...
@@ -51,6 +55,8 @@ Short version:
 
 - `direct_templates` and `network_templates` show which component templates the
   compiler saw in the port graph.
+- `gain_schedule` shows feedback stability and the effective gain chosen for
+  coherent gain media.
 - `receiver_outputs` compares one source's legacy trace with its direct graph.
 - `system_receiver_outputs` compares all cached source traces in the optical
   system with the compiled network result.

@@ -53,4 +53,26 @@ public record CachedOpticalSystem(
             receiverOutput.apply(level, sampleReliable, step);
         }
     }
+
+    public CachedOpticalSystem withRuntimeState(
+            int systemId,
+            OpticalEpochs epochs,
+            boolean structurallyFresh,
+            boolean parametricallyFresh,
+            boolean usableForGameplay
+    ) {
+        return new CachedOpticalSystem(
+                systemId,
+                graph,
+                sourcePowersByNode,
+                readoutLayer,
+                solution,
+                receiverOutputs,
+                sourceCount,
+                epochs,
+                structurallyFresh,
+                parametricallyFresh,
+                usableForGameplay
+        );
+    }
 }

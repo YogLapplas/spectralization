@@ -34,14 +34,11 @@ public record CachedOpticalTrace(
     }
 
     public void applyOutputs(Level level, boolean reliable, long step) {
-        if (readoutLayer.size() > 0) {
-            applyCompiledOutputs(level, reliable && scalarPowerSolution.reliableForReadout(), step);
+        if (readoutLayer.size() == 0) {
             return;
         }
 
-        for (ReceiverOutput receiverOutput : receiverOutputs) {
-            receiverOutput.apply(level, reliable && !unstable, step);
-        }
+        applyCompiledOutputs(level, reliable && scalarPowerSolution.reliableForReadout(), step);
     }
 
     public List<ReceiverOutput> sampleCompiledOutputs() {

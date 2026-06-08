@@ -9,6 +9,7 @@ import io.github.yoglappland.spectralization.optics.OpticalSource;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.PlaneWaveComponent;
 import io.github.yoglappland.spectralization.optics.SpectralRegion;
+import io.github.yoglappland.spectralization.optics.cache.OpticalDirtyKind;
 import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
 import net.minecraft.core.BlockPos;
@@ -196,5 +197,9 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
         }
 
         setChanged();
+
+        if (this.level != null && !this.level.isClientSide) {
+            OpticalTraceCache.markChanged(this.level, this.worldPosition, OpticalDirtyKind.SOURCE);
+        }
     }
 }

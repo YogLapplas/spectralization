@@ -19,8 +19,15 @@ public final class SpectralizationConfig {
     private static final ModConfigSpec.IntValue OPTICAL_COMPILER_DEBUG_MAX_EDGES;
     private static final ModConfigSpec.IntValue OPTICAL_COMPILER_MAX_DIRECT_OUTGOING_NODES;
     private static final ModConfigSpec.IntValue OPTICAL_COMPILER_DEBUG_SAMPLE_INTERVAL_TICKS;
+    private static final ModConfigSpec.IntValue OPTICAL_COMPILER_DEBUG_READOUT_APPLY_INTERVAL_TICKS;
     private static final ModConfigSpec.IntValue OPTICAL_COMPILER_DEBUG_MAX_RUNS_PER_TICK;
-    private static final ModConfigSpec.IntValue OPTICAL_COMPILER_DEBUG_FULL_NETWORK_MAX_NODES;
+    private static final ModConfigSpec.IntValue OPTICAL_COMPILER_FULL_NETWORK_MAX_NODES;
+    private static final ModConfigSpec.IntValue OPTICAL_COMPILER_SYSTEM_REBUILD_QUIET_TICKS;
+    private static final ModConfigSpec.IntValue OPTICAL_COMPILER_LARGE_DIRECT_GRAPH_NODES;
+    private static final ModConfigSpec.IntValue OPTICAL_COMPILER_DIRECT_RECOMPILE_QUIET_TICKS;
+    private static final ModConfigSpec.BooleanValue OPTICAL_COMPILER_LEGACY_DEBUG_ORACLE;
+    private static final ModConfigSpec.IntValue OPTICAL_COMPILER_LEGACY_EFFECT_MAX_GRAPH_NODES;
+    private static final ModConfigSpec.IntValue OPTICAL_COMPILER_SYSTEM_CACHE_MAX_ENTRIES;
 
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
@@ -79,12 +86,33 @@ public final class SpectralizationConfig {
         OPTICAL_COMPILER_DEBUG_SAMPLE_INTERVAL_TICKS = builder
                 .comment("Minimum ticks between full optical compiler debug samples for the same source.")
                 .defineInRange("debug_sample_interval_ticks", 20, 1, 1200);
+        OPTICAL_COMPILER_DEBUG_READOUT_APPLY_INTERVAL_TICKS = builder
+                .comment("Minimum ticks between repeated readout-apply debug samples for the same stable state. State changes are still logged immediately.")
+                .defineInRange("debug_readout_apply_interval_ticks", 100, 1, 6000);
         OPTICAL_COMPILER_DEBUG_MAX_RUNS_PER_TICK = builder
                 .comment("Maximum optical compiler debug samples processed per server tick.")
                 .defineInRange("debug_max_runs_per_tick", 1, 1, 16);
-        OPTICAL_COMPILER_DEBUG_FULL_NETWORK_MAX_NODES = builder
-                .comment("Maximum direct graph nodes allowed before network-level debug expansion is skipped.")
-                .defineInRange("debug_full_network_max_nodes", 2048, 64, 65536);
+        OPTICAL_COMPILER_FULL_NETWORK_MAX_NODES = builder
+                .comment("Maximum direct graph nodes allowed before network-level gameplay compilation is skipped for the current rebuild.")
+                .defineInRange("full_network_max_nodes", 16384, 64, 262144);
+        OPTICAL_COMPILER_SYSTEM_REBUILD_QUIET_TICKS = builder
+                .comment("Ticks without direct optical work required before queued topology/data rebuilds are allowed to run.")
+                .defineInRange("system_rebuild_quiet_ticks", 8, 0, 200);
+        OPTICAL_COMPILER_LARGE_DIRECT_GRAPH_NODES = builder
+                .comment("Direct graph node count above which dirty recompilation is deferred until the network is quiet.")
+                .defineInRange("large_direct_graph_nodes", 1024, 64, 262144);
+        OPTICAL_COMPILER_DIRECT_RECOMPILE_QUIET_TICKS = builder
+                .comment("Ticks a large dirty direct graph must remain quiet before it is recompiled.")
+                .defineInRange("direct_recompile_quiet_ticks", 8, 0, 200);
+        OPTICAL_COMPILER_LEGACY_DEBUG_ORACLE = builder
+                .comment("Whether compiler debug logging may run the old recursive tracer as an observed oracle. Keep this off for performance tests.")
+                .define("legacy_debug_oracle", false);
+        OPTICAL_COMPILER_LEGACY_EFFECT_MAX_GRAPH_NODES = builder
+                .comment("Maximum direct graph nodes allowed to run the old tracer for particles, spots, entity exposure, and other temporary effects.")
+                .defineInRange("legacy_effect_max_graph_nodes", 128, 0, 4096);
+        OPTICAL_COMPILER_SYSTEM_CACHE_MAX_ENTRIES = builder
+                .comment("Maximum cached compiled optical systems keyed by repeated source geometry states.")
+                .defineInRange("system_cache_max_entries", 256, 0, 8192);
         builder.pop();
 
         SPEC = builder.build();
@@ -166,12 +194,40 @@ public final class SpectralizationConfig {
         return OPTICAL_COMPILER_DEBUG_SAMPLE_INTERVAL_TICKS.get();
     }
 
+    public static int opticalCompilerDebugReadoutApplyIntervalTicks() {
+        return OPTICAL_COMPILER_DEBUG_READOUT_APPLY_INTERVAL_TICKS.get();
+    }
+
     public static int opticalCompilerDebugMaxRunsPerTick() {
         return OPTICAL_COMPILER_DEBUG_MAX_RUNS_PER_TICK.get();
     }
 
-    public static int opticalCompilerDebugFullNetworkMaxNodes() {
-        return OPTICAL_COMPILER_DEBUG_FULL_NETWORK_MAX_NODES.get();
+    public static int opticalCompilerFullNetworkMaxNodes() {
+        return OPTICAL_COMPILER_FULL_NETWORK_MAX_NODES.get();
+    }
+
+    public static int opticalCompilerSystemRebuildQuietTicks() {
+        return OPTICAL_COMPILER_SYSTEM_REBUILD_QUIET_TICKS.get();
+    }
+
+    public static int opticalCompilerLargeDirectGraphNodes() {
+        return OPTICAL_COMPILER_LARGE_DIRECT_GRAPH_NODES.get();
+    }
+
+    public static int opticalCompilerDirectRecompileQuietTicks() {
+        return OPTICAL_COMPILER_DIRECT_RECOMPILE_QUIET_TICKS.get();
+    }
+
+    public static boolean opticalCompilerLegacyDebugOracle() {
+        return OPTICAL_COMPILER_LEGACY_DEBUG_ORACLE.get();
+    }
+
+    public static int opticalCompilerLegacyEffectMaxGraphNodes() {
+        return OPTICAL_COMPILER_LEGACY_EFFECT_MAX_GRAPH_NODES.get();
+    }
+
+    public static int opticalCompilerSystemCacheMaxEntries() {
+        return OPTICAL_COMPILER_SYSTEM_CACHE_MAX_ENTRIES.get();
     }
 
     private SpectralizationConfig() {

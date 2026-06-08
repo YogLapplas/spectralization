@@ -2,14 +2,11 @@ package io.github.yoglappland.spectralization.optics.compiler;
 
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
-import io.github.yoglappland.spectralization.optics.CompiledOpticalNetwork;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalTrace;
 import io.github.yoglappland.spectralization.optics.OpticalInteractionKind;
 import io.github.yoglappland.spectralization.optics.OpticalMaterialProfiles;
-import io.github.yoglappland.spectralization.optics.OpticalNetworkCompiler;
 import io.github.yoglappland.spectralization.optics.OpticalPort;
 import io.github.yoglappland.spectralization.optics.OpticalPropagationEdge;
-import io.github.yoglappland.spectralization.optics.OpticalResult;
 import io.github.yoglappland.spectralization.optics.OpticalTraceStep;
 import io.github.yoglappland.spectralization.optics.OpticalTraceTermination;
 import io.github.yoglappland.spectralization.optics.OpticalTransferEdge;
@@ -17,11 +14,9 @@ import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldEffectType;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldInfluence;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
-import io.github.yoglappland.spectralization.optics.topology.OpticalTopologyProvider;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -33,12 +28,12 @@ import java.util.TreeSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 
 public final class PortGraphCompiler {
     private static final int MAX_DIRECT_SCAN_DISTANCE = 128;
     private static final double AIR_PROPAGATION_FACTOR = 0.995;
+    private static final double DIRECT_MIN_RELATIVE_POWER = 1.0E-4;
     private static final Comparator<PortGraphNode> NODE_COMPARATOR = Comparator
             .comparingInt((PortGraphNode node) -> node.pos().getX())
             .thenComparingInt(node -> node.pos().getY())
@@ -147,28 +142,41 @@ public final class PortGraphCompiler {
                 sourceOutput.outgoingDirection()
         ));
         BeamPacket sampleBeam = normalizedSampleBeam(sourceOutput);
-        ArrayDeque<PortGraphNode> pendingOutgoingNodes = new ArrayDeque<>();
+        ArrayDeque<DirectPendingNode> pendingOutgoingNodes = new ArrayDeque<>();
+        Map<PortGraphNode, Double> bestEstimatedOutgoingPower = new HashMap<>();
         Set<PortGraphNode> processedOutgoingNodes = new HashSet<>();
         int maxOutgoingNodes = SpectralizationConfig.opticalCompilerMaxDirectOutgoingNodes();
         int terminationCount = 0;
 
         interestingNodes.add(sourceNode);
-        pendingOutgoingNodes.add(sourceNode);
+        enqueueDirectOutgoing(pendingOutgoingNodes, bestEstimatedOutgoingPower, sourceNode, 1.0);
 
         while (!pendingOutgoingNodes.isEmpty() && processedOutgoingNodes.size() < maxOutgoingNodes) {
-            PortGraphNode outgoingNode = pendingOutgoingNodes.removeFirst();
+            DirectPendingNode pendingNode = pendingOutgoingNodes.removeFirst();
+            PortGraphNode outgoingNode = pendingNode.node();
 
             if (outgoingNode.waveKind() != PortWaveKind.OUTGOING || !processedOutgoingNodes.add(outgoingNode)) {
+                continue;
+            }
+
+            double estimatedOutgoingPower = Math.max(
+                    pendingNode.estimatedPower(),
+                    bestEstimatedOutgoingPower.getOrDefault(outgoingNode, 0.0)
+            );
+
+            if (estimatedOutgoingPower < DIRECT_MIN_RELATIVE_POWER) {
                 continue;
             }
 
             terminationCount += scanDirectPropagation(
                     level,
                     outgoingNode,
+                    estimatedOutgoingPower,
                     sampleBeam,
                     edgeAccumulators,
                     interestingNodes,
-                    pendingOutgoingNodes
+                    pendingOutgoingNodes,
+                    bestEstimatedOutgoingPower
             );
         }
 
@@ -237,10 +245,12 @@ public final class PortGraphCompiler {
     private static int scanDirectPropagation(
             Level level,
             PortGraphNode outgoingNode,
+            double estimatedOutgoingPower,
             BeamPacket sampleBeam,
             Map<EdgeKey, EdgeAccumulator> edgeAccumulators,
             Set<PortGraphNode> interestingNodes,
-            ArrayDeque<PortGraphNode> pendingOutgoingNodes
+            ArrayDeque<DirectPendingNode> pendingOutgoingNodes,
+            Map<PortGraphNode, Double> bestEstimatedOutgoingPower
     ) {
         Direction travelDirection = outgoingNode.side();
         BlockPos cursor = outgoingNode.pos().relative(travelDirection);
@@ -252,6 +262,12 @@ public final class PortGraphCompiler {
             }
 
             propagationFactor *= propagationFactor(level, cursor);
+            double estimatedIncomingPower = estimatedOutgoingPower * propagationFactor;
+
+            if (estimatedIncomingPower < DIRECT_MIN_RELATIVE_POWER) {
+                return 0;
+            }
+
             BlockState state = level.getBlockState(cursor);
 
             if (OpticalMaterialProfiles.isAirLike(state)) {
@@ -277,9 +293,11 @@ public final class PortGraphCompiler {
                     state,
                     incomingDirection,
                     sampleBeam.withDirection(travelDirection),
+                    estimatedIncomingPower,
                     edgeAccumulators,
                     interestingNodes,
-                    pendingOutgoingNodes
+                    pendingOutgoingNodes,
+                    bestEstimatedOutgoingPower
             );
             return 0;
         }
@@ -301,58 +319,76 @@ public final class PortGraphCompiler {
             BlockState state,
             Direction incomingDirection,
             BeamPacket inputBeam,
+            double estimatedInputPower,
             Map<EdgeKey, EdgeAccumulator> edgeAccumulators,
             Set<PortGraphNode> interestingNodes,
-            ArrayDeque<PortGraphNode> pendingOutgoingNodes
+            ArrayDeque<DirectPendingNode> pendingOutgoingNodes,
+            Map<PortGraphNode, Double> bestEstimatedOutgoingPower
     ) {
-        PortGraphNode incomingNode = PortGraphNode.incoming(new OpticalPort(pos, incomingDirection));
-        CompiledOpticalNetwork compiledNetwork = OpticalNetworkCompiler.compile(level, pos, state);
-        OpticalResult result = compiledNetwork.scatterWithoutEffects(inputBeam, incomingDirection);
-        Map<Direction, Double> outputPowerByDirection = new HashMap<>();
+        OpticalLocalTopology localTopology = OpticalLocalTopologyCompiler.compile(
+                level,
+                pos,
+                state,
+                incomingDirection,
+                inputBeam
+        );
 
-        for (OutputBeam outputBeam : result.outputs()) {
-            outputPowerByDirection.merge(
-                    outputBeam.outgoingDirection(),
-                    outputBeam.beam().totalPower(),
-                    Double::sum
-            );
-        }
+        for (OpticalLocalScattering scattering : localTopology.scattering()) {
+            PortGraphNode incomingNode = scattering.inputPort().incomingNode();
+            PortGraphNode outgoingNode = scattering.outputPort().outgoingNode();
+            double estimatedOutputPower = estimatedInputPower * scatteringGain(scattering);
 
-        for (Direction outgoingDirection : directOutgoingDirections(level, pos, state, incomingDirection, result)) {
-            PortGraphNode outgoingNode = PortGraphNode.outgoing(new OpticalPort(pos, outgoingDirection));
+            if (estimatedOutputPower < DIRECT_MIN_RELATIVE_POWER) {
+                continue;
+            }
+
             interestingNodes.add(outgoingNode);
-            pendingOutgoingNodes.addLast(outgoingNode);
+            enqueueDirectOutgoing(
+                    pendingOutgoingNodes,
+                    bestEstimatedOutgoingPower,
+                    outgoingNode,
+                    estimatedOutputPower
+            );
             addRawEdge(
                     edgeAccumulators,
                     PortGraphEdgeKind.LOCAL_SCATTERING,
                     incomingNode,
                     outgoingNode,
                     0,
-                    inputBeam.totalPower(),
-                    outputPowerByDirection.getOrDefault(outgoingDirection, 0.0)
+                    scattering.sampleInputPower(),
+                    scattering.sampleOutputPower()
             );
         }
     }
 
-    private static Set<Direction> directOutgoingDirections(
-            Level level,
-            BlockPos pos,
-            BlockState state,
-            Direction incomingDirection,
-            OpticalResult result
+    private static double scatteringGain(OpticalLocalScattering scattering) {
+        double inputPower = scattering.sampleInputPower();
+
+        if (inputPower <= 0.0) {
+            return 0.0;
+        }
+
+        return scattering.sampleOutputPower() / inputPower;
+    }
+
+    private static void enqueueDirectOutgoing(
+            ArrayDeque<DirectPendingNode> pendingOutgoingNodes,
+            Map<PortGraphNode, Double> bestEstimatedOutgoingPower,
+            PortGraphNode outgoingNode,
+            double estimatedPower
     ) {
-        Set<Direction> outgoingDirections = EnumSet.noneOf(Direction.class);
-        Block block = state.getBlock();
-
-        if (block instanceof OpticalTopologyProvider topologyProvider) {
-            outgoingDirections.addAll(topologyProvider.potentialOutgoingDirections(state, level, pos, incomingDirection));
+        if (estimatedPower < DIRECT_MIN_RELATIVE_POWER) {
+            return;
         }
 
-        for (OutputBeam outputBeam : result.outputs()) {
-            outgoingDirections.add(outputBeam.outgoingDirection());
+        double previousPower = bestEstimatedOutgoingPower.getOrDefault(outgoingNode, 0.0);
+
+        if (estimatedPower <= previousPower) {
+            return;
         }
 
-        return outgoingDirections;
+        bestEstimatedOutgoingPower.put(outgoingNode, estimatedPower);
+        pendingOutgoingNodes.addLast(new DirectPendingNode(outgoingNode, estimatedPower));
     }
 
     private static BeamPacket normalizedSampleBeam(OutputBeam sourceOutput) {
@@ -709,6 +745,12 @@ public final class PortGraphCompiler {
             Objects.requireNonNull(node, "node");
             Objects.requireNonNull(kind, "kind");
             Objects.requireNonNull(visited, "visited");
+        }
+    }
+
+    private record DirectPendingNode(PortGraphNode node, double estimatedPower) {
+        private DirectPendingNode {
+            Objects.requireNonNull(node, "node");
         }
     }
 

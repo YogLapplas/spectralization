@@ -18,6 +18,7 @@ import io.github.yoglappland.spectralization.optics.cache.OpticalDirtyKind;
 import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
 import io.github.yoglappland.spectralization.optics.topology.OpticalNetworkIndex;
+import io.github.yoglappland.spectralization.optics.world.OpticalWorldIndex;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
 import io.github.yoglappland.spectralization.registry.SpectralMenus;
 import net.minecraft.core.BlockPos;
@@ -220,6 +221,7 @@ public class Spectralization {
     @SubscribeEvent
     public void onBlockPlaced(BlockEvent.EntityPlaceEvent event) {
         OpticalFieldSources.invalidate(event.getLevel());
+        OpticalWorldIndex.onBlockPlaced(event.getLevel(), event.getPos());
         OpticalTraceCache.markChanged(event.getLevel(), event.getPos(), OpticalDirtyKind.STRUCTURE);
         OpticalNetworkIndex.markDirty(event.getLevel());
     }
@@ -227,6 +229,7 @@ public class Spectralization {
     @SubscribeEvent
     public void onBlockBroken(BlockEvent.BreakEvent event) {
         OpticalFieldSources.invalidate(event.getLevel());
+        OpticalWorldIndex.onBlockBroken(event.getLevel(), event.getPos());
         OpticalTraceCache.markChanged(event.getLevel(), event.getPos(), OpticalDirtyKind.STRUCTURE);
         OpticalNetworkIndex.markDirty(event.getLevel());
     }

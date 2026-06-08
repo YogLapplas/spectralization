@@ -123,8 +123,8 @@ public class PassThroughSensorBlockEntity extends BlockEntity {
         private boolean receivedReliableThisStep = false;
         private double committedPower = 0.0;
         private double candidatePower = 0.0;
-        private int stableCandidateSteps = 0;
-        private boolean reliable = false;
+        private int stableCandidateSteps = REQUIRED_STABLE_STEPS;
+        private boolean reliable = true;
 
         void receive(long gameTime, ReadoutSample sample) {
             this.lastReceivedGameTime = gameTime;
@@ -201,7 +201,7 @@ public class PassThroughSensorBlockEntity extends BlockEntity {
         void load(CompoundTag tag, String powerTag, String reliableTag) {
             this.committedPower = tag.getDouble(powerTag);
             this.candidatePower = this.committedPower;
-            this.reliable = tag.getBoolean(reliableTag);
+            this.reliable = !tag.contains(reliableTag) || tag.getBoolean(reliableTag);
             this.stableCandidateSteps = this.reliable ? REQUIRED_STABLE_STEPS : 0;
         }
 

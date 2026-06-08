@@ -27,8 +27,8 @@ public class CmosSensorBlockEntity extends BlockEntity {
     private boolean receivedReliableThisStep = false;
     private double committedPower = 0.0;
     private double candidatePower = 0.0;
-    private int stableCandidateSteps = 0;
-    private boolean reliable = false;
+    private int stableCandidateSteps = REQUIRED_STABLE_STEPS;
+    private boolean reliable = true;
 
     public CmosSensorBlockEntity(BlockPos pos, BlockState blockState) {
         super(SpectralBlockEntities.CMOS_SENSOR.get(), pos, blockState);
@@ -156,7 +156,7 @@ public class CmosSensorBlockEntity extends BlockEntity {
         super.loadAdditional(tag, registries);
         this.committedPower = tag.getDouble(COMMITTED_POWER_TAG);
         this.candidatePower = this.committedPower;
-        this.reliable = tag.getBoolean(RELIABLE_TAG);
+        this.reliable = !tag.contains(RELIABLE_TAG) || tag.getBoolean(RELIABLE_TAG);
         this.stableCandidateSteps = this.reliable ? REQUIRED_STABLE_STEPS : 0;
     }
 

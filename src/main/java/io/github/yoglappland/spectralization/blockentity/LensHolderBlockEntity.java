@@ -48,7 +48,7 @@ public class LensHolderBlockEntity extends BlockEntity {
 
         if (this.level != null) {
             if (!this.level.isClientSide) {
-                OpticalTraceCache.markChanged(this.level, this.worldPosition, OpticalDirtyKind.STRUCTURE);
+                OpticalTraceCache.markChanged(this.level, this.worldPosition, OpticalDirtyKind.PARAMETER);
             }
 
             this.level.sendBlockUpdated(this.worldPosition, this.getBlockState(), this.getBlockState(), 3);

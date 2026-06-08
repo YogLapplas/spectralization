@@ -5,6 +5,8 @@ import io.github.yoglappland.spectralization.optics.CompiledOpticalNetwork;
 import io.github.yoglappland.spectralization.optics.HorizontalOpticalOrientation;
 import io.github.yoglappland.spectralization.optics.OpticalElement;
 import io.github.yoglappland.spectralization.optics.OpticalResult;
+import io.github.yoglappland.spectralization.optics.cache.OpticalDirtyKind;
+import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -135,6 +137,7 @@ public class MirrorBlock extends Block implements OpticalElement {
     private static void rotateMirror(BlockState state, Level level, BlockPos pos) {
         if (!level.isClientSide) {
             level.setBlock(pos, state.setValue(ROTATION, (state.getValue(ROTATION) + 1) & 7), 3);
+            OpticalTraceCache.markChanged(level, pos, OpticalDirtyKind.PARAMETER);
         }
     }
 

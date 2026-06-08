@@ -5,6 +5,7 @@ import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalTrace;
 import io.github.yoglappland.spectralization.optics.OpticalTraceTermination;
 import io.github.yoglappland.spectralization.optics.OpticalTraceTerminationReason;
+import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.cache.ReceiverOutput;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -25,6 +26,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
 import net.neoforged.fml.loading.FMLPaths;
 
@@ -172,6 +174,7 @@ public final class OpticalCompilerDebugLogger {
         builder.append("held_readout_cache entries=").append(heldReadoutCacheEntries).append('\n');
 
         if (networkGraph != null && networkSolution != null) {
+            builder.append("network_at_direct_stage available=true\n");
             builder.append("network sources=").append(networkSourceCount).append(' ');
             appendGraphSummary(builder, "", networkGraph, -1, networkGraph.terminationCount());
             appendTemplateSummary(builder, "network", level, networkGraph);
@@ -183,7 +186,7 @@ public final class OpticalCompilerDebugLogger {
                     .append('\n');
             appendScalarSolution(builder, "network_scalar", networkSolution);
         } else {
-            builder.append("network_skipped=true\n");
+            builder.append("network_at_direct_stage available=false reason=not_installed_yet_or_rebuild_pending\n");
         }
 
         appendReceiverOutputs(
@@ -229,6 +232,200 @@ public final class OpticalCompilerDebugLogger {
         }
 
         appendEdges(builder, "direct", directGraph);
+        builder.append('\n');
+        write(builder.toString());
+    }
+
+    public static void logDirectOnly(
+            Level level,
+            BlockPos sourcePos,
+            OutputBeam sourceOutput,
+            CompiledPortGraph directGraph,
+            ScalarPowerSolution scalarPowerSolution,
+            boolean directGeometryCacheHit,
+            int directGeometrySignaturePositions,
+            int directGeometryCacheEntries,
+            int directGeometryCacheLimit,
+            int heldReadoutCacheEntries,
+            CompiledPortGraph networkGraph,
+            ScalarPowerSolution networkSolution,
+            int networkSourceCount,
+            int networkSystemId,
+            boolean networkStructurallyFresh,
+            boolean networkParametricallyFresh,
+            boolean networkUsableForGameplay,
+            List<ReceiverOutput> directReceiverOutputs,
+            List<ReceiverOutput> networkReceiverOutputs,
+            int directReadoutBindingCount,
+            int networkReadoutBindingCount
+    ) {
+        if (!SpectralizationConfig.opticalCompilerDebugLog()) {
+            return;
+        }
+
+        StringBuilder builder = new StringBuilder(8192);
+        builder.append("=== spectralization optical compiler ===\n");
+        builder.append("session_log=").append(SESSION_LOG_FILE_NAME).append('\n');
+        builder.append("stage=direct_only\n");
+        builder.append("time=").append(Instant.now()).append('\n');
+        builder.append("dimension=").append(level.dimension().location()).append('\n');
+        builder.append("source=").append(formatPos(sourcePos))
+                .append(" direction=").append(sourceOutput.outgoingDirection())
+                .append(" power=").append(formatPower(sourceOutput.beam().totalPower()))
+                .append('\n');
+        builder.append("legacy_observed_trace=skipped_feedback_or_disabled\n");
+        appendGraphSummary(builder, "direct", directGraph, -1, directGraph.terminationCount());
+        appendTemplateSummary(builder, "direct", level, directGraph);
+        appendScalarSolution(builder, "direct_scalar", scalarPowerSolution);
+        builder.append("direct_geometry_cache hit=").append(directGeometryCacheHit)
+                .append(" signature_positions=").append(directGeometrySignaturePositions)
+                .append(" entries=").append(directGeometryCacheEntries)
+                .append(" limit=").append(directGeometryCacheLimit)
+                .append('\n');
+        builder.append("held_readout_cache entries=").append(heldReadoutCacheEntries).append('\n');
+
+        if (networkGraph != null && networkSolution != null) {
+            builder.append("network_at_direct_stage available=true\n");
+            builder.append("network sources=").append(networkSourceCount).append(' ');
+            appendGraphSummary(builder, "", networkGraph, -1, networkGraph.terminationCount());
+            appendTemplateSummary(builder, "network", level, networkGraph);
+            appendSourceVectorSummary(builder, level, networkGraph, networkSourceCount);
+            builder.append("network_cache system_id=").append(networkSystemId)
+                    .append(" structurally_fresh=").append(networkStructurallyFresh)
+                    .append(" parametrically_fresh=").append(networkParametricallyFresh)
+                    .append(" usable_for_gameplay=").append(networkUsableForGameplay)
+                    .append('\n');
+            appendScalarSolution(builder, "network_scalar", networkSolution);
+        } else {
+            builder.append("network_at_direct_stage available=false reason=not_installed_yet_or_rebuild_pending\n");
+        }
+
+        appendReceiverOutputs(
+                builder,
+                List.of(),
+                directReceiverOutputs,
+                networkReceiverOutputs,
+                false,
+                scalarPowerSolution.reliableForReadout(),
+                networkSolution != null && networkSolution.reliableForReadout(),
+                directReadoutBindingCount,
+                networkReadoutBindingCount
+        );
+        appendSccs(builder, "direct", directGraph);
+        appendChords(builder, "direct", directGraph);
+        appendStrongestNodes(builder, "direct_scalar", scalarPowerSolution);
+
+        if (networkGraph != null && networkSolution != null) {
+            appendSccs(builder, "network", networkGraph);
+            appendChords(builder, "network", networkGraph);
+            appendStrongestNodes(builder, "network_scalar", networkSolution);
+        }
+
+        appendEdges(builder, "direct", directGraph);
+        builder.append('\n');
+        write(builder.toString());
+    }
+
+    public static void logSystemRebuild(
+            Level level,
+            int requestedNetworkId,
+            int rebuiltNetworkCount,
+            int pendingAfter,
+            long quietTicks,
+            boolean systemCacheHit,
+            int systemCacheEntries,
+            int systemCacheLimit,
+            int systemId,
+            int sourceCount,
+            int readoutBindingCount,
+            int receiverOutputCount,
+            boolean usableForGameplay,
+            String solverKind
+    ) {
+        if (!SpectralizationConfig.opticalCompilerDebugLog()) {
+            return;
+        }
+
+        StringBuilder builder = new StringBuilder(512);
+        builder.append("=== spectralization optical compiler ===\n");
+        builder.append("session_log=").append(SESSION_LOG_FILE_NAME).append('\n');
+        builder.append("stage=system_rebuild\n");
+        builder.append("time=").append(Instant.now()).append('\n');
+        builder.append("dimension=").append(level.dimension().location()).append('\n');
+        builder.append("requested_network=").append(requestedNetworkId)
+                .append(" rebuilt_networks=").append(rebuiltNetworkCount)
+                .append(" pending_after=").append(pendingAfter)
+                .append(" quiet_ticks=").append(quietTicks)
+                .append(" system_cache_hit=").append(systemCacheHit)
+                .append(" system_cache_entries=").append(systemCacheEntries)
+                .append(" system_cache_limit=").append(systemCacheLimit)
+                .append(" system_id=").append(systemId)
+                .append(" sources=").append(sourceCount)
+                .append(" readout_bindings=").append(readoutBindingCount)
+                .append(" receiver_outputs=").append(receiverOutputCount)
+                .append(" usable_for_gameplay=").append(usableForGameplay)
+                .append(" solver=").append(solverKind)
+                .append('\n');
+        builder.append('\n');
+        write(builder.toString());
+    }
+
+    public static void logReadoutApply(
+            Level level,
+            int networkId,
+            BlockPos sourcePos,
+            Direction sourceDirection,
+            String mode,
+            boolean reliable,
+            long readoutStep,
+            boolean systemRebuildPending,
+            int directReadoutBindingCount,
+            int directReceiverOutputCount,
+            boolean directSolutionReliable,
+            int directSourceOutputCount,
+            boolean systemAvailable,
+            int systemId,
+            int systemSourceCount,
+            int systemReadoutBindingCount,
+            int systemReceiverOutputCount,
+            boolean systemUsableForGameplay,
+            boolean systemSolutionReliable,
+            int heldReadoutCacheEntries
+    ) {
+        if (!SpectralizationConfig.opticalCompilerDebugLog()) {
+            return;
+        }
+
+        StringBuilder builder = new StringBuilder(1024);
+        builder.append("=== spectralization optical compiler ===\n");
+        builder.append("session_log=").append(SESSION_LOG_FILE_NAME).append('\n');
+        builder.append("stage=readout_apply\n");
+        builder.append("time=").append(Instant.now()).append('\n');
+        builder.append("dimension=").append(level.dimension().location()).append('\n');
+        builder.append("network_id=").append(networkId)
+                .append(" source=").append(formatPos(sourcePos))
+                .append(" direction=").append(sourceDirection)
+                .append(" mode=").append(mode)
+                .append(" reliable=").append(reliable)
+                .append(" readout_step=").append(readoutStep)
+                .append(" system_rebuild_pending=").append(systemRebuildPending)
+                .append('\n');
+        builder.append("direct_readout")
+                .append(" bindings=").append(directReadoutBindingCount)
+                .append(" receiver_outputs=").append(directReceiverOutputCount)
+                .append(" source_outputs=").append(directSourceOutputCount)
+                .append(" solution_reliable=").append(directSolutionReliable)
+                .append('\n');
+        builder.append("system_readout")
+                .append(" available=").append(systemAvailable)
+                .append(" system_id=").append(systemId)
+                .append(" sources=").append(systemSourceCount)
+                .append(" bindings=").append(systemReadoutBindingCount)
+                .append(" receiver_outputs=").append(systemReceiverOutputCount)
+                .append(" usable_for_gameplay=").append(systemUsableForGameplay)
+                .append(" solution_reliable=").append(systemSolutionReliable)
+                .append('\n');
+        builder.append("held_readout_cache entries=").append(heldReadoutCacheEntries).append('\n');
         builder.append('\n');
         write(builder.toString());
     }

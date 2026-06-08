@@ -14,12 +14,11 @@ public record OpticalReadoutBinding(
     public OpticalReadoutBinding {
         Objects.requireNonNull(pos, "pos");
         Objects.requireNonNull(kind, "kind");
-        Objects.requireNonNull(inputNode, "inputNode");
         pos = pos.immutable();
     }
 
     public ReceiverOutput sample(ScalarPowerSolution solution) {
-        double power = solution.powerAt(inputNode);
+        double power = inputNode == null ? 0.0 : solution.powerAt(inputNode);
 
         return switch (kind) {
             case CMOS -> ReceiverOutput.cmos(pos, power);

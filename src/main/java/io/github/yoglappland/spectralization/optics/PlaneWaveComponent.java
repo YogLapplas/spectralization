@@ -26,4 +26,8 @@ public record PlaneWaveComponent(
     public PlaneWaveComponent withDirection(Direction direction) {
         return new PlaneWaveComponent(frequency, power, direction, coherence);
     }
+
+    public PlaneWaveComponent withCoherence(CoherenceKind coherence) {
+        return new PlaneWaveComponent(frequency, power, direction, coherence);
+    }
 }

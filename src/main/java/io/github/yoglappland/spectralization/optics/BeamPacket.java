@@ -49,6 +49,15 @@ public record BeamPacket(List<PlaneWaveComponent> components, BeamEnvelope envel
         );
     }
 
+    public BeamPacket withCoherence(CoherenceKind coherence) {
+        return new BeamPacket(
+                components.stream()
+                        .map(component -> component.withCoherence(coherence))
+                        .toList(),
+                envelope
+        );
+    }
+
     public BeamPacket scalePower(double factor) {
         if (!Double.isFinite(factor) || factor < 0.0) {
             throw new IllegalArgumentException("Beam power scale must be finite and non-negative");

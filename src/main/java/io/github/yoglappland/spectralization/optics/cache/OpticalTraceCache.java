@@ -5,20 +5,25 @@ import io.github.yoglappland.spectralization.block.CmosSensorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalTrace;
+import io.github.yoglappland.spectralization.optics.CoherenceKind;
 import io.github.yoglappland.spectralization.optics.OpticalPort;
 import io.github.yoglappland.spectralization.optics.OpticalElement;
+import io.github.yoglappland.spectralization.optics.OpticalMaterialProfiles;
 import io.github.yoglappland.spectralization.optics.OpticalPathTracer;
+import io.github.yoglappland.spectralization.optics.PlaneWaveComponent;
 import io.github.yoglappland.spectralization.optics.OpticalTraceStep;
 import io.github.yoglappland.spectralization.optics.OpticalTraceTermination;
 import io.github.yoglappland.spectralization.optics.OpticalTraceTerminationReason;
 import io.github.yoglappland.spectralization.optics.OpticalSource;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
+import io.github.yoglappland.spectralization.optics.BeamPacket;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledPortGraph;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledReadoutLayer;
 import io.github.yoglappland.spectralization.optics.compiler.OpticalCompilerDebugLogger;
 import io.github.yoglappland.spectralization.optics.compiler.PortGraphCompiler;
 import io.github.yoglappland.spectralization.optics.compiler.PortGraphNode;
+import io.github.yoglappland.spectralization.optics.compiler.PortWaveKind;
 import io.github.yoglappland.spectralization.optics.compiler.OpticalReadoutLayerCompiler;
 import io.github.yoglappland.spectralization.optics.compiler.ScalarPowerSolution;
 import io.github.yoglappland.spectralization.optics.compiler.ScalarPowerSolver;
@@ -168,22 +173,35 @@ public final class OpticalTraceCache {
             boolean shouldLogCompilerDebug = SpectralizationConfig.opticalCompilerDebugLog()
                     && cache.shouldRunCompilerDebug(sourceKey, level.getGameTime());
             CompiledPortGraph directGraph;
+            CompiledPortGraph passiveDirectGraph;
+            CompiledPortGraph coherentDirectGraph;
             ScalarPowerSolution scalarPowerSolution;
             CompiledReadoutLayer directReadoutLayer;
 
             if (directCompilation != null) {
                 directGraph = directCompilation.graph();
+                passiveDirectGraph = directCompilation.passiveGraph();
+                coherentDirectGraph = directCompilation.coherentGraph();
                 scalarPowerSolution = directCompilation.solution();
                 directReadoutLayer = directCompilation.readoutLayer();
             } else {
-                directGraph = PortGraphCompiler.compileDirect(
+                passiveDirectGraph = PortGraphCompiler.compileDirect(
                         level,
                         request.sourcePos(),
-                        request.sourceOutput()
+                        withCoherence(request.sourceOutput(), CoherenceKind.INCOHERENT)
                 );
-                scalarPowerSolution = ScalarPowerSolver.solve(
-                        directGraph,
-                        request.sourceOutput().beam().totalPower()
+                coherentDirectGraph = PortGraphCompiler.compileDirect(
+                        level,
+                        request.sourcePos(),
+                        withCoherence(request.sourceOutput(), CoherenceKind.COHERENT)
+                );
+                directGraph = unionGraphs(List.of(passiveDirectGraph, coherentDirectGraph));
+                scalarPowerSolution = solvePowerChannels(
+                        level,
+                        passiveDirectGraph,
+                        coherentDirectGraph,
+                        sourcePowerMap(passiveDirectGraph.sourceNode(), incoherentPower(request.sourceOutput())),
+                        sourcePowerMap(coherentDirectGraph.sourceNode(), coherentPower(request.sourceOutput()))
                 );
                 directReadoutLayer = OpticalReadoutLayerCompiler.compile(level, directGraph);
             }
@@ -217,7 +235,13 @@ public final class OpticalTraceCache {
             if (updatedGeometrySignature != null) {
                 cache.directCompilationCache.put(
                         updatedDirectCompilationKey,
-                        new DirectCompilation(directGraph, directReadoutLayer, scalarPowerSolution)
+                        new DirectCompilation(
+                                directGraph,
+                                passiveDirectGraph,
+                                coherentDirectGraph,
+                                directReadoutLayer,
+                                scalarPowerSolution
+                        )
                 );
             }
             CachedOpticalSystem cachedSystem = null;
@@ -241,6 +265,8 @@ public final class OpticalTraceCache {
                         new DirectSourceRecord(
                                 request.networkId(),
                                 directGraph,
+                                passiveDirectGraph,
+                                coherentDirectGraph,
                                 request.sourceOutput(),
                                 updatedDirectCompilationKey,
                                 cache.epochs
@@ -727,7 +753,7 @@ public final class OpticalTraceCache {
                 receiverOutputs.add(ReceiverOutput.passThroughSensor(
                         step.pos(),
                         outgoingDirection == positiveZDirection,
-                        step.interactingBeam().totalPower()
+                        coherentPower(step.interactingBeam())
                 ));
             }
         }
@@ -870,6 +896,8 @@ public final class OpticalTraceCache {
         boolean parametricallyFresh = true;
         OpticalEpochs currentEpochs = cache.epochs;
         List<CompiledPortGraph> graphs = new ArrayList<>();
+        List<CompiledPortGraph> passiveGraphs = new ArrayList<>();
+        List<CompiledPortGraph> coherentGraphs = new ArrayList<>();
 
         for (SourceTraceKey sourceKey : sourceKeys) {
             DirectSourceRecord record = cache.directSourcesByKey.get(sourceKey);
@@ -882,6 +910,8 @@ public final class OpticalTraceCache {
             structurallyFresh &= record.epochs().structurallyMatches(currentEpochs);
             parametricallyFresh &= record.epochs().parametersMatch(currentEpochs);
             graphs.add(record.graph());
+            passiveGraphs.add(record.passiveGraph());
+            coherentGraphs.add(record.coherentGraph());
         }
 
         if (graphs.isEmpty()) {
@@ -916,12 +946,25 @@ public final class OpticalTraceCache {
             }
         }
 
-        graphs = expandGraphsWithDiscoveredSources(level, graphs);
-        CompiledPortGraph graph = graphs.size() == 1
-                ? graphs.getFirst()
-                : PortGraphCompiler.unionDirectGraphs(graphs);
-        Map<PortGraphNode, Double> sourcePowersByNode = collectGraphSourcePowers(level, graph);
-        ScalarPowerSolution solution = ScalarPowerSolver.solve(graph, sourcePowersByNode);
+        graphs = expandGraphsWithDiscoveredSources(level, graphs, null);
+        passiveGraphs = expandGraphsWithDiscoveredSources(level, passiveGraphs, CoherenceKind.INCOHERENT);
+        coherentGraphs = expandGraphsWithDiscoveredSources(level, coherentGraphs, CoherenceKind.COHERENT);
+        CompiledPortGraph graph = unionGraphs(graphs);
+        CompiledPortGraph passiveGraph = unionGraphs(passiveGraphs);
+        CompiledPortGraph coherentGraph = unionGraphs(coherentGraphs);
+        Map<PortGraphNode, Double> incoherentSourcePowersByNode = collectGraphIncoherentSourcePowers(level, passiveGraph);
+        Map<PortGraphNode, Double> directCoherentSourcePowersByNode = collectGraphCoherentSourcePowers(level, coherentGraph);
+        ScalarPowerSolution solution = solvePowerChannels(
+                level,
+                passiveGraph,
+                coherentGraph,
+                incoherentSourcePowersByNode,
+                directCoherentSourcePowersByNode
+        );
+        Map<PortGraphNode, Double> sourcePowersByNode = mergedPowerMap(
+                incoherentSourcePowersByNode,
+                directCoherentSourcePowersByNode
+        );
         CompiledReadoutLayer readoutLayer = OpticalReadoutLayerCompiler.compile(level, graph);
         List<ReceiverOutput> receiverOutputs = readoutLayer.sample(solution);
         CachedOpticalSystem system = new CachedOpticalSystem(
@@ -951,7 +994,8 @@ public final class OpticalTraceCache {
 
     private static List<CompiledPortGraph> expandGraphsWithDiscoveredSources(
             ServerLevel level,
-            List<CompiledPortGraph> initialGraphs
+            List<CompiledPortGraph> initialGraphs,
+            CoherenceKind sampleCoherence
     ) {
         List<CompiledPortGraph> graphs = new ArrayList<>(initialGraphs);
         Set<SourceTraceKey> compiledSourceKeys = new HashSet<>();
@@ -977,11 +1021,7 @@ public final class OpticalTraceCache {
                     continue;
                 }
 
-                graphs.add(PortGraphCompiler.compileDirect(
-                        level,
-                        sourceOutput.key().sourcePos(),
-                        sourceOutput.outputBeam()
-                ));
+                graphs.add(compileDirectForChannel(level, sourceOutput, sampleCoherence));
                 added = true;
             }
         } while (added);
@@ -989,7 +1029,34 @@ public final class OpticalTraceCache {
         return graphs;
     }
 
-    private static Map<PortGraphNode, Double> collectGraphSourcePowers(ServerLevel level, CompiledPortGraph graph) {
+    private static CompiledPortGraph compileDirectForChannel(
+            ServerLevel level,
+            GraphSourceOutput sourceOutput,
+            CoherenceKind sampleCoherence
+    ) {
+        if (sampleCoherence != null) {
+            return PortGraphCompiler.compileDirect(
+                    level,
+                    sourceOutput.key().sourcePos(),
+                    withCoherence(sourceOutput.outputBeam(), sampleCoherence)
+            );
+        }
+
+        return unionGraphs(List.of(
+                PortGraphCompiler.compileDirect(
+                        level,
+                        sourceOutput.key().sourcePos(),
+                        withCoherence(sourceOutput.outputBeam(), CoherenceKind.INCOHERENT)
+                ),
+                PortGraphCompiler.compileDirect(
+                        level,
+                        sourceOutput.key().sourcePos(),
+                        withCoherence(sourceOutput.outputBeam(), CoherenceKind.COHERENT)
+                )
+        ));
+    }
+
+    private static Map<PortGraphNode, Double> collectGraphIncoherentSourcePowers(ServerLevel level, CompiledPortGraph graph) {
         Map<PortGraphNode, Double> sourcePowersByNode = new HashMap<>();
         Set<PortGraphNode> graphNodes = new HashSet<>(graph.nodes());
 
@@ -1002,12 +1069,180 @@ public final class OpticalTraceCache {
 
             sourcePowersByNode.merge(
                     sourceNode,
-                    sourceOutput.outputBeam().beam().totalPower(),
+                    incoherentPower(sourceOutput.outputBeam()),
                     Double::sum
             );
         }
 
         return sourcePowersByNode;
+    }
+
+    private static Map<PortGraphNode, Double> collectGraphCoherentSourcePowers(ServerLevel level, CompiledPortGraph graph) {
+        Map<PortGraphNode, Double> sourcePowersByNode = new HashMap<>();
+        Set<PortGraphNode> graphNodes = new HashSet<>(graph.nodes());
+
+        for (GraphSourceOutput sourceOutput : discoverGraphSourceOutputs(level, graph)) {
+            PortGraphNode sourceNode = sourceOutput.sourceNode();
+
+            if (!graphNodes.contains(sourceNode)) {
+                continue;
+            }
+
+            sourcePowersByNode.merge(
+                    sourceNode,
+                    coherentPower(sourceOutput.outputBeam()),
+                    Double::sum
+            );
+        }
+
+        return sourcePowersByNode;
+    }
+
+    private static ScalarPowerSolution solvePowerChannels(
+            ServerLevel level,
+            CompiledPortGraph passiveGraph,
+            CompiledPortGraph coherentGraph,
+            Map<PortGraphNode, Double> incoherentSourcePowersByNode,
+            Map<PortGraphNode, Double> directCoherentSourcePowersByNode
+    ) {
+        ScalarPowerSolution incoherentSolution = ScalarPowerSolver.solve(passiveGraph, incoherentSourcePowersByNode);
+        Map<PortGraphNode, Double> coherentSourcePowersByNode = new HashMap<>(directCoherentSourcePowersByNode);
+        addRubyCoherentSeedSources(level, coherentGraph, incoherentSolution, coherentSourcePowersByNode);
+        ScalarPowerSolution coherentSolution = ScalarPowerSolver.solve(coherentGraph, coherentSourcePowersByNode);
+
+        return combineChannelSolutions(incoherentSolution, coherentSolution);
+    }
+
+    private static void addRubyCoherentSeedSources(
+            ServerLevel level,
+            CompiledPortGraph coherentGraph,
+            ScalarPowerSolution incoherentSolution,
+            Map<PortGraphNode, Double> coherentSourcePowersByNode
+    ) {
+        Set<PortGraphNode> coherentNodes = new HashSet<>(coherentGraph.nodes());
+
+        for (Map.Entry<PortGraphNode, Double> entry : incoherentSolution.powerByNode().entrySet()) {
+            PortGraphNode node = entry.getKey();
+
+            if (node.waveKind() != PortWaveKind.OUTGOING || !coherentNodes.contains(node) || !level.isLoaded(node.pos())) {
+                continue;
+            }
+
+            BlockState state = level.getBlockState(node.pos());
+            double conversionFactor = OpticalMaterialProfiles.coherentSeedConversionFactorFor(level, node.pos(), state);
+
+            if (conversionFactor <= 0.0) {
+                continue;
+            }
+
+            double convertedPower = entry.getValue() * conversionFactor;
+
+            if (convertedPower > 0.0) {
+                coherentSourcePowersByNode.merge(node, convertedPower, Double::sum);
+            }
+        }
+    }
+
+    private static ScalarPowerSolution combineChannelSolutions(
+            ScalarPowerSolution incoherentSolution,
+            ScalarPowerSolution coherentSolution
+    ) {
+        Map<PortGraphNode, Double> totalPowerByNode = mergedPowerMap(
+                incoherentSolution.powerByNode(),
+                coherentSolution.powerByNode()
+        );
+        double maxPower = 0.0;
+        double totalPower = 0.0;
+
+        for (double power : totalPowerByNode.values()) {
+            maxPower = Math.max(maxPower, power);
+            totalPower += power;
+        }
+
+        List<io.github.yoglappland.spectralization.optics.compiler.ScalarSolverRegionResult> regionResults =
+                new ArrayList<>(incoherentSolution.regionResults());
+        regionResults.addAll(coherentSolution.regionResults());
+
+        return new ScalarPowerSolution(
+                coherentSolution.solverKind() != io.github.yoglappland.spectralization.optics.compiler.ScalarSolverKind.NONE
+                        ? coherentSolution.solverKind()
+                        : incoherentSolution.solverKind(),
+                coherentSolution.solverKind() != io.github.yoglappland.spectralization.optics.compiler.ScalarSolverKind.NONE
+                        ? coherentSolution.solverPlan()
+                        : incoherentSolution.solverPlan(),
+                incoherentSolution.converged() && coherentSolution.converged(),
+                incoherentSolution.unstable() || coherentSolution.unstable(),
+                incoherentSolution.iterations() + coherentSolution.iterations(),
+                Math.max(incoherentSolution.residual(), coherentSolution.residual()),
+                maxPower,
+                totalPower,
+                totalPowerByNode,
+                coherentSolution.powerByNode(),
+                regionResults
+        );
+    }
+
+    private static Map<PortGraphNode, Double> mergedPowerMap(
+            Map<PortGraphNode, Double> first,
+            Map<PortGraphNode, Double> second
+    ) {
+        Map<PortGraphNode, Double> merged = new HashMap<>(first);
+
+        for (Map.Entry<PortGraphNode, Double> entry : second.entrySet()) {
+            if (entry.getValue() > 0.0) {
+                merged.merge(entry.getKey(), entry.getValue(), Double::sum);
+            }
+        }
+
+        return merged;
+    }
+
+    private static Map<PortGraphNode, Double> sourcePowerMap(PortGraphNode sourceNode, double power) {
+        if (power <= 0.0) {
+            return Map.of();
+        }
+
+        return Map.of(sourceNode, power);
+    }
+
+    private static CompiledPortGraph unionGraphs(List<CompiledPortGraph> graphs) {
+        if (graphs.size() == 1) {
+            return graphs.getFirst();
+        }
+
+        return PortGraphCompiler.unionDirectGraphs(graphs);
+    }
+
+    private static OutputBeam withCoherence(OutputBeam outputBeam, CoherenceKind coherence) {
+        return new OutputBeam(outputBeam.outgoingDirection(), outputBeam.beam().withCoherence(coherence));
+    }
+
+    private static double coherentPower(OutputBeam outputBeam) {
+        return coherentPower(outputBeam.beam());
+    }
+
+    private static double coherentPower(BeamPacket beam) {
+        double power = 0.0;
+
+        for (PlaneWaveComponent component : beam.components()) {
+            if (component.coherence() == CoherenceKind.COHERENT) {
+                power += component.power();
+            }
+        }
+
+        return power;
+    }
+
+    private static double incoherentPower(OutputBeam outputBeam) {
+        double power = 0.0;
+
+        for (PlaneWaveComponent component : outputBeam.beam().components()) {
+            if (component.coherence() == CoherenceKind.INCOHERENT) {
+                power += component.power();
+            }
+        }
+
+        return power;
     }
 
     private static List<GraphSourceOutput> discoverGraphSourceOutputs(ServerLevel level, CompiledPortGraph graph) {
@@ -1120,6 +1355,8 @@ public final class OpticalTraceCache {
     private record DirectSourceRecord(
             int networkId,
             CompiledPortGraph graph,
+            CompiledPortGraph passiveGraph,
+            CompiledPortGraph coherentGraph,
             OutputBeam sourceOutput,
             DirectCompilationKey compilationKey,
             OpticalEpochs epochs
@@ -1130,6 +1367,8 @@ public final class OpticalTraceCache {
             }
 
             Objects.requireNonNull(graph, "graph");
+            Objects.requireNonNull(passiveGraph, "passiveGraph");
+            Objects.requireNonNull(coherentGraph, "coherentGraph");
             Objects.requireNonNull(sourceOutput, "sourceOutput");
             Objects.requireNonNull(epochs, "epochs");
         }
@@ -1212,11 +1451,15 @@ public final class OpticalTraceCache {
 
     private record DirectCompilation(
             CompiledPortGraph graph,
+            CompiledPortGraph passiveGraph,
+            CompiledPortGraph coherentGraph,
             CompiledReadoutLayer readoutLayer,
             ScalarPowerSolution solution
     ) {
         private DirectCompilation {
             Objects.requireNonNull(graph, "graph");
+            Objects.requireNonNull(passiveGraph, "passiveGraph");
+            Objects.requireNonNull(coherentGraph, "coherentGraph");
             Objects.requireNonNull(readoutLayer, "readoutLayer");
             Objects.requireNonNull(solution, "solution");
         }

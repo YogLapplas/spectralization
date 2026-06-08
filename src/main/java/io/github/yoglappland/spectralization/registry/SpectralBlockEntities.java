@@ -5,6 +5,7 @@ import io.github.yoglappland.spectralization.blockentity.CmosSensorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.CreativeLightSourceBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.LensHolderBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.PassThroughSensorBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.RubyBlockEntity;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.neoforged.bus.api.IEventBus;
@@ -30,6 +31,10 @@ public final class SpectralBlockEntities {
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<PassThroughSensorBlockEntity>> PASS_THROUGH_SENSOR =
             BLOCK_ENTITY_TYPES.register("pass_through_sensor", () ->
                     BlockEntityType.Builder.of(PassThroughSensorBlockEntity::new, Spectralization.PASS_THROUGH_SENSOR.get()).build(null));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<RubyBlockEntity>> RUBY_BLOCK =
+            BLOCK_ENTITY_TYPES.register("ruby_block", () ->
+                    BlockEntityType.Builder.of(RubyBlockEntity::new, Spectralization.RUBY_BLOCK.get()).build(null));
 
     public static void register(IEventBus modEventBus) {
         BLOCK_ENTITY_TYPES.register(modEventBus);

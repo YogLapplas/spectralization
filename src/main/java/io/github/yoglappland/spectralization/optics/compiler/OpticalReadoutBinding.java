@@ -18,11 +18,12 @@ public record OpticalReadoutBinding(
     }
 
     public ReceiverOutput sample(ScalarPowerSolution solution) {
-        double power = inputNode == null ? 0.0 : solution.powerAt(inputNode);
+        double totalPower = inputNode == null ? 0.0 : solution.powerAt(inputNode);
+        double coherentPower = inputNode == null ? 0.0 : solution.coherentPowerAt(inputNode);
 
         return switch (kind) {
-            case CMOS -> ReceiverOutput.cmos(pos, power);
-            case PASS_THROUGH_SENSOR -> ReceiverOutput.passThroughSensor(pos, positiveZ, power);
+            case CMOS -> ReceiverOutput.cmos(pos, totalPower);
+            case PASS_THROUGH_SENSOR -> ReceiverOutput.passThroughSensor(pos, positiveZ, coherentPower);
         };
     }
 }

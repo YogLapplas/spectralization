@@ -14,12 +14,14 @@ public record ScalarPowerSolution(
         double maxNodePower,
         double totalNodePower,
         Map<PortGraphNode, Double> powerByNode,
+        Map<PortGraphNode, Double> coherentPowerByNode,
         List<ScalarSolverRegionResult> regionResults
 ) {
     public ScalarPowerSolution {
         Objects.requireNonNull(solverKind, "solverKind");
         Objects.requireNonNull(solverPlan, "solverPlan");
         Objects.requireNonNull(powerByNode, "powerByNode");
+        Objects.requireNonNull(coherentPowerByNode, "coherentPowerByNode");
         Objects.requireNonNull(regionResults, "regionResults");
 
         if (iterations < 0) {
@@ -39,6 +41,7 @@ public record ScalarPowerSolution(
         }
 
         powerByNode = Map.copyOf(powerByNode);
+        coherentPowerByNode = Map.copyOf(coherentPowerByNode);
         regionResults = List.copyOf(regionResults);
     }
 
@@ -48,6 +51,26 @@ public record ScalarPowerSolution(
 
     public double powerAt(PortGraphNode node) {
         return powerByNode.getOrDefault(node, 0.0);
+    }
+
+    public double coherentPowerAt(PortGraphNode node) {
+        return coherentPowerByNode.getOrDefault(node, 0.0);
+    }
+
+    public ScalarPowerSolution withCoherentPowerByNode(Map<PortGraphNode, Double> coherentPowerByNode) {
+        return new ScalarPowerSolution(
+                solverKind,
+                solverPlan,
+                converged,
+                unstable,
+                iterations,
+                residual,
+                maxNodePower,
+                totalNodePower,
+                powerByNode,
+                coherentPowerByNode,
+                regionResults
+        );
     }
 
     public boolean reliableForReadout() {

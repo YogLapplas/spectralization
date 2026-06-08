@@ -1,5 +1,8 @@
 package io.github.yoglappland.spectralization.optics;
 
+import io.github.yoglappland.spectralization.Spectralization;
+import io.github.yoglappland.spectralization.block.RubyBlock;
+import io.github.yoglappland.spectralization.optics.pump.OpticalPumpSources;
 import java.util.Map;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
@@ -28,15 +31,23 @@ public final class OpticalMaterialProfiles {
     private static final OpticalMaterialProfile METAL = OpticalMaterialProfile.constant(
             OpticalMaterialResponse.of(0.0, 0.78, 0.17)
     );
+    private static final OpticalMaterialProfile POLISHED_SILVER = OpticalMaterialProfile.constant(
+            OpticalMaterialResponse.of(0.0, 0.96, 0.02)
+    );
+    private static final OpticalMaterialProfile RUBY = OpticalMaterialProfile.of(
+            sample(SpectralRegion.INFRARED, 32, 0.58, 0.03, 0.26),
+            sample(SpectralRegion.VISIBLE, 4, 0.88, 0.04, 0.04),
+            sample(SpectralRegion.VISIBLE, 32, 0.35, 0.04, 0.50),
+            sample(SpectralRegion.VISIBLE, 52, 0.18, 0.05, 0.65),
+            sample(SpectralRegion.ULTRAVIOLET, 16, 0.05, 0.05, 0.80)
+    );
     private static final OpticalMaterialProfile WATER = OpticalMaterialProfile.of(
             sample(SpectralRegion.INFRARED, 32, 0.45, 0.02, 0.45),
             sample(SpectralRegion.VISIBLE, 32, 0.88, 0.02, 0.08),
             sample(SpectralRegion.ULTRAVIOLET, 16, 0.35, 0.02, 0.55)
     );
-    private static final OpticalMaterialProfile POWERED_GLOWSTONE_GAIN_MEDIUM = OpticalMaterialProfile.constant(
-            OpticalMaterialResponse.of(0.86, 0.05, 0.02)
-    );
-    private static final double POWERED_GLOWSTONE_GAIN_FACTOR = 1.25;
+    private static final double RUBY_INTERNAL_PUMP_CONVERSION_EFFICIENCY = 0.07;
+    private static final double RUBY_INCOHERENT_TO_COHERENT_COUPLING = 0.015;
 
     private static final Set<Block> AIR_LIKE_BLOCKS = Set.of(
             Blocks.REDSTONE_WIRE,
@@ -137,6 +148,14 @@ public final class OpticalMaterialProfiles {
             return METAL;
         }
 
+        if (block == Spectralization.SILVER_BLOCK.get()) {
+            return POLISHED_SILVER;
+        }
+
+        if (block == Spectralization.RUBY_BLOCK.get()) {
+            return RUBY;
+        }
+
         return OPAQUE;
     }
 
@@ -152,6 +171,8 @@ public final class OpticalMaterialProfiles {
                 || block == Blocks.TINTED_GLASS
                 || STAINED_GLASS_BLOCKS.containsKey(block)
                 || METAL_BLOCKS.contains(block)
+                || block == Spectralization.SILVER_BLOCK.get()
+                || block == Spectralization.RUBY_BLOCK.get()
                 || block == Blocks.GLOWSTONE;
     }
 
@@ -160,22 +181,53 @@ public final class OpticalMaterialProfiles {
     }
 
     public static OpticalMaterialProfile profileFor(Level level, BlockPos pos, BlockState state) {
-        if (isPoweredGlowstone(level, pos, state)) {
-            return POWERED_GLOWSTONE_GAIN_MEDIUM;
-        }
-
         return profileFor(state);
     }
 
     public static double gainFactorFor(Level level, BlockPos pos, BlockState state) {
-        return isPoweredGlowstone(level, pos, state) ? POWERED_GLOWSTONE_GAIN_FACTOR : 1.0;
+        return gainFactorFor(level, pos, state, FrequencyKey.DEBUG_VISIBLE);
     }
 
-    private static boolean isPoweredGlowstone(Level level, BlockPos pos, BlockState state) {
-        return level != null
-                && pos != null
-                && state.is(Blocks.GLOWSTONE)
-                && level.hasNeighborSignal(pos);
+    public static double gainFactorFor(Level level, BlockPos pos, BlockState state, FrequencyKey frequency) {
+        if (state.getBlock() != Spectralization.RUBY_BLOCK.get()) {
+            return 1.0;
+        }
+
+        int pumpRate = OpticalPumpSources.adjacentPumpRate(level, pos);
+
+        if (pumpRate <= 0) {
+            return 1.0;
+        }
+
+        return 1.0 + RUBY_INTERNAL_PUMP_CONVERSION_EFFICIENCY * pumpRate * rubyEmissionCoupling(frequency);
+    }
+
+    public static double coherentSeedConversionFactorFor(Level level, BlockPos pos, BlockState state) {
+        if (state.getBlock() != Spectralization.RUBY_BLOCK.get()) {
+            return 0.0;
+        }
+
+        int pumpRate = OpticalPumpSources.adjacentPumpRate(level, pos);
+
+        if (pumpRate <= 0) {
+            return 0.0;
+        }
+
+        return RUBY_INCOHERENT_TO_COHERENT_COUPLING * pumpRate;
+    }
+
+    private static double rubyEmissionCoupling(FrequencyKey frequency) {
+        if (frequency.region() != RubyBlock.RUBY_LINE.region()) {
+            return 0.0;
+        }
+
+        int distance = Math.abs(frequency.bin() - RubyBlock.RUBY_LINE.bin());
+
+        if (distance >= 12) {
+            return 0.0;
+        }
+
+        return Math.max(0.0, 1.0 - distance / 12.0);
     }
 
     private static OpticalMaterialProfile coloredGlass(int centerBin) {

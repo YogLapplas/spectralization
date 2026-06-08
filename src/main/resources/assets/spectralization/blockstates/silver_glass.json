@@ -1,0 +1,27 @@
+{
+  "variants": {
+    "facing=north": {
+      "model": "spectralization:block/silver_glass"
+    },
+    "facing=east": {
+      "model": "spectralization:block/silver_glass",
+      "y": 90
+    },
+    "facing=south": {
+      "model": "spectralization:block/silver_glass",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "spectralization:block/silver_glass",
+      "y": 270
+    },
+    "facing=up": {
+      "model": "spectralization:block/silver_glass",
+      "x": 270
+    },
+    "facing=down": {
+      "model": "spectralization:block/silver_glass",
+      "x": 90
+    }
+  }
+}

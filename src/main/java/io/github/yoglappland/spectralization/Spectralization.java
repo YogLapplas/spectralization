@@ -8,6 +8,8 @@ import io.github.yoglappland.spectralization.block.DynamicMirrorBlock;
 import io.github.yoglappland.spectralization.block.LensHolderBlock;
 import io.github.yoglappland.spectralization.block.MirrorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
+import io.github.yoglappland.spectralization.block.RubyBlock;
+import io.github.yoglappland.spectralization.block.SilverGlassBlock;
 import io.github.yoglappland.spectralization.client.renderer.LensHolderRenderer;
 import io.github.yoglappland.spectralization.client.screen.CreativeLightSourceScreen;
 import io.github.yoglappland.spectralization.command.SpectralCommands;
@@ -21,17 +23,12 @@ import io.github.yoglappland.spectralization.optics.topology.OpticalNetworkIndex
 import io.github.yoglappland.spectralization.optics.world.OpticalWorldIndex;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
 import io.github.yoglappland.spectralization.registry.SpectralMenus;
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
@@ -48,7 +45,6 @@ import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
-import net.neoforged.neoforge.event.level.BlockDropsEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
@@ -161,6 +157,45 @@ public class Spectralization {
     public static final DeferredItem<BlockItem> PASS_THROUGH_SENSOR_ITEM =
             ITEMS.registerSimpleBlockItem("pass_through_sensor", PASS_THROUGH_SENSOR);
 
+    public static final DeferredBlock<RubyBlock> RUBY_BLOCK = BLOCKS.register(
+            "ruby_block",
+            () -> new RubyBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_RED)
+                    .strength(3.0F, 6.0F)
+                    .sound(SoundType.AMETHYST)
+                    .lightLevel(RubyBlock::lightLevel)
+                    .noOcclusion())
+    );
+
+    public static final DeferredItem<BlockItem> RUBY_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("ruby_block", RUBY_BLOCK);
+
+    public static final DeferredBlock<net.minecraft.world.level.block.Block> SILVER_BLOCK = BLOCKS.registerSimpleBlock(
+            "silver_block",
+            BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_LIGHT_GRAY)
+                    .strength(3.0F, 6.0F)
+                    .sound(SoundType.METAL)
+    );
+
+    public static final DeferredItem<BlockItem> SILVER_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("silver_block", SILVER_BLOCK);
+
+    public static final DeferredBlock<SilverGlassBlock> SILVER_GLASS = BLOCKS.register(
+            "silver_glass",
+            () -> new SilverGlassBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_LIGHT_GRAY)
+                    .strength(0.3F)
+                    .sound(SoundType.GLASS)
+                    .noOcclusion()
+                    .isRedstoneConductor((state, level, pos) -> false)
+                    .isSuffocating((state, level, pos) -> false)
+                    .isViewBlocking((state, level, pos) -> false))
+    );
+
+    public static final DeferredItem<BlockItem> SILVER_GLASS_ITEM =
+            ITEMS.registerSimpleBlockItem("silver_glass", SILVER_GLASS);
+
     public static final DeferredHolder<CreativeModeTab, CreativeModeTab> SPECTRALIZATION_TAB =
             CREATIVE_MODE_TABS.register("spectralization", () -> CreativeModeTab.builder()
                     .title(Component.translatable("itemGroup.spectralization"))
@@ -177,6 +212,9 @@ public class Spectralization {
                         output.accept(CREATIVE_LIGHT_SOURCE_ITEM.get());
                         output.accept(CMOS_SENSOR_ITEM.get());
                         output.accept(PASS_THROUGH_SENSOR_ITEM.get());
+                        output.accept(RUBY_BLOCK_ITEM.get());
+                        output.accept(SILVER_BLOCK_ITEM.get());
+                        output.accept(SILVER_GLASS_ITEM.get());
                     })
                     .build());
 
@@ -192,25 +230,6 @@ public class Spectralization {
 
         NeoForge.EVENT_BUS.register(this);
         LOGGER.info("Spectralization initialized");
-    }
-
-    @SubscribeEvent
-    public void onBlockDrops(BlockDropsEvent event) {
-        if (!event.getState().is(Blocks.GLOWSTONE)) {
-            return;
-        }
-
-        BlockPos pos = event.getPos();
-        ItemStack spectralResidue = new ItemStack(Items.AMETHYST_SHARD);
-        ItemEntity residueDrop = new ItemEntity(
-                event.getLevel(),
-                pos.getX() + 0.5,
-                pos.getY() + 0.5,
-                pos.getZ() + 0.5,
-                spectralResidue
-        );
-
-        event.getDrops().add(residueDrop);
     }
 
     @SubscribeEvent

@@ -13,7 +13,6 @@ public final class OpticalBlockProperties {
 
     public static CompiledOpticalNetwork compile(Level level, BlockPos pos, BlockState state) {
         OpticalMaterialProfile profile = OpticalMaterialProfiles.profileFor(level, pos, state);
-        double gainFactor = OpticalMaterialProfiles.gainFactorFor(level, pos, state);
         CompiledOpticalNetwork.Builder builder = CompiledOpticalNetwork.builder()
                 .absorptionModel((input, incomingDirection, outputs) -> absorbedPower(input, profile));
 
@@ -23,13 +22,13 @@ public final class OpticalBlockProperties {
                     incomingDirection,
                     transmittedDirection,
                     (input, ignoredIncoming, outgoingDirection) ->
-                            transform(input, outgoingDirection, profile, ResponseChannel.TRANSMITTANCE, gainFactor)
+                            transform(level, pos, state, input, outgoingDirection, profile, ResponseChannel.TRANSMITTANCE)
             );
             builder.addRule(
                     incomingDirection,
                     incomingDirection,
                     (input, ignoredIncoming, outgoingDirection) ->
-                            transform(input, outgoingDirection, profile, ResponseChannel.REFLECTANCE, gainFactor)
+                            transform(level, pos, state, input, outgoingDirection, profile, ResponseChannel.REFLECTANCE)
             );
         }
 
@@ -45,14 +44,16 @@ public final class OpticalBlockProperties {
     }
 
     private static BeamPacket transform(
+            Level level,
+            BlockPos pos,
+            BlockState state,
             BeamPacket beam,
             Direction direction,
             OpticalMaterialProfile profile,
-            ResponseChannel channel,
-            double gainFactor
+            ResponseChannel channel
     ) {
         List<PlaneWaveComponent> components = beam.components().stream()
-                .map(component -> transform(component, direction, profile, channel, gainFactor))
+                .map(component -> transform(level, pos, state, component, direction, profile, channel))
                 .filter(component -> component.power() > 0.0)
                 .toList();
 
@@ -64,17 +65,22 @@ public final class OpticalBlockProperties {
     }
 
     private static PlaneWaveComponent transform(
+            Level level,
+            BlockPos pos,
+            BlockState state,
             PlaneWaveComponent component,
             Direction direction,
             OpticalMaterialProfile profile,
-            ResponseChannel channel,
-            double gainFactor
+            ResponseChannel channel
     ) {
         OpticalMaterialResponse response = profile.responseAt(component.frequency());
         double factor = switch (channel) {
             case TRANSMITTANCE -> response.transmittance();
             case REFLECTANCE -> response.reflectance();
         };
+        double gainFactor = component.coherence() == CoherenceKind.COHERENT
+                ? OpticalMaterialProfiles.gainFactorFor(level, pos, state, component.frequency())
+                : 1.0;
 
         return component.withDirection(direction).withPower(component.power() * factor * gainFactor);
     }

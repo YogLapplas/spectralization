@@ -4,6 +4,8 @@ import net.neoforged.neoforge.common.ModConfigSpec;
 
 public final class SpectralizationConfig {
     public static final ModConfigSpec SPEC;
+    private static final int LEGACY_INTERACTIVE_QUIET_TICKS = 8;
+    private static final int DEFAULT_INTERACTIVE_QUIET_TICKS = 1;
 
     private static final ModConfigSpec.BooleanValue LIGHT_PATHS_VISIBLE;
     private static final ModConfigSpec.BooleanValue SURFACE_SPOTS_VISIBLE;
@@ -97,13 +99,13 @@ public final class SpectralizationConfig {
                 .defineInRange("full_network_max_nodes", 16384, 64, 262144);
         OPTICAL_COMPILER_SYSTEM_REBUILD_QUIET_TICKS = builder
                 .comment("Ticks without direct optical work required before queued topology/data rebuilds are allowed to run.")
-                .defineInRange("system_rebuild_quiet_ticks", 8, 0, 200);
+                .defineInRange("system_rebuild_quiet_ticks", 1, 0, 200);
         OPTICAL_COMPILER_LARGE_DIRECT_GRAPH_NODES = builder
                 .comment("Direct graph node count above which dirty recompilation is deferred until the network is quiet.")
                 .defineInRange("large_direct_graph_nodes", 1024, 64, 262144);
         OPTICAL_COMPILER_DIRECT_RECOMPILE_QUIET_TICKS = builder
                 .comment("Ticks a large dirty direct graph must remain quiet before it is recompiled.")
-                .defineInRange("direct_recompile_quiet_ticks", 8, 0, 200);
+                .defineInRange("direct_recompile_quiet_ticks", 1, 0, 200);
         OPTICAL_COMPILER_LEGACY_DEBUG_ORACLE = builder
                 .comment("Whether compiler debug logging may run the old recursive tracer as an observed oracle. Keep this off for performance tests.")
                 .define("legacy_debug_oracle", false);
@@ -207,7 +209,7 @@ public final class SpectralizationConfig {
     }
 
     public static int opticalCompilerSystemRebuildQuietTicks() {
-        return OPTICAL_COMPILER_SYSTEM_REBUILD_QUIET_TICKS.get();
+        return interactiveQuietTicks(OPTICAL_COMPILER_SYSTEM_REBUILD_QUIET_TICKS);
     }
 
     public static int opticalCompilerLargeDirectGraphNodes() {
@@ -215,7 +217,7 @@ public final class SpectralizationConfig {
     }
 
     public static int opticalCompilerDirectRecompileQuietTicks() {
-        return OPTICAL_COMPILER_DIRECT_RECOMPILE_QUIET_TICKS.get();
+        return interactiveQuietTicks(OPTICAL_COMPILER_DIRECT_RECOMPILE_QUIET_TICKS);
     }
 
     public static boolean opticalCompilerLegacyDebugOracle() {
@@ -228,6 +230,11 @@ public final class SpectralizationConfig {
 
     public static int opticalCompilerSystemCacheMaxEntries() {
         return OPTICAL_COMPILER_SYSTEM_CACHE_MAX_ENTRIES.get();
+    }
+
+    private static int interactiveQuietTicks(ModConfigSpec.IntValue value) {
+        int ticks = value.get();
+        return ticks == LEGACY_INTERACTIVE_QUIET_TICKS ? DEFAULT_INTERACTIVE_QUIET_TICKS : ticks;
     }
 
     private SpectralizationConfig() {

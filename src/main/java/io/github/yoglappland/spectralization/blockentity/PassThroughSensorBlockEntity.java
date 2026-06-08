@@ -14,7 +14,6 @@ import net.minecraft.world.level.block.state.BlockState;
 
 public class PassThroughSensorBlockEntity extends BlockEntity {
     private static final long SAMPLE_HOLD_TICKS = 1L;
-    private static final int REQUIRED_STABLE_STEPS = 8;
     private static final double POWER_EPSILON = 1.0E-6;
     private static final String POSITIVE_Z_POWER_TAG = "positive_z_power";
     private static final String NEGATIVE_Z_POWER_TAG = "negative_z_power";
@@ -122,8 +121,6 @@ public class PassThroughSensorBlockEntity extends BlockEntity {
         private double receivedPowerThisStep = 0.0;
         private boolean receivedReliableThisStep = false;
         private double committedPower = 0.0;
-        private double candidatePower = 0.0;
-        private int stableCandidateSteps = REQUIRED_STABLE_STEPS;
         private boolean reliable = true;
 
         void receive(long gameTime, ReadoutSample sample) {
@@ -141,7 +138,7 @@ public class PassThroughSensorBlockEntity extends BlockEntity {
 
         boolean tick(Level level) {
             if (level.getGameTime() - this.lastReceivedGameTime > SAMPLE_HOLD_TICKS) {
-                return markUnreliable();
+                return commitReliablePower(0.0);
             }
 
             if (this.lastReceivedSampleStep == this.lastObservedSampleStep) {
@@ -156,32 +153,17 @@ public class PassThroughSensorBlockEntity extends BlockEntity {
 
             double observedPower = this.receivedPowerThisStep;
 
-            if (closeEnough(observedPower, this.candidatePower)) {
-                this.stableCandidateSteps++;
-                this.candidatePower = observedPower;
-            } else {
-                this.candidatePower = observedPower;
-                this.stableCandidateSteps = 1;
-            }
+            return commitReliablePower(observedPower);
+        }
 
-            if (this.stableCandidateSteps >= REQUIRED_STABLE_STEPS) {
-                boolean changed = !this.reliable || !closeEnough(this.committedPower, this.candidatePower);
-                this.committedPower = this.candidatePower;
-                this.reliable = true;
-                return changed;
-            }
-
-            if (this.reliable && !closeEnough(observedPower, this.committedPower)) {
-                this.reliable = false;
-                return true;
-            }
-
-            return false;
+        private boolean commitReliablePower(double observedPower) {
+            boolean changed = !this.reliable || !closeEnough(this.committedPower, observedPower);
+            this.committedPower = observedPower;
+            this.reliable = true;
+            return changed;
         }
 
         private boolean markUnreliable() {
-            this.stableCandidateSteps = 0;
-
             if (!this.reliable) {
                 return false;
             }
@@ -200,9 +182,7 @@ public class PassThroughSensorBlockEntity extends BlockEntity {
 
         void load(CompoundTag tag, String powerTag, String reliableTag) {
             this.committedPower = tag.getDouble(powerTag);
-            this.candidatePower = this.committedPower;
             this.reliable = !tag.contains(reliableTag) || tag.getBoolean(reliableTag);
-            this.stableCandidateSteps = this.reliable ? REQUIRED_STABLE_STEPS : 0;
         }
 
         void save(CompoundTag tag, String powerTag, String reliableTag) {

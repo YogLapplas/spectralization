@@ -15,7 +15,6 @@ import net.minecraft.world.level.block.state.BlockState;
 
 public class CmosSensorBlockEntity extends BlockEntity {
     private static final long SAMPLE_HOLD_TICKS = 1L;
-    private static final int REQUIRED_STABLE_STEPS = 8;
     private static final double POWER_EPSILON = 1.0E-6;
     private static final String COMMITTED_POWER_TAG = "committed_power";
     private static final String RELIABLE_TAG = "reliable";
@@ -26,8 +25,6 @@ public class CmosSensorBlockEntity extends BlockEntity {
     private double receivedPowerThisStep = 0.0;
     private boolean receivedReliableThisStep = false;
     private double committedPower = 0.0;
-    private double candidatePower = 0.0;
-    private int stableCandidateSteps = REQUIRED_STABLE_STEPS;
     private boolean reliable = true;
 
     public CmosSensorBlockEntity(BlockPos pos, BlockState blockState) {
@@ -80,7 +77,7 @@ public class CmosSensorBlockEntity extends BlockEntity {
 
     private boolean tickSample(Level level, BlockPos pos, BlockState state) {
         if (level.getGameTime() - this.lastReceivedGameTime > SAMPLE_HOLD_TICKS) {
-            return markUnreliable();
+            return commitReliablePower(level, pos, state, 0.0);
         }
 
         if (this.lastReceivedSampleStep == this.lastObservedSampleStep) {
@@ -93,38 +90,25 @@ public class CmosSensorBlockEntity extends BlockEntity {
             return markUnreliable();
         }
 
-        return observeReliablePower(level, pos, state, this.receivedPowerThisStep);
+        return commitReliablePower(level, pos, state, this.receivedPowerThisStep);
     }
 
-    private boolean observeReliablePower(Level level, BlockPos pos, BlockState state, double observedPower) {
+    private boolean commitReliablePower(Level level, BlockPos pos, BlockState state, double observedPower) {
         int observedSignal = CmosSensorBlock.calculateSignal(
                 observedPower,
                 state.getValue(CmosSensorBlock.LOGARITHMIC)
         );
 
-        if (closeEnough(observedPower, this.candidatePower)) {
-            this.stableCandidateSteps++;
-            this.candidatePower = observedPower;
-        } else {
-            this.candidatePower = observedPower;
-            this.stableCandidateSteps = 1;
-        }
-
         boolean changed = false;
 
-        if (this.stableCandidateSteps >= REQUIRED_STABLE_STEPS) {
-            if (state.getValue(CmosSensorBlock.POWER) != observedSignal) {
-                CmosSensorBlock.setSignalFromPower(level, pos, state, this.candidatePower);
-                changed = true;
-            }
+        if (state.getValue(CmosSensorBlock.POWER) != observedSignal) {
+            CmosSensorBlock.setSignalFromPower(level, pos, state, observedPower);
+            changed = true;
+        }
 
-            if (!this.reliable || !closeEnough(this.committedPower, this.candidatePower)) {
-                this.committedPower = this.candidatePower;
-                this.reliable = true;
-                changed = true;
-            }
-        } else if (this.reliable && !closeEnough(observedPower, this.committedPower)) {
-            this.reliable = false;
+        if (!this.reliable || !closeEnough(this.committedPower, observedPower)) {
+            this.committedPower = observedPower;
+            this.reliable = true;
             changed = true;
         }
 
@@ -136,8 +120,6 @@ public class CmosSensorBlockEntity extends BlockEntity {
     }
 
     private boolean markUnreliable() {
-        this.stableCandidateSteps = 0;
-
         if (!this.reliable) {
             return false;
         }
@@ -155,9 +137,7 @@ public class CmosSensorBlockEntity extends BlockEntity {
     protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
         this.committedPower = tag.getDouble(COMMITTED_POWER_TAG);
-        this.candidatePower = this.committedPower;
         this.reliable = !tag.contains(RELIABLE_TAG) || tag.getBoolean(RELIABLE_TAG);
-        this.stableCandidateSteps = this.reliable ? REQUIRED_STABLE_STEPS : 0;
     }
 
     @Override

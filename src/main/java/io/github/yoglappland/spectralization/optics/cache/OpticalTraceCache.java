@@ -80,7 +80,13 @@ public final class OpticalTraceCache {
 
         if (!OpticalWorldIndex.canRunDerived(serverLevel)) {
             if (cachedTrace != null) {
-                cachedTrace.applyOutputs(level, false, cache.nextReadoutStep());
+                applyInterruptedAuthoritativeOutputs(
+                        level,
+                        cache,
+                        networkId,
+                        cachedTrace,
+                        "derived_interrupted"
+                );
             }
 
             return;
@@ -167,7 +173,13 @@ public final class OpticalTraceCache {
             boolean directGeometryCacheHit = directCompilation != null;
 
             if (directCompilation == null && shouldDeferDirectRecompile(level, cache, request, existingTrace)) {
-                existingTrace.applyOutputs(level, false, cache.nextReadoutStep());
+                applyInterruptedAuthoritativeOutputs(
+                        level,
+                        cache,
+                        request.networkId(),
+                        existingTrace,
+                        "deferred_direct_recompile"
+                );
                 cache.requeueDeferred(request);
                 deferredDirectWork = true;
                 continue;
@@ -559,6 +571,47 @@ public final class OpticalTraceCache {
                 && directGraph.nodes().size() <= maxGraphNodes;
     }
 
+    private static boolean applyInterruptedAuthoritativeOutputs(
+            Level level,
+            LevelTraceCache cache,
+            int networkId,
+            CachedOpticalTrace cachedTrace,
+            String modePrefix
+    ) {
+        long readoutStep = cache.nextReadoutStep();
+        CachedOpticalSystem cachedSystem = cache.systemForNetwork(networkId);
+        CachedOpticalSystem heldSystem = cache.lastUsableSystemForNetwork(networkId);
+
+        if (heldSystem != null && cache.markSystemApplied(heldSystem.systemId(), level.getGameTime())) {
+            heldSystem.applyOutputs(level, false, readoutStep);
+            logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, heldSystem,
+                    modePrefix + "_held_system", false, readoutStep);
+            return false;
+        }
+
+        if (cachedSystem != null) {
+            List<ReceiverOutput> heldReceiverOutputs = cache.lastReliableReceiverOutputsFor(cachedSystem);
+            if (!heldReceiverOutputs.isEmpty() && cache.markHeldReadoutApplied(cachedSystem, level.getGameTime())) {
+                applyReceiverOutputs(level, heldReceiverOutputs, false, readoutStep);
+                logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, cachedSystem,
+                        modePrefix + "_held_readout", false, readoutStep);
+                return false;
+            }
+
+            if (cache.markSystemApplied(cachedSystem.systemId(), level.getGameTime())) {
+                cachedSystem.applyOutputs(level, false, readoutStep);
+                logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, cachedSystem,
+                        modePrefix + "_current_system", false, readoutStep);
+                return false;
+            }
+        }
+
+        cachedTrace.applyOutputs(level, false, readoutStep);
+        logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, null,
+                modePrefix + "_direct_trace", false, readoutStep);
+        return false;
+    }
+
     private static boolean applyCachedOutputs(
             Level level,
             LevelTraceCache cache,
@@ -566,24 +619,12 @@ public final class OpticalTraceCache {
             CachedOpticalTrace cachedTrace
     ) {
         CachedOpticalSystem cachedSystem = cache.systemForNetwork(networkId);
-        long readoutStep = cache.nextReadoutStep();
 
         if (cache.isSystemRebuildPending(networkId)) {
-            CachedOpticalSystem heldSystem = cache.lastUsableSystemForNetwork(networkId);
-
-            if (heldSystem != null && cache.markSystemApplied(heldSystem.systemId(), level.getGameTime())) {
-                heldSystem.applyOutputs(level, false, readoutStep);
-                logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, heldSystem,
-                        "pending_rebuild_held_system", false, readoutStep);
-                return false;
-            }
-
-            boolean reliable = reliablePendingDirectTrace(level, cachedTrace);
-            cachedTrace.applyOutputs(level, reliable, readoutStep);
-            logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, null,
-                    "pending_rebuild_direct_trace", reliable, readoutStep);
-            return reliable;
+            return applyInterruptedAuthoritativeOutputs(level, cache, networkId, cachedTrace, "pending_rebuild");
         }
+
+        long readoutStep = cache.nextReadoutStep();
 
         if (cachedSystem != null) {
             if (cachedSystem.usableForGameplay()) {
@@ -619,10 +660,11 @@ public final class OpticalTraceCache {
             }
         }
 
-        boolean reliable = cachedTrace.scalarPowerSolution().reliableForReadout();
+        boolean reliable = !cache.hasSystemAuthorityForNetwork(networkId)
+                && cachedTrace.scalarPowerSolution().reliableForReadout();
         cachedTrace.applyOutputs(level, reliable, readoutStep);
         logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, null,
-                "direct_trace", reliable, readoutStep);
+                reliable ? "direct_trace" : "direct_trace_unreliable_system_authority", reliable, readoutStep);
         return reliable;
     }
 
@@ -678,11 +720,6 @@ public final class OpticalTraceCache {
                 appliedSystem != null && appliedSystem.solution().reliableForReadout(),
                 cache.lastReliableReceiverOutputsByReadout.size()
         );
-    }
-
-    private static boolean reliablePendingDirectTrace(Level level, CachedOpticalTrace cachedTrace) {
-        return cachedTrace.scalarPowerSolution().reliableForReadout()
-                && directGraphSourceOutputCount(level, cachedTrace.portGraph()) == 1;
     }
 
     private static boolean hasReadoutDemand(
@@ -1819,6 +1856,10 @@ public final class OpticalTraceCache {
             return queuedSystemRebuildNetworkIds.contains(networkId);
         }
 
+        boolean hasSystemAuthorityForNetwork(int networkId) {
+            return queuedSystemRebuildNetworkIds.contains(networkId) || systemIdsByNetwork.containsKey(networkId);
+        }
+
         Integer pollPendingSystemRebuildNetworkId() {
             if (pendingSystemRebuilds.isEmpty()) {
                 return null;
@@ -1902,7 +1943,17 @@ public final class OpticalTraceCache {
                 CachedOpticalTrace cachedTrace = cachedTracesByNetwork.get(request.networkId());
 
                 if (cachedTrace != null) {
-                    cachedTrace.applyOutputs(level, reliable, readoutStep);
+                    if (reliable) {
+                        cachedTrace.applyOutputs(level, true, readoutStep);
+                    } else {
+                        applyInterruptedAuthoritativeOutputs(
+                                level,
+                                this,
+                                request.networkId(),
+                                cachedTrace,
+                                "pending_global_interrupted"
+                        );
+                    }
                 }
             }
         }

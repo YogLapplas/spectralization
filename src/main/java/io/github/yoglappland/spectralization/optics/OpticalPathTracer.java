@@ -1,7 +1,6 @@
 package io.github.yoglappland.spectralization.optics;
 
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldEffectType;
-import io.github.yoglappland.spectralization.optics.field.OpticalFieldInfluence;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
 import java.util.ArrayDeque;
 import java.util.HashSet;
@@ -17,7 +16,6 @@ public final class OpticalPathTracer {
     private static final int MAX_SEGMENTS = 128;
     private static final int MAX_STATES_PER_TRACE = 2048;
     private static final double MIN_POWER = 0.01;
-    private static final double AIR_PROPAGATION_FACTOR = 0.995;
 
     public static CompiledOpticalTrace trace(Level level, BlockPos sourcePos, OutputBeam sourceOutput) {
         return trace(level, sourcePos, sourceOutput, MAX_STATES_PER_TRACE, true);
@@ -52,7 +50,7 @@ public final class OpticalPathTracer {
         pending.add(new TravelState(
                 firstPos,
                 direction,
-                sourceOutput.beam().withDirection(direction).scalePower(propagationFactor(level, firstPos)),
+                propagate(level, firstPos, sourceOutput.beam().withDirection(direction)),
                 1
         ));
 
@@ -215,17 +213,13 @@ public final class OpticalPathTracer {
         pending.add(new TravelState(
                 nextPos,
                 direction,
-                beam.withDirection(direction).scalePower(propagationFactor(level, nextPos)),
+                propagate(level, nextPos, beam.withDirection(direction)),
                 segments + 1
         ));
     }
 
-    private static double propagationFactor(Level level, BlockPos pos) {
-        OpticalFieldInfluence fieldInfluence = OpticalFieldSources.influenceAt(level, pos);
-
-        return fieldInfluence.has(OpticalFieldEffectType.SCATTERING)
-                ? fieldInfluence.propagationFactor()
-                : AIR_PROPAGATION_FACTOR;
+    private static BeamPacket propagate(Level level, BlockPos pos, BeamPacket beam) {
+        return beam.scalePower(OpticalPropagationLoss.factor(level, pos, beam));
     }
 
     private record TravelState(

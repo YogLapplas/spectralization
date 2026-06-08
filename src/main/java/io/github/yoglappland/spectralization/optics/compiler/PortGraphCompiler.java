@@ -6,14 +6,12 @@ import io.github.yoglappland.spectralization.optics.CompiledOpticalTrace;
 import io.github.yoglappland.spectralization.optics.OpticalInteractionKind;
 import io.github.yoglappland.spectralization.optics.OpticalMaterialProfiles;
 import io.github.yoglappland.spectralization.optics.OpticalPort;
+import io.github.yoglappland.spectralization.optics.OpticalPropagationLoss;
 import io.github.yoglappland.spectralization.optics.OpticalPropagationEdge;
 import io.github.yoglappland.spectralization.optics.OpticalTraceStep;
 import io.github.yoglappland.spectralization.optics.OpticalTraceTermination;
 import io.github.yoglappland.spectralization.optics.OpticalTransferEdge;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
-import io.github.yoglappland.spectralization.optics.field.OpticalFieldEffectType;
-import io.github.yoglappland.spectralization.optics.field.OpticalFieldInfluence;
-import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -32,7 +30,6 @@ import net.minecraft.world.level.block.state.BlockState;
 
 public final class PortGraphCompiler {
     private static final int MAX_DIRECT_SCAN_DISTANCE = 128;
-    private static final double AIR_PROPAGATION_FACTOR = 0.995;
     private static final double DIRECT_MIN_RELATIVE_POWER = 1.0E-4;
     private static final Comparator<PortGraphNode> NODE_COMPARATOR = Comparator
             .comparingInt((PortGraphNode node) -> node.pos().getX())
@@ -261,7 +258,7 @@ public final class PortGraphCompiler {
                 return 1;
             }
 
-            propagationFactor *= propagationFactor(level, cursor);
+            propagationFactor *= OpticalPropagationLoss.factor(level, cursor, sampleBeam);
             double estimatedIncomingPower = estimatedOutgoingPower * propagationFactor;
 
             if (estimatedIncomingPower < DIRECT_MIN_RELATIVE_POWER) {
@@ -303,14 +300,6 @@ public final class PortGraphCompiler {
         }
 
         return 1;
-    }
-
-    private static double propagationFactor(Level level, BlockPos pos) {
-        OpticalFieldInfluence fieldInfluence = OpticalFieldSources.influenceAt(level, pos);
-
-        return fieldInfluence.has(OpticalFieldEffectType.SCATTERING)
-                ? fieldInfluence.propagationFactor()
-                : AIR_PROPAGATION_FACTOR;
     }
 
     private static void addDirectLocalScattering(

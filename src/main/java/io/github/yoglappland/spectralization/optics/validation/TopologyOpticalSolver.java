@@ -6,10 +6,10 @@ import io.github.yoglappland.spectralization.optics.OpticalElement;
 import io.github.yoglappland.spectralization.optics.OpticalMaterialProfiles;
 import io.github.yoglappland.spectralization.optics.OpticalNetworkCompiler;
 import io.github.yoglappland.spectralization.optics.OpticalPort;
+import io.github.yoglappland.spectralization.optics.OpticalPropagationLoss;
 import io.github.yoglappland.spectralization.optics.OpticalResult;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldEffectType;
-import io.github.yoglappland.spectralization.optics.field.OpticalFieldInfluence;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
 import java.util.ArrayDeque;
 import java.util.Queue;
@@ -23,7 +23,6 @@ public final class TopologyOpticalSolver {
     private static final int MAX_SEGMENTS = 128;
     private static final int MAX_STATES = 2048;
     private static final double MIN_POWER = 0.01;
-    private static final double AIR_PROPAGATION_FACTOR = 0.995;
 
     public static TopologyOpticalTrace solve(Level level, BlockPos sourcePos, OutputBeam sourceOutput) {
         TopologyOpticalTrace.Builder trace = new TopologyOpticalTrace.Builder();
@@ -68,7 +67,7 @@ public final class TopologyOpticalSolver {
                 return;
             }
 
-            beam = beam.withDirection(direction).scalePower(propagationFactor(level, pos));
+            beam = beam.withDirection(direction).scalePower(OpticalPropagationLoss.factor(level, pos, beam));
 
             if (beam.totalPower() < MIN_POWER) {
                 return;
@@ -122,14 +121,6 @@ public final class TopologyOpticalSolver {
         return block instanceof OpticalElement
                 || OpticalMaterialProfiles.isExplicitOpticalMaterial(state)
                 || OpticalFieldSources.isScatteringFieldSource(state);
-    }
-
-    private static double propagationFactor(Level level, BlockPos pos) {
-        OpticalFieldInfluence fieldInfluence = OpticalFieldSources.influenceAt(level, pos);
-
-        return fieldInfluence.has(OpticalFieldEffectType.SCATTERING)
-                ? fieldInfluence.propagationFactor()
-                : AIR_PROPAGATION_FACTOR;
     }
 
     private record TravelState(

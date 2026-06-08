@@ -46,8 +46,8 @@ public final class OpticalMaterialProfiles {
             sample(SpectralRegion.VISIBLE, 32, 0.88, 0.02, 0.08),
             sample(SpectralRegion.ULTRAVIOLET, 16, 0.35, 0.02, 0.55)
     );
-    private static final double RUBY_INTERNAL_PUMP_CONVERSION_EFFICIENCY = 0.07;
-    private static final double RUBY_INCOHERENT_TO_COHERENT_COUPLING = 0.015;
+    private static final double RUBY_COHERENT_POWER_BUDGET_PER_PUMP_RATE = 0.30;
+    private static final double RUBY_COHERENT_SEED_SATURATION_POWER = 0.35;
 
     private static final Set<Block> AIR_LIKE_BLOCKS = Set.of(
             Blocks.REDSTONE_WIRE,
@@ -189,21 +189,15 @@ public final class OpticalMaterialProfiles {
     }
 
     public static double gainFactorFor(Level level, BlockPos pos, BlockState state, FrequencyKey frequency) {
-        if (state.getBlock() != Spectralization.RUBY_BLOCK.get()) {
-            return 1.0;
-        }
-
-        int pumpRate = OpticalPumpSources.adjacentPumpRate(level, pos);
-
-        if (pumpRate <= 0) {
-            return 1.0;
-        }
-
-        return 1.0 + RUBY_INTERNAL_PUMP_CONVERSION_EFFICIENCY * pumpRate * rubyEmissionCoupling(frequency);
+        return 1.0;
     }
 
-    public static double coherentSeedConversionFactorFor(Level level, BlockPos pos, BlockState state) {
+    public static double saturatedCoherentEmissionFor(Level level, BlockPos pos, BlockState state, double seedPower) {
         if (state.getBlock() != Spectralization.RUBY_BLOCK.get()) {
+            return 0.0;
+        }
+
+        if (!Double.isFinite(seedPower) || seedPower <= 0.0) {
             return 0.0;
         }
 
@@ -213,7 +207,10 @@ public final class OpticalMaterialProfiles {
             return 0.0;
         }
 
-        return RUBY_INCOHERENT_TO_COHERENT_COUPLING * pumpRate;
+        double spectralCoupling = rubyEmissionCoupling(RubyBlock.RUBY_LINE);
+        double budget = RUBY_COHERENT_POWER_BUDGET_PER_PUMP_RATE * pumpRate * spectralCoupling;
+
+        return budget * seedPower / (seedPower + RUBY_COHERENT_SEED_SATURATION_POWER);
     }
 
     private static double rubyEmissionCoupling(FrequencyKey frequency) {

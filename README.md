@@ -1,80 +1,74 @@
 # Spectralization
 
-Spectralization is a NeoForge 1.21 mod experiment about modern spectral industry:
-light, channels, coatings, holographic storage, and large-scale aperture systems.
+Spectralization 是一个 NeoForge 1.21.1 科技模组实验。它想做的不是“又一套
+机器链”，而是一种少见的工业体验：玩家用光谱、端口、镀膜、反馈腔、场源、
+全息储存和虚空信道来设计自己的基地。
 
-## Current Prototype
+现在的原型已经走过了最早的试验阶段。它有了第一代光网络编译器，有了能在
+世界里自然形成的红宝石激光器，也有了涂层、光束 HUD、spot 可视化和一批
+传感器。接下来要把这些基础收束成真正的早中期玩法：固体激光器、镀膜系统、
+空间频率系统，以及它们通向光热工业、远程机器交互和虚空存储总线的路线。
 
-The current prototype is focused on the first optical runtime experiments:
+## 当前能玩的东西
 
-- Basic optical parts are registered: lens, lens holder, mirror, beam splitter,
-  creative light source, CMOS sensor, pass-through sensor, phosphor dust, and
-  phosphor tube.
-- Early laser materials are registered: ruby block, silver block, and silvered
-  glass.
-- Creative light sources emit simple single-frequency beams.
-- Mirrors, beam splitters, glass-like materials, scattering fields, and sensors
-  participate in the prototype beam path simulation.
-- CMOS and pass-through sensors can receive cached optical outputs.
-- Ruby blocks act as experimental solid-state laser media. Adjacent glowstone
-  provides weak incoherent seed light, charged glowstone provides pump rate, and
-  pumped ruby converts seed light into coherent ruby-line output.
-- Coherent ruby gain is scheduled per axial mode. The compiler estimates
-  feedback participation, applies a smooth effective-gain softcap with a hard
-  stability limit, and keeps unrelated cavity axes from sharing hidden gain
-  state.
-- The experimental optical compiler builds port graphs, groups source graphs
-  into optical systems, solves acyclic and feedback regions, emits readout-layer
-  diagnostics, and writes timestamped debug logs when enabled.
+- 创造光源、镜子、动态镜、分光镜、透镜架、CMOS、贯通传感器、光束分析仪。
+- 红宝石块、银块、涂银玻璃组成的初级固体激光腔。
+- 金/银涂料桶、砂纸、高级刷子、创造刷子和世界表面涂层。
+- 皮革帽子临时承担 debug HUD：能看到涂层、光束拓扑和 surface spot。
+- Jade 显示部分传感器读数。
+- 光束伤害、致盲、荧光管、沙尘场等早期互动。
+- 第一代 port graph 编译器：能识别网络、调度求解、处理反馈、缓存读数。
 
-This is still a prototype. The first-generation compiler is now the gameplay
-path for current optical parts, while the older tracer remains useful as a
-debug/reference path where it is still comparable.
+## 现在的技术方向
 
-## Development Notes
+光学系统按三层运行：
 
-The optical debug log can be enabled in the common config or with the in-game
-compiler debug command. Logs are written under:
+- 几何层：世界里有哪些光学节点、方块、表面、场源。
+- 拓扑层：这些节点的端口如何连接。
+- 数据层：材料、涂层、增益、频率、功率、读数和可视化导出量。
+
+光源 tick 不负责重算光路。它只申请缓存或应用缓存。真正的重建和求解进入
+预算队列；高优先级变化可以中断低优先级导出计算。这个结构是后续所有玩法的
+底座，包括微缩化光路、虚空存储总线和随机材料系统。
+
+## 文档
+
+- [TODO.md](TODO.md)：总路线图，标记哪些已经实现、哪些在原型中、哪些还只是设想。
+- [docs/WORLDVIEW.md](docs/WORLDVIEW.md)：玩法、世界观、工业线和终局幻想。
+- [docs/MATH_AND_ARCHITECTURE.md](docs/MATH_AND_ARCHITECTURE.md)：profile、port graph、
+  调度算法、求解器、缓存、场源和可视化架构。
+
+## Debug Log
+
+光学编译器日志可以通过 config 或游戏内命令开启：
 
 ```text
 logs/spectralization/optical_compiler_<timestamp>_UTC.log
 ```
 
-Useful validation lines:
+常见诊断行：
 
 ```text
-network_cache system_id=... structurally_fresh=... usable_for_gameplay=...
-gain_schedule sources=... passive_rho=... rho_after=... max_effective_gain=...
-direct_templates=...
-network_templates=...
+network_cache ...
+solver_plan ...
+gain_schedule ...
 receiver_outputs ...
 system_receiver_outputs ...
+spot_export ...
+beam_overlay ...
 ```
 
-Short version:
+这些日志不是错误报告，而是我们的实验仪器。它们用来检查网络是否被正确识别、
+求解器是否按计划运行、反馈腔是否被稳定调度、传感器读数是否可靠。
 
-- `direct_templates` and `network_templates` show which component templates the
-  compiler saw in the port graph.
-- `gain_schedule` shows feedback stability and the effective gain chosen for
-  coherent gain media.
-- `receiver_outputs` compares one source's legacy trace with its direct graph.
-- `system_receiver_outputs` compares all cached source traces in the optical
-  system with the compiled network result.
-- `usable_for_gameplay=true` means the compiled system is fresh, converged, and
-  stable enough for cached readouts.
-
-See [TODO.md](TODO.md) for the current compiler roadmap.
-
-## Development
-
-Build the mod with:
-
-```bash
-./gradlew build
-```
-
-On Windows:
+## Build
 
 ```powershell
 .\gradlew.bat build
+```
+
+或：
+
+```bash
+./gradlew build
 ```

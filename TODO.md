@@ -1,39 +1,267 @@
 # Spectralization TODO
 
-## Optical Runtime Stabilization
+标记：
 
-- Keep legacy trace outputs as the gameplay source while the compiler is being
-  validated.
-- Use `system_receiver_outputs` as the main multi-source validation metric.
-- Treat feedback systems as debug-only until the SCC/chord solver is in place.
-- Promote no-feedback compiled systems to gameplay output only after repeated
-  log validation.
+- `[x]` 已实现，至少经过游戏内验证。
+- `[~]` 原型已接入，需要继续调数值、体验或性能。
+- `[ ]` 尚未实现。
+- `[!]` 已知问题或需要重新设计。
+- `[hold]` 保留想法，暂时不进入当前阶段。
 
-## Compiler Roadmap
+## 当前版本的收束目标
 
-- Replace the fixed-point diagnostic solver with an SCC/chord solver for
-  feedback components.
-- Split optical dirty state into structure, parameter, source, field, and config
-  epochs.
-- Move from source-seeded system grouping toward an authoritative network-level
-  cache.
-- Cache path templates separately from transfer coefficients so parameter
-  changes do not rebuild topology.
-- Extend the scalar power solver toward profile-valued vectors by frequency bin.
+- [x] 第一代光网络编译器成为当前光学系统的主路径。
+- [x] 旧 tracer 降级为 debug/reference/fallback。
+- [x] 红宝石固体激光器能通过世界光路自然形成。
+- [x] 世界表面涂层能改变光学系统。
+- [x] 光束 HUD、涂层 HUD、surface spot 已经能显示。
+- [~] Spot 逻辑接入 compiled solver，但渲染成本偏高。
+- [~] 传感器可靠性和响应速度已经可用，还需要长期压力测试。
+- [ ] 下一阶段主线：空间频率系统、spot 性能、镀膜玩法、第一批生存合成。
 
-## Gameplay Roadmap
+## 光学 Profile
 
-- Keep the current `Emitter -> Mirror/Splitter -> Sensor` loop as the primary
-  validation playground.
-- Add a debug tool or block that reads beam profile data in-world.
-- Start coating experiments as face-level optical parameters once the runtime is
-  stable.
-- Keep feedback/gain gameplay conservative until instability handling, heating,
-  and damage policies are defined.
+- [x] `FrequencyKey = SpectralRegion + bin`。
+- [x] 功率 profile。
+- [x] 相干 / 散杂通道。
+- [x] `BeamEnvelope` 几何包络占位。
+- [x] 光束分析仪读取基础几何参数。
+- [~] 半径、发散角、聚焦距离、spot size、散杂度进入接口层。
+- [ ] 频率 bin 向量。
+- [ ] 带宽、调制信道、偏振、相位、热负载。
+- [ ] profile 分层求解：常规功率、局部复振幅、光热吸收、光纤信道分别走不同系统。
+- [hold] 全世界复振幅干涉。只在干涉仪、光刻、微缩化工作站等局部结构中启用。
 
-## Technical Hygiene
+## 材料、TRA 与随机材料
 
-- Keep compiler debug logs timestamped per game launch.
-- Keep field-source effects configurable.
-- Avoid entity-heavy visualizations; use particles or cached client overlays.
-- Do not commit local scratch data from `work/`.
+- [x] 材料响应 LUT 和插值。
+- [x] 玻璃、水、红石/铁轨、金属、沙子等基础行为。
+- [x] 红宝石、银块、涂银玻璃。
+- [x] 沙子/红沙/沙砾作为早期场源。
+- [~] 方块内传播较低损耗、自由空间传播额外损耗的 waveguide-like 设定。
+- [~] 染色玻璃、遮光玻璃、更多透明方块需要补表。
+- [ ] 随机材料系统：每个世界的部分材料谱线有轻微偏移。
+- [ ] 材料测量工具：玩家测得本世界材料 profile，而不是直接全知。
+- [ ] 随机材料缓存：世界 seed + 材料 id + 维度/区块扰动。
+- [ ] 随机材料和数据包共存：数据包给基准，世界扰动给个性。
+- [ ] 损伤阈值、热转换效率、光热材料标签。
+
+## 场系统
+
+- [x] 沙子附近光路显示和高损耗互动。
+- [x] 场源影响被纳入 dependency / dirty 逻辑。
+- [~] 沙子类场源不应自己总是成为光学元件，而是提升附近潜在光路的介质修正。
+- [ ] 统一术语：Field Source / Optical Field Modifier。
+- [ ] 配置每类场源的范围、强度、作用 profile 和刷新频率。
+- [ ] 场源只修改数据层时不重建拓扑。
+- [ ] 场源进入注意力调度：有传感器、有可见 HUD、有高功率路径时优先。
+- [ ] 新场源类型：烟雾、粉尘、热场、虚空扰动场、磁/电偏置场。
+- [ ] 场源可视化：自然可见、HUD 可见、调试可见三种层级。
+
+## 方块与物品
+
+- [x] 透镜。
+- [x] 透镜架：插入/取下 lens 标签物品，模型与碰撞体积修正。
+- [x] 镜子：双面反射，直/斜状态，朝向规范。
+- [x] 动态镜：具有潜在拓扑连接。
+- [x] 分光镜：50/50 反射/透射，直/斜模式，局部半透明材质。
+- [x] 创造光源：GUI 调光束参数。
+- [x] CMOS：总功率传感器。
+- [x] PTS：贯通传感器，显示世界方向。
+- [x] Beam Profiler：空间参数传感器。
+- [x] 荧光粉、荧光管。
+- [x] 红宝石块、银块、涂银玻璃。
+- [x] 涂料桶、砂纸、高级刷子、创造刷子。
+- [ ] 生存模式基础光源。
+- [ ] 基础发射器。
+- [ ] 光热泵浦器。
+- [ ] 光热接收面。
+- [ ] 辐光收集器。
+- [ ] 可调谐采矿激光。
+- [ ] 光纤、收发器。
+- [ ] 全息平板、全息终端、光子指挥台。
+- [ ] 全息物质矩阵。
+- [ ] 光点无人机坞站。
+- [ ] 相控激光孔径。
+- [ ] 虚空孔径阵列。
+
+## 编译器与求解器
+
+- [x] Dependency index。
+- [x] Timestamped debug log。
+- [x] 几何层、拓扑层、数据层。
+- [x] Port graph。
+- [x] 网络识别和系统缓存。
+- [x] Dirty epoch：structure / parameter / source / field / config。
+- [x] 预算队列和中断。
+- [x] 读数层可靠性。
+- [x] SolverPlan。
+- [x] DAG / 拓扑传播。
+- [x] Feedback SCC / chord 数值求解。
+- [x] Stable feedback gain scheduler。
+- [x] Effective gain softcap + hard rho。
+- [x] 64x64 分光镜阵列和高频红石压力测试达到可玩水平。
+- [~] 多源、多网络、切分/合并网络需要长期回归。
+- [~] 数据层状态 LUT 还可强化。
+- [ ] Weighted BFS attention scheduler。
+- [ ] 量级分池。
+- [ ] Residual correction。
+- [ ] Loop macro / 小环等效缓存。
+- [ ] 对称性 / 重复子图压缩。
+- [ ] Solver metadata：误差界、残差、稳定性余量、截断功率。
+- [ ] Debug command 导出 graph / solver plan / readout / gain schedule。
+
+## 调度算法
+
+- [x] 高层变化中断低层导出计算。
+- [x] 网络完成一次未中断导出后才标记可靠。
+- [x] 反馈增益在求解前被调度成稳定线性系统。
+- [~] 当前调度已经能支撑大网络和高频红石，但还没有完整注意力系统。
+- [ ] 网络优先级：中断 > 正在计算 > 有可靠性需求的传感器 > 高功率 > 玩家可见 > 最近变化 > 场源影响。
+- [ ] 无传感器网络降级排队，只保留必要固有数据和拓扑状态。
+- [ ] 传感器附近网络提高优先级。
+- [ ] 高频状态 LUT：最近出现过的几何/拓扑/固有数据签名可以直接复用。
+- [ ] 大型瞬时放置的网络分帧识别。
+
+## 红宝石激光与增益介质
+
+- [x] 删除打碎萤石掉紫水晶的测试特性。
+- [x] 萤石不再直接作为红石激活的激光源。
+- [x] 萤石提供弱非相干种子光。
+- [x] 被红石充能的萤石提供 pump rate。
+- [x] 红宝石把合适的非相干种子转为相干红宝石线。
+- [x] 银块作为背镜。
+- [x] 涂银玻璃作为输出镜。
+- [x] 三个红宝石块可以形成初级有效激光腔。
+- [x] 不同轴向腔不共享隐藏反转状态。
+- [~] 增益、泵浦效率、输出耦合还需要调数值。
+- [ ] FE 电容方块。
+- [ ] 脉冲激光。
+- [ ] 激光诱导相变 / 物质重构。
+- [ ] 热失控、镀膜烧蚀、光学击穿。
+
+## 涂层、镀膜与表面
+
+- [x] 表面涂层数据层接口。
+- [x] `world_coatable` / `item_coatable` / `surface_locked`。
+- [x] 金块、铁块、玻璃可涂。
+- [x] 主手刷子 + 副手涂料桶上涂层。
+- [x] 砂纸删除涂层。
+- [x] 高级刷子加载涂料并返还空桶。
+- [x] 创造刷子复用高级刷子 UI，涂料无限。
+- [x] 皮革帽显示涂层位置和参数。
+- [x] 不同涂层有不同颜色。
+- [!] 涂料来源未定稿。
+- [hold] 熔炉湿海绵式涂料制作路线已放弃。
+- [ ] 生存模式涂料生产链。
+- [ ] 机器镀膜：只处理 item-coatable 物品。
+- [ ] 破坏后涂层保存规则。
+- [ ] 面级 TMM / 界面反射接口。
+- [ ] 可编程涂层。
+
+## 空间频率与 Spot
+
+- [x] BeamEnvelope / BeamModel。
+- [x] Beam Profiler。
+- [x] HUD 拓扑光束线。
+- [x] Spot core/halo/ring。
+- [x] Spot 接入 compiled solver。
+- [~] 完整方块表面 spot 可用。
+- [~] 非完整方块表面的贴面定位暂缓。
+- [!] Spot FPS 成本偏高。
+- [ ] Spot batching / culling / 距离限制 / 最大数量。
+- [ ] 频率 + 功率 -> RGB 函数。
+- [ ] alpha 16 级量化。
+- [ ] 相干核心与散杂 halo 的形状随传播距离变化。
+- [ ] 光束宽度和 spot size 联动。
+- [ ] 光热 irradiance 读取。
+- [ ] 光纤耦合读取。
+
+## 光热工业线
+
+- [ ] 光热泵浦器。
+- [ ] 光热接收面。
+- [ ] 光热熔炉。
+- [ ] 光热反应釜。
+- [ ] 光学发电机。
+- [ ] 辐光收集器：发光方块 + 光腔 + 镀膜 + 冷却。
+- [ ] 吸收功率 -> 热负载。
+- [ ] 冷却、热损伤、热效率。
+
+## 光子信息线
+
+- [ ] 光纤。
+- [ ] 光学收发器。
+- [ ] 机器绑定器。
+- [ ] 全息平板。
+- [ ] 远程机器 GUI。
+- [ ] 权限等级：View / Touch / Slot / Matter。
+- [ ] 工业拓扑图。
+- [ ] 光子指挥台。
+- [ ] 光点维护群：任务 token + 客户端光点流。
+- [ ] 远程故障处理和维护任务卡。
+
+## 光谱物质、全息储存与虚空存储总线
+
+- [ ] 光谱扫描器。
+- [ ] 可调谐激光器。
+- [ ] 选择性切割器。
+- [ ] 激光诱导相变。
+- [ ] 全息晶体：模板信息 + 数量信息 + 能量抵押 + 光谱索引。
+- [ ] 全息物质矩阵。
+- [ ] NBT 复杂度影响占用。
+- [ ] 频率槽数量和信道稳定度影响容量。
+- [ ] 信道拥塞影响取出速度。
+- [ ] 虚空信道前置装置。
+- [ ] 虚空存储总线：把全息矩阵扩展到虚空信道。
+- [ ] 远程物质接口接入虚空总线。
+- [ ] 跨距离物品访问。
+- [ ] 从虚空中抽取基础资源。
+- [ ] 用已学习模板重构特定物品。
+- [ ] 虚空孔径阵列。
+
+## 微缩化结构与万能框架
+
+- [ ] 微缩化光路工作站：在二维工作区搭建光路。
+- [ ] 把二维光路编译成 macro node。
+- [ ] Macro node 可拥有多于六面的逻辑端口。
+- [ ] 激光扭曲空间，解释为什么光路能被压缩进一个方块。
+- [ ] 自定义机器通过光端口 IO。
+- [ ] 微缩结构复用 port graph / solver plan / cached solution。
+- [ ] 万能光学框架：内部放 lens/filter/mirror 等标签物品。
+- [ ] 表面贴 optical plate 改变表面性质。
+- [ ] 拆除保留内部物品和 plate。
+- [ ] 永远不可堆叠。
+- [ ] 框架本身不镀膜，因为它承载别的表面。
+
+## 超透镜与超材料玩法
+
+- [x] `optics.metasurface` 包已有材料预算、目标参数、包络评估占位。
+- [ ] 超透镜模板。
+- [ ] 材料预算 -> 可实现包络。
+- [ ] 目标参数落入包络则设计成功。
+- [ ] 机器记忆设计成功的模板。
+- [ ] 合成消耗材料，不消耗模板。
+- [ ] 同一预算可实现多个目标时，由目标模板决定输出。
+- [ ] 后期机器、虚空孔径、微缩结构需要超透镜压缩体积。
+
+## 兼容与配置
+
+- [x] Jade 已显示部分传感器信息。
+- [ ] Jade 显示更多传感器、涂层、可靠性和 profile。
+- [ ] FE 能源接口。
+- [ ] Curios/饰品 HUD 眼镜。
+- [ ] AE2/RS/QIO：接入虚空总线和远程物质接口，不替代仓库核心。
+- [ ] Create/物流模组：保留大宗物流价值。
+- [ ] 配置：场源范围、spot 数量、光伤害、可视化、solver budget、log 采样。
+
+## 文档与测试
+
+- [x] README 更新为项目入口。
+- [x] TODO 扩展成总路线图。
+- [x] 世界观文档。
+- [x] 数学与架构文档。
+- [ ] 单元测试：材料插值、softcap、SCC、可靠性门控。
+- [ ] 游戏内 debug 命令导出当前网络报告。
+- [ ] 数据包文档：材料 LUT、涂层 LUT、频率区间、场源、增益介质。
+- [ ] 美术规范：Blockbench 初始朝向、旋转、透明材质、item 视角。

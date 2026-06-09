@@ -65,10 +65,7 @@ public class CoatingBrushScreen extends AbstractContainerScreen<CoatingBrushMenu
     protected void renderLabels(GuiGraphics graphics, int mouseX, int mouseY) {
         graphics.drawString(font, title, titleLabelX, titleLabelY, 0xE7EEF8, false);
 
-        Component mode = menu.getData(CoatingBrushMenu.DATA_CREATIVE) == 1
-                ? Component.translatable("screen.spectralization.coating_brush.creative")
-                : Component.translatable("screen.spectralization.coating_brush.stored");
-        graphics.drawString(font, mode, 10, 24, 0xBFC7D5, false);
+        graphics.drawString(font, Component.translatable("screen.spectralization.coating_brush.stored"), 10, 24, 0xBFC7D5, false);
 
         if (menu.getData(CoatingBrushMenu.DATA_CREATIVE) == 0
                 && !menu.isPaintVisible(0)
@@ -93,9 +90,14 @@ public class CoatingBrushScreen extends AbstractContainerScreen<CoatingBrushMenu
             graphics.renderItem(icon, x + 29, y + 8);
         }
 
-        if (menu.getData(CoatingBrushMenu.DATA_CREATIVE) == 0) {
-            graphics.drawString(font, Component.translatable("screen.spectralization.coating_brush.uses", menu.usesFor(index)), x + 16, y + 32, 0xBFC7D5, false);
-        }
+        Component uses = menu.getData(CoatingBrushMenu.DATA_CREATIVE) == 1
+                ? Component.translatable(
+                        "screen.spectralization.coating_brush.uses",
+                        Component.translatable("screen.spectralization.coating_brush.infinite")
+                )
+                : Component.translatable("screen.spectralization.coating_brush.uses", menu.usesFor(index));
+        int usesColor = selected ? 0x1A2330 : 0xBFC7D5;
+        graphics.drawString(font, uses, x + 16, y + 32, usesColor, false);
     }
 
     private void click(int buttonId) {

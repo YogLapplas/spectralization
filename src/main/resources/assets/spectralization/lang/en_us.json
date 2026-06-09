@@ -26,6 +26,7 @@
   "screen.spectralization.coating_brush.stored": "Stored paint",
   "screen.spectralization.coating_brush.empty": "No paint stored",
   "screen.spectralization.coating_brush.uses": "Uses: %s",
+  "screen.spectralization.coating_brush.infinite": "infinite",
   "surface.spectralization.treatment.none": "No coating",
   "surface.spectralization.treatment.silvering": "Silver coating",
   "surface.spectralization.treatment.golding": "Gold coating",

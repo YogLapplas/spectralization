@@ -16,12 +16,15 @@ import io.github.yoglappland.spectralization.optics.OpticalTraceStep;
 import io.github.yoglappland.spectralization.optics.OpticalTraceTermination;
 import io.github.yoglappland.spectralization.optics.OpticalTraceTerminationReason;
 import io.github.yoglappland.spectralization.optics.OpticalSource;
+import io.github.yoglappland.spectralization.optics.OpticalSpotTracker;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
+import io.github.yoglappland.spectralization.optics.SpotRecord;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
 import io.github.yoglappland.spectralization.optics.geometry.BeamPathOverlayTracker;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledPortGraph;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledReadoutLayer;
+import io.github.yoglappland.spectralization.optics.compiler.CompiledSpotLayer;
 import io.github.yoglappland.spectralization.optics.compiler.OpticalCompilerDebugLogger;
 import io.github.yoglappland.spectralization.optics.compiler.PortGraphCompiler;
 import io.github.yoglappland.spectralization.optics.compiler.PortGraphNode;
@@ -134,10 +137,18 @@ public final class OpticalTraceCache {
         }
 
         if (dirtyKind == OpticalDirtyKind.PARAMETER) {
-            return cache.markParameterChanged(serverLevel, pos);
+            boolean changed = cache.markParameterChanged(serverLevel, pos);
+            if (changed) {
+                OpticalSpotTracker.clear(serverLevel);
+            }
+            return changed;
         }
 
-        return cache.markChanged(pos, dirtyKind, serverLevel.getGameTime());
+        boolean changed = cache.markChanged(pos, dirtyKind, serverLevel.getGameTime());
+        if (changed) {
+            OpticalSpotTracker.clear(serverLevel);
+        }
+        return changed;
     }
 
     public static void markSurfaceChanged(LevelAccessor level, SurfaceKey key) {
@@ -146,6 +157,7 @@ public final class OpticalTraceCache {
         }
 
         LevelTraceCache cache = cacheFor(serverLevel);
+        OpticalSpotTracker.clear(serverLevel);
         cache.applyKnownCachedOutputsAsInterrupted(serverLevel);
         cache.invalidateSurfaceParameterData();
         cache.markChanged(key.pos(), OpticalDirtyKind.PARAMETER, serverLevel.getGameTime());
@@ -158,6 +170,7 @@ public final class OpticalTraceCache {
         for (ServerLevel level : server.getAllLevels()) {
             processQueue(level);
         }
+        OpticalSpotTracker.refresh(server);
     }
 
     private static void processQueue(ServerLevel level) {
@@ -586,7 +599,6 @@ public final class OpticalTraceCache {
 
     private static boolean shouldRunLegacyEffects(CompiledPortGraph directGraph) {
         if (!SpectralizationConfig.lightPathsVisible()
-                && !SpectralizationConfig.surfaceSpotsVisible()
                 && !SpectralizationConfig.laserDamage()
                 && !SpectralizationConfig.laserBlindness()) {
             return false;
@@ -610,6 +622,7 @@ public final class OpticalTraceCache {
         CachedOpticalSystem cachedSystem = cache.systemForNetwork(networkId);
         CachedOpticalSystem heldSystem = cache.lastUsableSystemForNetwork(networkId);
         publishCachedHudOverlay(level, cache, networkId, cachedTrace, modePrefix);
+        publishCompiledSpotLayer(level, networkId, cachedTrace, false);
 
         if (heldSystem != null && cache.markSystemApplied(heldSystem.systemId(), level.getGameTime())) {
             heldSystem.applyOutputs(level, false, readoutStep);
@@ -654,6 +667,12 @@ public final class OpticalTraceCache {
         }
 
         publishCachedHudOverlay(level, cache, networkId, cachedTrace, "cached");
+        publishCompiledSpotLayer(
+                level,
+                networkId,
+                cachedTrace,
+                cachedTrace.scalarPowerSolution().reliableForReadout()
+        );
 
         long readoutStep = cache.nextReadoutStep();
 
@@ -697,6 +716,23 @@ public final class OpticalTraceCache {
         logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, null,
                 reliable ? "direct_trace" : "direct_trace_unreliable_system_authority", reliable, readoutStep);
         return reliable;
+    }
+
+    private static void publishCompiledSpotLayer(
+            Level level,
+            int networkId,
+            CachedOpticalTrace cachedTrace,
+            boolean reliable
+    ) {
+        if (!(level instanceof ServerLevel serverLevel) || cachedTrace == null) {
+            return;
+        }
+
+        OpticalSpotTracker.publishCompiledSpots(
+                serverLevel,
+                networkId,
+                reliable ? cachedTrace.spotRecords() : List.of()
+        );
     }
 
     private static void publishCachedHudOverlay(
@@ -856,6 +892,9 @@ public final class OpticalTraceCache {
         }
 
         addGraphDependencies(level, portGraph, dependencies);
+        List<SpotRecord> spotRecords = scalarPowerSolution.reliableForReadout()
+                ? CompiledSpotLayer.sample(level, portGraph, scalarPowerSolution, request.sourceOutput())
+                : List.of();
 
         return new CachedOpticalTrace(
                 request.networkId(),
@@ -866,6 +905,7 @@ public final class OpticalTraceCache {
                 readoutLayer,
                 scalarPowerSolution,
                 BeamPathOverlayTracker.topologySegments(portGraph),
+                spotRecords,
                 trace == null ? !scalarPowerSolution.reliableForReadout() : isUnstable(trace)
         );
     }

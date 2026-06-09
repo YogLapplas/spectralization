@@ -6,6 +6,7 @@ import io.github.yoglappland.spectralization.optics.BeamModel;
 public final class BeamGeometryOps {
     private static final double MIN_RADIUS = 0.03125;
     private static final double MAX_REASONABLE_RADIUS = 16.0;
+    private static final double DIFFRACTION_DIVERGENCE_SCALE = 0.0025;
 
     public static BeamGeometrySample sample(BeamEnvelope envelope, double power) {
         double area = spotArea(envelope);
@@ -24,22 +25,23 @@ public final class BeamGeometryOps {
         }
 
         double radius = envelope.radius();
+        double divergence = effectiveDivergence(envelope);
 
         if (envelope.focusDistance() > 0.0 && distance < envelope.focusDistance()) {
-            radius = Math.max(MIN_RADIUS, radius - envelope.divergence() * distance);
+            radius = Math.max(MIN_RADIUS, radius - divergence * distance);
         } else {
             double postFocusDistance = envelope.focusDistance() > 0.0
                     ? distance - envelope.focusDistance()
                     : distance;
-            radius = radius + envelope.divergence() * Math.max(0.0, postFocusDistance);
+            radius = radius + divergence * Math.max(0.0, postFocusDistance);
         }
 
-        double scatter = clamp01(envelope.scatter() + envelope.divergence() * distance * 0.01);
+        double scatter = clamp01(envelope.scatter() + divergence * distance * 0.01);
 
         return new BeamEnvelope(
                 envelope.model(),
                 Math.min(MAX_REASONABLE_RADIUS, Math.max(MIN_RADIUS, radius)),
-                envelope.divergence(),
+                divergence,
                 Math.max(0.0, envelope.focusDistance() - distance),
                 envelope.beamQuality(),
                 envelope.apertureFill(),
@@ -47,6 +49,16 @@ public final class BeamGeometryOps {
                 envelope.modeM(),
                 envelope.modeN()
         );
+    }
+
+    private static double effectiveDivergence(BeamEnvelope envelope) {
+        if (envelope.model() == BeamModel.PLANE_WAVE) {
+            return envelope.divergence();
+        }
+
+        double radius = Math.max(MIN_RADIUS, envelope.radius());
+        double diffractionFloor = DIFFRACTION_DIVERGENCE_SCALE / radius;
+        return Math.max(envelope.divergence(), diffractionFloor);
     }
 
     public static SpatialModeCoupling passivePropagationCoupling(BeamEnvelope envelope, double distance) {

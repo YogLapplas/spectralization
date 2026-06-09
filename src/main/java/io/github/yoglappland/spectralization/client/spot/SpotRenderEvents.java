@@ -5,20 +5,31 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.optics.SpotRecord;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
-import org.joml.Vector3f;
 
 @EventBusSubscriber(modid = Spectralization.MODID, value = Dist.CLIENT)
 public final class SpotRenderEvents {
     private static final double SURFACE_OFFSET = 0.003D;
+    private static final ResourceLocation CORE_TEXTURE =
+            ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "textures/effect/spot_core.png");
+    private static final ResourceLocation HALO_TEXTURE =
+            ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "textures/effect/spot_halo.png");
+    private static final ResourceLocation RING_TEXTURE =
+            ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "textures/effect/spot_ring.png");
 
     @SubscribeEvent
     public static void renderSpots(RenderLevelStageEvent event) {
@@ -35,7 +46,6 @@ public final class SpotRenderEvents {
 
         PoseStack poseStack = event.getPoseStack();
         MultiBufferSource.BufferSource bufferSource = Minecraft.getInstance().renderBuffers().bufferSource();
-        VertexConsumer consumer = bufferSource.getBuffer(RenderType.debugQuads());
         Vec3 cameraPosition = event.getCamera().getPosition();
 
         poseStack.pushPose();
@@ -44,22 +54,80 @@ public final class SpotRenderEvents {
         PoseStack.Pose pose = poseStack.last();
 
         for (SpotRecord spot : spots) {
-            renderSpot(consumer, pose, spot);
+            renderSpot(bufferSource, pose, spot);
         }
 
         poseStack.popPose();
-        bufferSource.endBatch(RenderType.debugQuads());
+        bufferSource.endBatch(RenderType.entityTranslucent(HALO_TEXTURE));
+        bufferSource.endBatch(RenderType.entityTranslucent(CORE_TEXTURE));
+        bufferSource.endBatch(RenderType.entityTranslucent(RING_TEXTURE));
     }
 
-    private static void renderSpot(VertexConsumer consumer, PoseStack.Pose pose, SpotRecord spot) {
-        double radius = renderRadius(spot.radiusLevel());
-        int alpha = 34 + spot.brightnessLevel() * 24;
-        Vector3f color = colorFor(spot.colorBin());
-        BlockPos pos = spot.pos();
+    private static void renderSpot(MultiBufferSource.BufferSource bufferSource, PoseStack.Pose pose, SpotRecord spot) {
+        Vec3 center = spotCenter(spot);
+
+        if (spot.strayAlphaLevel() > 0) {
+            renderTexturedSpot(
+                    bufferSource.getBuffer(RenderType.entityTranslucent(HALO_TEXTURE)),
+                    pose,
+                    spot,
+                    center,
+                    renderRadius(spot.strayRadiusLevel(), 1.25D),
+                    alphaFor(spot.strayAlphaLevel(), 0.72D),
+                    spot.strayRed(),
+                    spot.strayGreen(),
+                    spot.strayBlue()
+            );
+        }
+
+        if (spot.coherentAlphaLevel() > 0) {
+            renderTexturedSpot(
+                    bufferSource.getBuffer(RenderType.entityTranslucent(CORE_TEXTURE)),
+                    pose,
+                    spot,
+                    center,
+                    renderRadius(spot.coherentRadiusLevel(), 0.82D),
+                    alphaFor(spot.coherentAlphaLevel(), 1.0D),
+                    spot.coherentRed(),
+                    spot.coherentGreen(),
+                    spot.coherentBlue()
+            );
+        }
+
+        if (spot.ringAlphaLevel() > 0) {
+            int red = spot.coherentAlphaLevel() > 0 ? spot.coherentRed() : spot.strayRed();
+            int green = spot.coherentAlphaLevel() > 0 ? spot.coherentGreen() : spot.strayGreen();
+            int blue = spot.coherentAlphaLevel() > 0 ? spot.coherentBlue() : spot.strayBlue();
+            int radiusLevel = Math.max(spot.coherentRadiusLevel(), spot.strayRadiusLevel());
+            renderTexturedSpot(
+                    bufferSource.getBuffer(RenderType.entityTranslucent(RING_TEXTURE)),
+                    pose,
+                    spot,
+                    center,
+                    renderRadius(radiusLevel, 1.35D),
+                    alphaFor(spot.ringAlphaLevel(), 0.72D),
+                    red,
+                    green,
+                    blue
+            );
+        }
+    }
+
+    private static void renderTexturedSpot(
+            VertexConsumer consumer,
+            PoseStack.Pose pose,
+            SpotRecord spot,
+            Vec3 center,
+            double radius,
+            int alpha,
+            int red,
+            int green,
+            int blue
+    ) {
         Direction face = spot.face();
-        double x = pos.getX() + 0.5D + face.getStepX() * (0.5D + SURFACE_OFFSET);
-        double y = pos.getY() + 0.5D + face.getStepY() * (0.5D + SURFACE_OFFSET);
-        double z = pos.getZ() + 0.5D + face.getStepZ() * (0.5D + SURFACE_OFFSET);
+        double x = center.x;
+        double y = center.y;
+        double z = center.z;
 
         switch (face.getAxis()) {
             case X -> addQuad(
@@ -77,7 +145,9 @@ public final class SpotRenderEvents {
                     x,
                     y - radius,
                     z + radius,
-                    color,
+                    red,
+                    green,
+                    blue,
                     alpha
             );
             case Y -> addQuad(
@@ -95,7 +165,9 @@ public final class SpotRenderEvents {
                     x + radius,
                     y,
                     z - radius,
-                    color,
+                    red,
+                    green,
+                    blue,
                     alpha
             );
             case Z -> addQuad(
@@ -113,7 +185,9 @@ public final class SpotRenderEvents {
                     x - radius,
                     y + radius,
                     z,
-                    color,
+                    red,
+                    green,
+                    blue,
                     alpha
             );
         }
@@ -134,13 +208,15 @@ public final class SpotRenderEvents {
             double x4,
             double y4,
             double z4,
-            Vector3f color,
+            int red,
+            int green,
+            int blue,
             int alpha
     ) {
-        addVertex(consumer, pose, x1, y1, z1, color, alpha);
-        addVertex(consumer, pose, x2, y2, z2, color, alpha);
-        addVertex(consumer, pose, x3, y3, z3, color, alpha);
-        addVertex(consumer, pose, x4, y4, z4, color, alpha);
+        addVertex(consumer, pose, x1, y1, z1, 0.0F, 1.0F, red, green, blue, alpha);
+        addVertex(consumer, pose, x2, y2, z2, 0.0F, 0.0F, red, green, blue, alpha);
+        addVertex(consumer, pose, x3, y3, z3, 1.0F, 0.0F, red, green, blue, alpha);
+        addVertex(consumer, pose, x4, y4, z4, 1.0F, 1.0F, red, green, blue, alpha);
     }
 
     private static void addVertex(
@@ -149,40 +225,72 @@ public final class SpotRenderEvents {
             double x,
             double y,
             double z,
-            Vector3f color,
+            float u,
+            float v,
+            int red,
+            int green,
+            int blue,
             int alpha
     ) {
         consumer.addVertex(pose, (float) x, (float) y, (float) z)
-                .setColor((int) (color.x() * 255.0F), (int) (color.y() * 255.0F), (int) (color.z() * 255.0F), alpha);
+                .setColor(red, green, blue, alpha)
+                .setUv(u, v)
+                .setOverlay(OverlayTexture.NO_OVERLAY)
+                .setLight(LightTexture.FULL_BRIGHT)
+                .setNormal(pose, 0.0F, 1.0F, 0.0F);
     }
 
-    private static double renderRadius(int radiusLevel) {
-        return 0.06D + radiusLevel * 0.055D;
+    private static double renderRadius(int radiusLevel, double multiplier) {
+        return (0.075D + Math.max(1, radiusLevel) * 0.048D) * multiplier;
     }
 
-    private static Vector3f colorFor(int colorBin) {
-        double t = Math.max(0.0D, Math.min(1.0D, colorBin / 63.0D));
-        double hue = 0.72D - t * 0.72D;
-
-        return hsvToRgb(hue, 0.92D, 1.0D);
+    private static int alphaFor(int alphaLevel, double multiplier) {
+        return Math.max(0, Math.min(240, (int) Math.round((32 + alphaLevel * 15) * multiplier)));
     }
 
-    private static Vector3f hsvToRgb(double hue, double saturation, double value) {
-        double h = (hue - Math.floor(hue)) * 6.0D;
-        int sector = (int) Math.floor(h);
-        double f = h - sector;
-        double p = value * (1.0D - saturation);
-        double q = value * (1.0D - f * saturation);
-        double tt = value * (1.0D - (1.0D - f) * saturation);
+    private static Vec3 spotCenter(SpotRecord spot) {
+        Minecraft minecraft = Minecraft.getInstance();
+        BlockPos pos = spot.pos();
+        Direction face = spot.face();
+        Vec3 fallback = new Vec3(
+                pos.getX() + 0.5D + face.getStepX() * (0.5D + SURFACE_OFFSET),
+                pos.getY() + 0.5D + face.getStepY() * (0.5D + SURFACE_OFFSET),
+                pos.getZ() + 0.5D + face.getStepZ() * (0.5D + SURFACE_OFFSET)
+        );
 
-        return switch (sector) {
-            case 0 -> new Vector3f((float) value, (float) tt, (float) p);
-            case 1 -> new Vector3f((float) q, (float) value, (float) p);
-            case 2 -> new Vector3f((float) p, (float) value, (float) tt);
-            case 3 -> new Vector3f((float) p, (float) q, (float) value);
-            case 4 -> new Vector3f((float) tt, (float) p, (float) value);
-            default -> new Vector3f((float) value, (float) p, (float) q);
-        };
+        if (minecraft.level == null) {
+            return fallback;
+        }
+
+        BlockState state = minecraft.level.getBlockState(pos);
+        VoxelShape shape = state.getShape(minecraft.level, pos);
+
+        if (shape.isEmpty()) {
+            return fallback;
+        }
+
+        Vec3 start = new Vec3(
+                pos.getX() + 0.5D + face.getStepX() * 1.35D,
+                pos.getY() + 0.5D + face.getStepY() * 1.35D,
+                pos.getZ() + 0.5D + face.getStepZ() * 1.35D
+        );
+        Vec3 end = new Vec3(
+                pos.getX() + 0.5D - face.getStepX() * 0.35D,
+                pos.getY() + 0.5D - face.getStepY() * 0.35D,
+                pos.getZ() + 0.5D - face.getStepZ() * 0.35D
+        );
+        BlockHitResult hit = shape.clip(start, end, pos);
+
+        if (hit == null) {
+            return fallback;
+        }
+
+        Vec3 location = hit.getLocation();
+        return new Vec3(
+                location.x + face.getStepX() * SURFACE_OFFSET,
+                location.y + face.getStepY() * SURFACE_OFFSET,
+                location.z + face.getStepZ() * SURFACE_OFFSET
+        );
     }
 
     private SpotRenderEvents() {

@@ -112,16 +112,6 @@ public final class OpticalPathTracer {
             boolean opticalElement = block instanceof OpticalElement;
             OpticalInteractionKind interactionKind = interactionKind(state, opticalElement);
 
-            if (applyWorldEffects && !opticalElement && !state.isAir()) {
-                OpticalSpotTracker.markMaterialSpot(
-                        level,
-                        current.pos,
-                        incomingDirection,
-                        interactingBeam,
-                        state
-                );
-            }
-
             CompiledOpticalNetwork compiledNetwork = OpticalNetworkCompiler.compile(level, current.pos, state);
             OpticalResult result = compiledNetwork.interact(interactingBeam, incomingDirection);
 
@@ -134,17 +124,6 @@ public final class OpticalPathTracer {
                     interactingBeam,
                     result
             ));
-
-            if (applyWorldEffects && opticalElement) {
-                OpticalSpotTracker.markAbsorbedSpot(
-                        level,
-                        current.pos,
-                        incomingDirection,
-                        state,
-                        interactingBeam,
-                        result.absorbedPower()
-                );
-            }
 
             enqueueOutputs(level, pending, current.pos, result, current.segments);
         }

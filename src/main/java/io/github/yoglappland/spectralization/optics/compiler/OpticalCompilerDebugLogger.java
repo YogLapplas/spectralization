@@ -6,6 +6,7 @@ import io.github.yoglappland.spectralization.optics.CompiledOpticalTrace;
 import io.github.yoglappland.spectralization.optics.OpticalTraceTermination;
 import io.github.yoglappland.spectralization.optics.OpticalTraceTerminationReason;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
+import io.github.yoglappland.spectralization.optics.SpotRecord;
 import io.github.yoglappland.spectralization.optics.cache.ReceiverOutput;
 import io.github.yoglappland.spectralization.optics.compiler.gain.GainSchedule;
 import java.io.IOException;
@@ -462,6 +463,64 @@ public final class OpticalCompilerDebugLogger {
                 .append(" terminal_ray_blocks=").append(terminalRayBlocks)
                 .append(" game_time=").append(gameTime)
                 .append('\n');
+        builder.append('\n');
+        write(builder.toString());
+    }
+
+    public static void logSpotOverlay(
+            Level level,
+            List<SpotRecord> activeSpots,
+            int sentSpots,
+            int sentPlayers,
+            long gameTime
+    ) {
+        if (!SpectralizationConfig.opticalCompilerDebugLog()) {
+            return;
+        }
+
+        StringBuilder builder = new StringBuilder(1024);
+        builder.append("=== spectralization optical compiler ===\n");
+        builder.append("session_log=").append(SESSION_LOG_FILE_NAME).append('\n');
+        builder.append("stage=spot_overlay\n");
+        builder.append("time=").append(Instant.now()).append('\n');
+        builder.append("dimension=").append(level.dimension().location()).append('\n');
+        builder.append("layer=surface")
+                .append(" active_spots=").append(activeSpots.size())
+                .append(" sent_spots=").append(sentSpots)
+                .append(" sent_players=").append(sentPlayers)
+                .append(" quantization_levels=16")
+                .append(" game_time=").append(gameTime)
+                .append('\n');
+
+        if (activeSpots.isEmpty()) {
+            builder.append("spot_details: none\n\n");
+            write(builder.toString());
+            return;
+        }
+
+        builder.append("spot_details:\n");
+        int maxRows = Math.max(1, Math.min(32, SpectralizationConfig.opticalCompilerDebugMaxEdges()));
+        int rowCount = 0;
+
+        for (SpotRecord spot : activeSpots) {
+            if (rowCount >= maxRows) {
+                builder.append("  ... ").append(activeSpots.size() - rowCount).append(" more spots\n");
+                break;
+            }
+
+            builder.append("  pos=").append(formatPos(spot.pos()))
+                    .append(" face=").append(spot.face())
+                    .append(" coherent_alpha=").append(spot.coherentAlphaLevel())
+                    .append(" coherent_radius=").append(spot.coherentRadiusLevel())
+                    .append(" coherent_rgb=").append(formatRgb(spot.coherentRed(), spot.coherentGreen(), spot.coherentBlue()))
+                    .append(" stray_alpha=").append(spot.strayAlphaLevel())
+                    .append(" stray_radius=").append(spot.strayRadiusLevel())
+                    .append(" stray_rgb=").append(formatRgb(spot.strayRed(), spot.strayGreen(), spot.strayBlue()))
+                    .append(" ring_alpha=").append(spot.ringAlphaLevel())
+                    .append('\n');
+            rowCount++;
+        }
+
         builder.append('\n');
         write(builder.toString());
     }
@@ -1114,6 +1173,10 @@ public final class OpticalCompilerDebugLogger {
 
     private static String formatPower(double power) {
         return String.format(Locale.ROOT, "%.6f", power);
+    }
+
+    private static String formatRgb(int red, int green, int blue) {
+        return String.format(Locale.ROOT, "#%02X%02X%02X", red, green, blue);
     }
 
     private static void write(String content) {

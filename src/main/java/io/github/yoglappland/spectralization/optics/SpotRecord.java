@@ -6,21 +6,45 @@ import net.minecraft.core.Direction;
 public record SpotRecord(
         BlockPos pos,
         Direction face,
-        int brightnessLevel,
-        int radiusLevel,
-        int colorBin
+        int coherentAlphaLevel,
+        int coherentRadiusLevel,
+        int coherentRed,
+        int coherentGreen,
+        int coherentBlue,
+        int strayAlphaLevel,
+        int strayRadiusLevel,
+        int strayRed,
+        int strayGreen,
+        int strayBlue,
+        int ringAlphaLevel
 ) {
     public SpotRecord {
-        if (brightnessLevel < 0 || brightnessLevel > 7) {
-            throw new IllegalArgumentException("Spot brightness level must be between 0 and 7");
-        }
+        validateLevel(coherentAlphaLevel, "Coherent alpha level");
+        validateLevel(coherentRadiusLevel, "Coherent radius level");
+        validateColor(coherentRed, "Coherent red");
+        validateColor(coherentGreen, "Coherent green");
+        validateColor(coherentBlue, "Coherent blue");
+        validateLevel(strayAlphaLevel, "Stray alpha level");
+        validateLevel(strayRadiusLevel, "Stray radius level");
+        validateColor(strayRed, "Stray red");
+        validateColor(strayGreen, "Stray green");
+        validateColor(strayBlue, "Stray blue");
+        validateLevel(ringAlphaLevel, "Ring alpha level");
+    }
 
-        if (radiusLevel < 0 || radiusLevel > 7) {
-            throw new IllegalArgumentException("Spot radius level must be between 0 and 7");
-        }
+    public boolean visible() {
+        return coherentAlphaLevel > 0 || strayAlphaLevel > 0 || ringAlphaLevel > 0;
+    }
 
-        if (colorBin < 0 || colorBin > 63) {
-            throw new IllegalArgumentException("Spot color bin must be between 0 and 63");
+    private static void validateLevel(int level, String name) {
+        if (level < 0 || level > 15) {
+            throw new IllegalArgumentException(name + " must be between 0 and 15");
+        }
+    }
+
+    private static void validateColor(int channel, String name) {
+        if (channel < 0 || channel > 255) {
+            throw new IllegalArgumentException(name + " must be between 0 and 255");
         }
     }
 }

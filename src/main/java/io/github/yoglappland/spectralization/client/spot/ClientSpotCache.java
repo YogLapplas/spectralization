@@ -15,8 +15,8 @@ import net.neoforged.api.distmarker.OnlyIn;
 
 @OnlyIn(Dist.CLIENT)
 public final class ClientSpotCache {
-    private static final int SPOT_TTL_TICKS = 14;
-    private static final long SPOT_TTL_MILLIS = 900L;
+    private static final int SPOT_TTL_TICKS = 60;
+    private static final long SPOT_TTL_MILLIS = 4_000L;
     private static final Map<SpotKey, ClientSpot> SPOTS = new HashMap<>();
 
     public static void accept(SpotRecord spot) {
@@ -24,9 +24,15 @@ public final class ClientSpotCache {
             return;
         }
 
+        SpotKey key = new SpotKey(spot.pos(), spot.face());
+        if (!spot.visible()) {
+            SPOTS.remove(key);
+            return;
+        }
+
         long expiresAt = Minecraft.getInstance().level.getGameTime() + SPOT_TTL_TICKS;
         long expiresAtMillis = System.currentTimeMillis() + SPOT_TTL_MILLIS;
-        SPOTS.put(new SpotKey(spot.pos(), spot.face()), new ClientSpot(spot, expiresAt, expiresAtMillis));
+        SPOTS.put(key, new ClientSpot(spot, expiresAt, expiresAtMillis));
     }
 
     public static Collection<SpotRecord> activeSpots() {

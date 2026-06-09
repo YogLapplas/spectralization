@@ -29,6 +29,7 @@ import io.github.yoglappland.spectralization.optics.compiler.ScalarPowerSolution
 import io.github.yoglappland.spectralization.optics.compiler.ScalarPowerSolver;
 import io.github.yoglappland.spectralization.optics.compiler.gain.GainSchedule;
 import io.github.yoglappland.spectralization.optics.compiler.gain.GainSchedulers;
+import io.github.yoglappland.spectralization.optics.surface.SurfaceKey;
 import io.github.yoglappland.spectralization.optics.validation.OpticalTraceValidator;
 import io.github.yoglappland.spectralization.optics.world.OpticalWorldIndex;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
@@ -102,6 +103,16 @@ public final class OpticalTraceCache {
             return;
         }
 
+        if (cachedTrace != null) {
+            applyInterruptedAuthoritativeOutputs(
+                    level,
+                    cache,
+                    networkId,
+                    cachedTrace,
+                    "dirty_or_changed_trace"
+            );
+        }
+
         cache.enqueue(new TraceRequest(networkId, sourcePos, sourceOutput), serverLevel.getGameTime());
     }
 
@@ -124,6 +135,20 @@ public final class OpticalTraceCache {
         }
 
         return cache.markChanged(pos, dirtyKind, serverLevel.getGameTime());
+    }
+
+    public static void markSurfaceChanged(LevelAccessor level, SurfaceKey key) {
+        if (!(level instanceof ServerLevel serverLevel)) {
+            return;
+        }
+
+        LevelTraceCache cache = cacheFor(serverLevel);
+        cache.applyKnownCachedOutputsAsInterrupted(serverLevel);
+        cache.invalidateSurfaceParameterData();
+        cache.markChanged(key.pos(), OpticalDirtyKind.PARAMETER, serverLevel.getGameTime());
+        cache.markChanged(key.pos().relative(key.side()), OpticalDirtyKind.PARAMETER, serverLevel.getGameTime());
+        OpticalWorldIndex.markDataChanged(serverLevel, key.pos());
+        OpticalWorldIndex.markDataChanged(serverLevel, key.pos().relative(key.side()));
     }
 
     public static void processQueues(MinecraftServer server) {
@@ -1958,6 +1983,42 @@ public final class OpticalTraceCache {
             }
         }
 
+        void applyKnownCachedOutputsAsInterrupted(Level level) {
+            long readoutStep = nextReadoutStep();
+            Set<ReadoutSignature> appliedSignatures = new HashSet<>();
+
+            for (CachedOpticalSystem system : cachedSystemsBySystem.values()) {
+                ReadoutSignature signature = ReadoutSignature.of(system.receiverOutputs());
+
+                if (signature.empty() || !appliedSignatures.add(signature)) {
+                    continue;
+                }
+
+                List<ReceiverOutput> heldOutputs = lastReliableReceiverOutputsByReadout.get(signature);
+                if (heldOutputs == null || heldOutputs.isEmpty()) {
+                    system.applyOutputs(level, false, readoutStep);
+                } else {
+                    OpticalTraceCache.applyReceiverOutputs(level, heldOutputs, false, readoutStep);
+                }
+            }
+
+            for (CachedOpticalTrace trace : cachedTracesByNetwork.values()) {
+                List<ReceiverOutput> outputs = trace.sampleCompiledOutputs();
+                ReadoutSignature signature = ReadoutSignature.of(outputs);
+
+                if (signature.empty() || !appliedSignatures.add(signature)) {
+                    continue;
+                }
+
+                List<ReceiverOutput> heldOutputs = lastReliableReceiverOutputsByReadout.get(signature);
+                if (heldOutputs == null || heldOutputs.isEmpty()) {
+                    OpticalTraceCache.applyReceiverOutputs(level, outputs, false, readoutStep);
+                } else {
+                    OpticalTraceCache.applyReceiverOutputs(level, heldOutputs, false, readoutStep);
+                }
+            }
+        }
+
         boolean markChanged(BlockPos pos, OpticalDirtyKind dirtyKind, long gameTime) {
             IntSet affectedNetworkIds = dependencyIndex.markChangedAndGet(pos);
 
@@ -1973,6 +2034,11 @@ public final class OpticalTraceCache {
             }
 
             return true;
+        }
+
+        void invalidateSurfaceParameterData() {
+            directCompilationCache.clear();
+            systemCompilationCache.clear();
         }
 
         boolean markParameterChanged(ServerLevel level, BlockPos pos) {

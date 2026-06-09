@@ -88,6 +88,12 @@ public final class OpticalWorldIndex {
         get(level).commitDerived(level);
     }
 
+    public static void markDataChanged(LevelAccessor level, BlockPos pos) {
+        if (level instanceof ServerLevel serverLevel) {
+            get(serverLevel).markDirty(serverLevel, OpticalIndexLayer.INTRINSIC_DATA, pos);
+        }
+    }
+
     public long geometryEpoch() {
         return geometryEpoch;
     }

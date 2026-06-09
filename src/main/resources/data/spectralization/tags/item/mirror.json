@@ -1,0 +1,9 @@
+{
+  "replace": false,
+  "values": [
+    "spectralization:mirror",
+    "spectralization:dynamic_mirror",
+    "spectralization:beam_splitter",
+    "spectralization:silver_glass"
+  ]
+}

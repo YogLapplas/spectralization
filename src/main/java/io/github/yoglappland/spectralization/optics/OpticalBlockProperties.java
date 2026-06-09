@@ -1,5 +1,11 @@
 package io.github.yoglappland.spectralization.optics;
 
+import io.github.yoglappland.spectralization.optics.surface.EffectiveSurfaceResponse;
+import io.github.yoglappland.spectralization.optics.surface.OpticalInterfaceResolver;
+import io.github.yoglappland.spectralization.optics.surface.OpticalSurfaceResolver;
+import io.github.yoglappland.spectralization.optics.surface.SurfaceKey;
+import io.github.yoglappland.spectralization.optics.surface.SurfaceProfile;
+import io.github.yoglappland.spectralization.optics.surface.SurfaceTreatmentKind;
 import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -12,9 +18,8 @@ public final class OpticalBlockProperties {
     }
 
     public static CompiledOpticalNetwork compile(Level level, BlockPos pos, BlockState state) {
-        OpticalMaterialProfile profile = OpticalMaterialProfiles.profileFor(level, pos, state);
         CompiledOpticalNetwork.Builder builder = CompiledOpticalNetwork.builder()
-                .absorptionModel((input, incomingDirection, outputs) -> absorbedPower(input, profile));
+                .absorptionModel((input, incomingDirection, outputs) -> absorbedPower(level, pos, state, input, incomingDirection));
 
         for (Direction incomingDirection : Direction.values()) {
             Direction transmittedDirection = incomingDirection.getOpposite();
@@ -22,13 +27,13 @@ public final class OpticalBlockProperties {
                     incomingDirection,
                     transmittedDirection,
                     (input, ignoredIncoming, outgoingDirection) ->
-                            transform(level, pos, state, input, outgoingDirection, profile, ResponseChannel.TRANSMITTANCE)
+                            transform(level, pos, state, input, incomingDirection, outgoingDirection, ResponseChannel.TRANSMITTANCE)
             );
             builder.addRule(
                     incomingDirection,
                     incomingDirection,
                     (input, ignoredIncoming, outgoingDirection) ->
-                            transform(level, pos, state, input, outgoingDirection, profile, ResponseChannel.REFLECTANCE)
+                            transform(level, pos, state, input, incomingDirection, outgoingDirection, ResponseChannel.REFLECTANCE)
             );
         }
 
@@ -48,12 +53,12 @@ public final class OpticalBlockProperties {
             BlockPos pos,
             BlockState state,
             BeamPacket beam,
+            Direction incomingDirection,
             Direction direction,
-            OpticalMaterialProfile profile,
             ResponseChannel channel
     ) {
         List<PlaneWaveComponent> components = beam.components().stream()
-                .map(component -> transform(level, pos, state, component, direction, profile, channel))
+                .map(component -> transform(level, pos, state, component, incomingDirection, direction, channel))
                 .filter(component -> component.power() > 0.0)
                 .toList();
 
@@ -69,11 +74,11 @@ public final class OpticalBlockProperties {
             BlockPos pos,
             BlockState state,
             PlaneWaveComponent component,
+            Direction incomingDirection,
             Direction direction,
-            OpticalMaterialProfile profile,
             ResponseChannel channel
     ) {
-        OpticalMaterialResponse response = profile.responseAt(component.frequency());
+        OpticalMaterialResponse response = responseFor(level, pos, state, incomingDirection, component.frequency());
         double factor = switch (channel) {
             case TRANSMITTANCE -> response.transmittance();
             case REFLECTANCE -> response.reflectance();
@@ -85,14 +90,49 @@ public final class OpticalBlockProperties {
         return component.withDirection(direction).withPower(component.power() * factor * gainFactor);
     }
 
-    private static double absorbedPower(BeamPacket beam, OpticalMaterialProfile profile) {
+    private static double absorbedPower(Level level, BlockPos pos, BlockState state, BeamPacket beam, Direction incomingDirection) {
         double absorbedPower = 0.0;
 
         for (PlaneWaveComponent component : beam.components()) {
-            absorbedPower += component.power() * profile.responseAt(component.frequency()).absorption();
+            absorbedPower += component.power() * responseFor(level, pos, state, incomingDirection, component.frequency()).absorption();
         }
 
         return absorbedPower;
+    }
+
+    private static OpticalMaterialResponse responseFor(
+            Level level,
+            BlockPos pos,
+            BlockState state,
+            Direction incomingDirection,
+            FrequencyKey frequency
+    ) {
+        SurfaceProfile incidentSurface = surfaceFor(level, pos, state, incomingDirection);
+
+        if (incidentSurface.treatmentKind() == SurfaceTreatmentKind.NONE || level == null || pos == null) {
+            return incidentSurface.materialProfile().responseAt(frequency);
+        }
+
+        SurfaceKey neighborKey = new SurfaceKey(pos, incomingDirection).neighborKey();
+        SurfaceProfile neighborSurface = OpticalSurfaceResolver.surfaceFor(level, neighborKey);
+        EffectiveSurfaceResponse response = OpticalInterfaceResolver.effectiveResponseBetween(
+                frequency,
+                incidentSurface,
+                neighborSurface
+        );
+
+        return response.asMaterialResponse();
+    }
+
+    private static SurfaceProfile surfaceFor(Level level, BlockPos pos, BlockState state, Direction incomingDirection) {
+        if (level == null || pos == null) {
+            return SurfaceProfile.rawMaterial(
+                    OpticalMaterialProfiles.profileFor(state),
+                    io.github.yoglappland.spectralization.optics.medium.OpticalMediumProfiles.profileFor(level, pos, state)
+            );
+        }
+
+        return OpticalSurfaceResolver.surfaceFor(level, pos, state, incomingDirection);
     }
 
     private enum ResponseChannel {

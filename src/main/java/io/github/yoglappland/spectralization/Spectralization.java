@@ -11,16 +11,26 @@ import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
 import io.github.yoglappland.spectralization.block.RubyBlock;
 import io.github.yoglappland.spectralization.block.SilverGlassBlock;
 import io.github.yoglappland.spectralization.client.renderer.LensHolderRenderer;
+import io.github.yoglappland.spectralization.client.screen.CoatingBrushScreen;
 import io.github.yoglappland.spectralization.client.screen.CreativeLightSourceScreen;
 import io.github.yoglappland.spectralization.command.SpectralCommands;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
+import io.github.yoglappland.spectralization.item.CoatingBrushItem;
+import io.github.yoglappland.spectralization.item.CreativeBrushItem;
+import io.github.yoglappland.spectralization.item.PaintBucketItem;
 import io.github.yoglappland.spectralization.item.PhosphorTubeItem;
+import io.github.yoglappland.spectralization.item.SandpaperItem;
+import io.github.yoglappland.spectralization.item.SurfaceCoatingInteraction;
 import io.github.yoglappland.spectralization.network.SpectralNetwork;
 import io.github.yoglappland.spectralization.optics.cache.OpticalDirtyKind;
 import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
+import io.github.yoglappland.spectralization.optics.surface.SurfaceCoatingData;
+import io.github.yoglappland.spectralization.optics.surface.SurfaceKey;
+import io.github.yoglappland.spectralization.optics.surface.SurfaceTreatmentKind;
 import io.github.yoglappland.spectralization.optics.topology.OpticalNetworkIndex;
 import io.github.yoglappland.spectralization.optics.world.OpticalWorldIndex;
+import io.github.yoglappland.spectralization.recipe.AdvancedBrushLoadingRecipe;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
 import io.github.yoglappland.spectralization.registry.SpectralMenus;
 import net.minecraft.core.registries.Registries;
@@ -29,6 +39,10 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.crafting.RecipeSerializer;
+import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
@@ -44,6 +58,7 @@ import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.registries.DeferredBlock;
@@ -59,8 +74,16 @@ public class Spectralization {
 
     public static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(MODID);
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(MODID);
+    public static final DeferredRegister<RecipeSerializer<?>> RECIPE_SERIALIZERS =
+            DeferredRegister.create(Registries.RECIPE_SERIALIZER, MODID);
     public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS =
             DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MODID);
+
+    public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<AdvancedBrushLoadingRecipe>>
+            ADVANCED_BRUSH_LOADING_SERIALIZER = RECIPE_SERIALIZERS.register(
+                    "advanced_brush_loading",
+                    () -> new SimpleCraftingRecipeSerializer<>(AdvancedBrushLoadingRecipe::new)
+            );
 
     public static final DeferredItem<Item> LENS = ITEMS.registerSimpleItem("lens", new Item.Properties());
     public static final DeferredItem<Item> PHOSPHOR_DUST =
@@ -68,6 +91,36 @@ public class Spectralization {
     public static final DeferredItem<PhosphorTubeItem> PHOSPHOR_TUBE = ITEMS.register(
             "phosphor_tube",
             () -> new PhosphorTubeItem(new Item.Properties())
+    );
+    public static final DeferredItem<Item> EMPTY_PAINT_BUCKET =
+            ITEMS.registerSimpleItem("empty_paint_bucket", new Item.Properties());
+    public static final DeferredItem<PaintBucketItem> SILVER_PAINT_BUCKET = ITEMS.register(
+            "silver_paint_bucket",
+            () -> new PaintBucketItem(
+                    SurfaceTreatmentKind.SILVERING,
+                    EMPTY_PAINT_BUCKET::get,
+                    new Item.Properties().durability(PaintBucketItem.MAX_USES)
+            )
+    );
+    public static final DeferredItem<PaintBucketItem> GOLD_PAINT_BUCKET = ITEMS.register(
+            "gold_paint_bucket",
+            () -> new PaintBucketItem(
+                    SurfaceTreatmentKind.GOLDING,
+                    EMPTY_PAINT_BUCKET::get,
+                    new Item.Properties().durability(PaintBucketItem.MAX_USES)
+            )
+    );
+    public static final DeferredItem<SandpaperItem> SANDPAPER = ITEMS.register(
+            "sandpaper",
+            () -> new SandpaperItem(new Item.Properties().durability(64))
+    );
+    public static final DeferredItem<CoatingBrushItem> ADVANCED_BRUSH = ITEMS.register(
+            "advanced_brush",
+            () -> new CoatingBrushItem(new Item.Properties().stacksTo(1))
+    );
+    public static final DeferredItem<CreativeBrushItem> CREATIVE_BRUSH = ITEMS.register(
+            "creative_brush",
+            () -> new CreativeBrushItem(new Item.Properties().stacksTo(1))
     );
 
     public static final DeferredBlock<LensHolderBlock> LENS_HOLDER = BLOCKS.register(
@@ -205,6 +258,12 @@ public class Spectralization {
                         output.accept(LENS.get());
                         output.accept(PHOSPHOR_DUST.get());
                         output.accept(PHOSPHOR_TUBE.get());
+                        output.accept(EMPTY_PAINT_BUCKET.get());
+                        output.accept(SILVER_PAINT_BUCKET.get());
+                        output.accept(GOLD_PAINT_BUCKET.get());
+                        output.accept(SANDPAPER.get());
+                        output.accept(ADVANCED_BRUSH.get());
+                        output.accept(CREATIVE_BRUSH.get());
                         output.accept(LENS_HOLDER_ITEM.get());
                         output.accept(MIRROR_ITEM.get());
                         output.accept(DYNAMIC_MIRROR_ITEM.get());
@@ -223,6 +282,7 @@ public class Spectralization {
 
         BLOCKS.register(modEventBus);
         ITEMS.register(modEventBus);
+        RECIPE_SERIALIZERS.register(modEventBus);
         CREATIVE_MODE_TABS.register(modEventBus);
         SpectralBlockEntities.register(modEventBus);
         SpectralMenus.register(modEventBus);
@@ -239,6 +299,9 @@ public class Spectralization {
 
     @SubscribeEvent
     public void onBlockPlaced(BlockEvent.EntityPlaceEvent event) {
+        if (event.getLevel() instanceof Level level) {
+            SurfaceCoatingData.removeAll(level, event.getPos());
+        }
         OpticalFieldSources.invalidate(event.getLevel());
         OpticalWorldIndex.onBlockPlaced(event.getLevel(), event.getPos());
         OpticalTraceCache.markChanged(event.getLevel(), event.getPos(), OpticalDirtyKind.STRUCTURE);
@@ -247,6 +310,7 @@ public class Spectralization {
 
     @SubscribeEvent
     public void onBlockBroken(BlockEvent.BreakEvent event) {
+        SurfaceCoatingData.removeAll(event.getPlayer().level(), event.getPos());
         OpticalFieldSources.invalidate(event.getLevel());
         OpticalWorldIndex.onBlockBroken(event.getLevel(), event.getPos());
         OpticalTraceCache.markChanged(event.getLevel(), event.getPos(), OpticalDirtyKind.STRUCTURE);
@@ -256,6 +320,25 @@ public class Spectralization {
     @SubscribeEvent
     public void onNeighborNotified(BlockEvent.NeighborNotifyEvent event) {
         OpticalTraceCache.markChanged(event.getLevel(), event.getPos(), OpticalDirtyKind.PARAMETER);
+    }
+
+    @SubscribeEvent
+    public void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
+        if (event.getHand() != net.minecraft.world.InteractionHand.MAIN_HAND
+                || !event.getItemStack().is(Items.BRUSH)
+                || !(event.getEntity().getOffhandItem().getItem() instanceof PaintBucketItem)) {
+            return;
+        }
+
+        SurfaceKey key = new SurfaceKey(event.getPos(), event.getFace());
+        var result = SurfaceCoatingInteraction.applyPaint(
+                event.getLevel(),
+                event.getEntity(),
+                key,
+                event.getEntity().getOffhandItem()
+        );
+        event.setCancellationResult(result.consumesAction() ? result : net.minecraft.world.InteractionResult.FAIL);
+        event.setCanceled(true);
     }
 
     @SubscribeEvent
@@ -273,6 +356,7 @@ public class Spectralization {
         @SubscribeEvent
         static void registerScreens(RegisterMenuScreensEvent event) {
             event.register(SpectralMenus.CREATIVE_LIGHT_SOURCE.get(), CreativeLightSourceScreen::new);
+            event.register(SpectralMenus.COATING_BRUSH.get(), CoatingBrushScreen::new);
         }
     }
 }

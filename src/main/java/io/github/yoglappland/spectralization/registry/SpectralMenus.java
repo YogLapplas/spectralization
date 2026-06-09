@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization.registry;
 
 import io.github.yoglappland.spectralization.Spectralization;
+import io.github.yoglappland.spectralization.menu.CoatingBrushMenu;
 import io.github.yoglappland.spectralization.menu.CreativeLightSourceMenu;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.flag.FeatureFlags;
@@ -16,6 +17,10 @@ public final class SpectralMenus {
     public static final DeferredHolder<MenuType<?>, MenuType<CreativeLightSourceMenu>> CREATIVE_LIGHT_SOURCE =
             MENU_TYPES.register("creative_light_source", () ->
                     new MenuType<>(CreativeLightSourceMenu::new, FeatureFlags.DEFAULT_FLAGS));
+
+    public static final DeferredHolder<MenuType<?>, MenuType<CoatingBrushMenu>> COATING_BRUSH =
+            MENU_TYPES.register("coating_brush", () ->
+                    new MenuType<>(CoatingBrushMenu::new, FeatureFlags.DEFAULT_FLAGS));
 
     public static void register(IEventBus modEventBus) {
         MENU_TYPES.register(modEventBus);

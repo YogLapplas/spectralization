@@ -73,6 +73,7 @@ public final class OpticalMaterialProfiles {
             Blocks.SUSPICIOUS_GRAVEL
     );
     private static final Set<Block> METAL_BLOCKS = Set.of(
+            Blocks.GOLD_BLOCK,
             Blocks.IRON_BLOCK,
             Blocks.COPPER_BLOCK,
             Blocks.EXPOSED_COPPER,

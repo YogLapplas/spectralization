@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization;
 
 import com.mojang.logging.LogUtils;
+import io.github.yoglappland.spectralization.block.BeamProfilerBlock;
 import io.github.yoglappland.spectralization.block.BeamSplitterBlock;
 import io.github.yoglappland.spectralization.block.CmosSensorBlock;
 import io.github.yoglappland.spectralization.block.CreativeLightSourceBlock;
@@ -210,6 +211,19 @@ public class Spectralization {
     public static final DeferredItem<BlockItem> PASS_THROUGH_SENSOR_ITEM =
             ITEMS.registerSimpleBlockItem("pass_through_sensor", PASS_THROUGH_SENSOR);
 
+    public static final DeferredBlock<BeamProfilerBlock> BEAM_PROFILER = BLOCKS.register(
+            "beam_profiler",
+            () -> new BeamProfilerBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(0.0F)
+                    .sound(SoundType.METAL)
+                    .pushReaction(PushReaction.BLOCK)
+                    .noOcclusion())
+    );
+
+    public static final DeferredItem<BlockItem> BEAM_PROFILER_ITEM =
+            ITEMS.registerSimpleBlockItem("beam_profiler", BEAM_PROFILER);
+
     public static final DeferredBlock<RubyBlock> RUBY_BLOCK = BLOCKS.register(
             "ruby_block",
             () -> new RubyBlock(BlockBehaviour.Properties.of()
@@ -271,6 +285,7 @@ public class Spectralization {
                         output.accept(CREATIVE_LIGHT_SOURCE_ITEM.get());
                         output.accept(CMOS_SENSOR_ITEM.get());
                         output.accept(PASS_THROUGH_SENSOR_ITEM.get());
+                        output.accept(BEAM_PROFILER_ITEM.get());
                         output.accept(RUBY_BLOCK_ITEM.get());
                         output.accept(SILVER_BLOCK_ITEM.get());
                         output.accept(SILVER_GLASS_ITEM.get());

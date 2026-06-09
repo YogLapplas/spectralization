@@ -431,6 +431,41 @@ public final class OpticalCompilerDebugLogger {
         write(builder.toString());
     }
 
+    public static void logBeamHudOverlay(
+            Level level,
+            int networkId,
+            BlockPos sourcePos,
+            Direction sourceDirection,
+            String mode,
+            int segmentCount,
+            int sentPlayers,
+            int terminalRayBlocks,
+            long gameTime
+    ) {
+        if (!SpectralizationConfig.opticalCompilerDebugLog()) {
+            return;
+        }
+
+        StringBuilder builder = new StringBuilder(512);
+        builder.append("=== spectralization optical compiler ===\n");
+        builder.append("session_log=").append(SESSION_LOG_FILE_NAME).append('\n');
+        builder.append("stage=beam_hud_overlay\n");
+        builder.append("time=").append(Instant.now()).append('\n');
+        builder.append("dimension=").append(level.dimension().location()).append('\n');
+        builder.append("network_id=").append(networkId)
+                .append(" source=").append(formatPos(sourcePos))
+                .append(" direction=").append(sourceDirection)
+                .append(" mode=").append(mode)
+                .append(" layer=topology")
+                .append(" segments=").append(segmentCount)
+                .append(" sent_players=").append(sentPlayers)
+                .append(" terminal_ray_blocks=").append(terminalRayBlocks)
+                .append(" game_time=").append(gameTime)
+                .append('\n');
+        builder.append('\n');
+        write(builder.toString());
+    }
+
     public static void logGainSchedule(Level level, CompiledPortGraph graph, GainSchedule schedule) {
         if (!SpectralizationConfig.opticalCompilerDebugLog() || schedule.gainSourceCount() <= 0) {
             return;

@@ -2,6 +2,8 @@ package io.github.yoglappland.spectralization.optics;
 
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldEffectType;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
+import io.github.yoglappland.spectralization.optics.geometry.BeamGeometryOps;
+import io.github.yoglappland.spectralization.optics.geometry.SpatialModeCoupling;
 import java.util.ArrayDeque;
 import java.util.HashSet;
 import java.util.Queue;
@@ -219,7 +221,9 @@ public final class OpticalPathTracer {
     }
 
     private static BeamPacket propagate(Level level, BlockPos pos, BeamPacket beam) {
-        return beam.scalePower(OpticalPropagationLoss.factor(level, pos, beam));
+        SpatialModeCoupling coupling = BeamGeometryOps.passivePropagationCoupling(beam.envelope(), 1.0);
+        BeamPacket spatialBeam = beam.applySpatialCoupling(coupling);
+        return spatialBeam.scalePower(OpticalPropagationLoss.factor(level, pos, spatialBeam));
     }
 
     private record TravelState(

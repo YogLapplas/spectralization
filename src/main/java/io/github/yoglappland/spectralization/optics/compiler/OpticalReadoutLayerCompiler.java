@@ -1,5 +1,6 @@
 package io.github.yoglappland.spectralization.optics.compiler;
 
+import io.github.yoglappland.spectralization.block.BeamProfilerBlock;
 import io.github.yoglappland.spectralization.block.CmosSensorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
 import io.github.yoglappland.spectralization.optics.cache.ReceiverOutputKind;
@@ -23,6 +24,8 @@ public final class OpticalReadoutLayerCompiler {
         List<OpticalReadoutBinding> bindings = new ArrayList<>();
         Set<BlockPos> cmosPositions = new HashSet<>();
         Set<BlockPos> boundCmosPositions = new HashSet<>();
+        Set<BlockPos> beamProfilerPositions = new HashSet<>();
+        Set<BlockPos> boundBeamProfilerPositions = new HashSet<>();
         Map<BlockPos, PassThroughChannels> passThroughChannelsByPos = new HashMap<>();
 
         for (PortGraphNode node : graph.nodes()) {
@@ -49,13 +52,37 @@ public final class OpticalReadoutLayerCompiler {
                 continue;
             }
 
+            if (state.getBlock() instanceof BeamProfilerBlock) {
+                beamProfilerPositions.add(node.pos());
+                Direction receivingSide = BeamProfilerBlock.getReceivingSide(state);
+
+                if (node.side() == receivingSide) {
+                    boundBeamProfilerPositions.add(node.pos());
+                    bindings.add(new OpticalReadoutBinding(
+                            node.pos(),
+                            ReceiverOutputKind.BEAM_PROFILER,
+                            node,
+                            false
+                    ));
+                }
+
+                continue;
+            }
+
             if (state.getBlock() instanceof PassThroughSensorBlock) {
                 passThroughChannelsByPos.computeIfAbsent(node.pos(), ignored -> new PassThroughChannels());
                 addPassThroughSensorBinding(state, node, bindings, passThroughChannelsByPos);
             }
         }
 
-        addZeroBindings(bindings, cmosPositions, boundCmosPositions, passThroughChannelsByPos);
+        addZeroBindings(
+                bindings,
+                cmosPositions,
+                boundCmosPositions,
+                beamProfilerPositions,
+                boundBeamProfilerPositions,
+                passThroughChannelsByPos
+        );
 
         if (bindings.isEmpty()) {
             return CompiledReadoutLayer.EMPTY;
@@ -96,6 +123,8 @@ public final class OpticalReadoutLayerCompiler {
             List<OpticalReadoutBinding> bindings,
             Set<BlockPos> cmosPositions,
             Set<BlockPos> boundCmosPositions,
+            Set<BlockPos> beamProfilerPositions,
+            Set<BlockPos> boundBeamProfilerPositions,
             Map<BlockPos, PassThroughChannels> passThroughChannelsByPos
     ) {
         for (BlockPos pos : cmosPositions) {
@@ -103,6 +132,17 @@ public final class OpticalReadoutLayerCompiler {
                 bindings.add(new OpticalReadoutBinding(
                         pos,
                         ReceiverOutputKind.CMOS,
+                        null,
+                        false
+                ));
+            }
+        }
+
+        for (BlockPos pos : beamProfilerPositions) {
+            if (!boundBeamProfilerPositions.contains(pos)) {
+                bindings.add(new OpticalReadoutBinding(
+                        pos,
+                        ReceiverOutputKind.BEAM_PROFILER,
                         null,
                         false
                 ));

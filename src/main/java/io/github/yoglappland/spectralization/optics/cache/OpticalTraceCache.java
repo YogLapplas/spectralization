@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization.optics.cache;
 
 import io.github.yoglappland.spectralization.Spectralization;
+import io.github.yoglappland.spectralization.block.BeamProfilerBlock;
 import io.github.yoglappland.spectralization.block.CmosSensorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
@@ -18,6 +19,7 @@ import io.github.yoglappland.spectralization.optics.OpticalSource;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
+import io.github.yoglappland.spectralization.optics.geometry.BeamPathOverlayTracker;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledPortGraph;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledReadoutLayer;
 import io.github.yoglappland.spectralization.optics.compiler.OpticalCompilerDebugLogger;
@@ -68,6 +70,7 @@ public final class OpticalTraceCache {
     private static final int MAX_GEOMETRY_SIGNATURE_POSITIONS = 8192;
     private static final long GEOMETRY_SIGNATURE_SEED = 0x9E3779B97F4A7C15L;
     private static final int MIN_SYSTEM_COMPILATION_CACHE_ENTRIES = 32;
+    private static final long HUD_OVERLAY_SEND_INTERVAL_TICKS = 10L;
 
     public static void requestOrApply(Level level, BlockPos sourcePos, OutputBeam sourceOutput) {
         if (level.isClientSide || !(level instanceof ServerLevel serverLevel) || sourceOutput.beam().isEmpty()) {
@@ -606,6 +609,7 @@ public final class OpticalTraceCache {
         long readoutStep = cache.nextReadoutStep();
         CachedOpticalSystem cachedSystem = cache.systemForNetwork(networkId);
         CachedOpticalSystem heldSystem = cache.lastUsableSystemForNetwork(networkId);
+        publishCachedHudOverlay(level, cache, networkId, cachedTrace, modePrefix);
 
         if (heldSystem != null && cache.markSystemApplied(heldSystem.systemId(), level.getGameTime())) {
             heldSystem.applyOutputs(level, false, readoutStep);
@@ -649,6 +653,8 @@ public final class OpticalTraceCache {
             return applyInterruptedAuthoritativeOutputs(level, cache, networkId, cachedTrace, "pending_rebuild");
         }
 
+        publishCachedHudOverlay(level, cache, networkId, cachedTrace, "cached");
+
         long readoutStep = cache.nextReadoutStep();
 
         if (cachedSystem != null) {
@@ -691,6 +697,55 @@ public final class OpticalTraceCache {
         logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, null,
                 reliable ? "direct_trace" : "direct_trace_unreliable_system_authority", reliable, readoutStep);
         return reliable;
+    }
+
+    private static void publishCachedHudOverlay(
+            Level level,
+            LevelTraceCache cache,
+            int networkId,
+            CachedOpticalTrace cachedTrace,
+            String mode
+    ) {
+        if (!(level instanceof ServerLevel serverLevel)
+                || cachedTrace == null
+                || cachedTrace.hudSegments().isEmpty()) {
+            return;
+        }
+
+        BlockPos sourcePos = cachedTrace.portGraph().sourcePos();
+
+        if (!BeamPathOverlayTracker.hasHudViewerNear(serverLevel, sourcePos)
+                || !cache.shouldSendHudOverlay(networkId, serverLevel.getGameTime())) {
+            return;
+        }
+
+        int sentPlayers = BeamPathOverlayTracker.publish(serverLevel, sourcePos, cachedTrace.hudSegments());
+
+        if (sentPlayers <= 0 || !SpectralizationConfig.opticalCompilerDebugLog()) {
+            return;
+        }
+
+        BeamHudOverlayDebugState debugState = new BeamHudOverlayDebugState(
+                mode,
+                cachedTrace.hudSegments().size(),
+                sentPlayers
+        );
+
+        if (!cache.shouldRunHudOverlayDebug(networkId, debugState, serverLevel.getGameTime())) {
+            return;
+        }
+
+        OpticalCompilerDebugLogger.logBeamHudOverlay(
+                serverLevel,
+                networkId,
+                sourcePos,
+                cachedTrace.portGraph().sourceDirection(),
+                mode,
+                cachedTrace.hudSegments().size(),
+                sentPlayers,
+                BeamPathOverlayTracker.terminalRayBlocks(),
+                serverLevel.getGameTime()
+        );
     }
 
     private static void logReadoutApplyIfNeeded(
@@ -810,6 +865,7 @@ public final class OpticalTraceCache {
                 portGraph,
                 readoutLayer,
                 scalarPowerSolution,
+                BeamPathOverlayTracker.topologySegments(portGraph),
                 trace == null ? !scalarPowerSolution.reliableForReadout() : isUnstable(trace)
         );
     }
@@ -870,6 +926,24 @@ public final class OpticalTraceCache {
 
             if (step.incomingDirection() == receivingSide) {
                 receiverOutputs.add(ReceiverOutput.cmos(step.pos(), step.interactingBeam().totalPower()));
+            }
+
+            return;
+        }
+
+        if (state.getBlock() instanceof BeamProfilerBlock) {
+            Direction receivingSide = BeamProfilerBlock.getReceivingSide(state);
+
+            if (step.incomingDirection() == receivingSide) {
+                BeamPacket beam = step.interactingBeam();
+                double coherentPower = coherentPower(beam);
+                receiverOutputs.add(ReceiverOutput.beamProfiler(
+                        step.pos(),
+                        beam.totalPower(),
+                        coherentPower,
+                        Math.max(0.0, beam.totalPower() - coherentPower),
+                        beam.envelope()
+                ));
             }
 
             return;
@@ -1790,6 +1864,16 @@ public final class OpticalTraceCache {
         }
     }
 
+    private record BeamHudOverlayDebugState(
+            String mode,
+            int segmentCount,
+            int sentPlayers
+    ) {
+        private BeamHudOverlayDebugState {
+            Objects.requireNonNull(mode, "mode");
+        }
+    }
+
     private static final class LevelTraceCache {
         private final OpticalDependencyIndex dependencyIndex = new OpticalDependencyIndex();
         private final Map<SourceTraceKey, Integer> networkIdsBySource = new HashMap<>();
@@ -1820,6 +1904,9 @@ public final class OpticalTraceCache {
         private final Map<SourceTraceKey, Long> lastCompilerDebugTickBySource = new HashMap<>();
         private final Map<Integer, Long> lastReadoutApplyDebugTickByNetwork = new HashMap<>();
         private final Map<Integer, ReadoutApplyDebugState> lastReadoutApplyDebugStateByNetwork = new HashMap<>();
+        private final Map<Integer, Long> lastHudOverlaySentTickByNetwork = new HashMap<>();
+        private final Map<Integer, Long> lastHudOverlayDebugTickByNetwork = new HashMap<>();
+        private final Map<Integer, BeamHudOverlayDebugState> lastHudOverlayDebugStateByNetwork = new HashMap<>();
         private final ArrayDeque<TraceRequest> pendingRequests = new ArrayDeque<>();
         private final IntSet queuedNetworkIds = new IntOpenHashSet();
         private final ArrayDeque<Integer> pendingSystemRebuilds = new ArrayDeque<>();
@@ -1949,6 +2036,37 @@ public final class OpticalTraceCache {
 
             lastReadoutApplyDebugStateByNetwork.put(networkId, state);
             lastReadoutApplyDebugTickByNetwork.put(networkId, gameTime);
+            return true;
+        }
+
+        boolean shouldSendHudOverlay(int networkId, long gameTime) {
+            long lastSentTick = lastHudOverlaySentTickByNetwork.getOrDefault(networkId, Long.MIN_VALUE);
+
+            if (lastSentTick != Long.MIN_VALUE && gameTime - lastSentTick < HUD_OVERLAY_SEND_INTERVAL_TICKS) {
+                return false;
+            }
+
+            lastHudOverlaySentTickByNetwork.put(networkId, gameTime);
+            return true;
+        }
+
+        boolean shouldRunHudOverlayDebug(
+                int networkId,
+                BeamHudOverlayDebugState state,
+                long gameTime
+        ) {
+            BeamHudOverlayDebugState lastState = lastHudOverlayDebugStateByNetwork.get(networkId);
+            long lastRun = lastHudOverlayDebugTickByNetwork.getOrDefault(networkId, Long.MIN_VALUE);
+            boolean stateChanged = !state.equals(lastState);
+
+            if (!stateChanged
+                    && lastRun != Long.MIN_VALUE
+                    && gameTime - lastRun < SpectralizationConfig.opticalCompilerDebugReadoutApplyIntervalTicks()) {
+                return false;
+            }
+
+            lastHudOverlayDebugStateByNetwork.put(networkId, state);
+            lastHudOverlayDebugTickByNetwork.put(networkId, gameTime);
             return true;
         }
 

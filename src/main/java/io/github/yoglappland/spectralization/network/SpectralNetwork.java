@@ -1,5 +1,6 @@
 package io.github.yoglappland.spectralization.network;
 
+import io.github.yoglappland.spectralization.client.beam.ClientBeamPathPayloadHandler;
 import io.github.yoglappland.spectralization.client.networkoverlay.ClientNetworkOverlayPayloadHandler;
 import io.github.yoglappland.spectralization.client.surface.ClientSurfaceInspectionPayloadHandler;
 import io.github.yoglappland.spectralization.client.spot.ClientSpotPayloadHandler;
@@ -24,6 +25,12 @@ public final class SpectralNetwork {
                 NetworkOverlayPayload.TYPE,
                 NetworkOverlayPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleNetworkOverlay(payload))
+        );
+
+        registrar.playToClient(
+                BeamPathOverlayPayload.TYPE,
+                BeamPathOverlayPayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> handleBeamPathOverlay(payload))
         );
 
         registrar.playToClient(
@@ -54,6 +61,12 @@ public final class SpectralNetwork {
     private static void handleNetworkOverlay(NetworkOverlayPayload payload) {
         if (FMLEnvironment.dist == Dist.CLIENT) {
             ClientNetworkOverlayPayloadHandler.handle(payload);
+        }
+    }
+
+    private static void handleBeamPathOverlay(BeamPathOverlayPayload payload) {
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            ClientBeamPathPayloadHandler.handle(payload);
         }
     }
 

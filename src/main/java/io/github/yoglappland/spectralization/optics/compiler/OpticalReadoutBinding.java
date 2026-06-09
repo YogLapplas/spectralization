@@ -24,6 +24,13 @@ public record OpticalReadoutBinding(
         return switch (kind) {
             case CMOS -> ReceiverOutput.cmos(pos, totalPower);
             case PASS_THROUGH_SENSOR -> ReceiverOutput.passThroughSensor(pos, positiveZ, coherentPower);
+            case BEAM_PROFILER -> ReceiverOutput.beamProfiler(
+                    pos,
+                    totalPower,
+                    coherentPower,
+                    Math.max(0.0, totalPower - coherentPower),
+                    io.github.yoglappland.spectralization.optics.BeamEnvelope.DEFAULT_COLLIMATED
+            );
         };
     }
 }

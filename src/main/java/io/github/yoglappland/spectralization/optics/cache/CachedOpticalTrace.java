@@ -4,6 +4,7 @@ import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledReadoutLayer;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledPortGraph;
 import io.github.yoglappland.spectralization.optics.compiler.ScalarPowerSolution;
+import io.github.yoglappland.spectralization.network.BeamPathOverlayPayload;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import java.util.List;
 import java.util.Objects;
@@ -17,6 +18,7 @@ public record CachedOpticalTrace(
         CompiledPortGraph portGraph,
         CompiledReadoutLayer readoutLayer,
         ScalarPowerSolution scalarPowerSolution,
+        List<BeamPathOverlayPayload.Segment> hudSegments,
         boolean unstable
 ) {
     public CachedOpticalTrace {
@@ -26,7 +28,9 @@ public record CachedOpticalTrace(
         Objects.requireNonNull(portGraph, "portGraph");
         Objects.requireNonNull(readoutLayer, "readoutLayer");
         Objects.requireNonNull(scalarPowerSolution, "scalarPowerSolution");
+        Objects.requireNonNull(hudSegments, "hudSegments");
         receiverOutputs = List.copyOf(receiverOutputs);
+        hudSegments = List.copyOf(hudSegments);
     }
 
     public boolean matches(OutputBeam outputBeam) {

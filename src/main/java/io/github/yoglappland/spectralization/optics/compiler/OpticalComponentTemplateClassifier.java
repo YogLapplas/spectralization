@@ -1,5 +1,6 @@
 package io.github.yoglappland.spectralization.optics.compiler;
 
+import io.github.yoglappland.spectralization.block.BeamProfilerBlock;
 import io.github.yoglappland.spectralization.block.BeamSplitterBlock;
 import io.github.yoglappland.spectralization.block.CmosSensorBlock;
 import io.github.yoglappland.spectralization.block.CreativeLightSourceBlock;
@@ -59,6 +60,10 @@ public final class OpticalComponentTemplateClassifier {
 
         if (block instanceof PassThroughSensorBlock) {
             return OpticalComponentTemplate.PASS_THROUGH_SENSOR;
+        }
+
+        if (block instanceof BeamProfilerBlock) {
+            return OpticalComponentTemplate.BEAM_PROFILER;
         }
 
         if (OpticalMaterialProfiles.isScatteringMarker(state)) {

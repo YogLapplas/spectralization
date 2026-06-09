@@ -1,6 +1,12 @@
 package io.github.yoglappland.spectralization.optics;
 
+import io.github.yoglappland.spectralization.optics.geometry.SpatialModeCoupling;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import net.minecraft.core.Direction;
 
@@ -49,6 +55,10 @@ public record BeamPacket(List<PlaneWaveComponent> components, BeamEnvelope envel
         );
     }
 
+    public BeamPacket withEnvelope(BeamEnvelope envelope) {
+        return new BeamPacket(components, envelope);
+    }
+
     public BeamPacket withCoherence(CoherenceKind coherence) {
         return new BeamPacket(
                 components.stream()
@@ -69,5 +79,55 @@ public record BeamPacket(List<PlaneWaveComponent> components, BeamEnvelope envel
                         .toList(),
                 envelope
         );
+    }
+
+    public BeamPacket applySpatialCoupling(SpatialModeCoupling coupling) {
+        Objects.requireNonNull(coupling, "coupling");
+
+        if (isEmpty()) {
+            return empty(coupling.orderedEnvelope());
+        }
+
+        List<PlaneWaveComponent> transformed = new ArrayList<>();
+
+        for (PlaneWaveComponent component : components) {
+            double orderedPower = component.power() * coupling.orderedFraction();
+            double strayPower = component.power() * coupling.strayFraction();
+
+            if (orderedPower > 0.0) {
+                transformed.add(component.withPower(orderedPower));
+            }
+
+            if (strayPower > 0.0) {
+                transformed.add(component.withCoherence(CoherenceKind.INCOHERENT).withPower(strayPower));
+            }
+        }
+
+        return new BeamPacket(normalizeComponents(transformed), coupling.orderedEnvelope());
+    }
+
+    private static List<PlaneWaveComponent> normalizeComponents(Collection<PlaneWaveComponent> rawComponents) {
+        Map<ComponentKey, Double> powerByKey = new LinkedHashMap<>();
+
+        for (PlaneWaveComponent component : rawComponents) {
+            if (component.power() <= 0.0) {
+                continue;
+            }
+
+            ComponentKey key = new ComponentKey(component.frequency(), component.direction(), component.coherence());
+            powerByKey.merge(key, component.power(), Double::sum);
+        }
+
+        return powerByKey.entrySet().stream()
+                .map(entry -> entry.getKey().component(entry.getValue()))
+                .sorted(Comparator.comparingDouble(PlaneWaveComponent::power).reversed())
+                .limit(MAX_COMPONENTS)
+                .toList();
+    }
+
+    private record ComponentKey(FrequencyKey frequency, Direction direction, CoherenceKind coherence) {
+        private PlaneWaveComponent component(double power) {
+            return new PlaneWaveComponent(frequency, power, direction, coherence);
+        }
     }
 }

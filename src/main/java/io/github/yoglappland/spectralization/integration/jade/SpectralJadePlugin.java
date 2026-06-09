@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization.integration.jade;
 
 import io.github.yoglappland.spectralization.Spectralization;
+import io.github.yoglappland.spectralization.block.BeamProfilerBlock;
 import io.github.yoglappland.spectralization.block.CmosSensorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
 import net.minecraft.resources.ResourceLocation;
@@ -15,6 +16,8 @@ public class SpectralJadePlugin implements IWailaPlugin {
             ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "pass_through_sensor");
     public static final ResourceLocation CMOS_SENSOR =
             ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "cmos_sensor");
+    public static final ResourceLocation BEAM_PROFILER =
+            ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "beam_profiler");
 
     @Override
     public void register(IWailaCommonRegistration registration) {
@@ -24,5 +27,6 @@ public class SpectralJadePlugin implements IWailaPlugin {
     public void registerClient(IWailaClientRegistration registration) {
         registration.registerBlockComponent(CmosSensorComponentProvider.INSTANCE, CmosSensorBlock.class);
         registration.registerBlockComponent(PassThroughSensorComponentProvider.INSTANCE, PassThroughSensorBlock.class);
+        registration.registerBlockComponent(BeamProfilerComponentProvider.INSTANCE, BeamProfilerBlock.class);
     }
 }

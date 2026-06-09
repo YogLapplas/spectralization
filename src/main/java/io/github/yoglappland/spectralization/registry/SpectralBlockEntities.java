@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization.registry;
 
 import io.github.yoglappland.spectralization.Spectralization;
+import io.github.yoglappland.spectralization.blockentity.BeamProfilerBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.CmosSensorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.CreativeLightSourceBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.LensHolderBlockEntity;
@@ -31,6 +32,10 @@ public final class SpectralBlockEntities {
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<PassThroughSensorBlockEntity>> PASS_THROUGH_SENSOR =
             BLOCK_ENTITY_TYPES.register("pass_through_sensor", () ->
                     BlockEntityType.Builder.of(PassThroughSensorBlockEntity::new, Spectralization.PASS_THROUGH_SENSOR.get()).build(null));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<BeamProfilerBlockEntity>> BEAM_PROFILER =
+            BLOCK_ENTITY_TYPES.register("beam_profiler", () ->
+                    BlockEntityType.Builder.of(BeamProfilerBlockEntity::new, Spectralization.BEAM_PROFILER.get()).build(null));
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<RubyBlockEntity>> RUBY_BLOCK =
             BLOCK_ENTITY_TYPES.register("ruby_block", () ->

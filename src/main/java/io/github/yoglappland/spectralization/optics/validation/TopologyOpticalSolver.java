@@ -11,6 +11,8 @@ import io.github.yoglappland.spectralization.optics.OpticalResult;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldEffectType;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
+import io.github.yoglappland.spectralization.optics.geometry.BeamGeometryOps;
+import io.github.yoglappland.spectralization.optics.geometry.SpatialModeCoupling;
 import java.util.ArrayDeque;
 import java.util.Queue;
 import net.minecraft.core.BlockPos;
@@ -67,7 +69,7 @@ public final class TopologyOpticalSolver {
                 return;
             }
 
-            beam = beam.withDirection(direction).scalePower(OpticalPropagationLoss.factor(level, pos, beam));
+            beam = propagate(level, pos, beam.withDirection(direction));
 
             if (beam.totalPower() < MIN_POWER) {
                 return;
@@ -121,6 +123,12 @@ public final class TopologyOpticalSolver {
         return block instanceof OpticalElement
                 || OpticalMaterialProfiles.isExplicitOpticalMaterial(state)
                 || OpticalFieldSources.isScatteringFieldSource(state);
+    }
+
+    private static BeamPacket propagate(Level level, BlockPos pos, BeamPacket beam) {
+        SpatialModeCoupling coupling = BeamGeometryOps.passivePropagationCoupling(beam.envelope(), 1.0);
+        BeamPacket spatialBeam = beam.applySpatialCoupling(coupling);
+        return spatialBeam.scalePower(OpticalPropagationLoss.factor(level, pos, spatialBeam));
     }
 
     private record TravelState(

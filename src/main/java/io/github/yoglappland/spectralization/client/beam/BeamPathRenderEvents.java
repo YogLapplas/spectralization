@@ -32,7 +32,7 @@ public final class BeamPathRenderEvents {
 
         if (minecraft.level == null
                 || minecraft.player == null
-                || !minecraft.player.getItemBySlot(EquipmentSlot.HEAD).is(Items.LEATHER_HELMET)) {
+                || !hasBeamViewerHelmet(minecraft)) {
             ClientBeamPathCache.clear();
             return;
         }
@@ -116,6 +116,16 @@ public final class BeamPathRenderEvents {
     private static void addVertex(VertexConsumer consumer, PoseStack.Pose pose, double x, double y, double z, int color, int alpha) {
         consumer.addVertex(pose, (float) x, (float) y, (float) z)
                 .setColor(SpectralColorMap.red(color), SpectralColorMap.green(color), SpectralColorMap.blue(color), alpha);
+    }
+
+    private static boolean hasBeamViewerHelmet(Minecraft minecraft) {
+        if (minecraft.player == null) {
+            return false;
+        }
+
+        var helmet = minecraft.player.getItemBySlot(EquipmentSlot.HEAD);
+        return helmet.is(Items.LEATHER_HELMET)
+                || helmet.is(Spectralization.VERITY_HELM_OF_ALL_SEEING_INSIGHT.get());
     }
 
     private BeamPathRenderEvents() {

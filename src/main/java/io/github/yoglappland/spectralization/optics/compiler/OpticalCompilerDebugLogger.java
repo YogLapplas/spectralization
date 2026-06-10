@@ -782,6 +782,45 @@ public final class OpticalCompilerDebugLogger {
         write(builder.toString());
     }
 
+    public static void logSpectralLaneSolve(
+            Level level,
+            String channel,
+            CompiledPortGraph graph,
+            int requestedLaneCount,
+            int executedLaneCount,
+            boolean parallel,
+            long elapsedNanos,
+            ScalarPowerSolution solution
+    ) {
+        if (!SpectralizationConfig.opticalCompilerDebugLog()) {
+            return;
+        }
+
+        StringBuilder builder = new StringBuilder(2048);
+        builder.append("=== spectralization optical compiler ===\n");
+        builder.append("session_log=").append(SESSION_LOG_FILE_NAME).append('\n');
+        builder.append("stage=spectral_lane_solve\n");
+        builder.append("time=").append(Instant.now()).append('\n');
+        builder.append("dimension=").append(level.dimension().location()).append('\n');
+        builder.append("channel=").append(channel)
+                .append(" source=").append(formatPos(graph.sourcePos()))
+                .append(" direction=").append(graph.sourceDirection())
+                .append('\n');
+        builder.append("lane_execution")
+                .append(" requested_lanes=").append(requestedLaneCount)
+                .append(" executed_lanes=").append(executedLaneCount)
+                .append(" parallel=").append(parallel)
+                .append(" elapsed_us=").append(String.format(Locale.ROOT, "%.3f", elapsedNanos / 1_000.0D))
+                .append(" graph_nodes=").append(graph.nodes().size())
+                .append(" graph_edges=").append(graph.edges().size())
+                .append(" feedback_sccs=").append(graph.feedbackSccCount())
+                .append(" beta1=").append(graph.beta1())
+                .append('\n');
+        appendScalarSolution(builder, channel + "_lane_solution", solution);
+        builder.append('\n');
+        write(builder.toString());
+    }
+
     private static void appendTemplateSummary(
             StringBuilder builder,
             String label,
@@ -1105,9 +1144,56 @@ public final class OpticalCompilerDebugLogger {
                 .append(" residual=").append(formatPower(solution.residual()))
                 .append(" max_node_power=").append(formatPower(solution.maxNodePower()))
                 .append(" total_node_power=").append(formatPower(solution.totalNodePower()))
+                .append(" lanes=").append(solution.powerByLane().size())
                 .append('\n');
+        appendPowerLanes(builder, label, solution);
         appendSolverPlan(builder, label, solution.solverPlan());
         appendSolverRegionResults(builder, label, solution);
+    }
+
+    private static void appendPowerLanes(
+            StringBuilder builder,
+            String label,
+            ScalarPowerSolution solution
+    ) {
+        if (solution.powerByLane().isEmpty()) {
+            return;
+        }
+
+        builder.append(label).append("_lanes:\n");
+        List<Map.Entry<SpectralPowerLane, Map<PortGraphNode, Double>>> lanes =
+                new ArrayList<>(solution.powerByLane().entrySet());
+        lanes.sort(Map.Entry.comparingByKey(SpectralPowerLane.COMPARATOR));
+        int maxRows = Math.max(1, Math.min(8, SpectralizationConfig.opticalCompilerDebugMaxEdges()));
+        int rowCount = 0;
+
+        for (Map.Entry<SpectralPowerLane, Map<PortGraphNode, Double>> entry : lanes) {
+            if (rowCount >= maxRows) {
+                builder.append("  ... ").append(lanes.size() - rowCount).append(" more lanes\n");
+                return;
+            }
+
+            builder.append("  ")
+                    .append(entry.getKey().coherence())
+                    .append(" ")
+                    .append(entry.getKey().frequency().region())
+                    .append(":")
+                    .append(entry.getKey().frequency().bin())
+                    .append(" total=")
+                    .append(formatPower(totalNodePower(entry.getValue())))
+                    .append('\n');
+            rowCount++;
+        }
+    }
+
+    private static double totalNodePower(Map<PortGraphNode, Double> powers) {
+        double total = 0.0;
+
+        for (double power : powers.values()) {
+            total += power;
+        }
+
+        return total;
     }
 
     private static void appendSolverPlan(

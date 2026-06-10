@@ -1,5 +1,8 @@
 package io.github.yoglappland.spectralization.optics.compiler;
 
+import io.github.yoglappland.spectralization.optics.CoherenceKind;
+import io.github.yoglappland.spectralization.optics.FrequencyKey;
+import io.github.yoglappland.spectralization.optics.SpectralRegion;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -15,6 +18,7 @@ public record ScalarPowerSolution(
         double totalNodePower,
         Map<PortGraphNode, Double> powerByNode,
         Map<PortGraphNode, Double> coherentPowerByNode,
+        Map<SpectralPowerLane, Map<PortGraphNode, Double>> powerByLane,
         List<ScalarSolverRegionResult> regionResults
 ) {
     public ScalarPowerSolution {
@@ -22,6 +26,7 @@ public record ScalarPowerSolution(
         Objects.requireNonNull(solverPlan, "solverPlan");
         Objects.requireNonNull(powerByNode, "powerByNode");
         Objects.requireNonNull(coherentPowerByNode, "coherentPowerByNode");
+        Objects.requireNonNull(powerByLane, "powerByLane");
         Objects.requireNonNull(regionResults, "regionResults");
 
         if (iterations < 0) {
@@ -42,6 +47,7 @@ public record ScalarPowerSolution(
 
         powerByNode = Map.copyOf(powerByNode);
         coherentPowerByNode = Map.copyOf(coherentPowerByNode);
+        powerByLane = copyPowerByLane(powerByLane);
         regionResults = List.copyOf(regionResults);
     }
 
@@ -57,6 +63,47 @@ public record ScalarPowerSolution(
         return coherentPowerByNode.getOrDefault(node, 0.0);
     }
 
+    public double powerAt(PortGraphNode node, SpectralPowerLane lane) {
+        Map<PortGraphNode, Double> lanePowers = powerByLane.get(lane);
+        return lanePowers == null ? 0.0 : lanePowers.getOrDefault(node, 0.0);
+    }
+
+    public Map<PortGraphNode, Double> powerByNodeForLane(SpectralPowerLane lane) {
+        return powerByLane.getOrDefault(lane, Map.of());
+    }
+
+    public FrequencyKey strongestFrequencyAt(PortGraphNode node, CoherenceKind coherence) {
+        FrequencyKey strongestFrequency = FrequencyKey.DEBUG_VISIBLE;
+        double strongestPower = 0.0;
+
+        for (Map.Entry<SpectralPowerLane, Map<PortGraphNode, Double>> entry : powerByLane.entrySet()) {
+            SpectralPowerLane lane = entry.getKey();
+
+            if (lane.coherence() != coherence) {
+                continue;
+            }
+
+            double power = entry.getValue().getOrDefault(node, 0.0);
+
+            if (power > strongestPower) {
+                strongestPower = power;
+                strongestFrequency = lane.frequency();
+            }
+        }
+
+        return strongestFrequency;
+    }
+
+    public int strongestVisibleBinAt(PortGraphNode node, CoherenceKind coherence, int fallbackBin) {
+        FrequencyKey frequency = strongestFrequencyAt(node, coherence);
+
+        if (frequency.region() != SpectralRegion.VISIBLE) {
+            return fallbackBin;
+        }
+
+        return frequency.bin();
+    }
+
     public ScalarPowerSolution withCoherentPowerByNode(Map<PortGraphNode, Double> coherentPowerByNode) {
         return new ScalarPowerSolution(
                 solverKind,
@@ -69,6 +116,7 @@ public record ScalarPowerSolution(
                 totalNodePower,
                 powerByNode,
                 coherentPowerByNode,
+                powerByLane,
                 regionResults
         );
     }
@@ -83,5 +131,15 @@ public record ScalarPowerSolution(
                 .sorted((left, right) -> Double.compare(right.getValue(), left.getValue()))
                 .limit(Math.max(0, limit))
                 .toList();
+    }
+
+    private static Map<SpectralPowerLane, Map<PortGraphNode, Double>> copyPowerByLane(
+            Map<SpectralPowerLane, Map<PortGraphNode, Double>> powerByLane
+    ) {
+        return powerByLane.entrySet().stream()
+                .collect(java.util.stream.Collectors.toUnmodifiableMap(
+                        Map.Entry::getKey,
+                        entry -> Map.copyOf(entry.getValue())
+                ));
     }
 }

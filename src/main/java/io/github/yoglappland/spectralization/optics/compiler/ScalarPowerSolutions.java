@@ -19,6 +19,7 @@ final class ScalarPowerSolutions {
                 0.0,
                 Map.of(),
                 Map.of(),
+                Map.of(),
                 List.of()
         );
     }
@@ -60,6 +61,7 @@ final class ScalarPowerSolutions {
                 totalPower,
                 powerByNode,
                 powerByNode,
+                Map.of(),
                 List.of()
         );
     }
@@ -103,6 +105,7 @@ final class ScalarPowerSolutions {
                 totalPower,
                 powerByNode,
                 powerByNode,
+                Map.of(),
                 regionResults(solverKind, solverPlan, graph, nodeIds, source, powers, converged, unstable, iterations)
         );
     }

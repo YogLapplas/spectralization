@@ -46,6 +46,20 @@ public record BeamPacket(List<PlaneWaveComponent> components, BeamEnvelope envel
         return power;
     }
 
+    public Map<FrequencyKey, Double> powerByFrequency() {
+        Map<FrequencyKey, Double> powerByFrequency = new LinkedHashMap<>();
+
+        for (PlaneWaveComponent component : components) {
+            if (component.power() <= 0.0) {
+                continue;
+            }
+
+            powerByFrequency.merge(component.frequency(), component.power(), Double::sum);
+        }
+
+        return Map.copyOf(powerByFrequency);
+    }
+
     public BeamPacket withDirection(Direction direction) {
         return new BeamPacket(
                 components.stream()

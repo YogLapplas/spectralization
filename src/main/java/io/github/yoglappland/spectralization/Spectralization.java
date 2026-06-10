@@ -39,6 +39,8 @@ import io.github.yoglappland.spectralization.registry.SpectralMenus;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.ArmorItem;
+import net.minecraft.world.item.ArmorMaterials;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
@@ -126,6 +128,38 @@ public class Spectralization {
     public static final DeferredItem<CreativeBrushItem> CREATIVE_BRUSH = ITEMS.register(
             "creative_brush",
             () -> new CreativeBrushItem(new Item.Properties().stacksTo(1))
+    );
+    public static final DeferredItem<ArmorItem> VERITY_HELM_OF_ALL_SEEING_INSIGHT = ITEMS.register(
+            "verity_helm_of_all_seeing_insight",
+            () -> new ArmorItem(
+                    ArmorMaterials.NETHERITE,
+                    ArmorItem.Type.HELMET,
+                    new Item.Properties().stacksTo(1).fireResistant()
+            )
+    );
+    public static final DeferredItem<ArmorItem> VERITY_CUIRASS_OF_COSMIC_INDIFFERENCE = ITEMS.register(
+            "verity_cuirass_of_cosmic_indifference",
+            () -> new ArmorItem(
+                    ArmorMaterials.NETHERITE,
+                    ArmorItem.Type.CHESTPLATE,
+                    new Item.Properties().stacksTo(1).fireResistant()
+            )
+    );
+    public static final DeferredItem<ArmorItem> VERITY_LEGGINGS_OF_ENTROPIC_RELEASE = ITEMS.register(
+            "verity_leggings_of_entropic_release",
+            () -> new ArmorItem(
+                    ArmorMaterials.NETHERITE,
+                    ArmorItem.Type.LEGGINGS,
+                    new Item.Properties().stacksTo(1).fireResistant()
+            )
+    );
+    public static final DeferredItem<ArmorItem> VERITY_BOOTS_OF_LIGHT_CONE_TRANSITION = ITEMS.register(
+            "verity_boots_of_light_cone_transition",
+            () -> new ArmorItem(
+                    ArmorMaterials.NETHERITE,
+                    ArmorItem.Type.BOOTS,
+                    new Item.Properties().stacksTo(1).fireResistant()
+            )
     );
 
     public static final DeferredBlock<LensHolderBlock> LENS_HOLDER = BLOCKS.register(
@@ -282,6 +316,10 @@ public class Spectralization {
                         output.accept(SANDPAPER.get());
                         output.accept(ADVANCED_BRUSH.get());
                         output.accept(CREATIVE_BRUSH.get());
+                        output.accept(VERITY_HELM_OF_ALL_SEEING_INSIGHT.get());
+                        output.accept(VERITY_CUIRASS_OF_COSMIC_INDIFFERENCE.get());
+                        output.accept(VERITY_LEGGINGS_OF_ENTROPIC_RELEASE.get());
+                        output.accept(VERITY_BOOTS_OF_LIGHT_CONE_TRANSITION.get());
                         output.accept(LENS_HOLDER_ITEM.get());
                         output.accept(MIRROR_ITEM.get());
                         output.accept(DYNAMIC_MIRROR_ITEM.get());

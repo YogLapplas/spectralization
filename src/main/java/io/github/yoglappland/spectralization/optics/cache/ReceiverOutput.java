@@ -40,7 +40,7 @@ public record ReceiverOutput(
     }
 
     public static ReceiverOutput cmos(BlockPos pos, double power) {
-        return new ReceiverOutput(pos, ReceiverOutputKind.CMOS, power, false, power, 0.0, BeamEnvelope.DEFAULT_COLLIMATED);
+        return new ReceiverOutput(pos, ReceiverOutputKind.CMOS, power, false, 0.0, power, BeamEnvelope.DEFAULT_COLLIMATED);
     }
 
     public static ReceiverOutput passThroughSensor(BlockPos pos, boolean positiveZ, double power) {

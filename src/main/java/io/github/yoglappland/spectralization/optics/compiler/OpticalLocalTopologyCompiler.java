@@ -2,6 +2,7 @@ package io.github.yoglappland.spectralization.optics.compiler;
 
 import io.github.yoglappland.spectralization.optics.BeamPacket;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalNetwork;
+import io.github.yoglappland.spectralization.optics.FrequencyKey;
 import io.github.yoglappland.spectralization.optics.OpticalElement;
 import io.github.yoglappland.spectralization.optics.OpticalMaterialProfiles;
 import io.github.yoglappland.spectralization.optics.OpticalNetworkCompiler;
@@ -34,6 +35,9 @@ public final class OpticalLocalTopologyCompiler {
         OpticalResult result = compiledNetwork.scatterWithoutEffects(inputBeam, incomingDirection);
         Set<Direction> outgoingDirections = outgoingDirections(level, pos, state, incomingDirection, result);
         Map<Direction, Double> outputPowerByDirection = outputPowerByDirection(result);
+        Map<Direction, Map<FrequencyKey, Double>> outputPowerByFrequencyByDirection =
+                outputPowerByFrequencyByDirection(result);
+        Map<FrequencyKey, Double> inputPowerByFrequency = inputBeam.powerByFrequency();
         OpticalComponentTuple component = componentTuple(pos, state, incomingDirection, outgoingDirections);
         OpticalComponentPort inputPort = portFor(component, incomingDirection);
         List<OpticalLocalScattering> scattering = new ArrayList<>();
@@ -43,7 +47,9 @@ public final class OpticalLocalTopologyCompiler {
                     inputPort,
                     portFor(component, outgoingDirection),
                     inputBeam.totalPower(),
-                    outputPowerByDirection.getOrDefault(outgoingDirection, 0.0)
+                    outputPowerByDirection.getOrDefault(outgoingDirection, 0.0),
+                    inputPowerByFrequency,
+                    outputPowerByFrequencyByDirection.getOrDefault(outgoingDirection, Map.of())
             ));
         }
 
@@ -59,6 +65,23 @@ public final class OpticalLocalTopologyCompiler {
                     outputBeam.beam().totalPower(),
                     Double::sum
             );
+        }
+
+        return outputPowerByDirection;
+    }
+
+    private static Map<Direction, Map<FrequencyKey, Double>> outputPowerByFrequencyByDirection(OpticalResult result) {
+        Map<Direction, Map<FrequencyKey, Double>> outputPowerByDirection = new HashMap<>();
+
+        for (OutputBeam outputBeam : result.outputs()) {
+            Map<FrequencyKey, Double> powerByFrequency = outputPowerByDirection.computeIfAbsent(
+                    outputBeam.outgoingDirection(),
+                    ignored -> new HashMap<>()
+            );
+
+            for (Map.Entry<FrequencyKey, Double> entry : outputBeam.beam().powerByFrequency().entrySet()) {
+                powerByFrequency.merge(entry.getKey(), entry.getValue(), Double::sum);
+            }
         }
 
         return outputPowerByDirection;

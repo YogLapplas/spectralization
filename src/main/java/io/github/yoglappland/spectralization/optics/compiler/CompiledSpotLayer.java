@@ -2,6 +2,7 @@ package io.github.yoglappland.spectralization.optics.compiler;
 
 import io.github.yoglappland.spectralization.optics.BeamEnvelope;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
+import io.github.yoglappland.spectralization.optics.PlaneWaveComponent;
 import io.github.yoglappland.spectralization.optics.OpticalMaterialProfiles;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.SpotRecord;
@@ -58,7 +59,7 @@ public final class CompiledSpotLayer {
             }
 
             double coherentIncomingPower = Math.min(incomingPower, solution.coherentPowerAt(node));
-            BeamPacket profileTemplate = templateAt(sourceOutput, distanceByNode.getOrDefault(node, 0));
+            BeamPacket profileTemplate = templateAt(sourceOutput, distanceByNode.getOrDefault(node, 0), solution, node);
             List<PortGraphEdge> localEdges = localEdgesByInput.getOrDefault(node, List.of());
             SpotRecord incidentSpot = OpticalSpotTracker.createCompiledSurfaceSpot(
                     level,
@@ -160,11 +161,33 @@ public final class CompiledSpotLayer {
         return spots.size() >= MAX_SPOTS_PER_SAMPLE;
     }
 
-    private static BeamPacket templateAt(OutputBeam sourceOutput, int distance) {
+    private static BeamPacket templateAt(
+            OutputBeam sourceOutput,
+            int distance,
+            ScalarPowerSolution solution,
+            PortGraphNode node
+    ) {
         BeamEnvelope envelope = BeamGeometryOps.propagate(
                 sourceOutput.beam().envelope(),
                 Math.max(0, distance)
         );
+        List<PlaneWaveComponent> components = solution.powerByLane().entrySet().stream()
+                .map(entry -> {
+                    double power = entry.getValue().getOrDefault(node, 0.0);
+                    if (power <= 0.0) {
+                        return null;
+                    }
+
+                    return new PlaneWaveComponent(entry.getKey().frequency(), power, node.side(), entry.getKey().coherence());
+                })
+                .filter(java.util.Objects::nonNull)
+                .sorted(Comparator.comparingDouble(PlaneWaveComponent::power).reversed())
+                .limit(BeamPacket.MAX_COMPONENTS)
+                .toList();
+
+        if (!components.isEmpty()) {
+            return new BeamPacket(components, envelope);
+        }
 
         return sourceOutput.beam()
                 .withDirection(sourceOutput.outgoingDirection())

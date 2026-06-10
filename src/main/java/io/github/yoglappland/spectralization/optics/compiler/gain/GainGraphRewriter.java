@@ -2,7 +2,9 @@ package io.github.yoglappland.spectralization.optics.compiler.gain;
 
 import io.github.yoglappland.spectralization.optics.compiler.CompiledPortGraph;
 import io.github.yoglappland.spectralization.optics.compiler.PortGraphEdge;
+import io.github.yoglappland.spectralization.optics.FrequencyKey;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -33,7 +35,8 @@ final class GainGraphRewriter {
                     edge.distance(),
                     edge.sampleInputPower(),
                     edge.sampleOutputPower() * gain,
-                    edge.sampleFrequency()
+                    edge.sampleFrequency(),
+                    scaledFrequencyGains(edge.sampleGainByFrequency(), edge.sampleFrequency(), gain)
             ));
         }
 
@@ -57,6 +60,27 @@ final class GainGraphRewriter {
         }
 
         return false;
+    }
+
+    private static Map<FrequencyKey, Double> scaledFrequencyGains(
+            Map<FrequencyKey, Double> gains,
+            FrequencyKey targetFrequency,
+            double factor
+    ) {
+        if (gains.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<FrequencyKey, Double> scaled = new HashMap<>();
+
+        for (Map.Entry<FrequencyKey, Double> entry : gains.entrySet()) {
+            double gain = entry.getKey().equals(targetFrequency)
+                    ? entry.getValue() * factor
+                    : entry.getValue();
+            scaled.put(entry.getKey(), gain);
+        }
+
+        return scaled;
     }
 
     private GainGraphRewriter() {

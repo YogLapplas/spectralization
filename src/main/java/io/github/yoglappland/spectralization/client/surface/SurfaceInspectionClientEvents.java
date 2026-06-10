@@ -198,7 +198,13 @@ public final class SurfaceInspectionClientEvents {
     }
 
     private static boolean hasInspectionHelmet(Minecraft minecraft) {
-        return minecraft.player != null && minecraft.player.getItemBySlot(EquipmentSlot.HEAD).is(Items.LEATHER_HELMET);
+        if (minecraft.player == null) {
+            return false;
+        }
+
+        var helmet = minecraft.player.getItemBySlot(EquipmentSlot.HEAD);
+        return helmet.is(Items.LEATHER_HELMET)
+                || helmet.is(Spectralization.VERITY_HELM_OF_ALL_SEEING_INSIGHT.get());
     }
 
     private static String treatmentKey(SurfaceInspectionResponsePayload response) {

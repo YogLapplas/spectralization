@@ -1,5 +1,6 @@
 package io.github.yoglappland.spectralization.optics.geometry;
 
+import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.network.BeamPathOverlayPayload;
 import io.github.yoglappland.spectralization.optics.CoherenceKind;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalTrace;
@@ -25,7 +26,7 @@ public final class BeamPathOverlayTracker {
     private static final double SEND_RADIUS_SQUARED = 96.0D * 96.0D;
     private static final int MAX_SEGMENTS = 512;
     private static final int TERMINAL_RAY_BLOCKS = 64;
-    private static final int TOPOLOGY_COLOR_BIN = 63;
+    private static final int TOPOLOGY_COLOR_BIN = 4;
     private static final int TOPOLOGY_WIDTH_LEVEL = 1;
     private static final int TOPOLOGY_VISUAL_LEVEL = 5;
     private static final double HUD_COHERENT_POWER_THRESHOLD = 1.0E-6D;
@@ -125,7 +126,7 @@ public final class BeamPathOverlayTracker {
             double coherentPower = topologyPower(solution, edge.from());
 
             outgoingNodesWithPropagation.add(edge.from());
-            segments.add(toTopologyPayloadSegment(edge.from(), edge.to(), edge.from().side(), coherentPower));
+            segments.add(toTopologyPayloadSegment(edge.from(), edge.to(), edge.from().side(), coherentPower, solution));
 
             if (segments.size() >= MAX_SEGMENTS) {
                 return List.copyOf(segments);
@@ -144,7 +145,8 @@ public final class BeamPathOverlayTracker {
                     node,
                     new PortGraphNode(to, node.side().getOpposite(), PortWaveKind.INCOMING),
                     node.side(),
-                    coherentPower
+                    coherentPower,
+                    solution
             ));
 
             if (segments.size() >= MAX_SEGMENTS) {
@@ -230,7 +232,9 @@ public final class BeamPathOverlayTracker {
     }
 
     public static boolean hasHudHelmet(ServerPlayer player) {
-        return player.getItemBySlot(EquipmentSlot.HEAD).is(Items.LEATHER_HELMET);
+        var helmet = player.getItemBySlot(EquipmentSlot.HEAD);
+        return helmet.is(Items.LEATHER_HELMET)
+                || helmet.is(Spectralization.VERITY_HELM_OF_ALL_SEEING_INSIGHT.get());
     }
 
     private static BeamPathOverlayPayload payload(int ownerId, List<BeamPathOverlayPayload.Segment> segments) {
@@ -256,17 +260,26 @@ public final class BeamPathOverlayTracker {
             PortGraphNode from,
             PortGraphNode to,
             Direction direction,
-            double coherentPower
+            double coherentPower,
+            ScalarPowerSolution solution
     ) {
         return new BeamPathOverlayPayload.Segment(
                 from.pos(),
                 to.pos(),
                 direction,
                 true,
-                TOPOLOGY_COLOR_BIN,
+                solutionColorBin(solution, from),
                 TOPOLOGY_WIDTH_LEVEL,
                 topologyVisualLevel(coherentPower)
         );
+    }
+
+    private static int solutionColorBin(ScalarPowerSolution solution, PortGraphNode node) {
+        if (solution == null) {
+            return TOPOLOGY_COLOR_BIN;
+        }
+
+        return Math.max(0, Math.min(63, solution.strongestVisibleBinAt(node, CoherenceKind.COHERENT, TOPOLOGY_COLOR_BIN)));
     }
 
     private static int topologyVisualLevel(double coherentPower) {

@@ -67,7 +67,8 @@ public final class PortGraphCompiler {
                     manhattanDistance(propagationEdge.from().pos(), propagationEdge.to().pos()),
                     propagationEdge.beam().totalPower(),
                     propagationEdge.beam().totalPower(),
-                    sampleFrequency(propagationEdge.beam())
+                    sampleFrequency(propagationEdge.beam()),
+                    flatFrequencyGains(propagationEdge.beam(), 1.0)
             );
 
             boolean interestingStep = step.interactionKind() != OpticalInteractionKind.AIR;
@@ -87,7 +88,11 @@ public final class PortGraphCompiler {
                         0,
                         transferEdge.inputBeam().totalPower(),
                         transferEdge.outputBeam().totalPower(),
-                        sampleFrequency(transferEdge.inputBeam())
+                        sampleFrequency(transferEdge.inputBeam()),
+                        gainByFrequency(
+                                transferEdge.inputBeam().powerByFrequency(),
+                                transferEdge.outputBeam().powerByFrequency()
+                        )
                 );
 
                 if (interestingStep) {
@@ -111,7 +116,8 @@ public final class PortGraphCompiler {
                     manhattanDistance(from.pos(), termination.pos()),
                     termination.beam().totalPower(),
                     termination.beam().totalPower(),
-                    sampleFrequency(termination.beam())
+                    sampleFrequency(termination.beam()),
+                    flatFrequencyGains(termination.beam(), 1.0)
             );
         }
 
@@ -228,7 +234,7 @@ public final class PortGraphCompiler {
                                 key,
                                 ignored -> new EdgeAccumulator(edge.kind(), edge.from(), edge.to(), edge.distance(), edge.sampleFrequency())
                         )
-                        .accept(edge.distance(), edge.sampleInputPower(), edge.sampleOutputPower());
+                        .accept(edge.distance(), edge.sampleInputPower(), edge.sampleOutputPower(), edge.sampleGainByFrequency());
             }
         }
 
@@ -293,7 +299,8 @@ public final class PortGraphCompiler {
                     distance,
                     sampleBeam.totalPower(),
                     sampleBeam.totalPower() * propagationFactor,
-                    sampleFrequency(sampleBeam)
+                    sampleFrequency(sampleBeam),
+                    flatFrequencyGains(sampleBeam, propagationFactor)
             );
             addDirectLocalScattering(
                     level,
@@ -357,7 +364,11 @@ public final class PortGraphCompiler {
                     0,
                     scattering.sampleInputPower(),
                     scattering.sampleOutputPower(),
-                    sampleFrequency(inputBeam)
+                    sampleFrequency(inputBeam),
+                    gainByFrequency(
+                            scattering.sampleInputPowerByFrequency(),
+                            scattering.sampleOutputPowerByFrequency()
+                    )
             );
         }
     }
@@ -411,6 +422,43 @@ public final class PortGraphCompiler {
         return beam.components().getFirst().frequency();
     }
 
+    private static Map<FrequencyKey, Double> flatFrequencyGains(BeamPacket beam, double gain) {
+        if (beam.components().isEmpty()) {
+            return Map.of();
+        }
+
+        Map<FrequencyKey, Double> gains = new HashMap<>();
+
+        for (FrequencyKey frequency : beam.powerByFrequency().keySet()) {
+            gains.put(frequency, gain);
+        }
+
+        return gains;
+    }
+
+    private static Map<FrequencyKey, Double> gainByFrequency(
+            Map<FrequencyKey, Double> inputPowerByFrequency,
+            Map<FrequencyKey, Double> outputPowerByFrequency
+    ) {
+        if (inputPowerByFrequency.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<FrequencyKey, Double> gains = new HashMap<>();
+
+        for (Map.Entry<FrequencyKey, Double> entry : inputPowerByFrequency.entrySet()) {
+            double inputPower = entry.getValue();
+
+            if (inputPower <= 0.0) {
+                continue;
+            }
+
+            gains.put(entry.getKey(), outputPowerByFrequency.getOrDefault(entry.getKey(), 0.0) / inputPower);
+        }
+
+        return gains;
+    }
+
     private static void addRawEdge(
             Map<EdgeKey, EdgeAccumulator> edgeAccumulators,
             PortGraphEdgeKind kind,
@@ -421,13 +469,37 @@ public final class PortGraphCompiler {
             double sampleOutputPower,
             FrequencyKey sampleFrequency
     ) {
+        addRawEdge(
+                edgeAccumulators,
+                kind,
+                from,
+                to,
+                distance,
+                sampleInputPower,
+                sampleOutputPower,
+                sampleFrequency,
+                Map.of()
+        );
+    }
+
+    private static void addRawEdge(
+            Map<EdgeKey, EdgeAccumulator> edgeAccumulators,
+            PortGraphEdgeKind kind,
+            PortGraphNode from,
+            PortGraphNode to,
+            int distance,
+            double sampleInputPower,
+            double sampleOutputPower,
+            FrequencyKey sampleFrequency,
+            Map<FrequencyKey, Double> sampleGainByFrequency
+    ) {
         if (sampleInputPower <= 0.0 && sampleOutputPower <= 0.0) {
             return;
         }
 
         EdgeKey key = new EdgeKey(kind, from, to, sampleFrequency);
         edgeAccumulators.computeIfAbsent(key, ignored -> new EdgeAccumulator(kind, from, to, distance, sampleFrequency))
-                .accept(distance, sampleInputPower, sampleOutputPower);
+                .accept(distance, sampleInputPower, sampleOutputPower, sampleGainByFrequency);
     }
 
     private static List<PortGraphEdge> compactEdges(
@@ -474,6 +546,7 @@ public final class PortGraphCompiler {
                 firstEdge.sampleInputPower(),
                 firstEdge.sampleOutputPower(),
                 firstEdge.sampleFrequency(),
+                firstEdge.sampleGainByFrequency(),
                 firstVisited
         ));
 
@@ -498,6 +571,7 @@ public final class PortGraphCompiler {
                         current.sampleInputPower(),
                         nextEdge.sampleOutputPower(),
                         current.sampleFrequency(),
+                        multiplyFrequencyGains(current.sampleGainByFrequency(), nextEdge),
                         visited
                 ));
             }
@@ -522,7 +596,28 @@ public final class PortGraphCompiler {
                         key,
                         ignored -> new EdgeAccumulator(path.kind(), from, path.node(), path.distance(), path.sampleFrequency())
                 )
-                .accept(path.distance(), path.sampleInputPower(), path.sampleOutputPower());
+                .accept(path.distance(), path.sampleInputPower(), path.sampleOutputPower(), path.sampleGainByFrequency());
+    }
+
+    private static Map<FrequencyKey, Double> multiplyFrequencyGains(
+            Map<FrequencyKey, Double> accumulatedGains,
+            PortGraphEdge nextEdge
+    ) {
+        if (accumulatedGains.isEmpty()) {
+            return nextEdge.sampleGainByFrequency();
+        }
+
+        Map<FrequencyKey, Double> multiplied = new HashMap<>();
+
+        for (Map.Entry<FrequencyKey, Double> entry : accumulatedGains.entrySet()) {
+            multiplied.put(entry.getKey(), entry.getValue() * nextEdge.sampleGainFor(entry.getKey()));
+        }
+
+        for (Map.Entry<FrequencyKey, Double> entry : nextEdge.sampleGainByFrequency().entrySet()) {
+            multiplied.putIfAbsent(entry.getKey(), nextEdge.sampleGain() * entry.getValue());
+        }
+
+        return multiplied;
     }
 
     private static List<PortGraphNode> orderedNodes(
@@ -563,7 +658,8 @@ public final class PortGraphCompiler {
                     accumulator.distance,
                     accumulator.sampleInputPower,
                     accumulator.sampleOutputPower,
-                    accumulator.sampleFrequency
+                    accumulator.sampleFrequency,
+                    accumulator.sampleGainByFrequency
             ));
         }
 
@@ -756,13 +852,16 @@ public final class PortGraphCompiler {
             double sampleInputPower,
             double sampleOutputPower,
             FrequencyKey sampleFrequency,
+            Map<FrequencyKey, Double> sampleGainByFrequency,
             Set<PortGraphNode> visited
     ) {
         private PathState {
             Objects.requireNonNull(node, "node");
             Objects.requireNonNull(kind, "kind");
             Objects.requireNonNull(sampleFrequency, "sampleFrequency");
+            Objects.requireNonNull(sampleGainByFrequency, "sampleGainByFrequency");
             Objects.requireNonNull(visited, "visited");
+            sampleGainByFrequency = Map.copyOf(sampleGainByFrequency);
         }
     }
 
@@ -780,6 +879,7 @@ public final class PortGraphCompiler {
         private int distance;
         private double sampleInputPower;
         private double sampleOutputPower;
+        private final Map<FrequencyKey, Double> sampleGainByFrequency = new HashMap<>();
 
         private EdgeAccumulator(
                 PortGraphEdgeKind kind,
@@ -795,10 +895,19 @@ public final class PortGraphCompiler {
             this.sampleFrequency = sampleFrequency;
         }
 
-        private void accept(int distance, double sampleInputPower, double sampleOutputPower) {
+        private void accept(
+                int distance,
+                double sampleInputPower,
+                double sampleOutputPower,
+                Map<FrequencyKey, Double> sampleGainByFrequency
+        ) {
             this.distance = Math.max(this.distance, distance);
             this.sampleInputPower = Math.max(this.sampleInputPower, sampleInputPower);
             this.sampleOutputPower = Math.max(this.sampleOutputPower, sampleOutputPower);
+
+            for (Map.Entry<FrequencyKey, Double> entry : sampleGainByFrequency.entrySet()) {
+                this.sampleGainByFrequency.merge(entry.getKey(), entry.getValue(), Math::max);
+            }
         }
     }
 

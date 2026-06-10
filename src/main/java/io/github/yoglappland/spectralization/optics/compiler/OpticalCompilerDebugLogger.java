@@ -342,7 +342,9 @@ public final class OpticalCompilerDebugLogger {
             int readoutBindingCount,
             int receiverOutputCount,
             boolean usableForGameplay,
-            String solverKind
+            String solverKind,
+            CompiledPortGraph baseCoherentGraph,
+            CompiledPortGraph coherentGraph
     ) {
         if (!SpectralizationConfig.opticalCompilerDebugLog()) {
             return;
@@ -368,8 +370,65 @@ public final class OpticalCompilerDebugLogger {
                 .append(" usable_for_gameplay=").append(usableForGameplay)
                 .append(" solver=").append(solverKind)
                 .append('\n');
+        appendSystemGraphFingerprint(builder, "base_coherent", baseCoherentGraph);
+        appendSystemGraphFingerprint(builder, "coherent", coherentGraph);
         builder.append('\n');
         write(builder.toString());
+    }
+
+    private static void appendSystemGraphFingerprint(
+            StringBuilder builder,
+            String label,
+            CompiledPortGraph graph
+    ) {
+        if (graph == null) {
+            builder.append(label).append("_graph=none\n");
+            return;
+        }
+
+        builder.append(label).append("_graph")
+                .append(" nodes=").append(graph.nodes().size())
+                .append(" edges=").append(graph.edges().size())
+                .append(" beta1=").append(graph.beta1())
+                .append(" hash=").append(Long.toUnsignedString(graphFingerprint(graph), 16))
+                .append('\n');
+    }
+
+    private static long graphFingerprint(CompiledPortGraph graph) {
+        long hash = 0x6A09E667F3BCC909L;
+        List<PortGraphNode> nodes = new ArrayList<>(graph.nodes());
+        nodes.sort(NODE_COMPARATOR);
+
+        for (PortGraphNode node : nodes) {
+            hash = mix(hash, node.pos().asLong());
+            hash = mix(hash, node.side().ordinal());
+            hash = mix(hash, node.waveKind().ordinal());
+        }
+
+        List<PortGraphEdge> edges = new ArrayList<>(graph.edges());
+        edges.sort(Comparator
+                .comparing((PortGraphEdge edge) -> edge.from(), NODE_COMPARATOR)
+                .thenComparing(edge -> edge.to(), NODE_COMPARATOR)
+                .thenComparing(edge -> edge.kind().ordinal())
+                .thenComparingDouble(PortGraphEdge::sampleGain));
+
+        for (PortGraphEdge edge : edges) {
+            hash = mix(hash, edge.from().pos().asLong());
+            hash = mix(hash, edge.from().side().ordinal());
+            hash = mix(hash, edge.from().waveKind().ordinal());
+            hash = mix(hash, edge.to().pos().asLong());
+            hash = mix(hash, edge.to().side().ordinal());
+            hash = mix(hash, edge.to().waveKind().ordinal());
+            hash = mix(hash, edge.kind().ordinal());
+            hash = mix(hash, Double.doubleToLongBits(edge.sampleGain()));
+        }
+
+        return hash;
+    }
+
+    private static long mix(long hash, long value) {
+        long mixedValue = value + 0x9E3779B97F4A7C15L + (hash << 6) + (hash >>> 2);
+        return hash ^ mixedValue;
     }
 
     public static void logReadoutApply(
@@ -428,6 +487,42 @@ public final class OpticalCompilerDebugLogger {
                 .append(" solution_reliable=").append(systemSolutionReliable)
                 .append('\n');
         builder.append("held_readout_cache entries=").append(heldReadoutCacheEntries).append('\n');
+        builder.append('\n');
+        write(builder.toString());
+    }
+
+    public static void logReadoutApplyDetails(
+            Level level,
+            int networkId,
+            BlockPos sourcePos,
+            Direction sourceDirection,
+            String mode,
+            boolean reliable,
+            long readoutStep,
+            List<ReceiverOutput> directReceiverOutputs,
+            List<ReceiverOutput> systemReceiverOutputs,
+            List<ReceiverOutput> heldReceiverOutputs
+    ) {
+        if (!SpectralizationConfig.opticalCompilerDebugLog()) {
+            return;
+        }
+
+        StringBuilder builder = new StringBuilder(2048);
+        builder.append("=== spectralization optical compiler ===\n");
+        builder.append("session_log=").append(SESSION_LOG_FILE_NAME).append('\n');
+        builder.append("stage=readout_apply_details\n");
+        builder.append("time=").append(Instant.now()).append('\n');
+        builder.append("dimension=").append(level.dimension().location()).append('\n');
+        builder.append("network_id=").append(networkId)
+                .append(" source=").append(formatPos(sourcePos))
+                .append(" direction=").append(sourceDirection)
+                .append(" mode=").append(mode)
+                .append(" reliable=").append(reliable)
+                .append(" readout_step=").append(readoutStep)
+                .append('\n');
+        appendReadoutOutputList(builder, "direct", directReceiverOutputs);
+        appendReadoutOutputList(builder, "system", systemReceiverOutputs);
+        appendReadoutOutputList(builder, "held", heldReceiverOutputs);
         builder.append('\n');
         write(builder.toString());
     }
@@ -547,7 +642,9 @@ public final class OpticalCompilerDebugLogger {
                 .append(" sources=").append(schedule.gainSourceCount())
                 .append(" scheduled=").append(schedule.scheduled())
                 .append(" stable=").append(schedule.stable())
+                .append(" mode=").append(schedule.schedulerMode())
                 .append(" passive_rho=").append(formatPower(schedule.passiveRho()))
+                .append(" rho_target=").append(formatPower(schedule.rhoTarget()))
                 .append(" rho_hard=").append(formatPower(schedule.rhoHard()))
                 .append(" rho_before=").append(formatPower(schedule.rhoBefore()))
                 .append(" rho_after=").append(formatPower(schedule.rhoAfter()))
@@ -557,6 +654,130 @@ public final class OpticalCompilerDebugLogger {
                 .append(" max_base_gain=").append(formatPower(schedule.maxBaseGain()))
                 .append(" max_effective_gain=").append(formatPower(schedule.maxEffectiveGain()))
                 .append('\n');
+        builder.append('\n');
+        write(builder.toString());
+    }
+
+    public static void logRubySeedSynthesis(
+            Level level,
+            CompiledPortGraph graph,
+            int rubySeedNodeCount,
+            int rubyModeCount,
+            double totalStraySeedPower,
+            double totalConvertedPower,
+            double maxConvertedPower,
+            int maxPumpRate
+    ) {
+        if (!SpectralizationConfig.opticalCompilerDebugLog()
+                || rubySeedNodeCount <= 0
+                || totalConvertedPower <= 0.0) {
+            return;
+        }
+
+        StringBuilder builder = new StringBuilder(768);
+        builder.append("=== spectralization optical compiler ===\n");
+        builder.append("session_log=").append(SESSION_LOG_FILE_NAME).append('\n');
+        builder.append("stage=ruby_seed_synthesis\n");
+        builder.append("time=").append(Instant.now()).append('\n');
+        builder.append("dimension=").append(level.dimension().location()).append('\n');
+        builder.append("source=").append(formatPos(graph.sourcePos()))
+                .append(" direction=").append(graph.sourceDirection())
+                .append(" nodes=").append(graph.nodes().size())
+                .append(" edges=").append(graph.edges().size())
+                .append(" feedback_sccs=").append(graph.feedbackSccCount())
+                .append(" beta1=").append(graph.beta1())
+                .append('\n');
+        builder.append("ruby_seed")
+                .append(" seed_nodes=").append(rubySeedNodeCount)
+                .append(" modes=").append(rubyModeCount)
+                .append(" max_pump_rate=").append(maxPumpRate)
+                .append(" stray_seed_power=").append(formatPower(totalStraySeedPower))
+                .append(" coherent_source_power=").append(formatPower(totalConvertedPower))
+                .append(" max_node_source_power=").append(formatPower(maxConvertedPower))
+                .append('\n');
+        builder.append('\n');
+        write(builder.toString());
+    }
+
+    public static void logPowerChannelSolve(
+            Level level,
+            CompiledPortGraph passiveGraph,
+            CompiledPortGraph coherentGraph,
+            int incoherentSourceCount,
+            double incoherentSourcePower,
+            int directCoherentSourceCount,
+            double directCoherentSourcePower,
+            int rubySeedNodeCount,
+            int rubyModeCount,
+            double rubyStraySeedPower,
+            double rubyCoherentSourcePower,
+            int coherentSourceCount,
+            double coherentSourcePower,
+            GainSchedule gainSchedule,
+            ScalarPowerSolution incoherentSolution,
+            ScalarPowerSolution coherentSolution,
+            ScalarPowerSolution combinedSolution
+    ) {
+        if (!SpectralizationConfig.opticalCompilerDebugLog()
+                || (coherentSourceCount <= 0
+                && directCoherentSourceCount <= 0
+                && rubySeedNodeCount <= 0
+                && rubyCoherentSourcePower <= 0.0)) {
+            return;
+        }
+
+        StringBuilder builder = new StringBuilder(4096);
+        builder.append("=== spectralization optical compiler ===\n");
+        builder.append("session_log=").append(SESSION_LOG_FILE_NAME).append('\n');
+        builder.append("stage=power_channel_solve\n");
+        builder.append("time=").append(Instant.now()).append('\n');
+        builder.append("dimension=").append(level.dimension().location()).append('\n');
+        builder.append("source=").append(formatPos(coherentGraph.sourcePos()))
+                .append(" direction=").append(coherentGraph.sourceDirection())
+                .append('\n');
+        builder.append("passive_graph")
+                .append(" nodes=").append(passiveGraph.nodes().size())
+                .append(" edges=").append(passiveGraph.edges().size())
+                .append(" feedback_sccs=").append(passiveGraph.feedbackSccCount())
+                .append(" beta1=").append(passiveGraph.beta1())
+                .append('\n');
+        builder.append("coherent_graph")
+                .append(" nodes=").append(coherentGraph.nodes().size())
+                .append(" edges=").append(coherentGraph.edges().size())
+                .append(" feedback_sccs=").append(coherentGraph.feedbackSccCount())
+                .append(" beta1=").append(coherentGraph.beta1())
+                .append('\n');
+        builder.append("source_vectors")
+                .append(" incoherent_count=").append(incoherentSourceCount)
+                .append(" incoherent_power=").append(formatPower(incoherentSourcePower))
+                .append(" direct_coherent_count=").append(directCoherentSourceCount)
+                .append(" direct_coherent_power=").append(formatPower(directCoherentSourcePower))
+                .append(" ruby_seed_nodes=").append(rubySeedNodeCount)
+                .append(" ruby_modes=").append(rubyModeCount)
+                .append(" ruby_stray_seed_power=").append(formatPower(rubyStraySeedPower))
+                .append(" ruby_coherent_power=").append(formatPower(rubyCoherentSourcePower))
+                .append(" coherent_count=").append(coherentSourceCount)
+                .append(" coherent_power=").append(formatPower(coherentSourcePower))
+                .append('\n');
+        builder.append("gain_schedule")
+                .append(" scheduled=").append(gainSchedule.scheduled())
+                .append(" stable=").append(gainSchedule.stable())
+                .append(" mode=").append(gainSchedule.schedulerMode())
+                .append(" rho_before=").append(formatPower(gainSchedule.rhoBefore()))
+                .append(" rho_after=").append(formatPower(gainSchedule.rhoAfter()))
+                .append(" max_effective_gain=").append(formatPower(gainSchedule.maxEffectiveGain()))
+                .append('\n');
+        builder.append("theoretical_limits")
+                .append(" coherent_power_multiplier=")
+                .append(formatPower(coherentLimitMultiplier(gainSchedule.rhoAfter())))
+                .append(" coherent_internal_power_upper=")
+                .append(formatPower(coherentInternalPowerUpperBound(coherentSourcePower, gainSchedule.rhoAfter())))
+                .append('\n');
+        appendScalarSolution(builder, "incoherent_channel", incoherentSolution);
+        appendScalarSolution(builder, "coherent_channel", coherentSolution);
+        appendScalarSolution(builder, "combined_channels", combinedSolution);
+        appendStrongestNodes(builder, "coherent_channel", coherentSolution);
+        appendStrongestNodes(builder, "combined_channels", combinedSolution);
         builder.append('\n');
         write(builder.toString());
     }
@@ -766,6 +987,75 @@ public final class OpticalCompilerDebugLogger {
         }
 
         return powers;
+    }
+
+    private static void appendReadoutOutputList(
+            StringBuilder builder,
+            String label,
+            List<ReceiverOutput> receiverOutputs
+    ) {
+        builder.append(label)
+                .append("_outputs count=").append(receiverOutputs.size())
+                .append(" total_power=").append(formatPower(totalReceiverPower(receiverOutputs)))
+                .append(" coherent_power=").append(formatPower(totalReceiverCoherentPower(receiverOutputs)))
+                .append(" stray_power=").append(formatPower(totalReceiverStrayPower(receiverOutputs)))
+                .append('\n');
+
+        if (receiverOutputs.isEmpty()) {
+            builder.append(label).append("_output_details: none\n");
+            return;
+        }
+
+        builder.append(label).append("_output_details:\n");
+        int maxRows = Math.max(1, SpectralizationConfig.opticalCompilerDebugMaxEdges());
+        int rowCount = 0;
+
+        for (ReceiverOutput receiverOutput : receiverOutputs.stream()
+                .sorted(Comparator.comparing(OpticalCompilerDebugLogger::formatReceiverOutputKey))
+                .toList()) {
+            if (rowCount >= maxRows) {
+                builder.append("  ... ").append(receiverOutputs.size() - rowCount).append(" more receivers\n");
+                return;
+            }
+
+            builder.append("  ")
+                    .append(formatReceiverOutputKey(receiverOutput))
+                    .append(" power=").append(formatPower(receiverOutput.power()))
+                    .append(" coherent=").append(formatPower(receiverOutput.coherentPower()))
+                    .append(" stray=").append(formatPower(receiverOutput.strayPower()))
+                    .append('\n');
+            rowCount++;
+        }
+    }
+
+    private static double totalReceiverPower(List<ReceiverOutput> receiverOutputs) {
+        double totalPower = 0.0;
+
+        for (ReceiverOutput receiverOutput : receiverOutputs) {
+            totalPower += receiverOutput.power();
+        }
+
+        return totalPower;
+    }
+
+    private static double totalReceiverCoherentPower(List<ReceiverOutput> receiverOutputs) {
+        double totalPower = 0.0;
+
+        for (ReceiverOutput receiverOutput : receiverOutputs) {
+            totalPower += receiverOutput.coherentPower();
+        }
+
+        return totalPower;
+    }
+
+    private static double totalReceiverStrayPower(List<ReceiverOutput> receiverOutputs) {
+        double totalPower = 0.0;
+
+        for (ReceiverOutput receiverOutput : receiverOutputs) {
+            totalPower += receiverOutput.strayPower();
+        }
+
+        return totalPower;
     }
 
     private static String formatReceiverOutputKey(ReceiverOutput receiverOutput) {
@@ -1172,7 +1462,27 @@ public final class OpticalCompilerDebugLogger {
     }
 
     private static String formatPower(double power) {
+        if (!Double.isFinite(power)) {
+            return "inf";
+        }
+
         return String.format(Locale.ROOT, "%.6f", power);
+    }
+
+    private static double coherentLimitMultiplier(double rhoAfter) {
+        if (!Double.isFinite(rhoAfter) || rhoAfter >= 1.0D) {
+            return Double.POSITIVE_INFINITY;
+        }
+
+        return 1.0D / Math.max(1.0E-9D, 1.0D - Math.max(0.0D, rhoAfter));
+    }
+
+    private static double coherentInternalPowerUpperBound(double coherentSourcePower, double rhoAfter) {
+        if (!Double.isFinite(coherentSourcePower) || coherentSourcePower <= 0.0D) {
+            return 0.0D;
+        }
+
+        return coherentSourcePower * coherentLimitMultiplier(rhoAfter);
     }
 
     private static String formatRgb(int red, int green, int blue) {

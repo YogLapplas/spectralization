@@ -11,6 +11,7 @@ import io.github.yoglappland.spectralization.block.MirrorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
 import io.github.yoglappland.spectralization.block.RubyBlock;
 import io.github.yoglappland.spectralization.block.SilverGlassBlock;
+import io.github.yoglappland.spectralization.blockentity.RubyBlockEntity;
 import io.github.yoglappland.spectralization.client.renderer.LensHolderRenderer;
 import io.github.yoglappland.spectralization.client.screen.CoatingBrushScreen;
 import io.github.yoglappland.spectralization.client.screen.CreativeLightSourceScreen;
@@ -23,6 +24,7 @@ import io.github.yoglappland.spectralization.item.PhosphorTubeItem;
 import io.github.yoglappland.spectralization.item.SandpaperItem;
 import io.github.yoglappland.spectralization.item.SurfaceCoatingInteraction;
 import io.github.yoglappland.spectralization.network.SpectralNetwork;
+import io.github.yoglappland.spectralization.optics.OpticalSpotTracker;
 import io.github.yoglappland.spectralization.optics.cache.OpticalDirtyKind;
 import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
@@ -61,6 +63,8 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
+import net.neoforged.neoforge.event.server.ServerStartingEvent;
+import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
@@ -313,13 +317,26 @@ public class Spectralization {
     }
 
     @SubscribeEvent
+    public void onServerStarting(ServerStartingEvent event) {
+        resetOpticalRuntimeCaches();
+    }
+
+    @SubscribeEvent
+    public void onServerStopped(ServerStoppedEvent event) {
+        resetOpticalRuntimeCaches();
+    }
+
+    @SubscribeEvent
     public void onBlockPlaced(BlockEvent.EntityPlaceEvent event) {
         if (event.getLevel() instanceof Level level) {
             SurfaceCoatingData.removeAll(level, event.getPos());
         }
         OpticalFieldSources.invalidate(event.getLevel());
         OpticalWorldIndex.onBlockPlaced(event.getLevel(), event.getPos());
+        OpticalTraceCache.rememberSourceState(event.getLevel(), event.getPos());
         OpticalTraceCache.markChanged(event.getLevel(), event.getPos(), OpticalDirtyKind.STRUCTURE);
+        RubyBlockEntity.refreshNear(event.getLevel(), event.getPos());
+        OpticalTraceCache.requestIntrinsicSourcesNear(event.getLevel(), event.getPos());
         OpticalNetworkIndex.markDirty(event.getLevel());
     }
 
@@ -328,13 +345,20 @@ public class Spectralization {
         SurfaceCoatingData.removeAll(event.getPlayer().level(), event.getPos());
         OpticalFieldSources.invalidate(event.getLevel());
         OpticalWorldIndex.onBlockBroken(event.getLevel(), event.getPos());
+        OpticalTraceCache.forgetDormantSource(event.getLevel(), event.getPos());
         OpticalTraceCache.markChanged(event.getLevel(), event.getPos(), OpticalDirtyKind.STRUCTURE);
+        OpticalTraceCache.requestIntrinsicSourcesNear(event.getLevel(), event.getPos());
         OpticalNetworkIndex.markDirty(event.getLevel());
     }
 
     @SubscribeEvent
     public void onNeighborNotified(BlockEvent.NeighborNotifyEvent event) {
-        OpticalTraceCache.markChanged(event.getLevel(), event.getPos(), OpticalDirtyKind.PARAMETER);
+        boolean opticalDataChanged = OpticalTraceCache.markChanged(event.getLevel(), event.getPos(), OpticalDirtyKind.PARAMETER);
+        opticalDataChanged |= RubyBlockEntity.refreshNear(event.getLevel(), event.getPos());
+
+        if (opticalDataChanged) {
+            OpticalTraceCache.requestIntrinsicSourcesNear(event.getLevel(), event.getPos());
+        }
     }
 
     @SubscribeEvent
@@ -359,6 +383,14 @@ public class Spectralization {
     @SubscribeEvent
     public void onServerTickPost(ServerTickEvent.Post event) {
         OpticalTraceCache.processQueues(event.getServer());
+    }
+
+    private static void resetOpticalRuntimeCaches() {
+        OpticalTraceCache.clearAll();
+        OpticalWorldIndex.clearAll();
+        OpticalNetworkIndex.clearAll();
+        OpticalFieldSources.clearAll();
+        OpticalSpotTracker.clearAll();
     }
 
     @EventBusSubscriber(modid = Spectralization.MODID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)

@@ -4,10 +4,10 @@ import io.github.yoglappland.spectralization.block.BeamProfilerBlock;
 import io.github.yoglappland.spectralization.block.CmosSensorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
+import io.github.yoglappland.spectralization.optics.IntrinsicOpticalSources;
 import io.github.yoglappland.spectralization.optics.OpticalElement;
 import io.github.yoglappland.spectralization.optics.OpticalMaterialProfiles;
 import io.github.yoglappland.spectralization.optics.OpticalReceiver;
-import io.github.yoglappland.spectralization.optics.OpticalSource;
 import io.github.yoglappland.spectralization.optics.cache.OpticalDirtyKind;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
@@ -21,7 +21,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
 public final class OpticalWorldIndex {
@@ -53,6 +52,10 @@ public final class OpticalWorldIndex {
         return INDEXES.computeIfAbsent(level.dimension(), ignored -> new OpticalWorldIndex());
     }
 
+    public static void clearAll() {
+        INDEXES.clear();
+    }
+
     public static void onBlockPlaced(LevelAccessor level, BlockPos pos) {
         if (level instanceof ServerLevel serverLevel) {
             get(serverLevel).rescanGeometry(serverLevel, pos, OpticalIndexLayer.GEOMETRY);
@@ -74,6 +77,7 @@ public final class OpticalWorldIndex {
 
         switch (dirtyKind) {
             case STRUCTURE -> index.rescanGeometry(serverLevel, pos, OpticalIndexLayer.GEOMETRY);
+            case TOPOLOGY -> index.markDirty(serverLevel, OpticalIndexLayer.TOPOLOGY, pos);
             case PARAMETER -> index.markParameterizedChange(serverLevel, pos);
             case SOURCE -> index.markDirty(serverLevel, OpticalIndexLayer.INTRINSIC_DATA, pos);
             case FIELD -> index.markDirty(serverLevel, OpticalIndexLayer.TOPOLOGY, pos);
@@ -188,7 +192,7 @@ public final class OpticalWorldIndex {
             return;
         }
 
-        if (block instanceof OpticalSource || state.is(Blocks.GLOWSTONE)) {
+        if (IntrinsicOpticalSources.isSource(state)) {
             markDirty(level, OpticalIndexLayer.INTRINSIC_DATA, pos);
             return;
         }
@@ -256,7 +260,7 @@ public final class OpticalWorldIndex {
         Block block = state.getBlock();
 
         return new OpticalNodeClassification(
-                block instanceof OpticalSource,
+                IntrinsicOpticalSources.isSource(state),
                 block instanceof OpticalElement,
                 block instanceof OpticalReceiver || block instanceof CmosSensorBlock,
                 OpticalMaterialProfiles.isExplicitOpticalMaterial(state),

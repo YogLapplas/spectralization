@@ -6,9 +6,6 @@ import java.util.List;
 import java.util.Set;
 
 public final class ScalarSolverPlanner {
-    private static final int SMALL_EXACT_FEEDBACK_BETA1 = 8;
-    private static final int SMALL_EXACT_FEEDBACK_NODES = 64;
-
     public static ScalarSolverPlan plan(CompiledPortGraph graph) {
         if (graph.nodes().isEmpty()) {
             return ScalarSolverPlan.empty();
@@ -117,10 +114,6 @@ public final class ScalarSolverPlanner {
     }
 
     private static ScalarSolverKind preferredFeedbackSolver(PortGraphScc scc) {
-        if (scc.beta1() <= SMALL_EXACT_FEEDBACK_BETA1) {
-            return ScalarSolverKind.FEEDBACK_SCC_EXACT;
-        }
-
         return ScalarSolverKind.FEEDBACK_CHORD;
     }
 
@@ -129,12 +122,6 @@ public final class ScalarSolverPlanner {
             PortGraphScc scc,
             ScalarSolverKind preferredKind
     ) {
-        if (preferredKind == ScalarSolverKind.FEEDBACK_SCC_EXACT
-                && FeedbackSccScalarSolver.implemented()
-                && scc.nodes().size() <= SMALL_EXACT_FEEDBACK_NODES) {
-            return ScalarSolverKind.FEEDBACK_SCC_EXACT;
-        }
-
         if (preferredKind == ScalarSolverKind.FEEDBACK_CHORD
                 && ChordFeedbackScalarSolver.planningImplemented()
                 && ChordFeedbackScalarSolver.hasCompilableSystem(chordFeedbackPlan, scc.id())) {

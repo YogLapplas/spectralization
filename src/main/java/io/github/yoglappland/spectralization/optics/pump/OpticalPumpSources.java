@@ -8,7 +8,7 @@ import net.minecraft.world.level.block.state.BlockState;
 
 public final class OpticalPumpSources {
     public static final int CHARGED_GLOWSTONE_PUMP_RATE = 1;
-    public static final double GLOWSTONE_SEED_RATE = 1.0;
+    public static final int MAGMA_BLOCK_PUMP_RATE = 1;
 
     public static int adjacentPumpRate(Level level, BlockPos pos) {
         if (level == null || pos == null) {
@@ -19,31 +19,26 @@ public final class OpticalPumpSources {
 
         for (Direction direction : Direction.values()) {
             BlockPos neighborPos = pos.relative(direction);
-
-            if (isChargedGlowstone(level, neighborPos, level.getBlockState(neighborPos))) {
-                pumpRate += CHARGED_GLOWSTONE_PUMP_RATE;
-            }
+            pumpRate += pumpRateFor(level, neighborPos, level.getBlockState(neighborPos));
         }
 
         return pumpRate;
     }
 
-    public static double adjacentSeedRate(Level level, BlockPos pos) {
+    public static int pumpRateFor(Level level, BlockPos pos, BlockState state) {
         if (level == null || pos == null) {
-            return 0.0;
+            return 0;
         }
 
-        double seedRate = 0.0;
-
-        for (Direction direction : Direction.values()) {
-            BlockPos neighborPos = pos.relative(direction);
-
-            if (level.getBlockState(neighborPos).is(Blocks.GLOWSTONE)) {
-                seedRate += GLOWSTONE_SEED_RATE;
-            }
+        if (state.is(Blocks.MAGMA_BLOCK)) {
+            return MAGMA_BLOCK_PUMP_RATE;
         }
 
-        return seedRate;
+        return isChargedGlowstone(level, pos, state) ? CHARGED_GLOWSTONE_PUMP_RATE : 0;
+    }
+
+    public static boolean isPumpSource(Level level, BlockPos pos, BlockState state) {
+        return pumpRateFor(level, pos, state) > 0;
     }
 
     public static boolean isChargedGlowstone(Level level, BlockPos pos, BlockState state) {

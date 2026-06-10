@@ -50,6 +50,21 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
         super(SpectralBlockEntities.CREATIVE_LIGHT_SOURCE.get(), pos, blockState);
     }
 
+    @Override
+    public void onLoad() {
+        super.onLoad();
+
+        if (this.level == null || this.level.isClientSide) {
+            return;
+        }
+
+        if (this.getBlockState().getBlock() instanceof OpticalSource opticalSource) {
+            for (OutputBeam outputBeam : opticalSource.getOutputBeams(this.getBlockState(), this.level, this.worldPosition)) {
+                OpticalTraceCache.requestOrApply(this.level, this.worldPosition, outputBeam);
+            }
+        }
+    }
+
     public static void tick(Level level, BlockPos pos, BlockState state, CreativeLightSourceBlockEntity source) {
         if (level.isClientSide || !(state.getBlock() instanceof OpticalSource opticalSource)) {
             return;

@@ -1,5 +1,6 @@
 package io.github.yoglappland.spectralization.optics.compiler;
 
+import io.github.yoglappland.spectralization.optics.FrequencyKey;
 import java.util.Objects;
 
 public record PortGraphEdge(
@@ -9,12 +10,26 @@ public record PortGraphEdge(
         PortGraphNode to,
         int distance,
         double sampleInputPower,
-        double sampleOutputPower
+        double sampleOutputPower,
+        FrequencyKey sampleFrequency
 ) {
+    public PortGraphEdge(
+            int id,
+            PortGraphEdgeKind kind,
+            PortGraphNode from,
+            PortGraphNode to,
+            int distance,
+            double sampleInputPower,
+            double sampleOutputPower
+    ) {
+        this(id, kind, from, to, distance, sampleInputPower, sampleOutputPower, FrequencyKey.DEBUG_VISIBLE);
+    }
+
     public PortGraphEdge {
         Objects.requireNonNull(kind, "kind");
         Objects.requireNonNull(from, "from");
         Objects.requireNonNull(to, "to");
+        Objects.requireNonNull(sampleFrequency, "sampleFrequency");
 
         if (id < 0) {
             throw new IllegalArgumentException("Port graph edge id must be non-negative");

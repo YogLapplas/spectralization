@@ -62,6 +62,12 @@ public final class OpticalFieldSources {
         }
     }
 
+    public static void clearAll() {
+        synchronized (CACHES) {
+            CACHES.clear();
+        }
+    }
+
     private static OpticalFieldInfluence computeInfluence(Level level, BlockPos center) {
         int radius = SpectralizationConfig.scatteringFieldRadius();
 

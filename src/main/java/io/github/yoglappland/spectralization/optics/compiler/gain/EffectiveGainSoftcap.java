@@ -9,6 +9,7 @@ import java.util.Map;
 
 final class EffectiveGainSoftcap {
     static final double HARD_RHO = 0.985;
+    static final double SOLVER_TARGET_RHO = 0.940;
 
     private static final int SAFETY_BISECTION_STEPS = 14;
     private static final double SOFTCAP_SHARPNESS = 4.0;
@@ -68,10 +69,11 @@ final class EffectiveGainSoftcap {
         );
     }
 
-    Map<Integer, Double> shrinkExtraLogGainsToStable(
+    Map<Integer, Double> shrinkExtraLogGainsToTarget(
             CompiledPortGraph graph,
             GainGraphIndex index,
-            Map<Integer, Double> effectiveGainsByEdgeId
+            Map<Integer, Double> effectiveGainsByEdgeId,
+            double targetRho
     ) {
         double low = 0.0;
         double high = 1.0;
@@ -81,7 +83,7 @@ final class EffectiveGainSoftcap {
             Map<Integer, Double> gains = scaledExtraLogGains(effectiveGainsByEdgeId, middle);
             double rho = estimateWithGains(graph, index, gains);
 
-            if (rho < HARD_RHO) {
+            if (rho < targetRho) {
                 low = middle;
             } else {
                 high = middle;

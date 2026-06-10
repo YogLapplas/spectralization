@@ -32,7 +32,8 @@ final class GainGraphRewriter {
                     edge.to(),
                     edge.distance(),
                     edge.sampleInputPower(),
-                    edge.sampleOutputPower() * gain
+                    edge.sampleOutputPower() * gain,
+                    edge.sampleFrequency()
             ));
         }
 

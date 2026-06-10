@@ -27,9 +27,9 @@ public final class OpticalSpotTracker {
     private static final int LOG_INTERVAL_TICKS = 40;
     private static final double SEND_RADIUS = 64.0;
     private static final double SEND_RADIUS_SQUARED = SEND_RADIUS * SEND_RADIUS;
-    private static final double MIN_VISIBLE_IRRADIANCE = 0.25;
-    private static final double MAX_VISIBLE_IRRADIANCE = 256.0;
     private static final double MIN_SPOT_RADIUS = 0.08;
+    private static final double MIN_VISIBLE_SPOT_POWER = 0.125;
+    private static final double SPOT_POWER_PER_ALPHA_LEVEL = 8.0;
     private static final double DEFAULT_OPTICAL_DIFFUSE_YIELD = 0.85;
     private static final double VISIBLE_MIN_WAVELENGTH_NM = 380.0;
     private static final double VISIBLE_MAX_WAVELENGTH_NM = 750.0;
@@ -59,8 +59,7 @@ public final class OpticalSpotTracker {
             }
 
             OpticalMaterialResponse response = profile.responseAt(component.frequency());
-            double unmodeledLoss = Math.max(0.0, 1.0 - response.transmittance() - response.reflectance() - response.absorption());
-            double diffuseYield = Mth.clamp(response.absorption() + unmodeledLoss * 0.35, 0.0, 1.0);
+            double diffuseYield = spotYieldFor(component, response);
 
             spotPower.accept(component, component.power() * diffuseYield);
         }
@@ -97,14 +96,13 @@ public final class OpticalSpotTracker {
             }
 
             OpticalMaterialResponse response = profile.responseAt(component.frequency());
-            double unmodeledLoss = Math.max(0.0, 1.0 - response.transmittance() - response.reflectance() - response.absorption());
-            double diffuseYield = Mth.clamp(response.absorption() + unmodeledLoss * 0.35, 0.0, 1.0);
             double templateFraction = component.power() / totalTemplatePower;
             double componentBeamPower = beamPower * templateFraction;
             double componentCoherentPower = Math.min(componentBeamPower, coherentBeamPower * templateFraction);
+            double componentStrayPower = Math.max(0.0, componentBeamPower - componentCoherentPower);
 
-            spotPower.accept(component.withCoherence(CoherenceKind.COHERENT), componentCoherentPower * diffuseYield);
-            spotPower.accept(component.withCoherence(CoherenceKind.INCOHERENT), Math.max(0.0, componentBeamPower - componentCoherentPower) * diffuseYield);
+            spotPower.accept(component.withCoherence(CoherenceKind.COHERENT), componentCoherentPower * response.absorption());
+            spotPower.accept(component.withCoherence(CoherenceKind.INCOHERENT), componentStrayPower * response.reflectance());
         }
 
         return createSpot(pos, face, profileTemplate, spotPower);
@@ -295,6 +293,13 @@ public final class OpticalSpotTracker {
         }
     }
 
+    public static void clearAll() {
+        ACTIVE_SPOTS.clear();
+        SPOT_KEYS_BY_OWNER.clear();
+        LAST_REFRESH.clear();
+        LAST_LOG.clear();
+    }
+
     private static void refresh(ServerLevel level) {
         if (!SpectralizationConfig.surfaceSpotsVisible()) {
             clear(level);
@@ -398,18 +403,13 @@ public final class OpticalSpotTracker {
     }
 
     private static int alphaLevel(double spotPower, BeamEnvelope envelope) {
-        double radius = Math.max(envelope.radius(), MIN_SPOT_RADIUS);
-        double area = Math.PI * radius * radius;
-        double irradiance = spotPower / area;
-
-        if (irradiance < MIN_VISIBLE_IRRADIANCE) {
+        if (spotPower < MIN_VISIBLE_SPOT_POWER) {
             return 0;
         }
 
-        double normalized = Math.log1p(irradiance / MIN_VISIBLE_IRRADIANCE)
-                / Math.log1p(MAX_VISIBLE_IRRADIANCE / MIN_VISIBLE_IRRADIANCE);
-
-        return Mth.clamp((int) Math.ceil(normalized * 15.0), 1, 15);
+        double scaledPower = spotPower / MIN_VISIBLE_SPOT_POWER;
+        int level = (int) Math.floor(Math.log(scaledPower) / Math.log(SPOT_POWER_PER_ALPHA_LEVEL)) + 1;
+        return Mth.clamp(level, 1, 15);
     }
 
     private static int coherentRadiusLevel(BeamEnvelope envelope) {
@@ -427,6 +427,12 @@ public final class OpticalSpotTracker {
     private static int ringAlphaLevel(int coherentAlpha, int strayAlpha) {
         int strongest = Math.max(coherentAlpha, strayAlpha);
         return strongest >= 13 ? Mth.clamp(strongest - 8, 1, 7) : 0;
+    }
+
+    private static double spotYieldFor(PlaneWaveComponent component, OpticalMaterialResponse response) {
+        return component.coherence() == CoherenceKind.COHERENT
+                ? response.absorption()
+                : response.reflectance();
     }
 
     private static double visiblePower(BeamPacket beam) {

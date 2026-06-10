@@ -12,10 +12,7 @@ import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
-import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -23,6 +20,9 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 
 @EventBusSubscriber(modid = Spectralization.MODID, value = Dist.CLIENT)
 public final class SpotRenderEvents {
+    private static final int MAX_RENDERED_SPOTS = 384;
+    private static final double MAX_RENDER_DISTANCE = 48.0D;
+    private static final double MAX_RENDER_DISTANCE_SQUARED = MAX_RENDER_DISTANCE * MAX_RENDER_DISTANCE;
     private static final double SURFACE_OFFSET = 0.003D;
     private static final ResourceLocation CORE_TEXTURE =
             ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "textures/effect/spot_core.png");
@@ -53,8 +53,19 @@ public final class SpotRenderEvents {
 
         PoseStack.Pose pose = poseStack.last();
 
+        int renderedSpots = 0;
+
         for (SpotRecord spot : spots) {
+            if (renderedSpots >= MAX_RENDERED_SPOTS) {
+                break;
+            }
+
+            if (!isNearCamera(cameraPosition, spot)) {
+                continue;
+            }
+
             renderSpot(bufferSource, pose, spot);
+            renderedSpots++;
         }
 
         poseStack.popPose();
@@ -245,52 +256,25 @@ public final class SpotRenderEvents {
     }
 
     private static int alphaFor(int alphaLevel, double multiplier) {
-        return Math.max(0, Math.min(240, (int) Math.round((32 + alphaLevel * 15) * multiplier)));
+        return Math.max(0, Math.min(240, (int) Math.round((88 + alphaLevel * 10) * multiplier)));
     }
 
     private static Vec3 spotCenter(SpotRecord spot) {
-        Minecraft minecraft = Minecraft.getInstance();
         BlockPos pos = spot.pos();
         Direction face = spot.face();
-        Vec3 fallback = new Vec3(
+        return new Vec3(
                 pos.getX() + 0.5D + face.getStepX() * (0.5D + SURFACE_OFFSET),
                 pos.getY() + 0.5D + face.getStepY() * (0.5D + SURFACE_OFFSET),
                 pos.getZ() + 0.5D + face.getStepZ() * (0.5D + SURFACE_OFFSET)
         );
+    }
 
-        if (minecraft.level == null) {
-            return fallback;
-        }
-
-        BlockState state = minecraft.level.getBlockState(pos);
-        VoxelShape shape = state.getShape(minecraft.level, pos);
-
-        if (shape.isEmpty()) {
-            return fallback;
-        }
-
-        Vec3 start = new Vec3(
-                pos.getX() + 0.5D + face.getStepX() * 1.35D,
-                pos.getY() + 0.5D + face.getStepY() * 1.35D,
-                pos.getZ() + 0.5D + face.getStepZ() * 1.35D
-        );
-        Vec3 end = new Vec3(
-                pos.getX() + 0.5D - face.getStepX() * 0.35D,
-                pos.getY() + 0.5D - face.getStepY() * 0.35D,
-                pos.getZ() + 0.5D - face.getStepZ() * 0.35D
-        );
-        BlockHitResult hit = shape.clip(start, end, pos);
-
-        if (hit == null) {
-            return fallback;
-        }
-
-        Vec3 location = hit.getLocation();
-        return new Vec3(
-                location.x + face.getStepX() * SURFACE_OFFSET,
-                location.y + face.getStepY() * SURFACE_OFFSET,
-                location.z + face.getStepZ() * SURFACE_OFFSET
-        );
+    private static boolean isNearCamera(Vec3 cameraPosition, SpotRecord spot) {
+        BlockPos pos = spot.pos();
+        double dx = pos.getX() + 0.5D - cameraPosition.x;
+        double dy = pos.getY() + 0.5D - cameraPosition.y;
+        double dz = pos.getZ() + 0.5D - cameraPosition.z;
+        return dx * dx + dy * dy + dz * dz <= MAX_RENDER_DISTANCE_SQUARED;
     }
 
     private SpotRenderEvents() {

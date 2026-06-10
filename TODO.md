@@ -12,6 +12,7 @@
 
 - [x] 第一代光网络编译器成为当前光学系统的主路径。
 - [x] 旧 tracer 降级为 debug/reference/fallback。
+- [x] Compiler First 规范写入架构文档：新光源、传感器、HUD、spot、材料和场源先接编译器与事件驱动。
 - [x] 红宝石固体激光器能通过世界光路自然形成。
 - [x] 世界表面涂层能改变光学系统。
 - [x] 光束 HUD、涂层 HUD、surface spot 已经能显示。
@@ -103,6 +104,7 @@
 - [x] 64x64 分光镜阵列和高频红石压力测试达到可玩水平。
 - [~] 多源、多网络、切分/合并网络需要长期回归。
 - [~] 数据层状态 LUT 还可强化。
+- [ ] 清点旧 tracer 仍参与 gameplay 的位置，逐步迁移到 compiled output 或删除。
 - [ ] Weighted BFS attention scheduler。
 - [ ] 量级分池。
 - [ ] Residual correction。

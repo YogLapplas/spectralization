@@ -137,7 +137,7 @@ public class MirrorBlock extends Block implements OpticalElement {
     private static void rotateMirror(BlockState state, Level level, BlockPos pos) {
         if (!level.isClientSide) {
             level.setBlock(pos, state.setValue(ROTATION, (state.getValue(ROTATION) + 1) & 7), 3);
-            OpticalTraceCache.markChanged(level, pos, OpticalDirtyKind.PARAMETER);
+            OpticalTraceCache.markChanged(level, pos, OpticalDirtyKind.TOPOLOGY);
         }
     }
 

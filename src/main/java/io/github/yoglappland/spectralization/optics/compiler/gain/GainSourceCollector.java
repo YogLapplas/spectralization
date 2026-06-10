@@ -17,20 +17,18 @@ final class GainSourceCollector {
     static final double MIN_GAIN_DELTA = 1.0E-6;
 
     Map<Integer, GainSource> collect(Level level, CompiledPortGraph graph, GainGraphIndex index) {
-        Map<PortGraphNode, Integer> sccIdByNode = new HashMap<>();
+        Map<PortGraphNode, Integer> feedbackSccIdByNode = new HashMap<>();
 
         for (PortGraphScc scc : index.feedbackSccsById().values()) {
             for (PortGraphNode node : scc.nodes()) {
-                sccIdByNode.put(node, scc.id());
+                feedbackSccIdByNode.put(node, scc.id());
             }
         }
 
         Map<Integer, GainSource> gainSourcesByEdgeId = new HashMap<>();
 
         for (PortGraphEdge edge : graph.edges()) {
-            Integer sccId = sccIdByNode.get(edge.from());
-
-            if (sccId == null || !sccId.equals(sccIdByNode.get(edge.to())) || !isLocalGainCandidate(edge)) {
+            if (!isLocalGainCandidate(edge)) {
                 continue;
             }
 
@@ -41,12 +39,18 @@ final class GainSourceCollector {
             }
 
             BlockState state = level.getBlockState(pos);
-            double baseGain = OpticalMaterialProfiles.scheduledCoherentBaseGainFor(level, pos, state);
+            double baseGain = OpticalMaterialProfiles.scheduledCoherentBaseGainFor(level, pos, state, edge.sampleFrequency());
             double materialWeight = OpticalMaterialProfiles.gainMaterialWeightFor(state);
 
             if (baseGain <= 1.0 + MIN_GAIN_DELTA || materialWeight <= 0.0) {
                 continue;
             }
+
+            Integer fromFeedbackSccId = feedbackSccIdByNode.get(edge.from());
+            Integer toFeedbackSccId = feedbackSccIdByNode.get(edge.to());
+            int sccId = fromFeedbackSccId != null && fromFeedbackSccId.equals(toFeedbackSccId)
+                    ? fromFeedbackSccId
+                    : -1;
 
             gainSourcesByEdgeId.put(edge.id(), new GainSource(
                     edge.id(),

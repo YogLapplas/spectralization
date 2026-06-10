@@ -13,12 +13,14 @@ public record CachedOpticalSystem(
         int systemId,
         CompiledPortGraph graph,
         CompiledPortGraph passiveGraph,
+        CompiledPortGraph baseCoherentGraph,
         CompiledPortGraph coherentGraph,
         Map<PortGraphNode, Double> sourcePowersByNode,
         CompiledReadoutLayer readoutLayer,
         ScalarPowerSolution solution,
         List<ReceiverOutput> receiverOutputs,
         int sourceCount,
+        boolean coherentHudIntent,
         OpticalEpochs epochs,
         boolean structurallyFresh,
         boolean parametricallyFresh,
@@ -31,6 +33,7 @@ public record CachedOpticalSystem(
 
         Objects.requireNonNull(graph, "graph");
         Objects.requireNonNull(passiveGraph, "passiveGraph");
+        Objects.requireNonNull(baseCoherentGraph, "baseCoherentGraph");
         Objects.requireNonNull(coherentGraph, "coherentGraph");
         Objects.requireNonNull(sourcePowersByNode, "sourcePowersByNode");
         Objects.requireNonNull(readoutLayer, "readoutLayer");
@@ -69,12 +72,14 @@ public record CachedOpticalSystem(
                 systemId,
                 graph,
                 passiveGraph,
+                baseCoherentGraph,
                 coherentGraph,
                 sourcePowersByNode,
                 readoutLayer,
                 solution,
                 receiverOutputs,
                 sourceCount,
+                coherentHudIntent,
                 epochs,
                 structurallyFresh,
                 parametricallyFresh,

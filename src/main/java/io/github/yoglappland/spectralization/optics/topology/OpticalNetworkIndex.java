@@ -4,10 +4,10 @@ import io.github.yoglappland.spectralization.optics.BeamEnvelope;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
 import io.github.yoglappland.spectralization.optics.CoherenceKind;
 import io.github.yoglappland.spectralization.optics.FrequencyKey;
+import io.github.yoglappland.spectralization.optics.IntrinsicOpticalSources;
 import io.github.yoglappland.spectralization.optics.OpticalElement;
 import io.github.yoglappland.spectralization.optics.OpticalMaterialProfiles;
 import io.github.yoglappland.spectralization.optics.OpticalNetworkCompiler;
-import io.github.yoglappland.spectralization.optics.OpticalSource;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.PlaneWaveComponent;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldEffectType;
@@ -42,6 +42,10 @@ public final class OpticalNetworkIndex {
 
     public static OpticalNetworkSnapshot snapshot(ServerLevel level) {
         return SNAPSHOTS.getOrDefault(level.dimension(), OpticalNetworkSnapshot.EMPTY);
+    }
+
+    public static void clearAll() {
+        SNAPSHOTS.clear();
     }
 
     public static void markDirty(LevelAccessor level) {
@@ -107,7 +111,7 @@ public final class OpticalNetworkIndex {
         Block block = state.getBlock();
 
         return new OpticalNodeFlags(
-                block instanceof OpticalSource,
+                IntrinsicOpticalSources.isSource(state),
                 block instanceof OpticalElement,
                 OpticalMaterialProfiles.isExplicitOpticalMaterial(state)
         );
@@ -177,11 +181,11 @@ public final class OpticalNetworkIndex {
     private static void seedSourceFronts(ServerLevel level, BlockPos pos, ArrayDeque<TravelFront> pendingFronts) {
         BlockState state = level.getBlockState(pos);
 
-        if (!(state.getBlock() instanceof OpticalSource opticalSource)) {
+        if (!IntrinsicOpticalSources.isSource(state)) {
             return;
         }
 
-        for (OutputBeam outputBeam : opticalSource.getOutputBeams(state, level, pos)) {
+        for (OutputBeam outputBeam : IntrinsicOpticalSources.outputBeams(state, level, pos)) {
             pendingFronts.addLast(new TravelFront(pos, outputBeam.outgoingDirection()));
         }
     }

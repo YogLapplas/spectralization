@@ -7,7 +7,9 @@ public record GainSchedule(
         CompiledPortGraph graph,
         boolean scheduled,
         boolean stable,
+        String schedulerMode,
         double passiveRho,
+        double rhoTarget,
         double rhoHard,
         double rhoBefore,
         double rhoAfter,
@@ -20,9 +22,14 @@ public record GainSchedule(
 ) {
     public GainSchedule {
         Objects.requireNonNull(graph, "graph");
+        Objects.requireNonNull(schedulerMode, "schedulerMode");
 
         if (!Double.isFinite(passiveRho) || passiveRho < 0.0) {
             throw new IllegalArgumentException("Gain schedule passiveRho must be finite and non-negative");
+        }
+
+        if (!Double.isFinite(rhoTarget) || rhoTarget < 0.0) {
+            throw new IllegalArgumentException("Gain schedule rhoTarget must be finite and non-negative");
         }
 
         if (!Double.isFinite(rhoHard) || rhoHard < 0.0) {
@@ -63,6 +70,6 @@ public record GainSchedule(
     }
 
     public static GainSchedule none(CompiledPortGraph graph) {
-        return new GainSchedule(graph, false, true, 0.0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 1.0, 1.0, 1.0);
+        return new GainSchedule(graph, false, true, "none", 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 1.0, 1.0, 1.0);
     }
 }

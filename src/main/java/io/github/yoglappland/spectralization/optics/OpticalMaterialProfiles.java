@@ -197,6 +197,10 @@ public final class OpticalMaterialProfiles {
     }
 
     public static double scheduledCoherentBaseGainFor(Level level, BlockPos pos, BlockState state) {
+        return scheduledCoherentBaseGainFor(level, pos, state, FrequencyKey.DEBUG_VISIBLE);
+    }
+
+    public static double scheduledCoherentBaseGainFor(Level level, BlockPos pos, BlockState state, FrequencyKey frequency) {
         if (state.getBlock() != Spectralization.RUBY_BLOCK.get()) {
             return 1.0;
         }
@@ -207,7 +211,13 @@ public final class OpticalMaterialProfiles {
             return 1.0;
         }
 
-        return Math.min(RUBY_MAX_SCHEDULED_GAIN, 1.0 + RUBY_SCHEDULED_GAIN_PER_PUMP_RATE * pumpRate);
+        double spectralCoupling = rubyEmissionCoupling(frequency);
+
+        if (spectralCoupling <= 0.0) {
+            return 1.0;
+        }
+
+        return Math.min(RUBY_MAX_SCHEDULED_GAIN, 1.0 + RUBY_SCHEDULED_GAIN_PER_PUMP_RATE * pumpRate * spectralCoupling);
     }
 
     public static double gainMaterialWeightFor(BlockState state) {

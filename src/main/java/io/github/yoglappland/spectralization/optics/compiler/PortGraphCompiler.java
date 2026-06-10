@@ -3,6 +3,7 @@ package io.github.yoglappland.spectralization.optics.compiler;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalTrace;
+import io.github.yoglappland.spectralization.optics.FrequencyKey;
 import io.github.yoglappland.spectralization.optics.OpticalInteractionKind;
 import io.github.yoglappland.spectralization.optics.OpticalMaterialProfiles;
 import io.github.yoglappland.spectralization.optics.OpticalPort;
@@ -41,6 +42,8 @@ public final class PortGraphCompiler {
             .comparing((PortGraphEdge edge) -> edge.from(), NODE_COMPARATOR)
             .thenComparing(edge -> edge.to(), NODE_COMPARATOR)
             .thenComparing(edge -> edge.kind().ordinal())
+            .thenComparing(edge -> edge.sampleFrequency().region().ordinal())
+            .thenComparing(edge -> edge.sampleFrequency().bin())
             .thenComparingInt(PortGraphEdge::id);
 
     public static CompiledPortGraph compileObservedTrace(CompiledOpticalTrace trace) {
@@ -63,7 +66,8 @@ public final class PortGraphCompiler {
                     PortGraphNode.incoming(propagationEdge.to()),
                     manhattanDistance(propagationEdge.from().pos(), propagationEdge.to().pos()),
                     propagationEdge.beam().totalPower(),
-                    propagationEdge.beam().totalPower()
+                    propagationEdge.beam().totalPower(),
+                    sampleFrequency(propagationEdge.beam())
             );
 
             boolean interestingStep = step.interactionKind() != OpticalInteractionKind.AIR;
@@ -82,7 +86,8 @@ public final class PortGraphCompiler {
                         to,
                         0,
                         transferEdge.inputBeam().totalPower(),
-                        transferEdge.outputBeam().totalPower()
+                        transferEdge.outputBeam().totalPower(),
+                        sampleFrequency(transferEdge.inputBeam())
                 );
 
                 if (interestingStep) {
@@ -105,7 +110,8 @@ public final class PortGraphCompiler {
                     to,
                     manhattanDistance(from.pos(), termination.pos()),
                     termination.beam().totalPower(),
-                    termination.beam().totalPower()
+                    termination.beam().totalPower(),
+                    sampleFrequency(termination.beam())
             );
         }
 
@@ -203,20 +209,24 @@ public final class PortGraphCompiler {
             throw new IllegalArgumentException("Cannot union an empty direct graph list");
         }
 
-        CompiledPortGraph firstGraph = graphs.getFirst();
+        List<CompiledPortGraph> orderedGraphs = new ArrayList<>(graphs);
+        orderedGraphs.sort(Comparator
+                .comparing((CompiledPortGraph graph) -> graph.sourceNode(), NODE_COMPARATOR)
+                .thenComparing(graph -> graph.sourceDirection().ordinal()));
+        CompiledPortGraph firstGraph = orderedGraphs.getFirst();
         Map<EdgeKey, EdgeAccumulator> edgeAccumulators = new LinkedHashMap<>();
         Set<PortGraphNode> nodes = new TreeSet<>(NODE_COMPARATOR);
         int terminationCount = 0;
 
-        for (CompiledPortGraph graph : graphs) {
+        for (CompiledPortGraph graph : orderedGraphs) {
             nodes.addAll(graph.nodes());
             terminationCount += graph.terminationCount();
 
             for (PortGraphEdge edge : graph.edges()) {
-                EdgeKey key = new EdgeKey(edge.kind(), edge.from(), edge.to());
+                EdgeKey key = new EdgeKey(edge.kind(), edge.from(), edge.to(), edge.sampleFrequency());
                 edgeAccumulators.computeIfAbsent(
                                 key,
-                                ignored -> new EdgeAccumulator(edge.kind(), edge.from(), edge.to(), edge.distance())
+                                ignored -> new EdgeAccumulator(edge.kind(), edge.from(), edge.to(), edge.distance(), edge.sampleFrequency())
                         )
                         .accept(edge.distance(), edge.sampleInputPower(), edge.sampleOutputPower());
             }
@@ -282,7 +292,8 @@ public final class PortGraphCompiler {
                     incomingNode,
                     distance,
                     sampleBeam.totalPower(),
-                    sampleBeam.totalPower() * propagationFactor
+                    sampleBeam.totalPower() * propagationFactor,
+                    sampleFrequency(sampleBeam)
             );
             addDirectLocalScattering(
                     level,
@@ -345,7 +356,8 @@ public final class PortGraphCompiler {
                     outgoingNode,
                     0,
                     scattering.sampleInputPower(),
-                    scattering.sampleOutputPower()
+                    scattering.sampleOutputPower(),
+                    sampleFrequency(inputBeam)
             );
         }
     }
@@ -391,6 +403,14 @@ public final class PortGraphCompiler {
         return beam.scalePower(1.0 / totalPower);
     }
 
+    private static FrequencyKey sampleFrequency(BeamPacket beam) {
+        if (beam.components().isEmpty()) {
+            return FrequencyKey.DEBUG_VISIBLE;
+        }
+
+        return beam.components().getFirst().frequency();
+    }
+
     private static void addRawEdge(
             Map<EdgeKey, EdgeAccumulator> edgeAccumulators,
             PortGraphEdgeKind kind,
@@ -398,14 +418,15 @@ public final class PortGraphCompiler {
             PortGraphNode to,
             int distance,
             double sampleInputPower,
-            double sampleOutputPower
+            double sampleOutputPower,
+            FrequencyKey sampleFrequency
     ) {
         if (sampleInputPower <= 0.0 && sampleOutputPower <= 0.0) {
             return;
         }
 
-        EdgeKey key = new EdgeKey(kind, from, to);
-        edgeAccumulators.computeIfAbsent(key, ignored -> new EdgeAccumulator(kind, from, to, distance))
+        EdgeKey key = new EdgeKey(kind, from, to, sampleFrequency);
+        edgeAccumulators.computeIfAbsent(key, ignored -> new EdgeAccumulator(kind, from, to, distance, sampleFrequency))
                 .accept(distance, sampleInputPower, sampleOutputPower);
     }
 
@@ -452,6 +473,7 @@ public final class PortGraphCompiler {
                 firstEdge.distance(),
                 firstEdge.sampleInputPower(),
                 firstEdge.sampleOutputPower(),
+                firstEdge.sampleFrequency(),
                 firstVisited
         ));
 
@@ -475,6 +497,7 @@ public final class PortGraphCompiler {
                         current.distance() + nextEdge.distance(),
                         current.sampleInputPower(),
                         nextEdge.sampleOutputPower(),
+                        current.sampleFrequency(),
                         visited
                 ));
             }
@@ -494,10 +517,10 @@ public final class PortGraphCompiler {
             PortGraphNode from,
             PathState path
     ) {
-        EdgeKey key = new EdgeKey(path.kind(), from, path.node());
+        EdgeKey key = new EdgeKey(path.kind(), from, path.node(), path.sampleFrequency());
         compactAccumulators.computeIfAbsent(
                         key,
-                        ignored -> new EdgeAccumulator(path.kind(), from, path.node(), path.distance())
+                        ignored -> new EdgeAccumulator(path.kind(), from, path.node(), path.distance(), path.sampleFrequency())
                 )
                 .accept(path.distance(), path.sampleInputPower(), path.sampleOutputPower());
     }
@@ -524,7 +547,9 @@ public final class PortGraphCompiler {
         accumulators.sort(Comparator
                 .comparing((EdgeAccumulator accumulator) -> accumulator.from, NODE_COMPARATOR)
                 .thenComparing(accumulator -> accumulator.to, NODE_COMPARATOR)
-                .thenComparing(accumulator -> accumulator.kind.ordinal()));
+                .thenComparing(accumulator -> accumulator.kind.ordinal())
+                .thenComparing(accumulator -> accumulator.sampleFrequency.region().ordinal())
+                .thenComparing(accumulator -> accumulator.sampleFrequency.bin()));
 
         List<PortGraphEdge> edges = new ArrayList<>();
 
@@ -537,7 +562,8 @@ public final class PortGraphCompiler {
                     accumulator.to,
                     accumulator.distance,
                     accumulator.sampleInputPower,
-                    accumulator.sampleOutputPower
+                    accumulator.sampleOutputPower,
+                    accumulator.sampleFrequency
             ));
         }
 
@@ -714,11 +740,12 @@ public final class PortGraphCompiler {
                 + Math.abs(from.getZ() - to.getZ());
     }
 
-    private record EdgeKey(PortGraphEdgeKind kind, PortGraphNode from, PortGraphNode to) {
+    private record EdgeKey(PortGraphEdgeKind kind, PortGraphNode from, PortGraphNode to, FrequencyKey sampleFrequency) {
         private EdgeKey {
             Objects.requireNonNull(kind, "kind");
             Objects.requireNonNull(from, "from");
             Objects.requireNonNull(to, "to");
+            Objects.requireNonNull(sampleFrequency, "sampleFrequency");
         }
     }
 
@@ -728,11 +755,13 @@ public final class PortGraphCompiler {
             int distance,
             double sampleInputPower,
             double sampleOutputPower,
+            FrequencyKey sampleFrequency,
             Set<PortGraphNode> visited
     ) {
         private PathState {
             Objects.requireNonNull(node, "node");
             Objects.requireNonNull(kind, "kind");
+            Objects.requireNonNull(sampleFrequency, "sampleFrequency");
             Objects.requireNonNull(visited, "visited");
         }
     }
@@ -747,15 +776,23 @@ public final class PortGraphCompiler {
         private final PortGraphEdgeKind kind;
         private final PortGraphNode from;
         private final PortGraphNode to;
+        private final FrequencyKey sampleFrequency;
         private int distance;
         private double sampleInputPower;
         private double sampleOutputPower;
 
-        private EdgeAccumulator(PortGraphEdgeKind kind, PortGraphNode from, PortGraphNode to, int distance) {
+        private EdgeAccumulator(
+                PortGraphEdgeKind kind,
+                PortGraphNode from,
+                PortGraphNode to,
+                int distance,
+                FrequencyKey sampleFrequency
+        ) {
             this.kind = kind;
             this.from = from;
             this.to = to;
             this.distance = distance;
+            this.sampleFrequency = sampleFrequency;
         }
 
         private void accept(int distance, double sampleInputPower, double sampleOutputPower) {

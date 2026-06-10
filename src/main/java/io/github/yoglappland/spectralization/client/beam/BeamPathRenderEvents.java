@@ -26,10 +26,14 @@ public final class BeamPathRenderEvents {
     public static void renderBeamPaths(RenderLevelStageEvent event) {
         Minecraft minecraft = Minecraft.getInstance();
 
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS
-                || minecraft.level == null
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) {
+            return;
+        }
+
+        if (minecraft.level == null
                 || minecraft.player == null
                 || !minecraft.player.getItemBySlot(EquipmentSlot.HEAD).is(Items.LEATHER_HELMET)) {
+            ClientBeamPathCache.clear();
             return;
         }
 

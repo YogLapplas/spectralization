@@ -4,6 +4,7 @@ import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.network.BeamPathOverlayPayload;
 import io.github.yoglappland.spectralization.optics.CoherenceKind;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalTrace;
+import io.github.yoglappland.spectralization.optics.SpectralColorMap;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledPortGraph;
 import io.github.yoglappland.spectralization.optics.compiler.PortGraphEdge;
 import io.github.yoglappland.spectralization.optics.compiler.PortGraphEdgeKind;
@@ -26,7 +27,7 @@ public final class BeamPathOverlayTracker {
     private static final double SEND_RADIUS_SQUARED = 96.0D * 96.0D;
     private static final int MAX_SEGMENTS = 512;
     private static final int TERMINAL_RAY_BLOCKS = 64;
-    private static final int TOPOLOGY_COLOR_BIN = 4;
+    private static final int TOPOLOGY_COLOR_RGB = 0xFF2300;
     private static final int TOPOLOGY_WIDTH_LEVEL = 1;
     private static final int TOPOLOGY_VISUAL_LEVEL = 5;
     private static final double HUD_COHERENT_POWER_THRESHOLD = 1.0E-6D;
@@ -72,7 +73,7 @@ public final class BeamPathOverlayTracker {
             signature = mix(signature, segment.to().asLong());
             signature = mix(signature, segment.direction().ordinal());
             signature = mix(signature, segment.coherent() ? 1 : 0);
-            signature = mix(signature, segment.colorBin());
+            signature = mix(signature, segment.colorRgb());
             signature = mix(signature, segment.widthLevel());
             signature = mix(signature, segment.visualLevel());
         }
@@ -250,7 +251,7 @@ public final class BeamPathOverlayTracker {
                 segment.to(),
                 segment.direction(),
                 segment.coherence() == CoherenceKind.COHERENT,
-                Math.max(0, Math.min(63, segment.colorBin())),
+                SpectralColorMap.visibleRgbForBin(segment.colorBin()),
                 Math.max(1, Math.min(8, BeamGeometryOps.widthLevel(segment.geometry().envelope()))),
                 Math.max(1, Math.min(8, segment.geometry().visualLevel()))
         );
@@ -268,18 +269,18 @@ public final class BeamPathOverlayTracker {
                 to.pos(),
                 direction,
                 true,
-                solutionColorBin(solution, from),
+                solutionColorRgb(solution, from),
                 TOPOLOGY_WIDTH_LEVEL,
                 topologyVisualLevel(coherentPower)
         );
     }
 
-    private static int solutionColorBin(ScalarPowerSolution solution, PortGraphNode node) {
+    private static int solutionColorRgb(ScalarPowerSolution solution, PortGraphNode node) {
         if (solution == null) {
-            return TOPOLOGY_COLOR_BIN;
+            return TOPOLOGY_COLOR_RGB;
         }
 
-        return Math.max(0, Math.min(63, solution.strongestVisibleBinAt(node, CoherenceKind.COHERENT, TOPOLOGY_COLOR_BIN)));
+        return solution.mixedVisibleRgbAt(node, CoherenceKind.COHERENT, TOPOLOGY_COLOR_RGB);
     }
 
     private static int topologyVisualLevel(double coherentPower) {

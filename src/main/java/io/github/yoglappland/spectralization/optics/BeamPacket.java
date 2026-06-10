@@ -11,7 +11,7 @@ import java.util.Objects;
 import net.minecraft.core.Direction;
 
 public record BeamPacket(List<PlaneWaveComponent> components, BeamEnvelope envelope) {
-    public static final int MAX_COMPONENTS = 8;
+    public static final int MAX_COMPONENTS = 32;
 
     public BeamPacket {
         Objects.requireNonNull(components, "components");

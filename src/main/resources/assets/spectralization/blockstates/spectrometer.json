@@ -1,0 +1,27 @@
+{
+  "variants": {
+    "facing=north": {
+      "model": "spectralization:block/spectrometer",
+      "y": 180
+    },
+    "facing=east": {
+      "model": "spectralization:block/spectrometer",
+      "y": 270
+    },
+    "facing=south": {
+      "model": "spectralization:block/spectrometer"
+    },
+    "facing=west": {
+      "model": "spectralization:block/spectrometer",
+      "y": 90
+    },
+    "facing=up": {
+      "model": "spectralization:block/spectrometer",
+      "x": 90
+    },
+    "facing=down": {
+      "model": "spectralization:block/spectrometer",
+      "x": 270
+    }
+  }
+}

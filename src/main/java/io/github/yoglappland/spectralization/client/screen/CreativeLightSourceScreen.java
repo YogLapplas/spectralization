@@ -3,6 +3,7 @@ package io.github.yoglappland.spectralization.client.screen;
 import io.github.yoglappland.spectralization.blockentity.CreativeLightSourceBlockEntity;
 import io.github.yoglappland.spectralization.menu.CreativeLightSourceMenu;
 import io.github.yoglappland.spectralization.network.CreativeLightSpectrumPayload;
+import io.github.yoglappland.spectralization.optics.BeamPacket;
 import io.github.yoglappland.spectralization.optics.BeamModel;
 import io.github.yoglappland.spectralization.optics.CoherenceKind;
 import io.github.yoglappland.spectralization.optics.SpectralColorMap;
@@ -277,7 +278,7 @@ public class CreativeLightSourceScreen extends AbstractContainerScreen<CreativeL
             }
         }
 
-        return Math.min(count, 8);
+        return Math.min(count, BeamPacket.MAX_COMPONENTS);
     }
 
     private int[] strongestSpectrumBins() {

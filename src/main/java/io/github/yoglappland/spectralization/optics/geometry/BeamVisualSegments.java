@@ -63,7 +63,7 @@ public final class BeamVisualSegments {
 
     private static int visibleColorBin(BeamPacket beam) {
         double strongestPower = -1.0;
-        int colorBin = 63;
+        int colorBin = SpectralRegion.VISIBLE.defaultBins() - 1;
 
         for (PlaneWaveComponent component : beam.components()) {
             if (component.frequency().region() == SpectralRegion.VISIBLE && component.power() > strongestPower) {

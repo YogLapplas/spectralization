@@ -8,6 +8,7 @@ import io.github.yoglappland.spectralization.block.DynamicMirrorBlock;
 import io.github.yoglappland.spectralization.block.LensHolderBlock;
 import io.github.yoglappland.spectralization.block.MirrorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
+import io.github.yoglappland.spectralization.block.SpectrometerBlock;
 import io.github.yoglappland.spectralization.blockentity.LensHolderBlockEntity;
 import io.github.yoglappland.spectralization.optics.OpticalElement;
 import io.github.yoglappland.spectralization.optics.OpticalMaterialProfiles;
@@ -64,6 +65,10 @@ public final class OpticalComponentTemplateClassifier {
 
         if (block instanceof BeamProfilerBlock) {
             return OpticalComponentTemplate.BEAM_PROFILER;
+        }
+
+        if (block instanceof SpectrometerBlock) {
+            return OpticalComponentTemplate.SPECTROMETER;
         }
 
         if (OpticalMaterialProfiles.isScatteringMarker(state)) {

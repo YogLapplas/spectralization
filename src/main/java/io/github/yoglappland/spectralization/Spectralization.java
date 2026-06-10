@@ -11,10 +11,12 @@ import io.github.yoglappland.spectralization.block.MirrorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
 import io.github.yoglappland.spectralization.block.RubyBlock;
 import io.github.yoglappland.spectralization.block.SilverGlassBlock;
+import io.github.yoglappland.spectralization.block.SpectrometerBlock;
 import io.github.yoglappland.spectralization.blockentity.RubyBlockEntity;
 import io.github.yoglappland.spectralization.client.renderer.LensHolderRenderer;
 import io.github.yoglappland.spectralization.client.screen.CoatingBrushScreen;
 import io.github.yoglappland.spectralization.client.screen.CreativeLightSourceScreen;
+import io.github.yoglappland.spectralization.client.screen.SpectrometerScreen;
 import io.github.yoglappland.spectralization.command.SpectralCommands;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.item.CoatingBrushItem;
@@ -262,6 +264,19 @@ public class Spectralization {
     public static final DeferredItem<BlockItem> BEAM_PROFILER_ITEM =
             ITEMS.registerSimpleBlockItem("beam_profiler", BEAM_PROFILER);
 
+    public static final DeferredBlock<SpectrometerBlock> SPECTROMETER = BLOCKS.register(
+            "spectrometer",
+            () -> new SpectrometerBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(0.0F)
+                    .sound(SoundType.METAL)
+                    .pushReaction(PushReaction.BLOCK)
+                    .noOcclusion())
+    );
+
+    public static final DeferredItem<BlockItem> SPECTROMETER_ITEM =
+            ITEMS.registerSimpleBlockItem("spectrometer", SPECTROMETER);
+
     public static final DeferredBlock<RubyBlock> RUBY_BLOCK = BLOCKS.register(
             "ruby_block",
             () -> new RubyBlock(BlockBehaviour.Properties.of()
@@ -328,6 +343,7 @@ public class Spectralization {
                         output.accept(CMOS_SENSOR_ITEM.get());
                         output.accept(PASS_THROUGH_SENSOR_ITEM.get());
                         output.accept(BEAM_PROFILER_ITEM.get());
+                        output.accept(SPECTROMETER_ITEM.get());
                         output.accept(RUBY_BLOCK_ITEM.get());
                         output.accept(SILVER_BLOCK_ITEM.get());
                         output.accept(SILVER_GLASS_ITEM.get());
@@ -442,6 +458,7 @@ public class Spectralization {
         static void registerScreens(RegisterMenuScreensEvent event) {
             event.register(SpectralMenus.CREATIVE_LIGHT_SOURCE.get(), CreativeLightSourceScreen::new);
             event.register(SpectralMenus.COATING_BRUSH.get(), CoatingBrushScreen::new);
+            event.register(SpectralMenus.SPECTROMETER.get(), SpectrometerScreen::new);
         }
     }
 }

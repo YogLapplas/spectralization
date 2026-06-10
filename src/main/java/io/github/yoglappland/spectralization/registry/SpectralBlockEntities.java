@@ -7,6 +7,7 @@ import io.github.yoglappland.spectralization.blockentity.CreativeLightSourceBloc
 import io.github.yoglappland.spectralization.blockentity.LensHolderBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.PassThroughSensorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.RubyBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.SpectrometerBlockEntity;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.neoforged.bus.api.IEventBus;
@@ -36,6 +37,10 @@ public final class SpectralBlockEntities {
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<BeamProfilerBlockEntity>> BEAM_PROFILER =
             BLOCK_ENTITY_TYPES.register("beam_profiler", () ->
                     BlockEntityType.Builder.of(BeamProfilerBlockEntity::new, Spectralization.BEAM_PROFILER.get()).build(null));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<SpectrometerBlockEntity>> SPECTROMETER =
+            BLOCK_ENTITY_TYPES.register("spectrometer", () ->
+                    BlockEntityType.Builder.of(SpectrometerBlockEntity::new, Spectralization.SPECTROMETER.get()).build(null));
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<RubyBlockEntity>> RUBY_BLOCK =
             BLOCK_ENTITY_TYPES.register("ruby_block", () ->

@@ -2,6 +2,7 @@ package io.github.yoglappland.spectralization.optics.compiler;
 
 import io.github.yoglappland.spectralization.optics.cache.ReceiverOutput;
 import io.github.yoglappland.spectralization.optics.cache.ReceiverOutputKind;
+import java.util.Map;
 import java.util.Objects;
 import net.minecraft.core.BlockPos;
 
@@ -24,6 +25,10 @@ public record OpticalReadoutBinding(
         return switch (kind) {
             case CMOS -> ReceiverOutput.cmos(pos, totalPower);
             case PASS_THROUGH_SENSOR -> ReceiverOutput.passThroughSensor(pos, positiveZ, coherentPower);
+            case SPECTROMETER -> ReceiverOutput.spectrometer(
+                    pos,
+                    inputNode == null ? Map.of() : solution.powerByFrequencyAt(inputNode)
+            );
             case BEAM_PROFILER -> ReceiverOutput.beamProfiler(
                     pos,
                     totalPower,

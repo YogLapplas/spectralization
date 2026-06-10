@@ -13,7 +13,6 @@ import io.github.yoglappland.spectralization.optics.cache.OpticalDirtyKind;
 import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -270,14 +269,7 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
             return List.of(new PlaneWaveComponent(new FrequencyKey(region, bin), power, direction, coherence));
         }
 
-        activeBins.sort(Comparator
-                .comparingInt(SpectrumBin::weight)
-                .reversed()
-                .thenComparingInt(SpectrumBin::bin));
-
-        List<SpectrumBin> emittedBins = activeBins.stream()
-                .limit(BeamPacket.MAX_COMPONENTS)
-                .toList();
+        List<SpectrumBin> emittedBins = representativeSpectrumBins(activeBins);
         double emittedWeightTotal = emittedBins.stream()
                 .mapToInt(SpectrumBin::weight)
                 .sum();
@@ -297,5 +289,88 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
     }
 
     private record SpectrumBin(int bin, int weight) {
+    }
+
+    private static List<SpectrumBin> representativeSpectrumBins(List<SpectrumBin> activeBins) {
+        if (activeBins.size() <= BeamPacket.MAX_COMPONENTS) {
+            return List.copyOf(activeBins);
+        }
+
+        int totalWeight = activeBins.stream()
+                .mapToInt(SpectrumBin::weight)
+                .sum();
+
+        if (totalWeight <= 0) {
+            return List.of();
+        }
+
+        List<SpectrumBin> emittedBins = new ArrayList<>();
+        double bucketSize = totalWeight / (double) BeamPacket.MAX_COMPONENTS;
+        int activeIndex = 0;
+        double activeStart = 0.0;
+        double activeEnd = activeBins.getFirst().weight();
+
+        for (int bucket = 0; bucket < BeamPacket.MAX_COMPONENTS; bucket++) {
+            double bucketStart = bucket * bucketSize;
+            double bucketEnd = bucket == BeamPacket.MAX_COMPONENTS - 1
+                    ? totalWeight
+                    : (bucket + 1) * bucketSize;
+
+            while (activeIndex < activeBins.size() - 1 && activeEnd <= bucketStart) {
+                activeStart = activeEnd;
+                activeIndex++;
+                activeEnd += activeBins.get(activeIndex).weight();
+            }
+
+            double weightedBin = 0.0;
+            double bucketWeight = 0.0;
+            int scanIndex = activeIndex;
+            double scanStart = activeStart;
+            double scanEnd = activeEnd;
+
+            while (scanIndex < activeBins.size() && scanStart < bucketEnd) {
+                SpectrumBin spectrumBin = activeBins.get(scanIndex);
+                double overlap = Math.max(0.0, Math.min(scanEnd, bucketEnd) - Math.max(scanStart, bucketStart));
+
+                if (overlap > 0.0) {
+                    weightedBin += spectrumBin.bin() * overlap;
+                    bucketWeight += overlap;
+                }
+
+                scanIndex++;
+
+                if (scanIndex < activeBins.size()) {
+                    scanStart = scanEnd;
+                    scanEnd += activeBins.get(scanIndex).weight();
+                }
+            }
+
+            if (bucketWeight > 0.0) {
+                int bin = Mth.clamp((int) Math.round(weightedBin / bucketWeight), 0, Integer.MAX_VALUE);
+                int weight = Math.max(1, (int) Math.round(bucketWeight));
+                emittedBins.add(new SpectrumBin(bin, weight));
+            }
+        }
+
+        return mergeDuplicateBins(emittedBins);
+    }
+
+    private static List<SpectrumBin> mergeDuplicateBins(List<SpectrumBin> bins) {
+        if (bins.isEmpty()) {
+            return List.of();
+        }
+
+        List<SpectrumBin> merged = new ArrayList<>();
+
+        for (SpectrumBin bin : bins) {
+            if (!merged.isEmpty() && merged.getLast().bin() == bin.bin()) {
+                SpectrumBin previous = merged.removeLast();
+                merged.add(new SpectrumBin(previous.bin(), previous.weight() + bin.weight()));
+            } else {
+                merged.add(bin);
+            }
+        }
+
+        return List.copyOf(merged);
     }
 }

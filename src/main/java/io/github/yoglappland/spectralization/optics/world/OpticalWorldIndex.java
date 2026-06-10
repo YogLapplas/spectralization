@@ -3,6 +3,7 @@ package io.github.yoglappland.spectralization.optics.world;
 import io.github.yoglappland.spectralization.block.BeamProfilerBlock;
 import io.github.yoglappland.spectralization.block.CmosSensorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
+import io.github.yoglappland.spectralization.block.SpectrometerBlock;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.optics.IntrinsicOpticalSources;
 import io.github.yoglappland.spectralization.optics.OpticalElement;
@@ -188,7 +189,10 @@ public final class OpticalWorldIndex {
         BlockState state = level.getBlockState(pos);
         Block block = state.getBlock();
 
-        if (block instanceof CmosSensorBlock || block instanceof PassThroughSensorBlock || block instanceof BeamProfilerBlock) {
+        if (block instanceof CmosSensorBlock
+                || block instanceof PassThroughSensorBlock
+                || block instanceof BeamProfilerBlock
+                || block instanceof SpectrometerBlock) {
             return;
         }
 

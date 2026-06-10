@@ -3,7 +3,7 @@ package io.github.yoglappland.spectralization.optics;
 import java.util.Objects;
 
 public record FrequencyKey(SpectralRegion region, int bin) {
-    public static final FrequencyKey DEBUG_VISIBLE = new FrequencyKey(SpectralRegion.VISIBLE, 32);
+    public static final FrequencyKey DEBUG_VISIBLE = new FrequencyKey(SpectralRegion.VISIBLE, 16);
 
     public FrequencyKey {
         Objects.requireNonNull(region, "region");

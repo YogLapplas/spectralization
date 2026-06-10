@@ -2,7 +2,10 @@ package io.github.yoglappland.spectralization.optics.compiler;
 
 import io.github.yoglappland.spectralization.optics.CoherenceKind;
 import io.github.yoglappland.spectralization.optics.FrequencyKey;
+import io.github.yoglappland.spectralization.optics.SpectralColorMap;
 import io.github.yoglappland.spectralization.optics.SpectralRegion;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -70,6 +73,48 @@ public record ScalarPowerSolution(
 
     public Map<PortGraphNode, Double> powerByNodeForLane(SpectralPowerLane lane) {
         return powerByLane.getOrDefault(lane, Map.of());
+    }
+
+    public Map<FrequencyKey, Double> powerByFrequencyAt(PortGraphNode node) {
+        if (node == null) {
+            return Map.of();
+        }
+
+        Map<FrequencyKey, Double> powers = new HashMap<>();
+
+        for (Map.Entry<SpectralPowerLane, Map<PortGraphNode, Double>> entry : powerByLane.entrySet()) {
+            double power = entry.getValue().getOrDefault(node, 0.0);
+
+            if (power > 0.0) {
+                powers.merge(entry.getKey().frequency(), power, Double::sum);
+            }
+        }
+
+        return powers.isEmpty() ? Map.of() : Map.copyOf(powers);
+    }
+
+    public int mixedVisibleRgbAt(PortGraphNode node, CoherenceKind coherence, int fallbackRgb) {
+        if (node == null) {
+            return fallbackRgb;
+        }
+
+        List<SpectralColorMap.WeightedFrequency> frequencies = new ArrayList<>();
+
+        for (Map.Entry<SpectralPowerLane, Map<PortGraphNode, Double>> entry : powerByLane.entrySet()) {
+            SpectralPowerLane lane = entry.getKey();
+
+            if (lane.coherence() != coherence) {
+                continue;
+            }
+
+            double power = entry.getValue().getOrDefault(node, 0.0);
+
+            if (power > 0.0) {
+                frequencies.add(new SpectralColorMap.WeightedFrequency(lane.frequency(), power));
+            }
+        }
+
+        return SpectralColorMap.mixVisibleRgb(frequencies, fallbackRgb);
     }
 
     public FrequencyKey strongestFrequencyAt(PortGraphNode node, CoherenceKind coherence) {

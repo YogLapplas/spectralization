@@ -54,7 +54,7 @@ public record BeamPathOverlayPayload(int ownerId, List<Segment> segments) implem
             BlockPos to,
             Direction direction,
             boolean coherent,
-            int colorBin,
+            int colorRgb,
             int widthLevel,
             int visualLevel
     ) {
@@ -75,7 +75,7 @@ public record BeamPathOverlayPayload(int ownerId, List<Segment> segments) implem
             buffer.writeBlockPos(to);
             buffer.writeEnum(direction);
             buffer.writeBoolean(coherent);
-            buffer.writeVarInt(colorBin);
+            buffer.writeVarInt(colorRgb);
             buffer.writeVarInt(widthLevel);
             buffer.writeVarInt(visualLevel);
         }

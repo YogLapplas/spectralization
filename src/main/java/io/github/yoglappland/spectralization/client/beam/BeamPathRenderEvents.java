@@ -70,7 +70,7 @@ public final class BeamPathRenderEvents {
         double ey = segment.to().getY() + 0.5D - direction.getStepY() * EDGE_OFFSET;
         double ez = segment.to().getZ() + 0.5D - direction.getStepZ() * EDGE_OFFSET;
         double width = BEAM_WIDTH;
-        int color = SpectralColorMap.visibleRgbForBin(segment.colorBin());
+        int color = segment.colorRgb();
         int alpha = Math.min(180, 28 + Math.max(1, segment.visualLevel()) * 18 + (segment.coherent() ? 22 : 0));
 
         switch (direction.getAxis()) {

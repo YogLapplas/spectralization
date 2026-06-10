@@ -87,34 +87,34 @@ public final class OpticalMaterialProfiles {
     private static final Map<Block, OpticalMaterialProfile> STAINED_GLASS_BLOCKS = Map.ofEntries(
             Map.entry(Blocks.WHITE_STAINED_GLASS, neutralGlass(0.86)),
             Map.entry(Blocks.WHITE_STAINED_GLASS_PANE, neutralGlass(0.86)),
-            Map.entry(Blocks.ORANGE_STAINED_GLASS, coloredGlass(10)),
-            Map.entry(Blocks.ORANGE_STAINED_GLASS_PANE, coloredGlass(10)),
-            Map.entry(Blocks.MAGENTA_STAINED_GLASS, coloredGlass(58)),
-            Map.entry(Blocks.MAGENTA_STAINED_GLASS_PANE, coloredGlass(58)),
-            Map.entry(Blocks.LIGHT_BLUE_STAINED_GLASS, coloredGlass(40)),
-            Map.entry(Blocks.LIGHT_BLUE_STAINED_GLASS_PANE, coloredGlass(40)),
-            Map.entry(Blocks.YELLOW_STAINED_GLASS, coloredGlass(16)),
-            Map.entry(Blocks.YELLOW_STAINED_GLASS_PANE, coloredGlass(16)),
-            Map.entry(Blocks.LIME_STAINED_GLASS, coloredGlass(28)),
-            Map.entry(Blocks.LIME_STAINED_GLASS_PANE, coloredGlass(28)),
-            Map.entry(Blocks.PINK_STAINED_GLASS, coloredGlass(60)),
-            Map.entry(Blocks.PINK_STAINED_GLASS_PANE, coloredGlass(60)),
+            Map.entry(Blocks.ORANGE_STAINED_GLASS, coloredGlass(5)),
+            Map.entry(Blocks.ORANGE_STAINED_GLASS_PANE, coloredGlass(5)),
+            Map.entry(Blocks.MAGENTA_STAINED_GLASS, coloredGlass(29)),
+            Map.entry(Blocks.MAGENTA_STAINED_GLASS_PANE, coloredGlass(29)),
+            Map.entry(Blocks.LIGHT_BLUE_STAINED_GLASS, coloredGlass(20)),
+            Map.entry(Blocks.LIGHT_BLUE_STAINED_GLASS_PANE, coloredGlass(20)),
+            Map.entry(Blocks.YELLOW_STAINED_GLASS, coloredGlass(8)),
+            Map.entry(Blocks.YELLOW_STAINED_GLASS_PANE, coloredGlass(8)),
+            Map.entry(Blocks.LIME_STAINED_GLASS, coloredGlass(14)),
+            Map.entry(Blocks.LIME_STAINED_GLASS_PANE, coloredGlass(14)),
+            Map.entry(Blocks.PINK_STAINED_GLASS, coloredGlass(30)),
+            Map.entry(Blocks.PINK_STAINED_GLASS_PANE, coloredGlass(30)),
             Map.entry(Blocks.GRAY_STAINED_GLASS, neutralGlass(0.34)),
             Map.entry(Blocks.GRAY_STAINED_GLASS_PANE, neutralGlass(0.34)),
             Map.entry(Blocks.LIGHT_GRAY_STAINED_GLASS, neutralGlass(0.58)),
             Map.entry(Blocks.LIGHT_GRAY_STAINED_GLASS_PANE, neutralGlass(0.58)),
-            Map.entry(Blocks.CYAN_STAINED_GLASS, coloredGlass(36)),
-            Map.entry(Blocks.CYAN_STAINED_GLASS_PANE, coloredGlass(36)),
-            Map.entry(Blocks.PURPLE_STAINED_GLASS, coloredGlass(52)),
-            Map.entry(Blocks.PURPLE_STAINED_GLASS_PANE, coloredGlass(52)),
-            Map.entry(Blocks.BLUE_STAINED_GLASS, coloredGlass(46)),
-            Map.entry(Blocks.BLUE_STAINED_GLASS_PANE, coloredGlass(46)),
-            Map.entry(Blocks.BROWN_STAINED_GLASS, coloredGlass(8)),
-            Map.entry(Blocks.BROWN_STAINED_GLASS_PANE, coloredGlass(8)),
-            Map.entry(Blocks.GREEN_STAINED_GLASS, coloredGlass(26)),
-            Map.entry(Blocks.GREEN_STAINED_GLASS_PANE, coloredGlass(26)),
-            Map.entry(Blocks.RED_STAINED_GLASS, coloredGlass(4)),
-            Map.entry(Blocks.RED_STAINED_GLASS_PANE, coloredGlass(4)),
+            Map.entry(Blocks.CYAN_STAINED_GLASS, coloredGlass(18)),
+            Map.entry(Blocks.CYAN_STAINED_GLASS_PANE, coloredGlass(18)),
+            Map.entry(Blocks.PURPLE_STAINED_GLASS, coloredGlass(26)),
+            Map.entry(Blocks.PURPLE_STAINED_GLASS_PANE, coloredGlass(26)),
+            Map.entry(Blocks.BLUE_STAINED_GLASS, coloredGlass(23)),
+            Map.entry(Blocks.BLUE_STAINED_GLASS_PANE, coloredGlass(23)),
+            Map.entry(Blocks.BROWN_STAINED_GLASS, coloredGlass(4)),
+            Map.entry(Blocks.BROWN_STAINED_GLASS_PANE, coloredGlass(4)),
+            Map.entry(Blocks.GREEN_STAINED_GLASS, coloredGlass(13)),
+            Map.entry(Blocks.GREEN_STAINED_GLASS_PANE, coloredGlass(13)),
+            Map.entry(Blocks.RED_STAINED_GLASS, coloredGlass(2)),
+            Map.entry(Blocks.RED_STAINED_GLASS_PANE, coloredGlass(2)),
             Map.entry(Blocks.BLACK_STAINED_GLASS, neutralGlass(0.08)),
             Map.entry(Blocks.BLACK_STAINED_GLASS_PANE, neutralGlass(0.08))
     );
@@ -264,8 +264,8 @@ public final class OpticalMaterialProfiles {
     }
 
     private static OpticalMaterialProfile coloredGlass(int centerBin) {
-        int lowBin = Math.max(0, centerBin - 18);
-        int highBin = Math.min(SpectralRegion.VISIBLE.defaultBins() - 1, centerBin + 18);
+        int lowBin = Math.max(0, centerBin - 9);
+        int highBin = Math.min(SpectralRegion.VISIBLE.defaultBins() - 1, centerBin + 9);
 
         return OpticalMaterialProfile.of(
                 new OpticalMaterialSample(FrequencyKey.visible(0), OpticalMaterialResponse.of(0.18, 0.03, 0.60)),

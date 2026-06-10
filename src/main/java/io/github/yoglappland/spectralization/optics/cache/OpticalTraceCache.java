@@ -5,6 +5,7 @@ import io.github.yoglappland.spectralization.block.BeamProfilerBlock;
 import io.github.yoglappland.spectralization.block.CmosSensorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
 import io.github.yoglappland.spectralization.block.RubyBlock;
+import io.github.yoglappland.spectralization.block.SpectrometerBlock;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.network.BeamPathOverlayPayload;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalTrace;
@@ -452,6 +453,10 @@ public final class OpticalTraceCache {
                 );
             } else {
                 cache.unregisterDirectSourceForNetwork(request.networkId());
+            }
+
+            if (!directReadoutDemand) {
+                cache.clearSystemMappingForNetwork(request.networkId());
             }
 
             if (directReadoutDemand && canTrackDirectSource) {
@@ -1356,6 +1361,16 @@ public final class OpticalTraceCache {
                         Math.max(0.0, beam.totalPower() - coherentPower),
                         beam.envelope()
                 ));
+            }
+
+            return;
+        }
+
+        if (state.getBlock() instanceof SpectrometerBlock) {
+            Direction receivingSide = SpectrometerBlock.getReceivingSide(state);
+
+            if (step.incomingDirection() == receivingSide) {
+                receiverOutputs.add(ReceiverOutput.spectrometer(step.pos(), step.interactingBeam().powerByFrequency()));
             }
 
             return;
@@ -2833,6 +2848,7 @@ public final class OpticalTraceCache {
         private final ReceiverOutputKind kind;
         private final boolean positiveZ;
         private final BeamEnvelope envelope;
+        private final Map<FrequencyKey, Double> powerByFrequency = new HashMap<>();
         private double power;
         private double coherentPower;
         private double strayPower;
@@ -2849,6 +2865,10 @@ public final class OpticalTraceCache {
             power += receiverOutput.power();
             coherentPower += receiverOutput.coherentPower();
             strayPower += receiverOutput.strayPower();
+
+            for (Map.Entry<FrequencyKey, Double> entry : receiverOutput.powerByFrequency().entrySet()) {
+                powerByFrequency.merge(entry.getKey(), entry.getValue(), Double::sum);
+            }
         }
 
         private ReceiverOutput toReceiverOutput() {
@@ -2859,7 +2879,8 @@ public final class OpticalTraceCache {
                     positiveZ,
                     coherentPower,
                     strayPower,
-                    envelope
+                    envelope,
+                    powerByFrequency
             );
         }
     }
@@ -3523,6 +3544,7 @@ public final class OpticalTraceCache {
                 if (networkIds.isEmpty()) {
                     networkIdsBySystem.remove(systemId);
                     cachedSystemsBySystem.remove(systemId);
+                    lastUsableSystemsBySystem.remove(systemId);
                     retiredHudOwnerIds.add(-systemId);
                 }
             }

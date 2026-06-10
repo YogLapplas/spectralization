@@ -11,7 +11,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
 public class RubyBlock extends Block implements EntityBlock {
-    public static final FrequencyKey RUBY_LINE = FrequencyKey.visible(4);
+    public static final FrequencyKey RUBY_LINE = FrequencyKey.visible(26);
 
     public RubyBlock(Properties properties) {
         super(properties);

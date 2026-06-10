@@ -89,6 +89,19 @@ public class CreativeLightSourceMenu extends AbstractContainerMenu {
         return data.get(index);
     }
 
+    public boolean setSpectrumWeight(int bin, int weight) {
+        if (source == null || source.isRemoved()) {
+            return false;
+        }
+
+        if (bin < 0 || bin >= CreativeLightSourceBlockEntity.MAX_SPECTRUM_BINS) {
+            return false;
+        }
+
+        data.set(CreativeLightSourceBlockEntity.DATA_SPECTRUM_START + bin, weight);
+        return true;
+    }
+
     @Override
     public ItemStack quickMoveStack(Player player, int index) {
         return ItemStack.EMPTY;

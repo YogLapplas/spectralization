@@ -12,6 +12,9 @@ import io.github.yoglappland.spectralization.optics.SpectralRegion;
 import io.github.yoglappland.spectralization.optics.cache.OpticalDirtyKind;
 import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
@@ -23,7 +26,9 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
 public class CreativeLightSourceBlockEntity extends BlockEntity {
-    public static final int DATA_COUNT = 10;
+    public static final int MAX_SPECTRUM_BINS = SpectralRegion.VISIBLE.defaultBins();
+    public static final int MAX_SPECTRUM_WEIGHT = 1000;
+    public static final int DATA_COUNT = 10 + MAX_SPECTRUM_BINS;
     public static final int DATA_REGION = 0;
     public static final int DATA_BIN = 1;
     public static final int DATA_POWER = 2;
@@ -34,6 +39,7 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
     public static final int DATA_FOCUS_DISTANCE_MILLI = 7;
     public static final int DATA_MODE_M = 8;
     public static final int DATA_MODE_N = 9;
+    public static final int DATA_SPECTRUM_START = 10;
 
     private SpectralRegion region = FrequencyKey.DEBUG_VISIBLE.region();
     private int bin = FrequencyKey.DEBUG_VISIBLE.bin();
@@ -45,6 +51,7 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
     private int focusDistanceMilli = 0;
     private int modeM = 0;
     private int modeN = 0;
+    private final int[] spectrumWeights = new int[MAX_SPECTRUM_BINS];
 
     public CreativeLightSourceBlockEntity(BlockPos pos, BlockState blockState) {
         super(SpectralBlockEntities.CREATIVE_LIGHT_SOURCE.get(), pos, blockState);
@@ -76,8 +83,6 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
     }
 
     public OutputBeam createOutputBeam(Direction direction) {
-        FrequencyKey frequency = new FrequencyKey(region, bin);
-        PlaneWaveComponent component = new PlaneWaveComponent(frequency, power, direction, coherence);
         BeamEnvelope envelope = new BeamEnvelope(
                 beamModel,
                 radiusMilli / 1000.0,
@@ -86,8 +91,9 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
                 modeM,
                 modeN
         );
+        List<PlaneWaveComponent> components = spectrumComponents(direction);
 
-        return new OutputBeam(direction, BeamPacket.single(component, envelope));
+        return new OutputBeam(direction, new BeamPacket(components, envelope));
     }
 
     public ContainerData createDataAccess() {
@@ -152,6 +158,15 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
         if (tag.contains("ModeN")) {
             setData(DATA_MODE_N, tag.getInt("ModeN"));
         }
+
+        if (tag.contains("SpectrumWeights")) {
+            int[] savedWeights = tag.getIntArray("SpectrumWeights");
+            int length = Math.min(savedWeights.length, spectrumWeights.length);
+
+            for (int index = 0; index < length; index++) {
+                spectrumWeights[index] = Mth.clamp(savedWeights[index], 0, MAX_SPECTRUM_WEIGHT);
+            }
+        }
     }
 
     @Override
@@ -167,9 +182,14 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
         tag.putInt("FocusDistanceMilli", focusDistanceMilli);
         tag.putInt("ModeM", modeM);
         tag.putInt("ModeN", modeN);
+        tag.putIntArray("SpectrumWeights", spectrumWeights);
     }
 
     private int getData(int index) {
+        if (index >= DATA_SPECTRUM_START && index < DATA_COUNT) {
+            return spectrumWeights[index - DATA_SPECTRUM_START];
+        }
+
         return switch (index) {
             case DATA_REGION -> region.ordinal();
             case DATA_BIN -> bin;
@@ -186,6 +206,18 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
     }
 
     private void setData(int index, int value) {
+        if (index >= DATA_SPECTRUM_START && index < DATA_COUNT) {
+            int binIndex = index - DATA_SPECTRUM_START;
+            int clamped = Mth.clamp(value, 0, MAX_SPECTRUM_WEIGHT);
+
+            if (spectrumWeights[binIndex] != clamped) {
+                spectrumWeights[binIndex] = clamped;
+                markSourceChanged();
+            }
+
+            return;
+        }
+
         switch (index) {
             case DATA_REGION -> {
                 SpectralRegion[] regions = SpectralRegion.values();
@@ -211,10 +243,59 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
             }
         }
 
+        markSourceChanged();
+    }
+
+    private void markSourceChanged() {
         setChanged();
 
         if (this.level != null && !this.level.isClientSide) {
             OpticalTraceCache.markChanged(this.level, this.worldPosition, OpticalDirtyKind.SOURCE);
         }
+    }
+
+    private List<PlaneWaveComponent> spectrumComponents(Direction direction) {
+        int bins = Math.min(region.defaultBins(), spectrumWeights.length);
+        List<SpectrumBin> activeBins = new ArrayList<>();
+
+        for (int index = 0; index < bins; index++) {
+            int weight = spectrumWeights[index];
+
+            if (weight > 0) {
+                activeBins.add(new SpectrumBin(index, weight));
+            }
+        }
+
+        if (activeBins.isEmpty()) {
+            return List.of(new PlaneWaveComponent(new FrequencyKey(region, bin), power, direction, coherence));
+        }
+
+        activeBins.sort(Comparator
+                .comparingInt(SpectrumBin::weight)
+                .reversed()
+                .thenComparingInt(SpectrumBin::bin));
+
+        List<SpectrumBin> emittedBins = activeBins.stream()
+                .limit(BeamPacket.MAX_COMPONENTS)
+                .toList();
+        double emittedWeightTotal = emittedBins.stream()
+                .mapToInt(SpectrumBin::weight)
+                .sum();
+
+        if (emittedWeightTotal <= 0.0) {
+            return List.of(new PlaneWaveComponent(new FrequencyKey(region, bin), power, direction, coherence));
+        }
+
+        return emittedBins.stream()
+                .map(spectrumBin -> new PlaneWaveComponent(
+                        new FrequencyKey(region, spectrumBin.bin()),
+                        power * spectrumBin.weight() / emittedWeightTotal,
+                        direction,
+                        coherence
+                ))
+                .toList();
+    }
+
+    private record SpectrumBin(int bin, int weight) {
     }
 }

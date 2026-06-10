@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.network.BeamPathOverlayPayload;
+import io.github.yoglappland.spectralization.optics.SpectralColorMap;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
@@ -19,9 +20,7 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 @EventBusSubscriber(modid = Spectralization.MODID, value = Dist.CLIENT)
 public final class BeamPathRenderEvents {
     private static final double EDGE_OFFSET = 0.0D;
-    private static final double HUD_WIDTH = 0.035D;
-    private static final int[][] COHERENT_COLORS = buildColors(true);
-    private static final int[][] STRAY_COLORS = buildColors(false);
+    private static final double BEAM_WIDTH = 0.035D;
 
     @SubscribeEvent
     public static void renderBeamPaths(RenderLevelStageEvent event) {
@@ -70,8 +69,8 @@ public final class BeamPathRenderEvents {
         double ex = segment.to().getX() + 0.5D - direction.getStepX() * EDGE_OFFSET;
         double ey = segment.to().getY() + 0.5D - direction.getStepY() * EDGE_OFFSET;
         double ez = segment.to().getZ() + 0.5D - direction.getStepZ() * EDGE_OFFSET;
-        double width = HUD_WIDTH;
-        int[] color = colorFor(segment.colorBin(), segment.coherent());
+        double width = BEAM_WIDTH;
+        int color = SpectralColorMap.visibleRgbForBin(segment.colorBin());
         int alpha = Math.min(180, 28 + Math.max(1, segment.visualLevel()) * 18 + (segment.coherent() ? 22 : 0));
 
         switch (direction.getAxis()) {
@@ -105,7 +104,7 @@ public final class BeamPathRenderEvents {
             double x4,
             double y4,
             double z4,
-            int[] color,
+            int color,
             int alpha
     ) {
         addVertex(consumer, pose, x1, y1, z1, color, alpha);
@@ -114,56 +113,9 @@ public final class BeamPathRenderEvents {
         addVertex(consumer, pose, x4, y4, z4, color, alpha);
     }
 
-    private static void addVertex(VertexConsumer consumer, PoseStack.Pose pose, double x, double y, double z, int[] color, int alpha) {
+    private static void addVertex(VertexConsumer consumer, PoseStack.Pose pose, double x, double y, double z, int color, int alpha) {
         consumer.addVertex(pose, (float) x, (float) y, (float) z)
-                .setColor(color[0], color[1], color[2], alpha);
-    }
-
-    private static int[] colorFor(int colorBin, boolean coherent) {
-        int clampedBin = Math.max(0, Math.min(63, colorBin));
-        return coherent ? COHERENT_COLORS[clampedBin] : STRAY_COLORS[clampedBin];
-    }
-
-    private static int[][] buildColors(boolean coherent) {
-        int[][] colors = new int[64][3];
-
-        for (int bin = 0; bin < colors.length; bin++) {
-            colors[bin] = computeColor(bin, coherent);
-        }
-
-        return colors;
-    }
-
-    private static int[] computeColor(int colorBin, boolean coherent) {
-        double t = Math.max(0.0D, Math.min(1.0D, colorBin / 63.0D));
-        double hue = 0.72D - t * 0.72D;
-        return hsvToRgb(hue, coherent ? 0.96D : 0.42D, coherent ? 1.0D : 0.82D);
-    }
-
-    private static int[] hsvToRgb(double hue, double saturation, double value) {
-        double h = (hue - Math.floor(hue)) * 6.0D;
-        int sector = (int) Math.floor(h);
-        double f = h - sector;
-        double p = value * (1.0D - saturation);
-        double q = value * (1.0D - f * saturation);
-        double tt = value * (1.0D - (1.0D - f) * saturation);
-
-        return switch (sector) {
-            case 0 -> rgb(value, tt, p);
-            case 1 -> rgb(q, value, p);
-            case 2 -> rgb(p, value, tt);
-            case 3 -> rgb(p, q, value);
-            case 4 -> rgb(tt, p, value);
-            default -> rgb(value, p, q);
-        };
-    }
-
-    private static int[] rgb(double red, double green, double blue) {
-        return new int[]{
-                (int) Math.round(red * 255.0D),
-                (int) Math.round(green * 255.0D),
-                (int) Math.round(blue * 255.0D)
-        };
+                .setColor(SpectralColorMap.red(color), SpectralColorMap.green(color), SpectralColorMap.blue(color), alpha);
     }
 
     private BeamPathRenderEvents() {

@@ -4,6 +4,7 @@ import io.github.yoglappland.spectralization.client.beam.ClientBeamPathPayloadHa
 import io.github.yoglappland.spectralization.client.networkoverlay.ClientNetworkOverlayPayloadHandler;
 import io.github.yoglappland.spectralization.client.surface.ClientSurfaceInspectionPayloadHandler;
 import io.github.yoglappland.spectralization.client.spot.ClientSpotPayloadHandler;
+import io.github.yoglappland.spectralization.menu.CreativeLightSourceMenu;
 import io.github.yoglappland.spectralization.optics.surface.SurfaceCoatingData;
 import io.github.yoglappland.spectralization.optics.surface.SurfaceKey;
 import net.neoforged.api.distmarker.Dist;
@@ -55,6 +56,12 @@ public final class SpectralNetwork {
                 SurfaceInspectionRequestPayload.TYPE,
                 SurfaceInspectionRequestPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleSurfaceInspectionRequest(payload, context.player()))
+        );
+
+        registrar.playToServer(
+                CreativeLightSpectrumPayload.TYPE,
+                CreativeLightSpectrumPayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> handleCreativeLightSpectrum(payload, context.player()))
         );
     }
 
@@ -123,6 +130,17 @@ public final class SpectralNetwork {
                 .map(kind -> SurfaceInspectionResponsePayload.of(payload.pos(), payload.side(), kind))
                 .orElseGet(() -> SurfaceInspectionResponsePayload.empty(payload.pos(), payload.side()));
         contextReply(serverPlayer, response);
+    }
+
+    private static void handleCreativeLightSpectrum(
+            CreativeLightSpectrumPayload payload,
+            net.minecraft.world.entity.player.Player player
+    ) {
+        if (!(player.containerMenu instanceof CreativeLightSourceMenu menu) || menu.containerId != payload.containerId()) {
+            return;
+        }
+
+        menu.setSpectrumWeight(payload.bin(), payload.weight());
     }
 
     private static void contextReply(

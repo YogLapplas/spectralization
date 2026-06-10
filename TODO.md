@@ -12,10 +12,10 @@
 
 - [x] 第一代光网络编译器成为当前光学系统的主路径。
 - [x] 旧 tracer 降级为 debug/reference/fallback。
-- [x] Compiler First 规范写入架构文档：新光源、传感器、HUD、spot、材料和场源先接编译器与事件驱动。
+- [x] Compiler First 规范写入架构文档：新光源、传感器、光束、spot、材料和场源先接编译器与事件驱动。
 - [x] 红宝石固体激光器能通过世界光路自然形成。
 - [x] 世界表面涂层能改变光学系统。
-- [x] 光束 HUD、涂层 HUD、surface spot 已经能显示。
+- [x] 光束、涂层 debug 可视化、surface spot 已经能显示。
 - [~] Spot 逻辑接入 compiled solver，但渲染成本偏高。
 - [~] 传感器可靠性和响应速度已经可用，还需要长期压力测试。
 - [ ] 下一阶段主线：空间频率系统、spot 性能、镀膜玩法、第一批生存合成。
@@ -23,6 +23,7 @@
 ## 光学 Profile
 
 - [x] `FrequencyKey = SpectralRegion + bin`。
+- [~] 频率 bin 向量进入原型：创造光源可以通过柱状频谱页输出最多 8 个活跃频率分量。
 - [x] 功率 profile。
 - [x] 相干 / 散杂通道。
 - [x] `BeamEnvelope` 几何包络占位。
@@ -165,14 +166,14 @@
 
 - [x] BeamEnvelope / BeamModel。
 - [x] Beam Profiler。
-- [x] HUD 拓扑光束线。
+- [x] 拓扑光束线。
 - [x] Spot core/halo/ring。
 - [x] Spot 接入 compiled solver。
 - [~] 完整方块表面 spot 可用。
 - [~] 非完整方块表面的贴面定位暂缓。
 - [!] Spot FPS 成本偏高。
 - [ ] Spot batching / culling / 距离限制 / 最大数量。
-- [ ] 频率 + 功率 -> RGB 函数。
+- [x] 频率 + 功率 -> RGB 函数：可见光 bin 使用统一 LUT，光束和 spot 共用。
 - [ ] alpha 16 级量化。
 - [ ] 相干核心与散杂 halo 的形状随传播距离变化。
 - [ ] 光束宽度和 spot size 联动。
@@ -252,10 +253,10 @@
 - [x] Jade 已显示部分传感器信息。
 - [ ] Jade 显示更多传感器、涂层、可靠性和 profile。
 - [ ] FE 能源接口。
-- [ ] Curios/饰品 HUD 眼镜。
+- [ ] Curios/饰品光束观察眼镜。
 - [ ] AE2/RS/QIO：接入虚空总线和远程物质接口，不替代仓库核心。
 - [ ] Create/物流模组：保留大宗物流价值。
-- [ ] 配置：场源范围、spot 数量、光伤害、可视化、solver budget、log 采样。
+- [ ] 配置：场源范围、spot 数量、光伤害、光束/spot 可视化、solver budget、log 采样。
 
 ## 文档与测试
 

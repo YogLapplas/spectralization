@@ -33,9 +33,6 @@ public final class OpticalSpotTracker {
     private static final double MIN_VISIBLE_SPOT_POWER = 0.125;
     private static final double SPOT_POWER_PER_ALPHA_LEVEL = 8.0;
     private static final double DEFAULT_OPTICAL_DIFFUSE_YIELD = 0.85;
-    private static final double VISIBLE_MIN_WAVELENGTH_NM = 380.0;
-    private static final double VISIBLE_MAX_WAVELENGTH_NM = 750.0;
-
     private static final Comparator<SpotRecord> SPOT_COMPARATOR = Comparator
             .comparingInt((SpotRecord spot) -> spot.pos().getX())
             .thenComparingInt(spot -> spot.pos().getY())
@@ -566,59 +563,6 @@ public final class OpticalSpotTracker {
         };
     }
 
-    private static double wavelengthNm(PlaneWaveComponent component) {
-        int bins = Math.max(1, component.frequency().region().defaultBins() - 1);
-        double t = Mth.clamp(component.frequency().bin() / (double) bins, 0.0, 1.0);
-        return VISIBLE_MIN_WAVELENGTH_NM + t * (VISIBLE_MAX_WAVELENGTH_NM - VISIBLE_MIN_WAVELENGTH_NM);
-    }
-
-    private static double[] wavelengthToRgb(double wavelengthNm) {
-        double red;
-        double green;
-        double blue;
-
-        if (wavelengthNm < 410.0) {
-            red = 0.45 + (410.0 - wavelengthNm) / 30.0 * 0.55;
-            green = 0.0;
-            blue = 1.0;
-        } else if (wavelengthNm < 475.0) {
-            red = 0.0;
-            green = (wavelengthNm - 410.0) / 65.0;
-            blue = 1.0;
-        } else if (wavelengthNm < 540.0) {
-            red = 0.0;
-            green = 1.0;
-            blue = 1.0 - (wavelengthNm - 475.0) / 65.0;
-        } else if (wavelengthNm < 590.0) {
-            red = (wavelengthNm - 540.0) / 50.0;
-            green = 1.0;
-            blue = 0.0;
-        } else if (wavelengthNm < 650.0) {
-            red = 1.0;
-            green = 1.0 - (wavelengthNm - 590.0) / 60.0;
-            blue = 0.0;
-        } else {
-            red = 1.0;
-            green = 0.0;
-            blue = 0.0;
-        }
-
-        double edgeFactor;
-        if (wavelengthNm < 420.0) {
-            edgeFactor = 0.55 + (wavelengthNm - VISIBLE_MIN_WAVELENGTH_NM) / 40.0 * 0.45;
-        } else if (wavelengthNm > 700.0) {
-            edgeFactor = 0.55 + (VISIBLE_MAX_WAVELENGTH_NM - wavelengthNm) / 50.0 * 0.45;
-        } else {
-            edgeFactor = 1.0;
-        }
-
-        return new double[]{
-                Math.pow(Mth.clamp(red * edgeFactor, 0.0, 1.0), 0.85),
-                Math.pow(Mth.clamp(green * edgeFactor, 0.0, 1.0), 0.85),
-                Math.pow(Mth.clamp(blue * edgeFactor, 0.0, 1.0), 0.85)
-        };
-    }
-
     private record SpotKey(BlockPos pos, Direction face) {
     }
 
@@ -652,18 +596,18 @@ public final class OpticalSpotTracker {
                 return;
             }
 
-            double[] rgb = wavelengthToRgb(wavelengthNm(component));
+            int rgb = SpectralColorMap.rgbFor(component.frequency());
 
             if (component.coherence() == CoherenceKind.COHERENT) {
                 coherentPower += power;
-                coherentRed += rgb[0] * power;
-                coherentGreen += rgb[1] * power;
-                coherentBlue += rgb[2] * power;
+                coherentRed += SpectralColorMap.red(rgb) * power;
+                coherentGreen += SpectralColorMap.green(rgb) * power;
+                coherentBlue += SpectralColorMap.blue(rgb) * power;
             } else {
                 strayPower += power;
-                strayRed += rgb[0] * power;
-                strayGreen += rgb[1] * power;
-                strayBlue += rgb[2] * power;
+                strayRed += SpectralColorMap.red(rgb) * power;
+                strayGreen += SpectralColorMap.green(rgb) * power;
+                strayBlue += SpectralColorMap.blue(rgb) * power;
             }
         }
 

@@ -1,7 +1,6 @@
 package io.github.yoglappland.spectralization.client.beam;
 
 import io.github.yoglappland.spectralization.network.BeamPathOverlayPayload;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -11,6 +10,7 @@ import net.minecraft.core.BlockPos;
 
 public final class ClientBeamPathCache {
     private static final Map<SegmentKey, BeamPathOverlayPayload.Segment> SEGMENTS = new HashMap<>();
+    private static List<BeamPathOverlayPayload.Segment> activeSegments = List.of();
     private static Object lastLevel;
 
     public static void accept(BeamPathOverlayPayload payload) {
@@ -28,6 +28,8 @@ public final class ClientBeamPathCache {
         for (BeamPathOverlayPayload.Segment segment : payload.segments()) {
             SEGMENTS.put(new SegmentKey(payload.ownerId(), segment.from(), segment.to()), segment);
         }
+
+        rebuildActiveSegments();
     }
 
     public static Collection<BeamPathOverlayPayload.Segment> activeSegments() {
@@ -40,7 +42,7 @@ public final class ClientBeamPathCache {
 
         clearIfLevelChanged(minecraft.level);
 
-        return new ArrayList<>(SEGMENTS.values());
+        return activeSegments;
     }
 
     public static void clear() {
@@ -53,12 +55,18 @@ public final class ClientBeamPathCache {
         }
 
         SEGMENTS.clear();
+        activeSegments = List.of();
         lastLevel = level;
     }
 
     private static void clearLevel() {
         SEGMENTS.clear();
+        activeSegments = List.of();
         lastLevel = null;
+    }
+
+    private static void rebuildActiveSegments() {
+        activeSegments = SEGMENTS.isEmpty() ? List.of() : List.copyOf(SEGMENTS.values());
     }
 
     private record SegmentKey(int ownerId, BlockPos from, BlockPos to) {

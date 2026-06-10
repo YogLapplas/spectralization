@@ -22,6 +22,12 @@ public final class SpectralNetwork {
         );
 
         registrar.playToClient(
+                SpotOverlayPayload.TYPE,
+                SpotOverlayPayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> handleSpotOverlay(payload))
+        );
+
+        registrar.playToClient(
                 NetworkOverlayPayload.TYPE,
                 NetworkOverlayPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleNetworkOverlay(payload))
@@ -53,6 +59,12 @@ public final class SpectralNetwork {
     }
 
     private static void handleSpotUpdate(SpotUpdatePayload payload) {
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            ClientSpotPayloadHandler.handle(payload);
+        }
+    }
+
+    private static void handleSpotOverlay(SpotOverlayPayload payload) {
         if (FMLEnvironment.dist == Dist.CLIENT) {
             ClientSpotPayloadHandler.handle(payload);
         }

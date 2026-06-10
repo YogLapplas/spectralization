@@ -15,12 +15,13 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
-import org.joml.Vector3f;
 
 @EventBusSubscriber(modid = Spectralization.MODID, value = Dist.CLIENT)
 public final class BeamPathRenderEvents {
     private static final double EDGE_OFFSET = 0.0D;
     private static final double HUD_WIDTH = 0.035D;
+    private static final int[][] COHERENT_COLORS = buildColors(true);
+    private static final int[][] STRAY_COLORS = buildColors(false);
 
     @SubscribeEvent
     public static void renderBeamPaths(RenderLevelStageEvent event) {
@@ -70,7 +71,7 @@ public final class BeamPathRenderEvents {
         double ey = segment.to().getY() + 0.5D - direction.getStepY() * EDGE_OFFSET;
         double ez = segment.to().getZ() + 0.5D - direction.getStepZ() * EDGE_OFFSET;
         double width = HUD_WIDTH;
-        Vector3f color = colorFor(segment.colorBin(), segment.coherent());
+        int[] color = colorFor(segment.colorBin(), segment.coherent());
         int alpha = Math.min(180, 28 + Math.max(1, segment.visualLevel()) * 18 + (segment.coherent() ? 22 : 0));
 
         switch (direction.getAxis()) {
@@ -104,7 +105,7 @@ public final class BeamPathRenderEvents {
             double x4,
             double y4,
             double z4,
-            Vector3f color,
+            int[] color,
             int alpha
     ) {
         addVertex(consumer, pose, x1, y1, z1, color, alpha);
@@ -113,19 +114,33 @@ public final class BeamPathRenderEvents {
         addVertex(consumer, pose, x4, y4, z4, color, alpha);
     }
 
-    private static void addVertex(VertexConsumer consumer, PoseStack.Pose pose, double x, double y, double z, Vector3f color, int alpha) {
+    private static void addVertex(VertexConsumer consumer, PoseStack.Pose pose, double x, double y, double z, int[] color, int alpha) {
         consumer.addVertex(pose, (float) x, (float) y, (float) z)
-                .setColor((int) (color.x() * 255.0F), (int) (color.y() * 255.0F), (int) (color.z() * 255.0F), alpha);
+                .setColor(color[0], color[1], color[2], alpha);
     }
 
-    private static Vector3f colorFor(int colorBin, boolean coherent) {
+    private static int[] colorFor(int colorBin, boolean coherent) {
+        int clampedBin = Math.max(0, Math.min(63, colorBin));
+        return coherent ? COHERENT_COLORS[clampedBin] : STRAY_COLORS[clampedBin];
+    }
+
+    private static int[][] buildColors(boolean coherent) {
+        int[][] colors = new int[64][3];
+
+        for (int bin = 0; bin < colors.length; bin++) {
+            colors[bin] = computeColor(bin, coherent);
+        }
+
+        return colors;
+    }
+
+    private static int[] computeColor(int colorBin, boolean coherent) {
         double t = Math.max(0.0D, Math.min(1.0D, colorBin / 63.0D));
         double hue = 0.72D - t * 0.72D;
-        Vector3f color = hsvToRgb(hue, coherent ? 0.96D : 0.42D, coherent ? 1.0D : 0.82D);
-        return color;
+        return hsvToRgb(hue, coherent ? 0.96D : 0.42D, coherent ? 1.0D : 0.82D);
     }
 
-    private static Vector3f hsvToRgb(double hue, double saturation, double value) {
+    private static int[] hsvToRgb(double hue, double saturation, double value) {
         double h = (hue - Math.floor(hue)) * 6.0D;
         int sector = (int) Math.floor(h);
         double f = h - sector;
@@ -134,12 +149,20 @@ public final class BeamPathRenderEvents {
         double tt = value * (1.0D - (1.0D - f) * saturation);
 
         return switch (sector) {
-            case 0 -> new Vector3f((float) value, (float) tt, (float) p);
-            case 1 -> new Vector3f((float) q, (float) value, (float) p);
-            case 2 -> new Vector3f((float) p, (float) value, (float) tt);
-            case 3 -> new Vector3f((float) p, (float) q, (float) value);
-            case 4 -> new Vector3f((float) tt, (float) p, (float) value);
-            default -> new Vector3f((float) value, (float) p, (float) q);
+            case 0 -> rgb(value, tt, p);
+            case 1 -> rgb(q, value, p);
+            case 2 -> rgb(p, value, tt);
+            case 3 -> rgb(p, q, value);
+            case 4 -> rgb(tt, p, value);
+            default -> rgb(value, p, q);
+        };
+    }
+
+    private static int[] rgb(double red, double green, double blue) {
+        return new int[]{
+                (int) Math.round(red * 255.0D),
+                (int) Math.round(green * 255.0D),
+                (int) Math.round(blue * 255.0D)
         };
     }
 

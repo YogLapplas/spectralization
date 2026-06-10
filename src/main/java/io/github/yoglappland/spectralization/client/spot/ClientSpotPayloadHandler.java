@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization.client.spot;
 
 import io.github.yoglappland.spectralization.network.SpotUpdatePayload;
+import io.github.yoglappland.spectralization.network.SpotOverlayPayload;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 
@@ -8,6 +9,10 @@ import net.neoforged.api.distmarker.OnlyIn;
 public final class ClientSpotPayloadHandler {
     public static void handle(SpotUpdatePayload payload) {
         ClientSpotCache.accept(payload.toSpotRecord());
+    }
+
+    public static void handle(SpotOverlayPayload payload) {
+        ClientSpotCache.accept(payload);
     }
 
     private ClientSpotPayloadHandler() {

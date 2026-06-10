@@ -3,13 +3,11 @@ package io.github.yoglappland.spectralization.client.spot;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import io.github.yoglappland.spectralization.Spectralization;
-import io.github.yoglappland.spectralization.optics.SpotRecord;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
@@ -23,13 +21,15 @@ public final class SpotRenderEvents {
     private static final int MAX_RENDERED_SPOTS = 384;
     private static final double MAX_RENDER_DISTANCE = 48.0D;
     private static final double MAX_RENDER_DISTANCE_SQUARED = MAX_RENDER_DISTANCE * MAX_RENDER_DISTANCE;
-    private static final double SURFACE_OFFSET = 0.003D;
     private static final ResourceLocation CORE_TEXTURE =
             ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "textures/effect/spot_core.png");
     private static final ResourceLocation HALO_TEXTURE =
             ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "textures/effect/spot_halo.png");
     private static final ResourceLocation RING_TEXTURE =
             ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "textures/effect/spot_ring.png");
+    private static final RenderType CORE_RENDER_TYPE = RenderType.entityTranslucent(CORE_TEXTURE);
+    private static final RenderType HALO_RENDER_TYPE = RenderType.entityTranslucent(HALO_TEXTURE);
+    private static final RenderType RING_RENDER_TYPE = RenderType.entityTranslucent(RING_TEXTURE);
 
     @SubscribeEvent
     public static void renderSpots(RenderLevelStageEvent event) {
@@ -55,7 +55,7 @@ public final class SpotRenderEvents {
 
         int renderedSpots = 0;
 
-        for (SpotRecord spot : spots) {
+        for (ClientSpotCache.RenderedSpot spot : spots) {
             if (renderedSpots >= MAX_RENDERED_SPOTS) {
                 break;
             }
@@ -69,22 +69,19 @@ public final class SpotRenderEvents {
         }
 
         poseStack.popPose();
-        bufferSource.endBatch(RenderType.entityTranslucent(HALO_TEXTURE));
-        bufferSource.endBatch(RenderType.entityTranslucent(CORE_TEXTURE));
-        bufferSource.endBatch(RenderType.entityTranslucent(RING_TEXTURE));
+        bufferSource.endBatch(HALO_RENDER_TYPE);
+        bufferSource.endBatch(CORE_RENDER_TYPE);
+        bufferSource.endBatch(RING_RENDER_TYPE);
     }
 
-    private static void renderSpot(MultiBufferSource.BufferSource bufferSource, PoseStack.Pose pose, SpotRecord spot) {
-        Vec3 center = spotCenter(spot);
-
+    private static void renderSpot(MultiBufferSource.BufferSource bufferSource, PoseStack.Pose pose, ClientSpotCache.RenderedSpot spot) {
         if (spot.strayAlphaLevel() > 0) {
             renderTexturedSpot(
-                    bufferSource.getBuffer(RenderType.entityTranslucent(HALO_TEXTURE)),
+                    bufferSource.getBuffer(HALO_RENDER_TYPE),
                     pose,
                     spot,
-                    center,
-                    renderRadius(spot.strayRadiusLevel(), 1.25D),
-                    alphaFor(spot.strayAlphaLevel(), 0.72D),
+                    spot.strayRadius(),
+                    spot.strayAlpha(),
                     spot.strayRed(),
                     spot.strayGreen(),
                     spot.strayBlue()
@@ -93,12 +90,11 @@ public final class SpotRenderEvents {
 
         if (spot.coherentAlphaLevel() > 0) {
             renderTexturedSpot(
-                    bufferSource.getBuffer(RenderType.entityTranslucent(CORE_TEXTURE)),
+                    bufferSource.getBuffer(CORE_RENDER_TYPE),
                     pose,
                     spot,
-                    center,
-                    renderRadius(spot.coherentRadiusLevel(), 0.82D),
-                    alphaFor(spot.coherentAlphaLevel(), 1.0D),
+                    spot.coherentRadius(),
+                    spot.coherentAlpha(),
                     spot.coherentRed(),
                     spot.coherentGreen(),
                     spot.coherentBlue()
@@ -106,20 +102,15 @@ public final class SpotRenderEvents {
         }
 
         if (spot.ringAlphaLevel() > 0) {
-            int red = spot.coherentAlphaLevel() > 0 ? spot.coherentRed() : spot.strayRed();
-            int green = spot.coherentAlphaLevel() > 0 ? spot.coherentGreen() : spot.strayGreen();
-            int blue = spot.coherentAlphaLevel() > 0 ? spot.coherentBlue() : spot.strayBlue();
-            int radiusLevel = Math.max(spot.coherentRadiusLevel(), spot.strayRadiusLevel());
             renderTexturedSpot(
-                    bufferSource.getBuffer(RenderType.entityTranslucent(RING_TEXTURE)),
+                    bufferSource.getBuffer(RING_RENDER_TYPE),
                     pose,
                     spot,
-                    center,
-                    renderRadius(radiusLevel, 1.35D),
-                    alphaFor(spot.ringAlphaLevel(), 0.72D),
-                    red,
-                    green,
-                    blue
+                    spot.ringRadius(),
+                    spot.ringAlpha(),
+                    spot.ringRed(),
+                    spot.ringGreen(),
+                    spot.ringBlue()
             );
         }
     }
@@ -127,8 +118,7 @@ public final class SpotRenderEvents {
     private static void renderTexturedSpot(
             VertexConsumer consumer,
             PoseStack.Pose pose,
-            SpotRecord spot,
-            Vec3 center,
+            ClientSpotCache.RenderedSpot spot,
             double radius,
             int alpha,
             int red,
@@ -136,9 +126,9 @@ public final class SpotRenderEvents {
             int blue
     ) {
         Direction face = spot.face();
-        double x = center.x;
-        double y = center.y;
-        double z = center.z;
+        double x = spot.centerX();
+        double y = spot.centerY();
+        double z = spot.centerZ();
 
         switch (face.getAxis()) {
             case X -> addQuad(
@@ -251,29 +241,10 @@ public final class SpotRenderEvents {
                 .setNormal(pose, 0.0F, 1.0F, 0.0F);
     }
 
-    private static double renderRadius(int radiusLevel, double multiplier) {
-        return (0.075D + Math.max(1, radiusLevel) * 0.048D) * multiplier;
-    }
-
-    private static int alphaFor(int alphaLevel, double multiplier) {
-        return Math.max(0, Math.min(240, (int) Math.round((88 + alphaLevel * 10) * multiplier)));
-    }
-
-    private static Vec3 spotCenter(SpotRecord spot) {
-        BlockPos pos = spot.pos();
-        Direction face = spot.face();
-        return new Vec3(
-                pos.getX() + 0.5D + face.getStepX() * (0.5D + SURFACE_OFFSET),
-                pos.getY() + 0.5D + face.getStepY() * (0.5D + SURFACE_OFFSET),
-                pos.getZ() + 0.5D + face.getStepZ() * (0.5D + SURFACE_OFFSET)
-        );
-    }
-
-    private static boolean isNearCamera(Vec3 cameraPosition, SpotRecord spot) {
-        BlockPos pos = spot.pos();
-        double dx = pos.getX() + 0.5D - cameraPosition.x;
-        double dy = pos.getY() + 0.5D - cameraPosition.y;
-        double dz = pos.getZ() + 0.5D - cameraPosition.z;
+    private static boolean isNearCamera(Vec3 cameraPosition, ClientSpotCache.RenderedSpot spot) {
+        double dx = spot.centerX() - cameraPosition.x;
+        double dy = spot.centerY() - cameraPosition.y;
+        double dz = spot.centerZ() - cameraPosition.z;
         return dx * dx + dy * dy + dz * dz <= MAX_RENDER_DISTANCE_SQUARED;
     }
 

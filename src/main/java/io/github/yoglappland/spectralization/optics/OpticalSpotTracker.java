@@ -1,14 +1,15 @@
 package io.github.yoglappland.spectralization.optics;
 
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
+import io.github.yoglappland.spectralization.network.SpotOverlayPayload;
 import io.github.yoglappland.spectralization.network.SpotUpdatePayload;
 import io.github.yoglappland.spectralization.optics.compiler.OpticalCompilerDebugLogger;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.UUID;
 import java.util.WeakHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -22,9 +23,10 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 public final class OpticalSpotTracker {
-    private static final int SEND_INTERVAL_TICKS = 5;
-    private static final int REFRESH_INTERVAL_TICKS = 10;
-    private static final int LOG_INTERVAL_TICKS = 40;
+    private static final int SEND_INTERVAL_TICKS = 40;
+    private static final int REFRESH_INTERVAL_TICKS = 160;
+    private static final int LOG_INTERVAL_TICKS = 160;
+    private static final int PLAYER_SNAPSHOT_REFRESH_TICKS = 1200;
     private static final double SEND_RADIUS = 64.0;
     private static final double SEND_RADIUS_SQUARED = SEND_RADIUS * SEND_RADIUS;
     private static final double MIN_SPOT_RADIUS = 0.08;
@@ -34,8 +36,15 @@ public final class OpticalSpotTracker {
     private static final double VISIBLE_MIN_WAVELENGTH_NM = 380.0;
     private static final double VISIBLE_MAX_WAVELENGTH_NM = 750.0;
 
-    private static final Map<Level, Map<SpotKey, ActiveSpot>> ACTIVE_SPOTS = new WeakHashMap<>();
-    private static final Map<Level, Map<Integer, Set<SpotKey>>> SPOT_KEYS_BY_OWNER = new WeakHashMap<>();
+    private static final Comparator<SpotRecord> SPOT_COMPARATOR = Comparator
+            .comparingInt((SpotRecord spot) -> spot.pos().getX())
+            .thenComparingInt(spot -> spot.pos().getY())
+            .thenComparingInt(spot -> spot.pos().getZ())
+            .thenComparingInt(spot -> spot.face().ordinal());
+
+    private static final Map<Level, Map<Integer, SpotOwnerSnapshot>> SPOTS_BY_OWNER = new WeakHashMap<>();
+    private static final Map<Level, Map<UUID, Map<Integer, SentSpotSnapshot>>> SENT_SNAPSHOTS_BY_PLAYER = new WeakHashMap<>();
+    private static final Map<Level, Map<SpotKey, ActiveSpot>> LEGACY_ACTIVE_SPOTS = new WeakHashMap<>();
     private static final Map<Level, Long> LAST_REFRESH = new WeakHashMap<>();
     private static final Map<Level, Long> LAST_LOG = new WeakHashMap<>();
 
@@ -102,7 +111,7 @@ public final class OpticalSpotTracker {
             double componentStrayPower = Math.max(0.0, componentBeamPower - componentCoherentPower);
 
             spotPower.accept(component.withCoherence(CoherenceKind.COHERENT), componentCoherentPower * response.absorption());
-            spotPower.accept(component.withCoherence(CoherenceKind.INCOHERENT), componentStrayPower * response.reflectance());
+            spotPower.accept(component.withCoherence(CoherenceKind.INCOHERENT), componentStrayPower * straySpotYieldFor(response));
         }
 
         return createSpot(pos, face, profileTemplate, spotPower);
@@ -175,46 +184,28 @@ public final class OpticalSpotTracker {
             return;
         }
 
-        Map<SpotKey, ActiveSpot> levelSpots = ACTIVE_SPOTS.computeIfAbsent(level, ignored -> new HashMap<>());
-        Map<Integer, Set<SpotKey>> ownerKeysByLevel = SPOT_KEYS_BY_OWNER.computeIfAbsent(level, ignored -> new HashMap<>());
-        Set<SpotKey> previousKeys = ownerKeysByLevel.getOrDefault(ownerId, Set.of());
-        Set<SpotKey> nextKeys = new HashSet<>();
+        Map<Integer, SpotOwnerSnapshot> ownerSnapshots = SPOTS_BY_OWNER.computeIfAbsent(level, ignored -> new HashMap<>());
         long gameTime = level.getGameTime();
+        List<SpotRecord> visibleSpots = visibleSnapshot(spots);
 
-        for (SpotRecord spot : spots) {
-            if (!spot.visible()) {
-                continue;
-            }
-
-            SpotKey key = new SpotKey(spot.pos(), spot.face());
-            nextKeys.add(key);
-            ActiveSpot previous = levelSpots.get(key);
-            levelSpots.put(key, new ActiveSpot(gameTime, spot));
-
-            if (previous == null
-                    || !previous.spot().equals(spot)
-                    || gameTime - previous.lastSentGameTime() >= SEND_INTERVAL_TICKS) {
-                sendSpotToNearby(level, spot);
-            }
-        }
-
-        for (SpotKey previousKey : previousKeys) {
-            if (nextKeys.contains(previousKey)) {
-                continue;
-            }
-
-            ActiveSpot removed = levelSpots.remove(previousKey);
-
+        if (visibleSpots.isEmpty()) {
+            SpotOwnerSnapshot removed = ownerSnapshots.remove(ownerId);
             if (removed != null) {
-                sendSpotToNearby(level, clearedSpot(removed.spot()));
+                sendClearSnapshot(level, ownerId);
             }
+            return;
         }
 
-        if (nextKeys.isEmpty()) {
-            ownerKeysByLevel.remove(ownerId);
-        } else {
-            ownerKeysByLevel.put(ownerId, Set.copyOf(nextKeys));
+        long signature = spotSnapshotSignature(visibleSpots);
+        SpotOwnerSnapshot previous = ownerSnapshots.get(ownerId);
+
+        if (previous != null && previous.signature() == signature && previous.spots().equals(visibleSpots)) {
+            return;
         }
+
+        SpotOwnerSnapshot snapshot = new SpotOwnerSnapshot(ownerId, visibleSpots, signature, gameTime);
+        ownerSnapshots.put(ownerId, snapshot);
+        sendSnapshotToNearby(level, snapshot, true);
     }
 
     private static void mark(
@@ -279,23 +270,24 @@ public final class OpticalSpotTracker {
             return;
         }
 
-        Map<SpotKey, ActiveSpot> levelSpots = ACTIVE_SPOTS.remove(serverLevel);
-        SPOT_KEYS_BY_OWNER.remove(serverLevel);
+        Map<Integer, SpotOwnerSnapshot> ownerSnapshots = SPOTS_BY_OWNER.remove(serverLevel);
+        LEGACY_ACTIVE_SPOTS.remove(serverLevel);
         LAST_REFRESH.remove(serverLevel);
         LAST_LOG.remove(serverLevel);
 
-        if (levelSpots == null || levelSpots.isEmpty()) {
-            return;
+        if (ownerSnapshots != null) {
+            for (int ownerId : ownerSnapshots.keySet()) {
+                sendClearSnapshot(serverLevel, ownerId);
+            }
         }
 
-        for (ActiveSpot activeSpot : levelSpots.values()) {
-            sendSpotToNearby(serverLevel, clearedSpot(activeSpot.spot()));
-        }
+        SENT_SNAPSHOTS_BY_PLAYER.remove(serverLevel);
     }
 
     public static void clearAll() {
-        ACTIVE_SPOTS.clear();
-        SPOT_KEYS_BY_OWNER.clear();
+        SPOTS_BY_OWNER.clear();
+        SENT_SNAPSHOTS_BY_PLAYER.clear();
+        LEGACY_ACTIVE_SPOTS.clear();
         LAST_REFRESH.clear();
         LAST_LOG.clear();
     }
@@ -306,9 +298,9 @@ public final class OpticalSpotTracker {
             return;
         }
 
-        Map<SpotKey, ActiveSpot> levelSpots = ACTIVE_SPOTS.get(level);
+        Map<Integer, SpotOwnerSnapshot> ownerSnapshots = SPOTS_BY_OWNER.get(level);
 
-        if (levelSpots == null || levelSpots.isEmpty()) {
+        if (ownerSnapshots == null || ownerSnapshots.isEmpty()) {
             return;
         }
 
@@ -323,23 +315,13 @@ public final class OpticalSpotTracker {
 
         int sentSpots = 0;
         int sentPlayers = 0;
-        List<SpotRecord> activeSpotRecords = new ArrayList<>(levelSpots.size());
+        List<SpotRecord> activeSpotRecords = new ArrayList<>();
 
-        for (Map.Entry<SpotKey, ActiveSpot> entry : levelSpots.entrySet()) {
-            SpotRecord spot = entry.getValue().spot();
-
-            if (!spot.visible()) {
-                continue;
-            }
-
-            int players = sendSpotToNearby(level, spot);
-            if (players > 0) {
-                sentSpots++;
-                sentPlayers += players;
-                entry.setValue(new ActiveSpot(gameTime, spot));
-            }
-
-            activeSpotRecords.add(spot);
+        for (SpotOwnerSnapshot snapshot : ownerSnapshots.values()) {
+            SnapshotSendResult result = sendSnapshotToNearby(level, snapshot, false);
+            sentSpots += result.sentSpots();
+            sentPlayers += result.sentPlayers();
+            activeSpotRecords.addAll(snapshot.spots());
         }
 
         long lastLog = LAST_LOG.getOrDefault(level, (long) -LOG_INTERVAL_TICKS);
@@ -351,7 +333,7 @@ public final class OpticalSpotTracker {
 
     private static boolean shouldSend(Level level, SpotRecord spot) {
         long gameTime = level.getGameTime();
-        Map<SpotKey, ActiveSpot> levelSpots = ACTIVE_SPOTS.computeIfAbsent(level, ignored -> new HashMap<>());
+        Map<SpotKey, ActiveSpot> levelSpots = LEGACY_ACTIVE_SPOTS.computeIfAbsent(level, ignored -> new HashMap<>());
         SpotKey key = new SpotKey(spot.pos(), spot.face());
         ActiveSpot lastSent = levelSpots.get(key);
 
@@ -361,6 +343,141 @@ public final class OpticalSpotTracker {
 
         levelSpots.put(key, new ActiveSpot(gameTime, spot));
         return true;
+    }
+
+    private static SnapshotSendResult sendSnapshotToNearby(ServerLevel level, SpotOwnerSnapshot snapshot, boolean force) {
+        SpotOverlayPayload payload = new SpotOverlayPayload(snapshot.ownerId(), snapshot.spots());
+        long gameTime = level.getGameTime();
+        int sentPlayers = 0;
+        int sentSpots = 0;
+
+        for (ServerPlayer player : level.players()) {
+            if (!isNearSnapshot(player, snapshot)) {
+                continue;
+            }
+
+            if (!force && !needsSnapshot(player, snapshot, gameTime)) {
+                continue;
+            }
+
+            PacketDistributor.sendToPlayer(player, payload);
+            rememberSnapshotSent(level, player, snapshot, gameTime);
+            sentPlayers++;
+            sentSpots += snapshot.spots().size();
+        }
+
+        return new SnapshotSendResult(sentSpots, sentPlayers);
+    }
+
+    private static void sendClearSnapshot(ServerLevel level, int ownerId) {
+        SpotOverlayPayload payload = new SpotOverlayPayload(ownerId, List.of());
+        Map<UUID, Map<Integer, SentSpotSnapshot>> sentByPlayer = SENT_SNAPSHOTS_BY_PLAYER.get(level);
+
+        if (sentByPlayer == null || sentByPlayer.isEmpty()) {
+            return;
+        }
+
+        for (ServerPlayer player : level.players()) {
+            Map<Integer, SentSpotSnapshot> playerSnapshots = sentByPlayer.get(player.getUUID());
+            if (playerSnapshots == null || !playerSnapshots.containsKey(ownerId)) {
+                continue;
+            }
+
+            PacketDistributor.sendToPlayer(player, payload);
+            playerSnapshots.remove(ownerId);
+        }
+    }
+
+    private static boolean needsSnapshot(ServerPlayer player, SpotOwnerSnapshot snapshot, long gameTime) {
+        Map<UUID, Map<Integer, SentSpotSnapshot>> sentByPlayer = SENT_SNAPSHOTS_BY_PLAYER.get(player.level());
+
+        if (sentByPlayer == null) {
+            return true;
+        }
+
+        Map<Integer, SentSpotSnapshot> playerSnapshots = sentByPlayer.get(player.getUUID());
+
+        if (playerSnapshots == null) {
+            return true;
+        }
+
+        SentSpotSnapshot sent = playerSnapshots.get(snapshot.ownerId());
+
+        return sent == null
+                || sent.signature() != snapshot.signature()
+                || gameTime - sent.gameTime() >= PLAYER_SNAPSHOT_REFRESH_TICKS;
+    }
+
+    private static void rememberSnapshotSent(
+            ServerLevel level,
+            ServerPlayer player,
+            SpotOwnerSnapshot snapshot,
+            long gameTime
+    ) {
+        Map<UUID, Map<Integer, SentSpotSnapshot>> sentByPlayer =
+                SENT_SNAPSHOTS_BY_PLAYER.computeIfAbsent(level, ignored -> new HashMap<>());
+        Map<Integer, SentSpotSnapshot> playerSnapshots =
+                sentByPlayer.computeIfAbsent(player.getUUID(), ignored -> new HashMap<>());
+        playerSnapshots.put(snapshot.ownerId(), new SentSpotSnapshot(snapshot.signature(), gameTime));
+    }
+
+    private static boolean isNearSnapshot(ServerPlayer player, SpotOwnerSnapshot snapshot) {
+        for (SpotRecord spot : snapshot.spots()) {
+            double sx = spot.pos().getX() + 0.5D;
+            double sy = spot.pos().getY() + 0.5D;
+            double sz = spot.pos().getZ() + 0.5D;
+
+            if (player.distanceToSqr(sx, sy, sz) <= SEND_RADIUS_SQUARED) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static List<SpotRecord> visibleSnapshot(List<SpotRecord> spots) {
+        if (spots.isEmpty()) {
+            return List.of();
+        }
+
+        List<SpotRecord> visibleSpots = new ArrayList<>();
+        for (SpotRecord spot : spots) {
+            if (spot.visible()) {
+                visibleSpots.add(spot);
+            }
+        }
+
+        visibleSpots.sort(SPOT_COMPARATOR);
+        return visibleSpots.isEmpty() ? List.of() : List.copyOf(visibleSpots);
+    }
+
+    private static long spotSnapshotSignature(List<SpotRecord> spots) {
+        long signature = 0xCBF29CE484222325L;
+        signature = mix(signature, spots.size());
+
+        for (SpotRecord spot : spots) {
+            signature = mix(signature, spot.pos().asLong());
+            signature = mix(signature, spot.face().ordinal());
+            signature = mix(signature, spot.coherentAlphaLevel());
+            signature = mix(signature, spot.coherentRadiusLevel());
+            signature = mix(signature, spot.coherentRed());
+            signature = mix(signature, spot.coherentGreen());
+            signature = mix(signature, spot.coherentBlue());
+            signature = mix(signature, spot.strayAlphaLevel());
+            signature = mix(signature, spot.strayRadiusLevel());
+            signature = mix(signature, spot.strayRed());
+            signature = mix(signature, spot.strayGreen());
+            signature = mix(signature, spot.strayBlue());
+            signature = mix(signature, spot.ringAlphaLevel());
+        }
+
+        return signature;
+    }
+
+    private static long mix(long seed, long value) {
+        long mixed = seed ^ value;
+        mixed *= 0x100000001B3L;
+        return mixed;
     }
 
     private static int sendSpotToNearby(ServerLevel level, SpotRecord spot) {
@@ -378,24 +495,6 @@ public final class OpticalSpotTracker {
         }
 
         return sentPlayers;
-    }
-
-    private static SpotRecord clearedSpot(SpotRecord spot) {
-        return new SpotRecord(
-                spot.pos(),
-                spot.face(),
-                0,
-                0,
-                255,
-                70,
-                48,
-                0,
-                0,
-                255,
-                70,
-                48,
-                0
-        );
     }
 
     private static boolean isFullBlockSurface(Level level, BlockPos pos, BlockState state) {
@@ -432,7 +531,11 @@ public final class OpticalSpotTracker {
     private static double spotYieldFor(PlaneWaveComponent component, OpticalMaterialResponse response) {
         return component.coherence() == CoherenceKind.COHERENT
                 ? response.absorption()
-                : response.reflectance();
+                : straySpotYieldFor(response);
+    }
+
+    private static double straySpotYieldFor(OpticalMaterialResponse response) {
+        return Mth.clamp(1.0 - response.transmittance(), 0.0, 1.0);
     }
 
     private static double visiblePower(BeamPacket beam) {
@@ -520,6 +623,18 @@ public final class OpticalSpotTracker {
     }
 
     private record ActiveSpot(long lastSentGameTime, SpotRecord spot) {
+    }
+
+    private record SpotOwnerSnapshot(int ownerId, List<SpotRecord> spots, long signature, long gameTime) {
+        private SpotOwnerSnapshot {
+            spots = List.copyOf(spots);
+        }
+    }
+
+    private record SentSpotSnapshot(long signature, long gameTime) {
+    }
+
+    private record SnapshotSendResult(int sentSpots, int sentPlayers) {
     }
 
     private static final class SpotPowerAccumulator {

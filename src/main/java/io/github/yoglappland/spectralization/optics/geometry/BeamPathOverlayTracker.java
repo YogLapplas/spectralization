@@ -62,6 +62,23 @@ public final class BeamPathOverlayTracker {
         return TERMINAL_RAY_BLOCKS;
     }
 
+    public static long signature(List<BeamPathOverlayPayload.Segment> segments) {
+        long signature = 0xCBF29CE484222325L;
+        signature = mix(signature, segments.size());
+
+        for (BeamPathOverlayPayload.Segment segment : segments) {
+            signature = mix(signature, segment.from().asLong());
+            signature = mix(signature, segment.to().asLong());
+            signature = mix(signature, segment.direction().ordinal());
+            signature = mix(signature, segment.coherent() ? 1 : 0);
+            signature = mix(signature, segment.colorBin());
+            signature = mix(signature, segment.widthLevel());
+            signature = mix(signature, segment.visualLevel());
+        }
+
+        return signature;
+    }
+
     public static int publish(ServerLevel level, CompiledOpticalTrace trace) {
         if (trace.steps().isEmpty()) {
             return 0;
@@ -317,6 +334,12 @@ public final class BeamPathOverlayTracker {
         double dy = py - cy;
         double dz = pz - cz;
         return dx * dx + dy * dy + dz * dz;
+    }
+
+    private static long mix(long seed, long value) {
+        long mixed = seed ^ value;
+        mixed *= 0x100000001B3L;
+        return mixed;
     }
 
     private BeamPathOverlayTracker() {

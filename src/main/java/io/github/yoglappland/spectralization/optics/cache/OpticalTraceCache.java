@@ -6,6 +6,7 @@ import io.github.yoglappland.spectralization.block.CmosSensorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
 import io.github.yoglappland.spectralization.block.RubyBlock;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
+import io.github.yoglappland.spectralization.network.BeamPathOverlayPayload;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalTrace;
 import io.github.yoglappland.spectralization.optics.CoherenceKind;
 import io.github.yoglappland.spectralization.optics.IntrinsicOpticalSources;
@@ -81,6 +82,7 @@ public final class OpticalTraceCache {
     private static final long GEOMETRY_SIGNATURE_SEED = 0x9E3779B97F4A7C15L;
     private static final int MIN_SYSTEM_COMPILATION_CACHE_ENTRIES = 32;
     private static final long HUD_OVERLAY_SEND_INTERVAL_TICKS = 2L;
+    private static final long HUD_OVERLAY_REFRESH_INTERVAL_TICKS = 80L;
     private static final int DORMANT_SOURCE_WAKE_BUDGET_PER_TICK = 64;
     private static final int MAX_RUBY_DERIVED_COHERENT_SOURCES = 96;
     private static final double RUBY_DERIVED_COHERENT_SOURCE_MIN_POWER = 1.0E-6D;
@@ -909,14 +911,22 @@ public final class OpticalTraceCache {
 
         boolean hasSegments = !cachedTrace.hudSegments().isEmpty();
 
-        if (!(hasSegments
+        if (!hasSegments && !cache.hasSentNonEmptyHudOverlay(networkId)) {
+            return;
+        }
+
+        if (!cache.shouldAttemptHudOverlay(networkId, serverLevel.getGameTime(), cachedTrace.hudSegments())
+                || !(hasSegments
                 ? BeamPathOverlayTracker.hasHudViewerNear(serverLevel, sourcePos, cachedTrace.hudSegments())
-                : BeamPathOverlayTracker.hasHudViewerNear(serverLevel, sourcePos))
-                || !cache.shouldSendHudOverlay(networkId, serverLevel.getGameTime())) {
+                : BeamPathOverlayTracker.hasHudViewerNear(serverLevel, sourcePos))) {
             return;
         }
 
         int sentPlayers = BeamPathOverlayTracker.publish(serverLevel, sourcePos, networkId, cachedTrace.hudSegments());
+
+        if (sentPlayers > 0) {
+            cache.markHudOverlaySent(networkId, serverLevel.getGameTime(), cachedTrace.hudSegments());
+        }
 
         if (sentPlayers <= 0 || !SpectralizationConfig.opticalCompilerDebugLog()) {
             return;
@@ -955,28 +965,29 @@ public final class OpticalTraceCache {
             return;
         }
 
-        List<io.github.yoglappland.spectralization.network.BeamPathOverlayPayload.Segment> segments =
-                BeamPathOverlayTracker.topologySegments(
-                        system.coherentGraph(),
-                        system.coherentHudIntent()
-                                || BeamPathOverlayTracker.hasCoherentSignal(system.solution()),
-                        system.solution()
-                );
-
+        List<BeamPathOverlayPayload.Segment> segments = system.hudSegments();
         BlockPos sourcePos = system.graph().sourcePos();
         int overlayId = -system.systemId();
         cache.retiredHudOwnerIds.remove(overlayId);
 
         boolean hasSegments = !segments.isEmpty();
 
-        if (!(hasSegments
+        if (!hasSegments && !cache.hasSentNonEmptyHudOverlay(overlayId)) {
+            return;
+        }
+
+        if (!cache.shouldAttemptHudOverlay(overlayId, serverLevel.getGameTime(), segments)
+                || !(hasSegments
                 ? BeamPathOverlayTracker.hasHudViewerNear(serverLevel, sourcePos, segments)
-                : BeamPathOverlayTracker.hasHudViewerNear(serverLevel, sourcePos))
-                || !cache.shouldSendHudOverlay(overlayId, serverLevel.getGameTime())) {
+                : BeamPathOverlayTracker.hasHudViewerNear(serverLevel, sourcePos))) {
             return;
         }
 
         int sentPlayers = BeamPathOverlayTracker.publish(serverLevel, sourcePos, overlayId, segments);
+
+        if (sentPlayers > 0) {
+            cache.markHudOverlaySent(overlayId, serverLevel.getGameTime(), segments);
+        }
 
         if (sentPlayers <= 0 || !SpectralizationConfig.opticalCompilerDebugLog()) {
             return;
@@ -1040,18 +1051,15 @@ public final class OpticalTraceCache {
                 systemNetworkIds.addAll(networkIds);
             }
 
-            List<io.github.yoglappland.spectralization.network.BeamPathOverlayPayload.Segment> segments =
-                    BeamPathOverlayTracker.topologySegments(
-                            system.coherentGraph(),
-                            system.coherentHudIntent()
-                                    || BeamPathOverlayTracker.hasCoherentSignal(system.solution()),
-                            system.solution()
-                    );
+            if (system.hudSegments().isEmpty()) {
+                continue;
+            }
+
             BeamPathOverlayTracker.publishToPlayer(
                     player,
                     system.graph().sourcePos(),
                     -system.systemId(),
-                    segments
+                    system.hudSegments()
             );
         }
 
@@ -1068,6 +1076,11 @@ public final class OpticalTraceCache {
 
             CachedOpticalTrace trace = entry.getValue();
             cache.retiredHudOwnerIds.remove(networkId);
+
+            if (trace.hudSegments().isEmpty()) {
+                continue;
+            }
+
             BeamPathOverlayTracker.publishToPlayer(
                     player,
                     trace.portGraph().sourcePos(),
@@ -1548,6 +1561,13 @@ public final class OpticalTraceCache {
                 CompiledReadoutLayer readoutLayer = OpticalReadoutLayerCompiler.compile(level, solvedChannels.graph());
                 List<ReceiverOutput> receiverOutputs = readoutLayer.sample(solution);
                 boolean usableForGameplay = structurallyFresh && canUseForGameplay(solvedChannels.graph(), solution);
+                boolean coherentHudIntent = solvedChannels.coherentHudIntent()
+                        || BeamPathOverlayTracker.hasCoherentSignal(solution);
+                List<BeamPathOverlayPayload.Segment> hudSegments = BeamPathOverlayTracker.topologySegments(
+                        solvedChannels.coherentGraph(),
+                        coherentHudIntent,
+                        solution
+                );
                 CachedOpticalSystem refreshedSystem = new CachedOpticalSystem(
                         systemId,
                         solvedChannels.graph(),
@@ -1558,9 +1578,9 @@ public final class OpticalTraceCache {
                         readoutLayer,
                         solution,
                         receiverOutputs,
+                        hudSegments,
                         sourcePowersByNode.size(),
-                        solvedChannels.coherentHudIntent()
-                                || BeamPathOverlayTracker.hasCoherentSignal(solution),
+                        coherentHudIntent,
                         currentEpochs,
                         structurallyFresh,
                         true,
@@ -1602,6 +1622,13 @@ public final class OpticalTraceCache {
         );
         CompiledReadoutLayer readoutLayer = OpticalReadoutLayerCompiler.compile(level, graph);
         List<ReceiverOutput> receiverOutputs = readoutLayer.sample(solution);
+        boolean coherentHudIntent = solvedChannels.coherentHudIntent()
+                || BeamPathOverlayTracker.hasCoherentSignal(solution);
+        List<BeamPathOverlayPayload.Segment> hudSegments = BeamPathOverlayTracker.topologySegments(
+                coherentGraph,
+                coherentHudIntent,
+                solution
+        );
         CachedOpticalSystem system = new CachedOpticalSystem(
                 systemId,
                 graph,
@@ -1612,9 +1639,9 @@ public final class OpticalTraceCache {
                 readoutLayer,
                 solution,
                 receiverOutputs,
+                hudSegments,
                 sourcePowersByNode.size(),
-                solvedChannels.coherentHudIntent()
-                        || BeamPathOverlayTracker.hasCoherentSignal(solution),
+                coherentHudIntent,
                 currentEpochs,
                 structurallyFresh,
                 parametricallyFresh,
@@ -2543,6 +2570,9 @@ public final class OpticalTraceCache {
         }
     }
 
+    private record HudOverlaySendState(long signature, long gameTime, int segmentCount) {
+    }
+
     private static final class ReceiverOutputAccumulator {
         private final BlockPos pos;
         private final ReceiverOutputKind kind;
@@ -2610,7 +2640,7 @@ public final class OpticalTraceCache {
         private final Map<SourceTraceKey, Long> lastCompilerDebugTickBySource = new HashMap<>();
         private final Map<Integer, Long> lastReadoutApplyDebugTickByNetwork = new HashMap<>();
         private final Map<Integer, ReadoutApplyDebugState> lastReadoutApplyDebugStateByNetwork = new HashMap<>();
-        private final Map<Integer, Long> lastHudOverlaySentTickByNetwork = new HashMap<>();
+        private final Map<Integer, HudOverlaySendState> lastHudOverlaySentByNetwork = new HashMap<>();
         private final Map<Integer, Long> lastHudOverlayDebugTickByNetwork = new HashMap<>();
         private final Map<Integer, BeamHudOverlayDebugState> lastHudOverlayDebugStateByNetwork = new HashMap<>();
         private final LongSet awakenedDormantSourcePositions = new LongOpenHashSet();
@@ -2724,7 +2754,7 @@ public final class OpticalTraceCache {
             geometrySignaturePositionsByNetwork.remove(networkId);
             dependencyIndex.removeNetwork(networkId);
             retiredHudOwnerIds.add(networkId);
-            lastHudOverlaySentTickByNetwork.remove(networkId);
+            lastHudOverlaySentByNetwork.remove(networkId);
             lastHudOverlayDebugTickByNetwork.remove(networkId);
             lastHudOverlayDebugStateByNetwork.remove(networkId);
         }
@@ -2838,15 +2868,33 @@ public final class OpticalTraceCache {
             return true;
         }
 
-        boolean shouldSendHudOverlay(int networkId, long gameTime) {
-            long lastSentTick = lastHudOverlaySentTickByNetwork.getOrDefault(networkId, Long.MIN_VALUE);
+        boolean shouldAttemptHudOverlay(int networkId, long gameTime, List<BeamPathOverlayPayload.Segment> segments) {
+            HudOverlaySendState lastSent = lastHudOverlaySentByNetwork.get(networkId);
+            long signature = BeamPathOverlayTracker.signature(segments);
 
-            if (lastSentTick != Long.MIN_VALUE && gameTime - lastSentTick < HUD_OVERLAY_SEND_INTERVAL_TICKS) {
+            if (lastSent != null
+                    && lastSent.signature() == signature
+                    && gameTime - lastSent.gameTime() < HUD_OVERLAY_REFRESH_INTERVAL_TICKS) {
                 return false;
             }
 
-            lastHudOverlaySentTickByNetwork.put(networkId, gameTime);
+            if (lastSent != null
+                    && lastSent.signature() != signature
+                    && gameTime - lastSent.gameTime() < HUD_OVERLAY_SEND_INTERVAL_TICKS) {
+                return false;
+            }
+
             return true;
+        }
+
+        boolean hasSentNonEmptyHudOverlay(int networkId) {
+            HudOverlaySendState lastSent = lastHudOverlaySentByNetwork.get(networkId);
+            return lastSent != null && lastSent.segmentCount() > 0;
+        }
+
+        void markHudOverlaySent(int networkId, long gameTime, List<BeamPathOverlayPayload.Segment> segments) {
+            long signature = BeamPathOverlayTracker.signature(segments);
+            lastHudOverlaySentByNetwork.put(networkId, new HudOverlaySendState(signature, gameTime, segments.size()));
         }
 
         boolean shouldRunHudOverlayDebug(
@@ -3346,7 +3394,7 @@ public final class OpticalTraceCache {
 
         private void retireHudOwner(int ownerId) {
             retiredHudOwnerIds.add(ownerId);
-            lastHudOverlaySentTickByNetwork.remove(ownerId);
+            lastHudOverlaySentByNetwork.remove(ownerId);
             lastHudOverlayDebugTickByNetwork.remove(ownerId);
             lastHudOverlayDebugStateByNetwork.remove(ownerId);
         }

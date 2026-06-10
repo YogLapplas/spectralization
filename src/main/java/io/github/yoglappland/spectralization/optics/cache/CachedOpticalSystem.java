@@ -1,5 +1,6 @@
 package io.github.yoglappland.spectralization.optics.cache;
 
+import io.github.yoglappland.spectralization.network.BeamPathOverlayPayload;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledPortGraph;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledReadoutLayer;
 import io.github.yoglappland.spectralization.optics.compiler.PortGraphNode;
@@ -19,6 +20,7 @@ public record CachedOpticalSystem(
         CompiledReadoutLayer readoutLayer,
         ScalarPowerSolution solution,
         List<ReceiverOutput> receiverOutputs,
+        List<BeamPathOverlayPayload.Segment> hudSegments,
         int sourceCount,
         boolean coherentHudIntent,
         OpticalEpochs epochs,
@@ -39,6 +41,7 @@ public record CachedOpticalSystem(
         Objects.requireNonNull(readoutLayer, "readoutLayer");
         Objects.requireNonNull(solution, "solution");
         Objects.requireNonNull(receiverOutputs, "receiverOutputs");
+        Objects.requireNonNull(hudSegments, "hudSegments");
         Objects.requireNonNull(epochs, "epochs");
 
         if (sourceCount < 0) {
@@ -47,6 +50,7 @@ public record CachedOpticalSystem(
 
         sourcePowersByNode = Map.copyOf(sourcePowersByNode);
         receiverOutputs = List.copyOf(receiverOutputs);
+        hudSegments = List.copyOf(hudSegments);
     }
 
     public void applyOutputs(Level level, boolean reliable, long step) {
@@ -78,6 +82,7 @@ public record CachedOpticalSystem(
                 readoutLayer,
                 solution,
                 receiverOutputs,
+                hudSegments,
                 sourceCount,
                 coherentHudIntent,
                 epochs,

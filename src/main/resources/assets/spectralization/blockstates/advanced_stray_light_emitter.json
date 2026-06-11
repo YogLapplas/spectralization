@@ -1,0 +1,30 @@
+{
+  "variants": {
+    "facing=down": {
+      "model": "spectralization:block/advanced_stray_light_emitter"
+    },
+    "facing=up": {
+      "model": "spectralization:block/advanced_stray_light_emitter",
+      "x": 180
+    },
+    "facing=north": {
+      "model": "spectralization:block/advanced_stray_light_emitter",
+      "x": 90,
+      "y": 180
+    },
+    "facing=east": {
+      "model": "spectralization:block/advanced_stray_light_emitter",
+      "x": 90,
+      "y": 270
+    },
+    "facing=south": {
+      "model": "spectralization:block/advanced_stray_light_emitter",
+      "x": 90
+    },
+    "facing=west": {
+      "model": "spectralization:block/advanced_stray_light_emitter",
+      "x": 90,
+      "y": 90
+    }
+  }
+}

@@ -34,6 +34,8 @@
   "block.spectralization.spectrometer": "\u5149\u8c31\u4eea",
   "block.spectralization.photonic_gradient_generator": "\u5149\u5dee\u53d1\u7535\u673a",
   "block.spectralization.photothermal_generator": "\u5149\u70ed\u53d1\u7535\u673a",
+  "block.spectralization.stray_light_emitter": "\u73af\u5883\u5149\u6536\u96c6\u5668",
+  "block.spectralization.advanced_stray_light_emitter": "\u9ad8\u7ea7\u73af\u5883\u5149\u6536\u96c6\u5668",
   "block.spectralization.ruby_block": "\u7ea2\u5b9d\u77f3\u5757",
   "block.spectralization.silver_block": "\u94f6\u5757",
   "block.spectralization.silver_glass": "\u6d82\u94f6\u73bb\u7483",

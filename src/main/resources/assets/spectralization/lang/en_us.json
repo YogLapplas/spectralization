@@ -34,6 +34,8 @@
   "block.spectralization.spectrometer": "Spectrometer",
   "block.spectralization.photonic_gradient_generator": "Photonic Gradient Generator",
   "block.spectralization.photothermal_generator": "Photothermal Generator",
+  "block.spectralization.stray_light_emitter": "Ambient Light Collector",
+  "block.spectralization.advanced_stray_light_emitter": "Advanced Ambient Light Collector",
   "block.spectralization.ruby_block": "Ruby Block",
   "block.spectralization.silver_block": "Silver Block",
   "block.spectralization.silver_glass": "Silvered Glass",

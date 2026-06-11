@@ -10,6 +10,7 @@ import io.github.yoglappland.spectralization.blockentity.PhotonicGradientGenerat
 import io.github.yoglappland.spectralization.blockentity.PhotothermalGeneratorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.RubyBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.SpectrometerBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.StrayLightEmitterBlockEntity;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.neoforged.bus.api.IEventBus;
@@ -55,6 +56,14 @@ public final class SpectralBlockEntities {
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<PhotothermalGeneratorBlockEntity>> PHOTOTHERMAL_GENERATOR =
             BLOCK_ENTITY_TYPES.register("photothermal_generator", () ->
                     BlockEntityType.Builder.of(PhotothermalGeneratorBlockEntity::new, Spectralization.PHOTOTHERMAL_GENERATOR.get()).build(null));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<StrayLightEmitterBlockEntity>> STRAY_LIGHT_EMITTER =
+            BLOCK_ENTITY_TYPES.register("stray_light_emitter", () ->
+                    BlockEntityType.Builder.of(
+                            StrayLightEmitterBlockEntity::new,
+                            Spectralization.STRAY_LIGHT_EMITTER.get(),
+                            Spectralization.ADVANCED_STRAY_LIGHT_EMITTER.get()
+                    ).build(null));
 
     public static void register(IEventBus modEventBus) {
         BLOCK_ENTITY_TYPES.register(modEventBus);

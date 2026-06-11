@@ -14,6 +14,7 @@ import io.github.yoglappland.spectralization.block.PhotothermalGeneratorBlock;
 import io.github.yoglappland.spectralization.block.RubyBlock;
 import io.github.yoglappland.spectralization.block.SilverGlassBlock;
 import io.github.yoglappland.spectralization.block.SpectrometerBlock;
+import io.github.yoglappland.spectralization.block.StrayLightEmitterBlock;
 import io.github.yoglappland.spectralization.blockentity.RubyBlockEntity;
 import io.github.yoglappland.spectralization.client.renderer.LensHolderRenderer;
 import io.github.yoglappland.spectralization.client.screen.CoatingBrushScreen;
@@ -29,6 +30,7 @@ import io.github.yoglappland.spectralization.item.PhosphorTubeItem;
 import io.github.yoglappland.spectralization.item.SandpaperItem;
 import io.github.yoglappland.spectralization.item.SurfaceCoatingInteraction;
 import io.github.yoglappland.spectralization.network.SpectralNetwork;
+import io.github.yoglappland.spectralization.optics.EnvironmentLightSpectra;
 import io.github.yoglappland.spectralization.optics.OpticalSpotTracker;
 import io.github.yoglappland.spectralization.optics.cache.OpticalDirtyKind;
 import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
@@ -324,6 +326,36 @@ public class Spectralization {
     public static final DeferredItem<BlockItem> PHOTOTHERMAL_GENERATOR_ITEM =
             ITEMS.registerSimpleBlockItem("photothermal_generator", PHOTOTHERMAL_GENERATOR);
 
+    public static final DeferredBlock<StrayLightEmitterBlock> STRAY_LIGHT_EMITTER = BLOCKS.register(
+            "stray_light_emitter",
+            () -> new StrayLightEmitterBlock(
+                    BlockBehaviour.Properties.of()
+                            .mapColor(MapColor.METAL)
+                            .strength(1.5F, 3.0F)
+                            .sound(SoundType.METAL)
+                            .noOcclusion(),
+                    0,
+                    EnvironmentLightSpectra.BASIC_EFFICIENCY)
+    );
+
+    public static final DeferredItem<BlockItem> STRAY_LIGHT_EMITTER_ITEM =
+            ITEMS.registerSimpleBlockItem("stray_light_emitter", STRAY_LIGHT_EMITTER);
+
+    public static final DeferredBlock<StrayLightEmitterBlock> ADVANCED_STRAY_LIGHT_EMITTER = BLOCKS.register(
+            "advanced_stray_light_emitter",
+            () -> new StrayLightEmitterBlock(
+                    BlockBehaviour.Properties.of()
+                            .mapColor(MapColor.METAL)
+                            .strength(2.0F, 4.0F)
+                            .sound(SoundType.METAL)
+                            .noOcclusion(),
+                    1,
+                    EnvironmentLightSpectra.ADVANCED_EFFICIENCY)
+    );
+
+    public static final DeferredItem<BlockItem> ADVANCED_STRAY_LIGHT_EMITTER_ITEM =
+            ITEMS.registerSimpleBlockItem("advanced_stray_light_emitter", ADVANCED_STRAY_LIGHT_EMITTER);
+
     public static final DeferredBlock<RubyBlock> RUBY_BLOCK = BLOCKS.register(
             "ruby_block",
             () -> new RubyBlock(BlockBehaviour.Properties.of()
@@ -474,6 +506,8 @@ public class Spectralization {
                         output.accept(SPECTROMETER_ITEM.get());
                         output.accept(PHOTONIC_GRADIENT_GENERATOR_ITEM.get());
                         output.accept(PHOTOTHERMAL_GENERATOR_ITEM.get());
+                        output.accept(STRAY_LIGHT_EMITTER_ITEM.get());
+                        output.accept(ADVANCED_STRAY_LIGHT_EMITTER_ITEM.get());
                         output.accept(RUBY_BLOCK_ITEM.get());
                         output.accept(SILVER_BLOCK_ITEM.get());
                         output.accept(SILVER_GLASS_ITEM.get());

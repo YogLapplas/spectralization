@@ -1,12 +1,12 @@
 package io.github.yoglappland.spectralization.optics;
 
 import io.github.yoglappland.spectralization.block.RubyBlock;
+import io.github.yoglappland.spectralization.tag.SpectralBlockTags;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
 public final class IntrinsicOpticalSources {
@@ -19,7 +19,7 @@ public final class IntrinsicOpticalSources {
     }
 
     public static boolean isBuiltInSource(BlockState state) {
-        return state.is(Blocks.GLOWSTONE);
+        return state.is(SpectralBlockTags.STRAY_LIGHT_SOURCE);
     }
 
     public static List<OutputBeam> outputBeams(BlockState state, Level level, BlockPos pos) {

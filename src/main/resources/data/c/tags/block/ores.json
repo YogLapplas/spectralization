@@ -1,0 +1,12 @@
+{
+  "replace": false,
+  "values": [
+    "#c:ores/rutile",
+    "#c:ores/corundum",
+    "#c:ores/fluorite",
+    "#c:ores/xenotime",
+    "#c:ores/ruby_bearing_corundum",
+    "#c:ores/silver",
+    "#c:ores/ruby"
+  ]
+}

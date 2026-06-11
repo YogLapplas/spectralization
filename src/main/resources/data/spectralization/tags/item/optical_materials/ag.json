@@ -1,0 +1,11 @@
+{
+  "replace": false,
+  "values": [
+    "spectralization:silver_ingot",
+    "spectralization:raw_silver",
+    "spectralization:raw_silver_block",
+    "spectralization:silver_block",
+    "spectralization:silver_glass",
+    "spectralization:silver_paint_bucket"
+  ]
+}

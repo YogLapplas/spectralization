@@ -1,0 +1,9 @@
+{
+  "replace": false,
+  "values": [
+    "#c:gems/ruby",
+    "#c:gems/fluorite",
+    "#c:gems/corundum",
+    "#c:gems/yag"
+  ]
+}

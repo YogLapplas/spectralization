@@ -57,6 +57,12 @@ public final class OpticalWorldIndex {
         INDEXES.clear();
     }
 
+    public static void clear(LevelAccessor level) {
+        if (level instanceof ServerLevel serverLevel) {
+            INDEXES.remove(serverLevel.dimension());
+        }
+    }
+
     public static void onBlockPlaced(LevelAccessor level, BlockPos pos) {
         if (level instanceof ServerLevel serverLevel) {
             get(serverLevel).rescanGeometry(serverLevel, pos, OpticalIndexLayer.GEOMETRY);

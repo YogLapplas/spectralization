@@ -16,6 +16,7 @@ import io.github.yoglappland.spectralization.optics.OpticalPort;
 import io.github.yoglappland.spectralization.optics.OpticalElement;
 import io.github.yoglappland.spectralization.optics.OpticalMaterialProfiles;
 import io.github.yoglappland.spectralization.optics.OpticalPathTracer;
+import io.github.yoglappland.spectralization.optics.OpticalSource;
 import io.github.yoglappland.spectralization.optics.PlaneWaveComponent;
 import io.github.yoglappland.spectralization.optics.OpticalTraceStep;
 import io.github.yoglappland.spectralization.optics.OpticalTraceTermination;
@@ -114,7 +115,7 @@ public final class OpticalTraceCache {
             return;
         }
 
-        OpticalDormantSourceData.recordSource(serverLevel, sourcePos);
+        rememberPersistentSourceState(serverLevel, sourcePos);
 
         LevelTraceCache cache = cacheFor(serverLevel);
         SourceTraceKey key = new SourceTraceKey(sourcePos, sourceOutput.outgoingDirection());
@@ -227,8 +228,6 @@ public final class OpticalTraceCache {
                         continue;
                     }
 
-                    OpticalDormantSourceData.recordSource(level, pos);
-
                     for (OutputBeam outputBeam : IntrinsicOpticalSources.builtInOutputBeams(state)) {
                         if (outputBeam.beam().isEmpty()) {
                             continue;
@@ -248,7 +247,7 @@ public final class OpticalTraceCache {
             return;
         }
 
-        if (IntrinsicOpticalSources.isSource(level.getBlockState(pos))) {
+        if (isPersistentDormantSource(level.getBlockState(pos))) {
             OpticalDormantSourceData.recordSource(level, pos);
         } else {
             OpticalDormantSourceData.removeSource(level, pos);
@@ -271,6 +270,16 @@ public final class OpticalTraceCache {
     public static void clearAll() {
         synchronized (CACHES) {
             CACHES.clear();
+        }
+    }
+
+    public static void clear(LevelAccessor level) {
+        if (!(level instanceof ServerLevel serverLevel)) {
+            return;
+        }
+
+        synchronized (CACHES) {
+            CACHES.remove(serverLevel);
         }
     }
 
@@ -2467,7 +2476,7 @@ public final class OpticalTraceCache {
                 continue;
             }
 
-            OpticalDormantSourceData.recordSource(level, pos);
+            rememberPersistentSourceState(level, pos);
 
             for (OutputBeam outputBeam : IntrinsicOpticalSources.outputBeams(state, level, pos)) {
                 if (outputBeam.beam().isEmpty()) {
@@ -2576,7 +2585,7 @@ public final class OpticalTraceCache {
 
             BlockState state = level.getBlockState(pos);
 
-            if (!IntrinsicOpticalSources.isSource(state)) {
+            if (!isPersistentDormantSource(state)) {
                 OpticalDormantSourceData.removeSource(level, pos);
                 cache.awakenedDormantSourcePositions.add(encodedPos);
                 continue;
@@ -2596,6 +2605,22 @@ public final class OpticalTraceCache {
         }
 
         cache.dormantSourceWakeCursor = cursor;
+    }
+
+    private static void rememberPersistentSourceState(ServerLevel level, BlockPos pos) {
+        if (!level.isLoaded(pos)) {
+            return;
+        }
+
+        if (isPersistentDormantSource(level.getBlockState(pos))) {
+            OpticalDormantSourceData.recordSource(level, pos);
+        } else {
+            OpticalDormantSourceData.removeSource(level, pos);
+        }
+    }
+
+    private static boolean isPersistentDormantSource(BlockState state) {
+        return state.getBlock() instanceof OpticalSource;
     }
 
     private static LevelTraceCache cacheFor(ServerLevel level) {

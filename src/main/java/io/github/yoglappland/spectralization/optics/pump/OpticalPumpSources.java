@@ -1,13 +1,12 @@
 package io.github.yoglappland.spectralization.optics.pump;
 
+import io.github.yoglappland.spectralization.tag.SpectralBlockTags;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
 public final class OpticalPumpSources {
-    public static final int CHARGED_GLOWSTONE_PUMP_RATE = 1;
     public static final int MAGMA_BLOCK_PUMP_RATE = 1;
 
     public static int adjacentPumpRate(Level level, BlockPos pos) {
@@ -30,22 +29,11 @@ public final class OpticalPumpSources {
             return 0;
         }
 
-        if (state.is(Blocks.MAGMA_BLOCK)) {
-            return MAGMA_BLOCK_PUMP_RATE;
-        }
-
-        return isChargedGlowstone(level, pos, state) ? CHARGED_GLOWSTONE_PUMP_RATE : 0;
+        return state.is(SpectralBlockTags.PUMP_SOURCE) ? MAGMA_BLOCK_PUMP_RATE : 0;
     }
 
     public static boolean isPumpSource(Level level, BlockPos pos, BlockState state) {
         return pumpRateFor(level, pos, state) > 0;
-    }
-
-    public static boolean isChargedGlowstone(Level level, BlockPos pos, BlockState state) {
-        return level != null
-                && pos != null
-                && state.is(Blocks.GLOWSTONE)
-                && level.hasNeighborSignal(pos);
     }
 
     private OpticalPumpSources() {

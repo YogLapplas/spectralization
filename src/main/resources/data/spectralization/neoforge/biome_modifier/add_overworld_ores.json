@@ -1,0 +1,20 @@
+{
+  "type": "neoforge:add_features",
+  "biomes": "#minecraft:is_overworld",
+  "features": [
+    "spectralization:ore_rutile",
+    "spectralization:ore_deepslate_rutile",
+    "spectralization:ore_corundum",
+    "spectralization:ore_deepslate_corundum",
+    "spectralization:ore_fluorite",
+    "spectralization:ore_deepslate_fluorite",
+    "spectralization:ore_xenotime",
+    "spectralization:ore_deepslate_xenotime",
+    "spectralization:ore_ruby_bearing_corundum",
+    "spectralization:ore_silver",
+    "spectralization:ore_deepslate_silver",
+    "spectralization:ore_ruby",
+    "spectralization:ore_deepslate_ruby"
+  ],
+  "step": "underground_ores"
+}

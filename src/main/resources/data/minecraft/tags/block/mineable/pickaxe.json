@@ -1,0 +1,22 @@
+{
+  "replace": false,
+  "values": [
+    "spectralization:rutile_ore",
+    "spectralization:deepslate_rutile_ore",
+    "spectralization:corundum_ore",
+    "spectralization:deepslate_corundum_ore",
+    "spectralization:fluorite_ore",
+    "spectralization:deepslate_fluorite_ore",
+    "spectralization:xenotime_ore",
+    "spectralization:deepslate_xenotime_ore",
+    "spectralization:ruby_bearing_corundum_ore",
+    "spectralization:silver_ore",
+    "spectralization:deepslate_silver_ore",
+    "spectralization:ruby_ore",
+    "spectralization:deepslate_ruby_ore",
+    "spectralization:raw_silver_block",
+    "spectralization:rutile_block",
+    "spectralization:corundum_block",
+    "spectralization:fluorite_block"
+  ]
+}

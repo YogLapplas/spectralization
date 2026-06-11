@@ -50,6 +50,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
@@ -67,6 +68,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
+import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
@@ -163,6 +165,22 @@ public class Spectralization {
                     new Item.Properties().stacksTo(1).fireResistant()
             )
     );
+    public static final DeferredItem<Item> RUTILE = ITEMS.registerSimpleItem("rutile", new Item.Properties());
+    public static final DeferredItem<Item> TITANIUM_DIOXIDE_DUST =
+            ITEMS.registerSimpleItem("titanium_dioxide_dust", new Item.Properties());
+    public static final DeferredItem<Item> CORUNDUM = ITEMS.registerSimpleItem("corundum", new Item.Properties());
+    public static final DeferredItem<Item> ALUMINA_DUST =
+            ITEMS.registerSimpleItem("alumina_dust", new Item.Properties());
+    public static final DeferredItem<Item> FLUORITE = ITEMS.registerSimpleItem("fluorite", new Item.Properties());
+    public static final DeferredItem<Item> YTTRIUM_OXIDE =
+            ITEMS.registerSimpleItem("yttrium_oxide", new Item.Properties());
+    public static final DeferredItem<Item> YAG_CRYSTAL =
+            ITEMS.registerSimpleItem("yag_crystal", new Item.Properties());
+    public static final DeferredItem<Item> RUBY = ITEMS.registerSimpleItem("ruby", new Item.Properties());
+    public static final DeferredItem<Item> RAW_SILVER =
+            ITEMS.registerSimpleItem("raw_silver", new Item.Properties());
+    public static final DeferredItem<Item> SILVER_INGOT =
+            ITEMS.registerSimpleItem("silver_ingot", new Item.Properties());
 
     public static final DeferredBlock<LensHolderBlock> LENS_HOLDER = BLOCKS.register(
             "lens_holder",
@@ -316,6 +334,77 @@ public class Spectralization {
     public static final DeferredItem<BlockItem> SILVER_GLASS_ITEM =
             ITEMS.registerSimpleBlockItem("silver_glass", SILVER_GLASS);
 
+    public static final DeferredBlock<Block> SILVER_ORE = oreBlock("silver_ore", MapColor.STONE, 3.0F);
+    public static final DeferredItem<BlockItem> SILVER_ORE_ITEM =
+            ITEMS.registerSimpleBlockItem("silver_ore", SILVER_ORE);
+    public static final DeferredBlock<Block> DEEPSLATE_SILVER_ORE =
+            oreBlock("deepslate_silver_ore", MapColor.DEEPSLATE, 4.5F);
+    public static final DeferredItem<BlockItem> DEEPSLATE_SILVER_ORE_ITEM =
+            ITEMS.registerSimpleBlockItem("deepslate_silver_ore", DEEPSLATE_SILVER_ORE);
+
+    public static final DeferredBlock<Block> RUBY_ORE = oreBlock("ruby_ore", MapColor.STONE, 3.0F);
+    public static final DeferredItem<BlockItem> RUBY_ORE_ITEM =
+            ITEMS.registerSimpleBlockItem("ruby_ore", RUBY_ORE);
+    public static final DeferredBlock<Block> DEEPSLATE_RUBY_ORE =
+            oreBlock("deepslate_ruby_ore", MapColor.DEEPSLATE, 4.5F);
+    public static final DeferredItem<BlockItem> DEEPSLATE_RUBY_ORE_ITEM =
+            ITEMS.registerSimpleBlockItem("deepslate_ruby_ore", DEEPSLATE_RUBY_ORE);
+
+    public static final DeferredBlock<Block> RAW_SILVER_BLOCK =
+            storageBlock("raw_silver_block", MapColor.COLOR_LIGHT_GRAY, SoundType.METAL);
+    public static final DeferredItem<BlockItem> RAW_SILVER_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("raw_silver_block", RAW_SILVER_BLOCK);
+
+    public static final DeferredBlock<Block> RUTILE_ORE = oreBlock("rutile_ore", MapColor.STONE, 3.0F);
+    public static final DeferredItem<BlockItem> RUTILE_ORE_ITEM =
+            ITEMS.registerSimpleBlockItem("rutile_ore", RUTILE_ORE);
+    public static final DeferredBlock<Block> DEEPSLATE_RUTILE_ORE =
+            oreBlock("deepslate_rutile_ore", MapColor.DEEPSLATE, 4.5F);
+    public static final DeferredItem<BlockItem> DEEPSLATE_RUTILE_ORE_ITEM =
+            ITEMS.registerSimpleBlockItem("deepslate_rutile_ore", DEEPSLATE_RUTILE_ORE);
+
+    public static final DeferredBlock<Block> CORUNDUM_ORE = oreBlock("corundum_ore", MapColor.STONE, 3.0F);
+    public static final DeferredItem<BlockItem> CORUNDUM_ORE_ITEM =
+            ITEMS.registerSimpleBlockItem("corundum_ore", CORUNDUM_ORE);
+    public static final DeferredBlock<Block> DEEPSLATE_CORUNDUM_ORE =
+            oreBlock("deepslate_corundum_ore", MapColor.DEEPSLATE, 4.5F);
+    public static final DeferredItem<BlockItem> DEEPSLATE_CORUNDUM_ORE_ITEM =
+            ITEMS.registerSimpleBlockItem("deepslate_corundum_ore", DEEPSLATE_CORUNDUM_ORE);
+
+    public static final DeferredBlock<Block> FLUORITE_ORE = oreBlock("fluorite_ore", MapColor.STONE, 3.0F);
+    public static final DeferredItem<BlockItem> FLUORITE_ORE_ITEM =
+            ITEMS.registerSimpleBlockItem("fluorite_ore", FLUORITE_ORE);
+    public static final DeferredBlock<Block> DEEPSLATE_FLUORITE_ORE =
+            oreBlock("deepslate_fluorite_ore", MapColor.DEEPSLATE, 4.5F);
+    public static final DeferredItem<BlockItem> DEEPSLATE_FLUORITE_ORE_ITEM =
+            ITEMS.registerSimpleBlockItem("deepslate_fluorite_ore", DEEPSLATE_FLUORITE_ORE);
+
+    public static final DeferredBlock<Block> XENOTIME_ORE = oreBlock("xenotime_ore", MapColor.STONE, 3.0F);
+    public static final DeferredItem<BlockItem> XENOTIME_ORE_ITEM =
+            ITEMS.registerSimpleBlockItem("xenotime_ore", XENOTIME_ORE);
+    public static final DeferredBlock<Block> DEEPSLATE_XENOTIME_ORE =
+            oreBlock("deepslate_xenotime_ore", MapColor.DEEPSLATE, 4.5F);
+    public static final DeferredItem<BlockItem> DEEPSLATE_XENOTIME_ORE_ITEM =
+            ITEMS.registerSimpleBlockItem("deepslate_xenotime_ore", DEEPSLATE_XENOTIME_ORE);
+
+    public static final DeferredBlock<Block> RUBY_BEARING_CORUNDUM_ORE =
+            oreBlock("ruby_bearing_corundum_ore", MapColor.STONE, 3.0F);
+    public static final DeferredItem<BlockItem> RUBY_BEARING_CORUNDUM_ORE_ITEM =
+            ITEMS.registerSimpleBlockItem("ruby_bearing_corundum_ore", RUBY_BEARING_CORUNDUM_ORE);
+
+    public static final DeferredBlock<Block> RUTILE_BLOCK =
+            storageBlock("rutile_block", MapColor.COLOR_BROWN, SoundType.STONE);
+    public static final DeferredItem<BlockItem> RUTILE_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("rutile_block", RUTILE_BLOCK);
+    public static final DeferredBlock<Block> CORUNDUM_BLOCK =
+            storageBlock("corundum_block", MapColor.COLOR_LIGHT_BLUE, SoundType.AMETHYST);
+    public static final DeferredItem<BlockItem> CORUNDUM_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("corundum_block", CORUNDUM_BLOCK);
+    public static final DeferredBlock<Block> FLUORITE_BLOCK =
+            storageBlock("fluorite_block", MapColor.COLOR_PURPLE, SoundType.AMETHYST);
+    public static final DeferredItem<BlockItem> FLUORITE_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("fluorite_block", FLUORITE_BLOCK);
+
     public static final DeferredHolder<CreativeModeTab, CreativeModeTab> SPECTRALIZATION_TAB =
             CREATIVE_MODE_TABS.register("spectralization", () -> CreativeModeTab.builder()
                     .title(Component.translatable("itemGroup.spectralization"))
@@ -335,6 +424,16 @@ public class Spectralization {
                         output.accept(VERITY_CUIRASS_OF_COSMIC_INDIFFERENCE.get());
                         output.accept(VERITY_LEGGINGS_OF_ENTROPIC_RELEASE.get());
                         output.accept(VERITY_BOOTS_OF_LIGHT_CONE_TRANSITION.get());
+                        output.accept(RUTILE.get());
+                        output.accept(TITANIUM_DIOXIDE_DUST.get());
+                        output.accept(CORUNDUM.get());
+                        output.accept(ALUMINA_DUST.get());
+                        output.accept(FLUORITE.get());
+                        output.accept(YTTRIUM_OXIDE.get());
+                        output.accept(YAG_CRYSTAL.get());
+                        output.accept(RUBY.get());
+                        output.accept(RAW_SILVER.get());
+                        output.accept(SILVER_INGOT.get());
                         output.accept(LENS_HOLDER_ITEM.get());
                         output.accept(MIRROR_ITEM.get());
                         output.accept(DYNAMIC_MIRROR_ITEM.get());
@@ -347,8 +446,47 @@ public class Spectralization {
                         output.accept(RUBY_BLOCK_ITEM.get());
                         output.accept(SILVER_BLOCK_ITEM.get());
                         output.accept(SILVER_GLASS_ITEM.get());
+                        output.accept(SILVER_ORE_ITEM.get());
+                        output.accept(DEEPSLATE_SILVER_ORE_ITEM.get());
+                        output.accept(RUBY_ORE_ITEM.get());
+                        output.accept(DEEPSLATE_RUBY_ORE_ITEM.get());
+                        output.accept(RAW_SILVER_BLOCK_ITEM.get());
+                        output.accept(RUTILE_ORE_ITEM.get());
+                        output.accept(DEEPSLATE_RUTILE_ORE_ITEM.get());
+                        output.accept(CORUNDUM_ORE_ITEM.get());
+                        output.accept(DEEPSLATE_CORUNDUM_ORE_ITEM.get());
+                        output.accept(FLUORITE_ORE_ITEM.get());
+                        output.accept(DEEPSLATE_FLUORITE_ORE_ITEM.get());
+                        output.accept(XENOTIME_ORE_ITEM.get());
+                        output.accept(DEEPSLATE_XENOTIME_ORE_ITEM.get());
+                        output.accept(RUBY_BEARING_CORUNDUM_ORE_ITEM.get());
+                        output.accept(RUTILE_BLOCK_ITEM.get());
+                        output.accept(CORUNDUM_BLOCK_ITEM.get());
+                        output.accept(FLUORITE_BLOCK_ITEM.get());
                     })
                     .build());
+
+    private static DeferredBlock<Block> oreBlock(String name, MapColor mapColor, float strength) {
+        return BLOCKS.registerSimpleBlock(
+                name,
+                BlockBehaviour.Properties.of()
+                        .mapColor(mapColor)
+                        .strength(strength, 3.0F)
+                        .requiresCorrectToolForDrops()
+                        .sound(mapColor == MapColor.DEEPSLATE ? SoundType.DEEPSLATE : SoundType.STONE)
+        );
+    }
+
+    private static DeferredBlock<Block> storageBlock(String name, MapColor mapColor, SoundType soundType) {
+        return BLOCKS.registerSimpleBlock(
+                name,
+                BlockBehaviour.Properties.of()
+                        .mapColor(mapColor)
+                        .strength(3.0F, 6.0F)
+                        .requiresCorrectToolForDrops()
+                        .sound(soundType)
+        );
+    }
 
     public Spectralization(IEventBus modEventBus, ModContainer modContainer) {
         modContainer.registerConfig(ModConfig.Type.COMMON, SpectralizationConfig.SPEC);
@@ -378,6 +516,11 @@ public class Spectralization {
     @SubscribeEvent
     public void onServerStopped(ServerStoppedEvent event) {
         resetOpticalRuntimeCaches();
+    }
+
+    @SubscribeEvent
+    public void onLevelUnload(LevelEvent.Unload event) {
+        resetOpticalRuntimeCaches(event.getLevel());
     }
 
     @SubscribeEvent
@@ -445,6 +588,14 @@ public class Spectralization {
         OpticalNetworkIndex.clearAll();
         OpticalFieldSources.clearAll();
         OpticalSpotTracker.clearAll();
+    }
+
+    private static void resetOpticalRuntimeCaches(net.minecraft.world.level.LevelAccessor level) {
+        OpticalTraceCache.clear(level);
+        OpticalWorldIndex.clear(level);
+        OpticalNetworkIndex.clear(level);
+        OpticalFieldSources.invalidate(level);
+        OpticalSpotTracker.clear(level);
     }
 
     @EventBusSubscriber(modid = Spectralization.MODID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)

@@ -48,6 +48,12 @@ public final class OpticalNetworkIndex {
         SNAPSHOTS.clear();
     }
 
+    public static void clear(LevelAccessor level) {
+        if (level instanceof ServerLevel serverLevel) {
+            SNAPSHOTS.remove(serverLevel.dimension());
+        }
+    }
+
     public static void markDirty(LevelAccessor level) {
         if (level instanceof ServerLevel serverLevel) {
             markDirty(serverLevel);

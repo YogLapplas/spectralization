@@ -1,0 +1,9 @@
+{
+  "replace": false,
+  "values": [
+    "minecraft:quartz",
+    "minecraft:glass",
+    "minecraft:glass_pane",
+    "minecraft:sand"
+  ]
+}

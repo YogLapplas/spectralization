@@ -1,0 +1,8 @@
+{
+  "replace": false,
+  "values": [
+    "spectralization:alumina_dust",
+    "spectralization:corundum",
+    "spectralization:corundum_block"
+  ]
+}

@@ -9,6 +9,8 @@ import io.github.yoglappland.spectralization.block.DynamicMirrorBlock;
 import io.github.yoglappland.spectralization.block.LensHolderBlock;
 import io.github.yoglappland.spectralization.block.MirrorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
+import io.github.yoglappland.spectralization.block.PhotonicGradientGeneratorBlock;
+import io.github.yoglappland.spectralization.block.PhotothermalGeneratorBlock;
 import io.github.yoglappland.spectralization.block.RubyBlock;
 import io.github.yoglappland.spectralization.block.SilverGlassBlock;
 import io.github.yoglappland.spectralization.block.SpectrometerBlock;
@@ -16,6 +18,7 @@ import io.github.yoglappland.spectralization.blockentity.RubyBlockEntity;
 import io.github.yoglappland.spectralization.client.renderer.LensHolderRenderer;
 import io.github.yoglappland.spectralization.client.screen.CoatingBrushScreen;
 import io.github.yoglappland.spectralization.client.screen.CreativeLightSourceScreen;
+import io.github.yoglappland.spectralization.client.screen.PhotothermalGeneratorScreen;
 import io.github.yoglappland.spectralization.client.screen.SpectrometerScreen;
 import io.github.yoglappland.spectralization.command.SpectralCommands;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
@@ -64,6 +67,8 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
+import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
@@ -295,6 +300,30 @@ public class Spectralization {
     public static final DeferredItem<BlockItem> SPECTROMETER_ITEM =
             ITEMS.registerSimpleBlockItem("spectrometer", SPECTROMETER);
 
+    public static final DeferredBlock<PhotonicGradientGeneratorBlock> PHOTONIC_GRADIENT_GENERATOR = BLOCKS.register(
+            "photonic_gradient_generator",
+            () -> new PhotonicGradientGeneratorBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(2.0F, 6.0F)
+                    .sound(SoundType.METAL)
+                    .noOcclusion())
+    );
+
+    public static final DeferredItem<BlockItem> PHOTONIC_GRADIENT_GENERATOR_ITEM =
+            ITEMS.registerSimpleBlockItem("photonic_gradient_generator", PHOTONIC_GRADIENT_GENERATOR);
+
+    public static final DeferredBlock<PhotothermalGeneratorBlock> PHOTOTHERMAL_GENERATOR = BLOCKS.register(
+            "photothermal_generator",
+            () -> new PhotothermalGeneratorBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(2.0F, 6.0F)
+                    .sound(SoundType.METAL)
+                    .noOcclusion())
+    );
+
+    public static final DeferredItem<BlockItem> PHOTOTHERMAL_GENERATOR_ITEM =
+            ITEMS.registerSimpleBlockItem("photothermal_generator", PHOTOTHERMAL_GENERATOR);
+
     public static final DeferredBlock<RubyBlock> RUBY_BLOCK = BLOCKS.register(
             "ruby_block",
             () -> new RubyBlock(BlockBehaviour.Properties.of()
@@ -443,6 +472,8 @@ public class Spectralization {
                         output.accept(PASS_THROUGH_SENSOR_ITEM.get());
                         output.accept(BEAM_PROFILER_ITEM.get());
                         output.accept(SPECTROMETER_ITEM.get());
+                        output.accept(PHOTONIC_GRADIENT_GENERATOR_ITEM.get());
+                        output.accept(PHOTOTHERMAL_GENERATOR_ITEM.get());
                         output.accept(RUBY_BLOCK_ITEM.get());
                         output.accept(SILVER_BLOCK_ITEM.get());
                         output.accept(SILVER_GLASS_ITEM.get());
@@ -498,6 +529,7 @@ public class Spectralization {
         SpectralBlockEntities.register(modEventBus);
         SpectralMenus.register(modEventBus);
         modEventBus.addListener(SpectralNetwork::register);
+        modEventBus.addListener(this::registerCapabilities);
 
         NeoForge.EVENT_BUS.register(this);
         LOGGER.info("Spectralization initialized");
@@ -506,6 +538,24 @@ public class Spectralization {
     @SubscribeEvent
     public void onRegisterCommands(RegisterCommandsEvent event) {
         SpectralCommands.register(event.getDispatcher());
+    }
+
+    private void registerCapabilities(RegisterCapabilitiesEvent event) {
+        event.registerBlockEntity(
+                Capabilities.EnergyStorage.BLOCK,
+                SpectralBlockEntities.PHOTONIC_GRADIENT_GENERATOR.get(),
+                (generator, side) -> generator.getEnergyStorage(side)
+        );
+        event.registerBlockEntity(
+                Capabilities.EnergyStorage.BLOCK,
+                SpectralBlockEntities.PHOTOTHERMAL_GENERATOR.get(),
+                (generator, side) -> generator.getEnergyStorage(side)
+        );
+        event.registerBlockEntity(
+                Capabilities.ItemHandler.BLOCK,
+                SpectralBlockEntities.PHOTOTHERMAL_GENERATOR.get(),
+                (generator, side) -> generator.getFuelItems(side)
+        );
     }
 
     @SubscribeEvent
@@ -610,6 +660,7 @@ public class Spectralization {
             event.register(SpectralMenus.CREATIVE_LIGHT_SOURCE.get(), CreativeLightSourceScreen::new);
             event.register(SpectralMenus.COATING_BRUSH.get(), CoatingBrushScreen::new);
             event.register(SpectralMenus.SPECTROMETER.get(), SpectrometerScreen::new);
+            event.register(SpectralMenus.PHOTOTHERMAL_GENERATOR.get(), PhotothermalGeneratorScreen::new);
         }
     }
 }

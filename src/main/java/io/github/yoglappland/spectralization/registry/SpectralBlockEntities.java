@@ -6,6 +6,8 @@ import io.github.yoglappland.spectralization.blockentity.CmosSensorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.CreativeLightSourceBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.LensHolderBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.PassThroughSensorBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.PhotonicGradientGeneratorBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.PhotothermalGeneratorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.RubyBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.SpectrometerBlockEntity;
 import net.minecraft.core.registries.Registries;
@@ -45,6 +47,14 @@ public final class SpectralBlockEntities {
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<RubyBlockEntity>> RUBY_BLOCK =
             BLOCK_ENTITY_TYPES.register("ruby_block", () ->
                     BlockEntityType.Builder.of(RubyBlockEntity::new, Spectralization.RUBY_BLOCK.get()).build(null));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<PhotonicGradientGeneratorBlockEntity>> PHOTONIC_GRADIENT_GENERATOR =
+            BLOCK_ENTITY_TYPES.register("photonic_gradient_generator", () ->
+                    BlockEntityType.Builder.of(PhotonicGradientGeneratorBlockEntity::new, Spectralization.PHOTONIC_GRADIENT_GENERATOR.get()).build(null));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<PhotothermalGeneratorBlockEntity>> PHOTOTHERMAL_GENERATOR =
+            BLOCK_ENTITY_TYPES.register("photothermal_generator", () ->
+                    BlockEntityType.Builder.of(PhotothermalGeneratorBlockEntity::new, Spectralization.PHOTOTHERMAL_GENERATOR.get()).build(null));
 
     public static void register(IEventBus modEventBus) {
         BLOCK_ENTITY_TYPES.register(modEventBus);

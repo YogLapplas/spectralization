@@ -8,6 +8,7 @@ import io.github.yoglappland.spectralization.block.DynamicMirrorBlock;
 import io.github.yoglappland.spectralization.block.LensHolderBlock;
 import io.github.yoglappland.spectralization.block.MirrorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
+import io.github.yoglappland.spectralization.block.PhotothermalGeneratorBlock;
 import io.github.yoglappland.spectralization.block.SpectrometerBlock;
 import io.github.yoglappland.spectralization.blockentity.LensHolderBlockEntity;
 import io.github.yoglappland.spectralization.optics.OpticalElement;
@@ -69,6 +70,10 @@ public final class OpticalComponentTemplateClassifier {
 
         if (block instanceof SpectrometerBlock) {
             return OpticalComponentTemplate.SPECTROMETER;
+        }
+
+        if (block instanceof PhotothermalGeneratorBlock) {
+            return OpticalComponentTemplate.PHOTOTHERMAL_GENERATOR;
         }
 
         if (OpticalMaterialProfiles.isScatteringMarker(state)) {

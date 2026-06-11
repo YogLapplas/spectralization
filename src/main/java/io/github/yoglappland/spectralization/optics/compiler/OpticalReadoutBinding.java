@@ -29,6 +29,7 @@ public record OpticalReadoutBinding(
                     pos,
                     inputNode == null ? Map.of() : solution.powerByFrequencyAt(inputNode)
             );
+            case PHOTOTHERMAL_GENERATOR -> ReceiverOutput.photothermalGenerator(pos, totalPower);
             case BEAM_PROFILER -> ReceiverOutput.beamProfiler(
                     pos,
                     totalPower,

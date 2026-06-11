@@ -3,6 +3,7 @@ package io.github.yoglappland.spectralization.optics.cache;
 import io.github.yoglappland.spectralization.blockentity.BeamProfilerBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.CmosSensorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.PassThroughSensorBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.PhotothermalGeneratorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.SpectrometerBlockEntity;
 import io.github.yoglappland.spectralization.optics.BeamEnvelope;
 import io.github.yoglappland.spectralization.optics.FrequencyKey;
@@ -97,6 +98,19 @@ public record ReceiverOutput(
         );
     }
 
+    public static ReceiverOutput photothermalGenerator(BlockPos pos, double power) {
+        return new ReceiverOutput(
+                pos,
+                ReceiverOutputKind.PHOTOTHERMAL_GENERATOR,
+                power,
+                false,
+                0.0,
+                power,
+                BeamEnvelope.DEFAULT_COLLIMATED,
+                Map.of()
+        );
+    }
+
     public ReceiverOutputKey key() {
         return new ReceiverOutputKey(pos, kind, positiveZ);
     }
@@ -127,6 +141,11 @@ public record ReceiverOutput(
             case SPECTROMETER -> {
                 if (level.getBlockEntity(pos) instanceof SpectrometerBlockEntity spectrometer) {
                     spectrometer.receiveSample(new SpectralReadoutSample(powerByFrequency, reliable, step));
+                }
+            }
+            case PHOTOTHERMAL_GENERATOR -> {
+                if (level.getBlockEntity(pos) instanceof PhotothermalGeneratorBlockEntity generator) {
+                    generator.receiveOpticalSample(sample);
                 }
             }
         }

@@ -4,5 +4,6 @@ public enum ReceiverOutputKind {
     CMOS,
     PASS_THROUGH_SENSOR,
     BEAM_PROFILER,
-    SPECTROMETER
+    SPECTROMETER,
+    PHOTOTHERMAL_GENERATOR
 }

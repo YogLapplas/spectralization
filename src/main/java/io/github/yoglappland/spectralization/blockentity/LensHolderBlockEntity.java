@@ -2,6 +2,7 @@ package io.github.yoglappland.spectralization.blockentity;
 
 import io.github.yoglappland.spectralization.optics.cache.OpticalDirtyKind;
 import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
+import io.github.yoglappland.spectralization.optics.lens.LensProfile;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
@@ -31,6 +32,10 @@ public class LensHolderBlockEntity extends BlockEntity {
         return !this.lens.isEmpty();
     }
 
+    public LensProfile lensProfile() {
+        return LensProfile.fromStack(this.lens);
+    }
+
     public void setLens(ItemStack lens) {
         this.lens = lens.copyWithCount(1);
         this.syncChanged();
@@ -48,7 +53,7 @@ public class LensHolderBlockEntity extends BlockEntity {
 
         if (this.level != null) {
             if (!this.level.isClientSide) {
-                OpticalTraceCache.markChanged(this.level, this.worldPosition, OpticalDirtyKind.PARAMETER);
+                OpticalTraceCache.markChanged(this.level, this.worldPosition, OpticalDirtyKind.DATA);
             }
 
             this.level.sendBlockUpdated(this.worldPosition, this.getBlockState(), this.getBlockState(), 3);

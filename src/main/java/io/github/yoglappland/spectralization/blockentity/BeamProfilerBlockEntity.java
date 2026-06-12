@@ -19,7 +19,9 @@ public class BeamProfilerBlockEntity extends BlockEntity {
     private static final String COHERENT_POWER_TAG = "coherent_power";
     private static final String STRAY_POWER_TAG = "stray_power";
     private static final String RADIUS_TAG = "radius";
+    private static final String WAIST_RADIUS_TAG = "waist_radius";
     private static final String DIVERGENCE_TAG = "divergence";
+    private static final String FOCUS_DISTANCE_TAG = "focus_distance";
     private static final String IRRADIANCE_TAG = "irradiance";
     private static final String BEAM_QUALITY_TAG = "beam_quality";
     private static final String SCATTER_TAG = "scatter";
@@ -111,7 +113,9 @@ public class BeamProfilerBlockEntity extends BlockEntity {
                 committedSample.coherentPower(),
                 committedSample.strayPower(),
                 committedSample.radius(),
+                committedSample.waistRadius(),
                 committedSample.divergence(),
+                committedSample.focusDistance(),
                 committedSample.irradiance(),
                 committedSample.beamQuality(),
                 committedSample.scatter(),
@@ -132,7 +136,9 @@ public class BeamProfilerBlockEntity extends BlockEntity {
                     0.0,
                     0.0,
                     Math.max(left.radius(), right.radius()),
+                    Math.max(left.waistRadius(), right.waistRadius()),
                     Math.max(left.divergence(), right.divergence()),
+                    dominantFocusDistance(left, right),
                     0.0,
                     Math.max(left.beamQuality(), right.beamQuality()),
                     Math.max(left.scatter(), right.scatter()),
@@ -150,7 +156,9 @@ public class BeamProfilerBlockEntity extends BlockEntity {
                 left.coherentPower() + right.coherentPower(),
                 left.strayPower() + right.strayPower(),
                 left.radius() * leftWeight + right.radius() * rightWeight,
+                left.waistRadius() * leftWeight + right.waistRadius() * rightWeight,
                 left.divergence() * leftWeight + right.divergence() * rightWeight,
+                left.focusDistance() * leftWeight + right.focusDistance() * rightWeight,
                 left.irradiance() + right.irradiance(),
                 left.beamQuality() * leftWeight + right.beamQuality() * rightWeight,
                 left.scatter() * leftWeight + right.scatter() * rightWeight,
@@ -165,7 +173,9 @@ public class BeamProfilerBlockEntity extends BlockEntity {
                 && closeEnough(left.coherentPower(), right.coherentPower())
                 && closeEnough(left.strayPower(), right.strayPower())
                 && closeEnough(left.radius(), right.radius())
+                && closeEnough(left.waistRadius(), right.waistRadius())
                 && closeEnough(left.divergence(), right.divergence())
+                && closeEnough(left.focusDistance(), right.focusDistance())
                 && closeEnough(left.irradiance(), right.irradiance())
                 && closeEnough(left.beamQuality(), right.beamQuality())
                 && closeEnough(left.scatter(), right.scatter())
@@ -219,7 +229,9 @@ public class BeamProfilerBlockEntity extends BlockEntity {
                 tag.getDouble(COHERENT_POWER_TAG),
                 tag.getDouble(STRAY_POWER_TAG),
                 tag.getDouble(RADIUS_TAG),
+                tag.contains(WAIST_RADIUS_TAG) ? tag.getDouble(WAIST_RADIUS_TAG) : tag.getDouble(RADIUS_TAG),
                 tag.getDouble(DIVERGENCE_TAG),
+                tag.contains(FOCUS_DISTANCE_TAG) ? tag.getDouble(FOCUS_DISTANCE_TAG) : 0.0,
                 tag.getDouble(IRRADIANCE_TAG),
                 tag.contains(BEAM_QUALITY_TAG) ? tag.getDouble(BEAM_QUALITY_TAG) : 1.0,
                 tag.getDouble(SCATTER_TAG),
@@ -234,10 +246,18 @@ public class BeamProfilerBlockEntity extends BlockEntity {
         tag.putDouble(COHERENT_POWER_TAG, sample.coherentPower());
         tag.putDouble(STRAY_POWER_TAG, sample.strayPower());
         tag.putDouble(RADIUS_TAG, sample.radius());
+        tag.putDouble(WAIST_RADIUS_TAG, sample.waistRadius());
         tag.putDouble(DIVERGENCE_TAG, sample.divergence());
+        tag.putDouble(FOCUS_DISTANCE_TAG, sample.focusDistance());
         tag.putDouble(IRRADIANCE_TAG, sample.irradiance());
         tag.putDouble(BEAM_QUALITY_TAG, sample.beamQuality());
         tag.putDouble(SCATTER_TAG, sample.scatter());
         tag.putInt(VISUAL_LEVEL_TAG, sample.visualLevel());
+    }
+
+    private static double dominantFocusDistance(BeamProfileReadoutSample left, BeamProfileReadoutSample right) {
+        return Math.abs(left.focusDistance()) >= Math.abs(right.focusDistance())
+                ? left.focusDistance()
+                : right.focusDistance();
     }
 }

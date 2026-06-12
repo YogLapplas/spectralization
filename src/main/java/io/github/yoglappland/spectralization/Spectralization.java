@@ -27,6 +27,7 @@ import io.github.yoglappland.spectralization.command.SpectralCommands;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.item.CoatingBrushItem;
 import io.github.yoglappland.spectralization.item.CreativeBrushItem;
+import io.github.yoglappland.spectralization.item.LensItem;
 import io.github.yoglappland.spectralization.item.PaintBucketItem;
 import io.github.yoglappland.spectralization.item.PhosphorTubeItem;
 import io.github.yoglappland.spectralization.item.SandpaperItem;
@@ -106,7 +107,10 @@ public class Spectralization {
                     () -> new SimpleCraftingRecipeSerializer<>(AdvancedBrushLoadingRecipe::new)
             );
 
-    public static final DeferredItem<Item> LENS = ITEMS.registerSimpleItem("lens", new Item.Properties());
+    public static final DeferredItem<LensItem> LENS = ITEMS.register(
+            "lens",
+            () -> new LensItem(new Item.Properties())
+    );
     public static final DeferredItem<Item> PHOSPHOR_DUST =
             ITEMS.registerSimpleItem("phosphor_dust", new Item.Properties());
     public static final DeferredItem<PhosphorTubeItem> PHOSPHOR_TUBE = ITEMS.register(

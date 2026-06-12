@@ -24,6 +24,7 @@ sourceSets.main.resources {
     // Exclude common development only resources from finalized outputs
     exclude("**/*.bbmodel") // BlockBench project files
     exclude("src/generated/**/.cache") // datagen cache files
+    exclude("spectralization (1).png") // local duplicate/reference image
 }
 
 repositories {

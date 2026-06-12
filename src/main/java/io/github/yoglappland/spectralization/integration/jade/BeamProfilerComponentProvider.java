@@ -34,6 +34,11 @@ public class BeamProfilerComponentProvider implements IBlockComponentProvider {
                 format(sample.strayPower())
         ));
         tooltip.add(Component.translatable("jade.spectralization.beam_profiler.radius", format(sample.radius())));
+        tooltip.add(Component.translatable(
+                "jade.spectralization.beam_profiler.waist_focus",
+                format(sample.waistRadius()),
+                format(sample.focusDistance())
+        ));
         tooltip.add(Component.translatable("jade.spectralization.beam_profiler.divergence", format(sample.divergence())));
         tooltip.add(Component.translatable("jade.spectralization.beam_profiler.irradiance", format(sample.irradiance())));
         tooltip.add(Component.translatable(

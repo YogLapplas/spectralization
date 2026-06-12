@@ -7,6 +7,7 @@ import io.github.yoglappland.spectralization.block.SpectrometerBlock;
 import io.github.yoglappland.spectralization.heat.PhotothermalReceiverBlock;
 import io.github.yoglappland.spectralization.optics.cache.ReceiverOutputKind;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -20,8 +21,17 @@ import net.minecraft.world.level.block.state.BlockState;
 
 public final class OpticalReadoutLayerCompiler {
     public static CompiledReadoutLayer compile(Level level, CompiledPortGraph graph) {
+        return compile(level, graph, List.of());
+    }
+
+    public static CompiledReadoutLayer compile(
+            Level level,
+            CompiledPortGraph graph,
+            Collection<BeamProfileSource> profileSources
+    ) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(graph, "graph");
+        Objects.requireNonNull(profileSources, "profileSources");
 
         List<OpticalReadoutBinding> bindings = new ArrayList<>();
         Set<BlockPos> cmosPositions = new HashSet<>();
@@ -132,7 +142,10 @@ public final class OpticalReadoutLayerCompiler {
             return CompiledReadoutLayer.EMPTY;
         }
 
-        return new CompiledReadoutLayer(bindings);
+        return new CompiledReadoutLayer(
+                bindings,
+                CompiledBeamProfileLayer.compile(level, graph, profileSources)
+        );
     }
 
     private static void addPassThroughSensorBinding(

@@ -29,6 +29,7 @@ import io.github.yoglappland.spectralization.optics.SpotRecord;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
 import io.github.yoglappland.spectralization.optics.geometry.BeamPathOverlayTracker;
 import io.github.yoglappland.spectralization.optics.pump.OpticalPumpSources;
+import io.github.yoglappland.spectralization.optics.compiler.BeamProfileSource;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledPortGraph;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledReadoutLayer;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledSpotLayer;
@@ -366,7 +367,11 @@ public final class OpticalTraceCache {
                 );
                 directGraph = solvedChannels.graph();
                 scalarPowerSolution = solvedChannels.solution();
-                directReadoutLayer = OpticalReadoutLayerCompiler.compile(level, directGraph);
+                directReadoutLayer = OpticalReadoutLayerCompiler.compile(
+                        level,
+                        directGraph,
+                        List.of(new BeamProfileSource(request.sourcePos(), request.sourceOutput()))
+                );
             } else {
                 passiveDirectGraph = PortGraphCompiler.compileDirect(
                         level,
@@ -388,7 +393,11 @@ public final class OpticalTraceCache {
                 );
                 directGraph = solvedChannels.graph();
                 scalarPowerSolution = solvedChannels.solution();
-                directReadoutLayer = OpticalReadoutLayerCompiler.compile(level, directGraph);
+                directReadoutLayer = OpticalReadoutLayerCompiler.compile(
+                        level,
+                        directGraph,
+                        List.of(new BeamProfileSource(request.sourcePos(), request.sourceOutput()))
+                );
             }
             List<ReceiverOutput> directReceiverOutputs = directReadoutLayer.sample(scalarPowerSolution);
             boolean directReadoutDemand = hasReadoutDemand(directReadoutLayer, directReceiverOutputs);
@@ -1588,7 +1597,11 @@ public final class OpticalTraceCache {
                         collapseLanePowerMap(incoherentSourcePowersByLane),
                         solvedChannels.coherentSourcePowersByNode()
                 );
-                CompiledReadoutLayer readoutLayer = OpticalReadoutLayerCompiler.compile(level, solvedChannels.graph());
+                CompiledReadoutLayer readoutLayer = OpticalReadoutLayerCompiler.compile(
+                        level,
+                        solvedChannels.graph(),
+                        beamProfileSourcesForGraph(level, solvedChannels.graph())
+                );
                 List<ReceiverOutput> receiverOutputs = readoutLayer.sample(solution);
                 boolean usableForGameplay = structurallyFresh && canUseForGameplay(solvedChannels.graph(), solution);
                 boolean coherentHudIntent = solvedChannels.coherentHudIntent()
@@ -1652,7 +1665,11 @@ public final class OpticalTraceCache {
                 collapseLanePowerMap(incoherentSourcePowersByLane),
                 solvedChannels.coherentSourcePowersByNode()
         );
-        CompiledReadoutLayer readoutLayer = OpticalReadoutLayerCompiler.compile(level, graph);
+        CompiledReadoutLayer readoutLayer = OpticalReadoutLayerCompiler.compile(
+                level,
+                graph,
+                beamProfileSourcesForGraph(level, graph)
+        );
         List<ReceiverOutput> receiverOutputs = readoutLayer.sample(solution);
         boolean coherentHudIntent = solvedChannels.coherentHudIntent()
                 || BeamPathOverlayTracker.hasCoherentSignal(solution);
@@ -2496,6 +2513,12 @@ public final class OpticalTraceCache {
 
         sourceOutputs.sort(Comparator.comparing(GraphSourceOutput::key, SOURCE_TRACE_KEY_COMPARATOR));
         return sourceOutputs;
+    }
+
+    private static List<BeamProfileSource> beamProfileSourcesForGraph(ServerLevel level, CompiledPortGraph graph) {
+        return discoverGraphSourceOutputs(level, graph).stream()
+                .map(sourceOutput -> new BeamProfileSource(sourceOutput.key().sourcePos(), sourceOutput.outputBeam()))
+                .toList();
     }
 
     private static IntSet networkIdsFor(LevelTraceCache cache, Set<SourceTraceKey> sourceKeys) {

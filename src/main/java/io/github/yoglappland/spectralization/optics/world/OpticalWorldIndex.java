@@ -86,6 +86,7 @@ public final class OpticalWorldIndex {
             case STRUCTURE -> index.rescanGeometry(serverLevel, pos, OpticalIndexLayer.GEOMETRY);
             case TOPOLOGY -> index.markDirty(serverLevel, OpticalIndexLayer.TOPOLOGY, pos);
             case PARAMETER -> index.markParameterizedChange(serverLevel, pos);
+            case DATA -> index.markDirty(serverLevel, OpticalIndexLayer.INTRINSIC_DATA, pos);
             case SOURCE -> index.markDirty(serverLevel, OpticalIndexLayer.INTRINSIC_DATA, pos);
             case FIELD -> index.markDirty(serverLevel, OpticalIndexLayer.TOPOLOGY, pos);
             case CONFIG -> index.markAllDirty(serverLevel);

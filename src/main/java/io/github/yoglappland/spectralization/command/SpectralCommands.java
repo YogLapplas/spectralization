@@ -2,10 +2,14 @@ package io.github.yoglappland.spectralization.command;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.suggestion.Suggestions;
+import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.network.NetworkOverlayPayload;
 import io.github.yoglappland.spectralization.optics.OpticalEntityInteractions;
 import io.github.yoglappland.spectralization.optics.OpticalPathVisualization;
+import io.github.yoglappland.spectralization.optics.lens.LensProfile;
 import io.github.yoglappland.spectralization.optics.topology.OpticalNetworkIndex;
 import io.github.yoglappland.spectralization.optics.topology.OpticalNetworkSnapshot;
 import java.util.ArrayList;
@@ -13,12 +17,15 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 public final class SpectralCommands {
@@ -94,6 +101,45 @@ public final class SpectralCommands {
                                         context.getSource(),
                                         !SpectralizationConfig.uiDebug()
                                 ))))
+                .then(Commands.literal("lens")
+                        .then(Commands.literal("give")
+                                .executes(context -> giveLens(context.getSource(), LensProfile.STANDARD))
+                                .then(Commands.argument("tag", StringArgumentType.word())
+                                        .suggests(SpectralCommands::suggestLensTags)
+                                        .executes(context -> giveLens(
+                                                context.getSource(),
+                                                LensProfile.preset(StringArgumentType.getString(context, "tag"))
+                                        ))
+                                        .then(Commands.argument(
+                                                        "focal_length",
+                                                        IntegerArgumentType.integer(
+                                                                LensProfile.MIN_FOCAL_LENGTH,
+                                                                LensProfile.MAX_FOCAL_LENGTH
+                                                        )
+                                                )
+                                                .then(Commands.argument(
+                                                                "aperture",
+                                                                IntegerArgumentType.integer(
+                                                                        LensProfile.MIN_APERTURE,
+                                                                        LensProfile.MAX_APERTURE
+                                                                )
+                                                        )
+                                                        .then(Commands.argument(
+                                                                        "quality",
+                                                                        IntegerArgumentType.integer(
+                                                                                LensProfile.MIN_QUALITY,
+                                                                                LensProfile.MAX_QUALITY
+                                                                        )
+                                                                )
+                                                                .executes(context -> giveLens(
+                                                                        context.getSource(),
+                                                                        new LensProfile(
+                                                                                StringArgumentType.getString(context, "tag"),
+                                                                                IntegerArgumentType.getInteger(context, "focal_length"),
+                                                                                IntegerArgumentType.getInteger(context, "aperture"),
+                                                                                IntegerArgumentType.getInteger(context, "quality")
+                                                                        )
+                                                                ))))))))
                 .then(Commands.literal("networks")
                         .executes(context -> reportNetworkStatus(context.getSource()))
                         .then(Commands.literal("status")
@@ -221,6 +267,38 @@ public final class SpectralCommands {
     private static int reportUiDebugLabelsState(CommandSourceStack source) {
         String state = SpectralizationConfig.uiDebugLabels() ? "on" : "off";
         source.sendSuccess(() -> Component.literal("Spectralization UI debug box labels: " + state), true);
+        return 1;
+    }
+
+    private static CompletableFuture<Suggestions> suggestLensTags(
+            com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+            SuggestionsBuilder builder
+    ) {
+        return SharedSuggestionProvider.suggest(LensProfile.PRESET_TAGS, builder);
+    }
+
+    private static int giveLens(CommandSourceStack source, LensProfile profile) {
+        ServerPlayer player;
+
+        try {
+            player = source.getPlayerOrException();
+        } catch (Exception exception) {
+            source.sendFailure(Component.literal("Lens command can only give items to a player."));
+            return 0;
+        }
+
+        ItemStack stack = profile.createStack();
+        if (!player.addItem(stack)) {
+            player.drop(stack, false);
+        }
+
+        source.sendSuccess(() -> Component.literal(String.format(
+                "Gave lens tag=%s focal=%d aperture=%d quality=%d",
+                profile.tag(),
+                profile.focalLength(),
+                profile.aperture(),
+                profile.quality()
+        )), true);
         return 1;
     }
 

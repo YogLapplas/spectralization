@@ -2,6 +2,7 @@ package io.github.yoglappland.spectralization.optics.compiler;
 
 import io.github.yoglappland.spectralization.optics.cache.ReceiverOutput;
 import io.github.yoglappland.spectralization.optics.cache.ReceiverOutputKind;
+import io.github.yoglappland.spectralization.optics.BeamEnvelope;
 import java.util.Map;
 import java.util.Objects;
 import net.minecraft.core.BlockPos;
@@ -18,9 +19,12 @@ public record OpticalReadoutBinding(
         pos = pos.immutable();
     }
 
-    public ReceiverOutput sample(ScalarPowerSolution solution) {
+    public ReceiverOutput sample(ScalarPowerSolution solution, CompiledBeamProfileLayer beamProfileLayer) {
+        Objects.requireNonNull(beamProfileLayer, "beamProfileLayer");
+
         double totalPower = inputNode == null ? 0.0 : solution.powerAt(inputNode);
         double coherentPower = inputNode == null ? 0.0 : solution.coherentPowerAt(inputNode);
+        BeamEnvelope envelope = beamProfileLayer.envelopeAt(inputNode, solution);
 
         return switch (kind) {
             case CMOS -> ReceiverOutput.cmos(pos, totalPower);
@@ -34,7 +38,7 @@ public record OpticalReadoutBinding(
                     totalPower,
                     coherentPower,
                     Math.max(0.0, totalPower - coherentPower),
-                    io.github.yoglappland.spectralization.optics.BeamEnvelope.DEFAULT_COLLIMATED,
+                    envelope,
                     inputNode == null ? Map.of() : solution.powerByFrequencyAt(inputNode)
             );
             case BEAM_PROFILER -> ReceiverOutput.beamProfiler(
@@ -42,7 +46,7 @@ public record OpticalReadoutBinding(
                     totalPower,
                     coherentPower,
                     Math.max(0.0, totalPower - coherentPower),
-                    io.github.yoglappland.spectralization.optics.BeamEnvelope.DEFAULT_COLLIMATED
+                    envelope
             );
         };
     }

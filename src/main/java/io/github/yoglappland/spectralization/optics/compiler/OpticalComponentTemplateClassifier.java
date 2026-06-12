@@ -10,7 +10,6 @@ import io.github.yoglappland.spectralization.block.MirrorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
 import io.github.yoglappland.spectralization.block.PhotothermalGeneratorBlock;
 import io.github.yoglappland.spectralization.block.SpectrometerBlock;
-import io.github.yoglappland.spectralization.blockentity.LensHolderBlockEntity;
 import io.github.yoglappland.spectralization.optics.OpticalElement;
 import io.github.yoglappland.spectralization.optics.OpticalMaterialProfiles;
 import net.minecraft.core.BlockPos;
@@ -51,9 +50,7 @@ public final class OpticalComponentTemplateClassifier {
         }
 
         if (block instanceof LensHolderBlock) {
-            return level.getBlockEntity(pos) instanceof LensHolderBlockEntity lensHolder && lensHolder.hasLens()
-                    ? OpticalComponentTemplate.LENS_HOLDER_LENSED
-                    : OpticalComponentTemplate.LENS_HOLDER_EMPTY;
+            return OpticalComponentTemplate.LENS_HOLDER;
         }
 
         if (block instanceof CmosSensorBlock) {

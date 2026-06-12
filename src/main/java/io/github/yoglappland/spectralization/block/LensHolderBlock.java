@@ -5,6 +5,10 @@ import io.github.yoglappland.spectralization.optics.BeamPacket;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalNetwork;
 import io.github.yoglappland.spectralization.optics.OpticalElement;
 import io.github.yoglappland.spectralization.optics.OpticalResult;
+import io.github.yoglappland.spectralization.optics.BeamEnvelope;
+import io.github.yoglappland.spectralization.optics.geometry.SpatialModeCoupling;
+import io.github.yoglappland.spectralization.optics.geometry.SpatialProfileElement;
+import io.github.yoglappland.spectralization.optics.geometry.SpatialTransformContext;
 import io.github.yoglappland.spectralization.tag.SpectralItemTags;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
@@ -31,7 +35,7 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
-public class LensHolderBlock extends Block implements EntityBlock, OpticalElement {
+public class LensHolderBlock extends Block implements EntityBlock, OpticalElement, SpatialProfileElement {
     public static final DirectionProperty FACING = BlockStateProperties.HORIZONTAL_FACING;
     private static final double LENS_TRANSMITTANCE = 0.96;
     private static final double LENS_REFLECTANCE = 0.02;
@@ -71,7 +75,6 @@ public class LensHolderBlock extends Block implements EntityBlock, OpticalElemen
     public CompiledOpticalNetwork compileOpticalNetwork(BlockState state, Level level, BlockPos pos) {
         Direction positiveDirection = state.getValue(FACING);
         Direction negativeDirection = positiveDirection.getOpposite();
-        boolean hasLens = level.getBlockEntity(pos) instanceof LensHolderBlockEntity lensHolder && lensHolder.hasLens();
         CompiledOpticalNetwork.Builder builder = CompiledOpticalNetwork.builder();
 
         for (Direction incomingDirection : Direction.values()) {
@@ -81,15 +84,25 @@ public class LensHolderBlock extends Block implements EntityBlock, OpticalElemen
                 continue;
             }
 
-            if (hasLens) {
-                builder.addRule(incomingDirection, transmittedDirection, CompiledOpticalNetwork.scale(LENS_TRANSMITTANCE));
-                builder.addRule(incomingDirection, incomingDirection, CompiledOpticalNetwork.scale(LENS_REFLECTANCE));
-            } else {
-                builder.addRule(incomingDirection, transmittedDirection, CompiledOpticalNetwork.passThrough());
-            }
+            builder.addRule(incomingDirection, transmittedDirection, CompiledOpticalNetwork.scale(LENS_TRANSMITTANCE));
+            builder.addRule(incomingDirection, incomingDirection, CompiledOpticalNetwork.scale(LENS_REFLECTANCE));
         }
 
         return builder.build();
+    }
+
+    @Override
+    public SpatialModeCoupling transformSpatialProfile(
+            BeamEnvelope inputEnvelope,
+            SpatialTransformContext context
+    ) {
+        if (!(context.level().getBlockEntity(context.pos()) instanceof LensHolderBlockEntity lensHolder)
+                || !lensHolder.hasLens()
+                || context.outgoingDirection() != context.incomingDirection().getOpposite()) {
+            return SpatialModeCoupling.ordered(inputEnvelope);
+        }
+
+        return SpatialModeCoupling.ordered(lensHolder.lensProfile().transformTransmittedEnvelope(inputEnvelope));
     }
 
     @Override

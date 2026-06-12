@@ -29,7 +29,14 @@ public record OpticalReadoutBinding(
                     pos,
                     inputNode == null ? Map.of() : solution.powerByFrequencyAt(inputNode)
             );
-            case PHOTOTHERMAL_GENERATOR -> ReceiverOutput.photothermalGenerator(pos, totalPower);
+            case PHOTOTHERMAL_GENERATOR -> ReceiverOutput.photothermalGenerator(
+                    pos,
+                    totalPower,
+                    coherentPower,
+                    Math.max(0.0, totalPower - coherentPower),
+                    io.github.yoglappland.spectralization.optics.BeamEnvelope.DEFAULT_COLLIMATED,
+                    inputNode == null ? Map.of() : solution.powerByFrequencyAt(inputNode)
+            );
             case BEAM_PROFILER -> ReceiverOutput.beamProfiler(
                     pos,
                     totalPower,

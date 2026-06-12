@@ -5,6 +5,7 @@ import io.github.yoglappland.spectralization.menu.CoatingBrushMenu;
 import io.github.yoglappland.spectralization.menu.CreativeLightSourceMenu;
 import io.github.yoglappland.spectralization.menu.PhotothermalGeneratorMenu;
 import io.github.yoglappland.spectralization.menu.SpectrometerMenu;
+import io.github.yoglappland.spectralization.menu.ThermalSmelterMenu;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.flag.FeatureFlags;
 import net.minecraft.world.inventory.MenuType;
@@ -31,6 +32,10 @@ public final class SpectralMenus {
     public static final DeferredHolder<MenuType<?>, MenuType<PhotothermalGeneratorMenu>> PHOTOTHERMAL_GENERATOR =
             MENU_TYPES.register("photothermal_generator", () ->
                     new MenuType<>(PhotothermalGeneratorMenu::new, FeatureFlags.DEFAULT_FLAGS));
+
+    public static final DeferredHolder<MenuType<?>, MenuType<ThermalSmelterMenu>> THERMAL_SMELTER =
+            MENU_TYPES.register("thermal_smelter", () ->
+                    new MenuType<>(ThermalSmelterMenu::new, FeatureFlags.DEFAULT_FLAGS));
 
     public static void register(IEventBus modEventBus) {
         MENU_TYPES.register(modEventBus);

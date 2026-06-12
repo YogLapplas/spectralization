@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization.block;
 
 import io.github.yoglappland.spectralization.blockentity.PhotothermalGeneratorBlockEntity;
+import io.github.yoglappland.spectralization.heat.PhotothermalReceiverBlock;
 import io.github.yoglappland.spectralization.menu.PhotothermalGeneratorMenu;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalNetwork;
@@ -26,7 +27,7 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
-public class PhotothermalGeneratorBlock extends Block implements EntityBlock, OpticalReceiver {
+public class PhotothermalGeneratorBlock extends Block implements EntityBlock, OpticalReceiver, PhotothermalReceiverBlock {
     private static final VoxelShape SHAPE = Block.box(0.0, 0.0, 0.0, 16.0, 16.0, 16.0);
 
     public PhotothermalGeneratorBlock(Properties properties) {
@@ -84,5 +85,10 @@ public class PhotothermalGeneratorBlock extends Block implements EntityBlock, Op
 
     public static Direction getReceivingSide(BlockState state) {
         return Direction.NORTH;
+    }
+
+    @Override
+    public Direction photothermalReceivingSide(BlockState state) {
+        return getReceivingSide(state);
     }
 }

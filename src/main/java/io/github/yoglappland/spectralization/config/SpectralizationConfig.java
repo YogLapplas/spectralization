@@ -11,6 +11,8 @@ public final class SpectralizationConfig {
     private static final ModConfigSpec.BooleanValue SURFACE_SPOTS_VISIBLE;
     private static final ModConfigSpec.BooleanValue LASER_DAMAGE;
     private static final ModConfigSpec.BooleanValue LASER_BLINDNESS;
+    private static final ModConfigSpec.BooleanValue UI_DEBUG;
+    private static final ModConfigSpec.BooleanValue UI_DEBUG_LABELS;
     private static final ModConfigSpec.BooleanValue SCATTERING_FIELD_ENABLED;
     private static final ModConfigSpec.IntValue SCATTERING_FIELD_RADIUS;
     private static final ModConfigSpec.DoubleValue SCATTERING_FIELD_PROPAGATION_FACTOR;
@@ -47,6 +49,15 @@ public final class SpectralizationConfig {
         LASER_BLINDNESS = builder
                 .comment("Whether hazardous beams can blind entities looking into them.")
                 .define("laser_blindness", true);
+        builder.pop();
+
+        builder.push("client");
+        UI_DEBUG = builder
+                .comment("Whether Spectralization machine screens render layout debug boxes, labels, and mouse coordinates.")
+                .define("ui_debug", false);
+        UI_DEBUG_LABELS = builder
+                .comment("Whether UI debug boxes render their component names and rectangles.")
+                .define("ui_debug_labels", true);
         builder.pop();
 
         builder.push("optical_field_sources");
@@ -148,6 +159,24 @@ public final class SpectralizationConfig {
 
     public static void setLaserBlindness(boolean enabled) {
         LASER_BLINDNESS.set(enabled);
+        SPEC.save();
+    }
+
+    public static boolean uiDebug() {
+        return UI_DEBUG.get();
+    }
+
+    public static void setUiDebug(boolean enabled) {
+        UI_DEBUG.set(enabled);
+        SPEC.save();
+    }
+
+    public static boolean uiDebugLabels() {
+        return UI_DEBUG_LABELS.get();
+    }
+
+    public static void setUiDebugLabels(boolean enabled) {
+        UI_DEBUG_LABELS.set(enabled);
         SPEC.save();
     }
 

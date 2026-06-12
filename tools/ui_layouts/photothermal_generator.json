@@ -1,0 +1,116 @@
+{
+  "width": 256,
+  "height": 204,
+  "components": [
+    {
+      "id": "machine_panel",
+      "type": "panel",
+      "label": "machine_panel",
+      "x": 18,
+      "y": 22,
+      "w": 220,
+      "h": 74,
+      "color": "#66CCFF",
+      "data": ""
+    },
+    {
+      "id": "inventory_panel",
+      "type": "panel",
+      "label": "inventory_panel",
+      "x": 42,
+      "y": 104,
+      "w": 172,
+      "h": 90,
+      "color": "#66CCFF",
+      "data": ""
+    },
+    {
+      "id": "burn_bar",
+      "type": "readout",
+      "label": "burn_bar",
+      "x": 36,
+      "y": 36,
+      "w": 10,
+      "h": 54,
+      "color": "#66CCFF",
+      "data": ""
+    },
+    {
+      "id": "slot_fuel",
+      "type": "slot",
+      "label": "slot_fuel",
+      "x": 66,
+      "y": 54,
+      "w": 18,
+      "h": 18,
+      "color": "#66CCFF",
+      "data": ""
+    },
+    {
+      "id": "energy_text",
+      "type": "label",
+      "label": "energy_text",
+      "x": 112,
+      "y": 34,
+      "w": 118,
+      "h": 9,
+      "color": "#66CCFF",
+      "data": ""
+    },
+    {
+      "id": "burn_text",
+      "type": "label",
+      "label": "burn_text",
+      "x": 112,
+      "y": 52,
+      "w": 118,
+      "h": 9,
+      "color": "#66CCFF",
+      "data": ""
+    },
+    {
+      "id": "output_text",
+      "type": "label",
+      "label": "output_text",
+      "x": 112,
+      "y": 70,
+      "w": 118,
+      "h": 9,
+      "color": "#66CCFF",
+      "data": ""
+    },
+    {
+      "id": "energy_bar",
+      "type": "readout",
+      "label": "energy_bar",
+      "x": 112,
+      "y": 88,
+      "w": 118,
+      "h": 5,
+      "color": "#66CCFF",
+      "data": ""
+    },
+    {
+      "id": "player_inventory",
+      "type": "custom",
+      "label": "player_inventory",
+      "x": 47,
+      "y": 111,
+      "w": 162,
+      "h": 76,
+      "color": "#66CCFF",
+      "data": ""
+    },
+    {
+      "id": "fuel_text",
+      "type": "label",
+      "label": "fuel_text",
+      "x": 0,
+      "y": 200,
+      "w": 4,
+      "h": 4,
+      "color": "#66CCFF",
+      "data": ""
+    }
+  ]
+}

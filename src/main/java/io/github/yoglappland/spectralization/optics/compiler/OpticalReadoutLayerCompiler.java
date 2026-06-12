@@ -3,8 +3,8 @@ package io.github.yoglappland.spectralization.optics.compiler;
 import io.github.yoglappland.spectralization.block.BeamProfilerBlock;
 import io.github.yoglappland.spectralization.block.CmosSensorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
-import io.github.yoglappland.spectralization.block.PhotothermalGeneratorBlock;
 import io.github.yoglappland.spectralization.block.SpectrometerBlock;
+import io.github.yoglappland.spectralization.heat.PhotothermalReceiverBlock;
 import io.github.yoglappland.spectralization.optics.cache.ReceiverOutputKind;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -30,8 +30,8 @@ public final class OpticalReadoutLayerCompiler {
         Set<BlockPos> boundBeamProfilerPositions = new HashSet<>();
         Set<BlockPos> spectrometerPositions = new HashSet<>();
         Set<BlockPos> boundSpectrometerPositions = new HashSet<>();
-        Set<BlockPos> photothermalGeneratorPositions = new HashSet<>();
-        Set<BlockPos> boundPhotothermalGeneratorPositions = new HashSet<>();
+        Set<BlockPos> photothermalReceiverPositions = new HashSet<>();
+        Set<BlockPos> boundPhotothermalReceiverPositions = new HashSet<>();
         Map<BlockPos, PassThroughChannels> passThroughChannelsByPos = new HashMap<>();
 
         for (PortGraphNode node : graph.nodes()) {
@@ -92,12 +92,12 @@ public final class OpticalReadoutLayerCompiler {
                 continue;
             }
 
-            if (state.getBlock() instanceof PhotothermalGeneratorBlock) {
-                photothermalGeneratorPositions.add(node.pos());
-                Direction receivingSide = PhotothermalGeneratorBlock.getReceivingSide(state);
+            if (state.getBlock() instanceof PhotothermalReceiverBlock photothermalReceiverBlock) {
+                photothermalReceiverPositions.add(node.pos());
+                Direction receivingSide = photothermalReceiverBlock.photothermalReceivingSide(state);
 
                 if (node.side() == receivingSide) {
-                    boundPhotothermalGeneratorPositions.add(node.pos());
+                    boundPhotothermalReceiverPositions.add(node.pos());
                     bindings.add(new OpticalReadoutBinding(
                             node.pos(),
                             ReceiverOutputKind.PHOTOTHERMAL_GENERATOR,
@@ -123,8 +123,8 @@ public final class OpticalReadoutLayerCompiler {
                 boundBeamProfilerPositions,
                 spectrometerPositions,
                 boundSpectrometerPositions,
-                photothermalGeneratorPositions,
-                boundPhotothermalGeneratorPositions,
+                photothermalReceiverPositions,
+                boundPhotothermalReceiverPositions,
                 passThroughChannelsByPos
         );
 
@@ -171,8 +171,8 @@ public final class OpticalReadoutLayerCompiler {
             Set<BlockPos> boundBeamProfilerPositions,
             Set<BlockPos> spectrometerPositions,
             Set<BlockPos> boundSpectrometerPositions,
-            Set<BlockPos> photothermalGeneratorPositions,
-            Set<BlockPos> boundPhotothermalGeneratorPositions,
+            Set<BlockPos> photothermalReceiverPositions,
+            Set<BlockPos> boundPhotothermalReceiverPositions,
             Map<BlockPos, PassThroughChannels> passThroughChannelsByPos
     ) {
         for (BlockPos pos : cmosPositions) {
@@ -208,8 +208,8 @@ public final class OpticalReadoutLayerCompiler {
             }
         }
 
-        for (BlockPos pos : photothermalGeneratorPositions) {
-            if (!boundPhotothermalGeneratorPositions.contains(pos)) {
+        for (BlockPos pos : photothermalReceiverPositions) {
+            if (!boundPhotothermalReceiverPositions.contains(pos)) {
                 bindings.add(new OpticalReadoutBinding(
                         pos,
                         ReceiverOutputKind.PHOTOTHERMAL_GENERATOR,

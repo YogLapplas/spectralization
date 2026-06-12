@@ -19,8 +19,10 @@ public final class OpticalMaterialProfiles {
     private static final OpticalMaterialProfile OPAQUE = OpticalMaterialProfile.constant(
             OpticalMaterialResponse.of(0.0, 0.0, 1.0)
     );
-    private static final OpticalMaterialProfile CLEAR_GLASS = OpticalMaterialProfile.constant(
-            OpticalMaterialResponse.of(0.96, 0.03, 0.005)
+    private static final OpticalMaterialProfile CLEAR_GLASS = OpticalMaterialProfile.of(
+            sample(SpectralRegion.INFRARED, 16, 0.92, 0.025, 0.035),
+            sample(SpectralRegion.VISIBLE, 16, 0.97, 0.020, 0.005),
+            sample(SpectralRegion.ULTRAVIOLET, 16, 0.72, 0.035, 0.200)
     );
     private static final OpticalMaterialProfile TINTED_GLASS = OpticalMaterialProfile.constant(
             OpticalMaterialResponse.of(0.02, 0.05, 0.88)
@@ -28,26 +30,66 @@ public final class OpticalMaterialProfiles {
     private static final OpticalMaterialProfile SAND = OpticalMaterialProfile.constant(
             OpticalMaterialResponse.of(0.03, 0.35, 0.55)
     );
-    private static final OpticalMaterialProfile METAL = OpticalMaterialProfile.constant(
-            OpticalMaterialResponse.of(0.0, 0.78, 0.17)
+    private static final OpticalMaterialProfile IRON = OpticalMaterialProfile.of(
+            sample(SpectralRegion.INFRARED, 16, 0.0, 0.72, 0.22),
+            sample(SpectralRegion.VISIBLE, 16, 0.0, 0.62, 0.30),
+            sample(SpectralRegion.ULTRAVIOLET, 16, 0.0, 0.35, 0.50)
     );
-    private static final OpticalMaterialProfile POLISHED_SILVER = OpticalMaterialProfile.constant(
-            OpticalMaterialResponse.of(0.0, 0.96, 0.02)
+    private static final OpticalMaterialProfile COPPER = OpticalMaterialProfile.of(
+            sample(SpectralRegion.INFRARED, 16, 0.0, 0.89, 0.07),
+            sample(SpectralRegion.VISIBLE, 4, 0.0, 0.80, 0.15),
+            sample(SpectralRegion.VISIBLE, 26, 0.0, 0.45, 0.45),
+            sample(SpectralRegion.ULTRAVIOLET, 16, 0.0, 0.24, 0.65)
     );
-    private static final OpticalMaterialProfile RUBY = OpticalMaterialProfile.of(
-            sample(SpectralRegion.INFRARED, 32, 0.58, 0.03, 0.26),
-            sample(SpectralRegion.VISIBLE, 4, 0.88, 0.04, 0.04),
-            sample(SpectralRegion.VISIBLE, 32, 0.35, 0.04, 0.50),
-            sample(SpectralRegion.VISIBLE, 52, 0.18, 0.05, 0.65),
+    private static final OpticalMaterialProfile GOLD = OpticalMaterialProfile.of(
+            sample(SpectralRegion.INFRARED, 16, 0.0, 0.96, 0.025),
+            sample(SpectralRegion.VISIBLE, 4, 0.0, 0.42, 0.48),
+            sample(SpectralRegion.VISIBLE, 26, 0.0, 0.93, 0.05),
+            sample(SpectralRegion.ULTRAVIOLET, 16, 0.0, 0.32, 0.58)
+    );
+    private static final OpticalMaterialProfile POLISHED_SILVER = OpticalMaterialProfile.of(
+            sample(SpectralRegion.INFRARED, 16, 0.0, 0.985, 0.010),
+            sample(SpectralRegion.VISIBLE, 16, 0.0, 0.970, 0.020),
+            sample(SpectralRegion.ULTRAVIOLET, 16, 0.0, 0.620, 0.300)
+    );
+    private static final OpticalMaterialProfile RUTILE = OpticalMaterialProfile.of(
+            sample(SpectralRegion.INFRARED, 16, 0.18, 0.42, 0.32),
+            sample(SpectralRegion.VISIBLE, 16, 0.08, 0.55, 0.30),
+            sample(SpectralRegion.ULTRAVIOLET, 16, 0.02, 0.30, 0.60)
+    );
+    private static final OpticalMaterialProfile CORUNDUM = OpticalMaterialProfile.of(
+            sample(SpectralRegion.INFRARED, 16, 0.82, 0.04, 0.08),
+            sample(SpectralRegion.VISIBLE, 16, 0.88, 0.035, 0.05),
+            sample(SpectralRegion.ULTRAVIOLET, 16, 0.46, 0.04, 0.42)
+    );
+    private static final OpticalMaterialProfile FLUORITE = OpticalMaterialProfile.of(
+            sample(SpectralRegion.INFRARED, 16, 0.93, 0.025, 0.030),
+            sample(SpectralRegion.VISIBLE, 16, 0.97, 0.020, 0.005),
+            sample(SpectralRegion.ULTRAVIOLET, 16, 0.90, 0.025, 0.045)
+    );
+    private static final OpticalMaterialProfile RUBY_UNPUMPED = OpticalMaterialProfile.of(
+            sample(SpectralRegion.INFRARED, 16, 0.60, 0.03, 0.24),
+            sample(SpectralRegion.VISIBLE, 2, 0.18, 0.04, 0.65),
+            sample(SpectralRegion.VISIBLE, 16, 0.35, 0.04, 0.50),
+            sample(SpectralRegion.VISIBLE, 26, 0.90, 0.03, 0.05),
+            sample(SpectralRegion.VISIBLE, 31, 0.82, 0.05, 0.08),
+            sample(SpectralRegion.ULTRAVIOLET, 16, 0.05, 0.05, 0.80)
+    );
+    private static final OpticalMaterialProfile RUBY_PUMPED = OpticalMaterialProfile.of(
+            sample(SpectralRegion.INFRARED, 16, 0.64, 0.03, 0.20),
+            sample(SpectralRegion.VISIBLE, 2, 0.18, 0.04, 0.65),
+            sample(SpectralRegion.VISIBLE, 16, 0.38, 0.04, 0.46),
+            sample(SpectralRegion.VISIBLE, 26, 0.97, 0.02, 0.005),
+            sample(SpectralRegion.VISIBLE, 31, 0.88, 0.04, 0.07),
             sample(SpectralRegion.ULTRAVIOLET, 16, 0.05, 0.05, 0.80)
     );
     private static final OpticalMaterialProfile WATER = OpticalMaterialProfile.of(
-            sample(SpectralRegion.INFRARED, 32, 0.45, 0.02, 0.45),
-            sample(SpectralRegion.VISIBLE, 32, 0.88, 0.02, 0.08),
+            sample(SpectralRegion.INFRARED, 16, 0.45, 0.02, 0.45),
+            sample(SpectralRegion.VISIBLE, 16, 0.88, 0.02, 0.08),
             sample(SpectralRegion.ULTRAVIOLET, 16, 0.35, 0.02, 0.55)
     );
-    private static final double RUBY_COHERENT_POWER_BUDGET_PER_PUMP_RATE = 0.45;
-    private static final double RUBY_COHERENT_SEED_SATURATION_POWER = 0.35;
+    private static final double RUBY_COHERENT_POWER_BUDGET_PER_PUMP_RATE = 1.25;
+    private static final double RUBY_COHERENT_SEED_SATURATION_POWER = 1.0;
     private static final double RUBY_SCHEDULED_GAIN_PER_PUMP_RATE = 0.35;
     private static final double RUBY_MAX_SCHEDULED_GAIN = 4.0;
     private static final double RUBY_GAIN_MATERIAL_WEIGHT = 2.0;
@@ -72,10 +114,13 @@ public final class OpticalMaterialProfiles {
             Blocks.SUSPICIOUS_SAND,
             Blocks.SUSPICIOUS_GRAVEL
     );
-    private static final Set<Block> METAL_BLOCKS = Set.of(
-            Blocks.GOLD_BLOCK,
+    private static final Set<Block> IRON_BLOCKS = Set.of(
             Blocks.IRON_BLOCK,
+            Blocks.RAW_IRON_BLOCK
+    );
+    private static final Set<Block> COPPER_BLOCKS = Set.of(
             Blocks.COPPER_BLOCK,
+            Blocks.RAW_COPPER_BLOCK,
             Blocks.EXPOSED_COPPER,
             Blocks.WEATHERED_COPPER,
             Blocks.OXIDIZED_COPPER,
@@ -83,6 +128,10 @@ public final class OpticalMaterialProfiles {
             Blocks.WAXED_EXPOSED_COPPER,
             Blocks.WAXED_WEATHERED_COPPER,
             Blocks.WAXED_OXIDIZED_COPPER
+    );
+    private static final Set<Block> GOLD_BLOCKS = Set.of(
+            Blocks.GOLD_BLOCK,
+            Blocks.RAW_GOLD_BLOCK
     );
     private static final Map<Block, OpticalMaterialProfile> STAINED_GLASS_BLOCKS = Map.ofEntries(
             Map.entry(Blocks.WHITE_STAINED_GLASS, neutralGlass(0.86)),
@@ -148,8 +197,16 @@ public final class OpticalMaterialProfiles {
             return SAND;
         }
 
-        if (METAL_BLOCKS.contains(block)) {
-            return METAL;
+        if (IRON_BLOCKS.contains(block)) {
+            return IRON;
+        }
+
+        if (COPPER_BLOCKS.contains(block)) {
+            return COPPER;
+        }
+
+        if (GOLD_BLOCKS.contains(block)) {
+            return GOLD;
         }
 
         if (block == Spectralization.SILVER_BLOCK.get()) {
@@ -157,7 +214,19 @@ public final class OpticalMaterialProfiles {
         }
 
         if (block == Spectralization.RUBY_BLOCK.get()) {
-            return RUBY;
+            return RUBY_UNPUMPED;
+        }
+
+        if (block == Spectralization.RUTILE_BLOCK.get()) {
+            return RUTILE;
+        }
+
+        if (block == Spectralization.CORUNDUM_BLOCK.get()) {
+            return CORUNDUM;
+        }
+
+        if (block == Spectralization.FLUORITE_BLOCK.get()) {
+            return FLUORITE;
         }
 
         return OPAQUE;
@@ -174,9 +243,14 @@ public final class OpticalMaterialProfiles {
                 || CLEAR_GLASS_BLOCKS.contains(block)
                 || block == Blocks.TINTED_GLASS
                 || STAINED_GLASS_BLOCKS.containsKey(block)
-                || METAL_BLOCKS.contains(block)
+                || IRON_BLOCKS.contains(block)
+                || COPPER_BLOCKS.contains(block)
+                || GOLD_BLOCKS.contains(block)
                 || block == Spectralization.SILVER_BLOCK.get()
                 || block == Spectralization.RUBY_BLOCK.get()
+                || block == Spectralization.RUTILE_BLOCK.get()
+                || block == Spectralization.CORUNDUM_BLOCK.get()
+                || block == Spectralization.FLUORITE_BLOCK.get()
                 || block == Blocks.GLOWSTONE;
     }
 
@@ -185,6 +259,13 @@ public final class OpticalMaterialProfiles {
     }
 
     public static OpticalMaterialProfile profileFor(Level level, BlockPos pos, BlockState state) {
+        if (state.getBlock() == Spectralization.RUBY_BLOCK.get()
+                && level != null
+                && pos != null
+                && OpticalPumpSources.adjacentPumpRate(level, pos) > 0) {
+            return RUBY_PUMPED;
+        }
+
         return profileFor(state);
     }
 

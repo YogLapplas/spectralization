@@ -3,8 +3,9 @@ package io.github.yoglappland.spectralization.optics.cache;
 import io.github.yoglappland.spectralization.blockentity.BeamProfilerBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.CmosSensorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.PassThroughSensorBlockEntity;
-import io.github.yoglappland.spectralization.blockentity.PhotothermalGeneratorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.SpectrometerBlockEntity;
+import io.github.yoglappland.spectralization.heat.PhotothermalReceiver;
+import io.github.yoglappland.spectralization.heat.PhotothermalReadoutSample;
 import io.github.yoglappland.spectralization.optics.BeamEnvelope;
 import io.github.yoglappland.spectralization.optics.FrequencyKey;
 import io.github.yoglappland.spectralization.optics.geometry.BeamGeometryOps;
@@ -99,15 +100,33 @@ public record ReceiverOutput(
     }
 
     public static ReceiverOutput photothermalGenerator(BlockPos pos, double power) {
+        return photothermalGenerator(
+                pos,
+                power,
+                0.0,
+                power,
+                BeamEnvelope.DEFAULT_COLLIMATED,
+                Map.of()
+        );
+    }
+
+    public static ReceiverOutput photothermalGenerator(
+            BlockPos pos,
+            double power,
+            double coherentPower,
+            double strayPower,
+            BeamEnvelope envelope,
+            Map<FrequencyKey, Double> powerByFrequency
+    ) {
         return new ReceiverOutput(
                 pos,
                 ReceiverOutputKind.PHOTOTHERMAL_GENERATOR,
                 power,
                 false,
-                0.0,
-                power,
-                BeamEnvelope.DEFAULT_COLLIMATED,
-                Map.of()
+                coherentPower,
+                strayPower,
+                envelope,
+                powerByFrequency
         );
     }
 
@@ -144,8 +163,16 @@ public record ReceiverOutput(
                 }
             }
             case PHOTOTHERMAL_GENERATOR -> {
-                if (level.getBlockEntity(pos) instanceof PhotothermalGeneratorBlockEntity generator) {
-                    generator.receiveOpticalSample(sample);
+                if (level.getBlockEntity(pos) instanceof PhotothermalReceiver receiver) {
+                    receiver.receivePhotothermalSample(new PhotothermalReadoutSample(
+                            power,
+                            coherentPower,
+                            strayPower,
+                            envelope,
+                            powerByFrequency,
+                            reliable,
+                            step
+                    ));
                 }
             }
         }

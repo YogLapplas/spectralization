@@ -11,6 +11,7 @@ import io.github.yoglappland.spectralization.blockentity.PhotothermalGeneratorBl
 import io.github.yoglappland.spectralization.blockentity.RubyBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.SpectrometerBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.StrayLightEmitterBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.ThermalSmelterBlockEntity;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.neoforged.bus.api.IEventBus;
@@ -56,6 +57,10 @@ public final class SpectralBlockEntities {
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<PhotothermalGeneratorBlockEntity>> PHOTOTHERMAL_GENERATOR =
             BLOCK_ENTITY_TYPES.register("photothermal_generator", () ->
                     BlockEntityType.Builder.of(PhotothermalGeneratorBlockEntity::new, Spectralization.PHOTOTHERMAL_GENERATOR.get()).build(null));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<ThermalSmelterBlockEntity>> THERMAL_SMELTER =
+            BLOCK_ENTITY_TYPES.register("thermal_smelter", () ->
+                    BlockEntityType.Builder.of(ThermalSmelterBlockEntity::new, Spectralization.THERMAL_SMELTER.get()).build(null));
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<StrayLightEmitterBlockEntity>> STRAY_LIGHT_EMITTER =
             BLOCK_ENTITY_TYPES.register("stray_light_emitter", () ->

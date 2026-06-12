@@ -1,0 +1,149 @@
+{
+  "width": 256,
+  "height": 216,
+  "components": [
+    {
+      "id": "machine_panel",
+      "type": "panel",
+      "label": "machine_panel",
+      "x": 18,
+      "y": 22,
+      "w": 220,
+      "h": 74,
+      "color": "#66CCFF",
+      "data": ""
+    },
+    {
+      "id": "inventory_panel",
+      "type": "panel",
+      "label": "inventory_panel",
+      "x": 42,
+      "y": 104,
+      "w": 172,
+      "h": 104,
+      "color": "#66CCFF",
+      "data": ""
+    },
+    {
+      "id": "heat_bar",
+      "type": "readout",
+      "label": "heat_bar",
+      "x": 36,
+      "y": 36,
+      "w": 10,
+      "h": 54,
+      "color": "#66CCFF",
+      "data": ""
+    },
+    {
+      "id": "slot_input",
+      "type": "slot",
+      "label": "slot_input",
+      "x": 66,
+      "y": 43,
+      "w": 18,
+      "h": 18,
+      "color": "#66CCFF",
+      "data": ""
+    },
+    {
+      "id": "slot_container",
+      "type": "slot",
+      "label": "slot_container",
+      "x": 66,
+      "y": 70,
+      "w": 18,
+      "h": 18,
+      "color": "#66CCFF",
+      "data": ""
+    },
+    {
+      "id": "progress_bar",
+      "type": "readout",
+      "label": "progress_bar",
+      "x": 98,
+      "y": 59,
+      "w": 42,
+      "h": 5,
+      "color": "#66CCFF",
+      "data": ""
+    },
+    {
+      "id": "fluid_bar",
+      "type": "readout",
+      "label": "fluid_bar",
+      "x": 156,
+      "y": 36,
+      "w": 10,
+      "h": 54,
+      "color": "#66CCFF",
+      "data": ""
+    },
+    {
+      "id": "slot_output",
+      "type": "slot",
+      "label": "slot_output",
+      "x": 191,
+      "y": 56,
+      "w": 18,
+      "h": 18,
+      "color": "#66CCFF",
+      "data": ""
+    },
+    {
+      "id": "temperature_text",
+      "type": "label",
+      "label": "temperature_text",
+      "x": 112,
+      "y": 34,
+      "w": 90,
+      "h": 9,
+      "color": "#66CCFF",
+      "data": ""
+    },
+    {
+      "id": "fluid_text",
+      "type": "label",
+      "label": "fluid_text",
+      "x": 112,
+      "y": 78,
+      "w": 90,
+      "h": 9,
+      "color": "#66CCFF",
+      "data": ""
+    },
+    {
+      "id": "player_inventory",
+      "type": "custom",
+      "label": "player_inventory",
+      "x": 47,
+      "y": 123,
+      "w": 162,
+      "h": 76,
+      "color": "#66CCFF",
+      "data": ""
+    },
+    {
+      "id": "heat_text",
+      "type": "label",
+      "label": "heat_text",
+      "x": 0,
+      "y": 212,
+      "w": 4,
+      "h": 4,
+      "color": "#66CCFF",
+      "data": ""
+    },
+    {
+      "id": "optical_heat_text",
+      "type": "label",
+      "label": "optical_heat_text",
+      "x": 0,
+      "y": 212,
+      "w": 4,
+      "h": 4,
+      "color": "#66CCFF",
+      "data": ""
+    }
+  ]
+}

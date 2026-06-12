@@ -72,6 +72,28 @@ public final class SpectralCommands {
                                         context.getSource(),
                                         !SpectralizationConfig.opticalCompilerDebugLog()
                                 ))))
+                .then(Commands.literal("uidebug")
+                        .executes(context -> reportUiDebugState(context.getSource()))
+                        .then(Commands.literal("on")
+                                .executes(context -> setUiDebug(context.getSource(), true)))
+                        .then(Commands.literal("off")
+                                .executes(context -> setUiDebug(context.getSource(), false)))
+                        .then(Commands.literal("labels")
+                                .executes(context -> reportUiDebugLabelsState(context.getSource()))
+                                .then(Commands.literal("on")
+                                        .executes(context -> setUiDebugLabels(context.getSource(), true)))
+                                .then(Commands.literal("off")
+                                        .executes(context -> setUiDebugLabels(context.getSource(), false)))
+                                .then(Commands.literal("toggle")
+                                        .executes(context -> setUiDebugLabels(
+                                                context.getSource(),
+                                                !SpectralizationConfig.uiDebugLabels()
+                                        ))))
+                        .then(Commands.literal("toggle")
+                                .executes(context -> setUiDebug(
+                                        context.getSource(),
+                                        !SpectralizationConfig.uiDebug()
+                                ))))
                 .then(Commands.literal("networks")
                         .executes(context -> reportNetworkStatus(context.getSource()))
                         .then(Commands.literal("status")
@@ -177,6 +199,28 @@ public final class SpectralCommands {
     private static int reportCompilerDebugState(CommandSourceStack source) {
         String state = SpectralizationConfig.opticalCompilerDebugLog() ? "on" : "off";
         source.sendSuccess(() -> Component.literal("Spectralization optical compiler debug log: " + state), true);
+        return 1;
+    }
+
+    private static int setUiDebug(CommandSourceStack source, boolean enabled) {
+        SpectralizationConfig.setUiDebug(enabled);
+        return reportUiDebugState(source);
+    }
+
+    private static int reportUiDebugState(CommandSourceStack source) {
+        String state = SpectralizationConfig.uiDebug() ? "on" : "off";
+        source.sendSuccess(() -> Component.literal("Spectralization UI debug overlay: " + state), true);
+        return 1;
+    }
+
+    private static int setUiDebugLabels(CommandSourceStack source, boolean enabled) {
+        SpectralizationConfig.setUiDebugLabels(enabled);
+        return reportUiDebugLabelsState(source);
+    }
+
+    private static int reportUiDebugLabelsState(CommandSourceStack source) {
+        String state = SpectralizationConfig.uiDebugLabels() ? "on" : "off";
+        source.sendSuccess(() -> Component.literal("Spectralization UI debug box labels: " + state), true);
         return 1;
     }
 

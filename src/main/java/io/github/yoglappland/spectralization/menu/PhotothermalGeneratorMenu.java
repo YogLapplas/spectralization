@@ -42,7 +42,7 @@ public class PhotothermalGeneratorMenu extends AbstractContainerMenu {
         this.generator = generator;
         this.data = data;
 
-        addSlot(new SlotItemHandler(fuelItems, 0, 80, 44));
+        addSlot(new SlotItemHandler(fuelItems, 0, 67, 55));
         addPlayerInventory(inventory, 48, 112);
         addDataSlots(data);
     }

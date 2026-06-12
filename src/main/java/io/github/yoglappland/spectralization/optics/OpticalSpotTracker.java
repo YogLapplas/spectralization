@@ -56,7 +56,7 @@ public final class OpticalSpotTracker {
             return;
         }
 
-        OpticalMaterialProfile profile = OpticalMaterialProfiles.profileFor(state);
+        OpticalMaterialProfile profile = OpticalMaterialProfiles.profileFor(level, pos, state);
         SpotPowerAccumulator spotPower = new SpotPowerAccumulator();
 
         for (PlaneWaveComponent component : beam.components()) {
@@ -92,7 +92,7 @@ public final class OpticalSpotTracker {
             double beamPower,
             double coherentBeamPower
     ) {
-        OpticalMaterialProfile profile = OpticalMaterialProfiles.profileFor(state);
+        OpticalMaterialProfile profile = OpticalMaterialProfiles.profileFor(level, pos, state);
         SpotPowerAccumulator spotPower = new SpotPowerAccumulator();
         double totalTemplatePower = Math.max(profileTemplate.totalPower(), 1.0E-9);
 

@@ -1,6 +1,6 @@
 {
   "parent": "minecraft:item/generated",
   "textures": {
-    "layer0": "spectralization:item/verity_helm_of_all_seeing_insight"
+    "layer0": "spectralization:item/verity_cuirass_of_cosmic_indifference"
   }
 }

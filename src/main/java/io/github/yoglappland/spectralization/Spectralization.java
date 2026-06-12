@@ -15,12 +15,14 @@ import io.github.yoglappland.spectralization.block.RubyBlock;
 import io.github.yoglappland.spectralization.block.SilverGlassBlock;
 import io.github.yoglappland.spectralization.block.SpectrometerBlock;
 import io.github.yoglappland.spectralization.block.StrayLightEmitterBlock;
+import io.github.yoglappland.spectralization.block.ThermalSmelterBlock;
 import io.github.yoglappland.spectralization.blockentity.RubyBlockEntity;
 import io.github.yoglappland.spectralization.client.renderer.LensHolderRenderer;
 import io.github.yoglappland.spectralization.client.screen.CoatingBrushScreen;
 import io.github.yoglappland.spectralization.client.screen.CreativeLightSourceScreen;
 import io.github.yoglappland.spectralization.client.screen.PhotothermalGeneratorScreen;
 import io.github.yoglappland.spectralization.client.screen.SpectrometerScreen;
+import io.github.yoglappland.spectralization.client.screen.ThermalSmelterScreen;
 import io.github.yoglappland.spectralization.command.SpectralCommands;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.item.CoatingBrushItem;
@@ -42,6 +44,7 @@ import io.github.yoglappland.spectralization.optics.topology.OpticalNetworkIndex
 import io.github.yoglappland.spectralization.optics.world.OpticalWorldIndex;
 import io.github.yoglappland.spectralization.recipe.AdvancedBrushLoadingRecipe;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
+import io.github.yoglappland.spectralization.registry.SpectralFluids;
 import io.github.yoglappland.spectralization.registry.SpectralMenus;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
@@ -326,6 +329,18 @@ public class Spectralization {
     public static final DeferredItem<BlockItem> PHOTOTHERMAL_GENERATOR_ITEM =
             ITEMS.registerSimpleBlockItem("photothermal_generator", PHOTOTHERMAL_GENERATOR);
 
+    public static final DeferredBlock<ThermalSmelterBlock> THERMAL_SMELTER = BLOCKS.register(
+            "thermal_smelter",
+            () -> new ThermalSmelterBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(2.5F, 6.0F)
+                    .sound(SoundType.METAL)
+                    .noOcclusion())
+    );
+
+    public static final DeferredItem<BlockItem> THERMAL_SMELTER_ITEM =
+            ITEMS.registerSimpleBlockItem("thermal_smelter", THERMAL_SMELTER);
+
     public static final DeferredBlock<StrayLightEmitterBlock> STRAY_LIGHT_EMITTER = BLOCKS.register(
             "stray_light_emitter",
             () -> new StrayLightEmitterBlock(
@@ -506,6 +521,7 @@ public class Spectralization {
                         output.accept(SPECTROMETER_ITEM.get());
                         output.accept(PHOTONIC_GRADIENT_GENERATOR_ITEM.get());
                         output.accept(PHOTOTHERMAL_GENERATOR_ITEM.get());
+                        output.accept(THERMAL_SMELTER_ITEM.get());
                         output.accept(STRAY_LIGHT_EMITTER_ITEM.get());
                         output.accept(ADVANCED_STRAY_LIGHT_EMITTER_ITEM.get());
                         output.accept(RUBY_BLOCK_ITEM.get());
@@ -528,6 +544,15 @@ public class Spectralization {
                         output.accept(RUTILE_BLOCK_ITEM.get());
                         output.accept(CORUNDUM_BLOCK_ITEM.get());
                         output.accept(FLUORITE_BLOCK_ITEM.get());
+                        output.accept(SpectralFluids.MOLTEN_SILVER.bucket().get());
+                        output.accept(SpectralFluids.MOLTEN_GOLD.bucket().get());
+                        output.accept(SpectralFluids.MOLTEN_COPPER.bucket().get());
+                        output.accept(SpectralFluids.MOLTEN_SILICA.bucket().get());
+                        output.accept(SpectralFluids.MOLTEN_ALUMINA.bucket().get());
+                        output.accept(SpectralFluids.MOLTEN_TITANIUM_DIOXIDE.bucket().get());
+                        output.accept(SpectralFluids.MOLTEN_FLUORITE.bucket().get());
+                        output.accept(SpectralFluids.MOLTEN_YTTRIUM_OXIDE.bucket().get());
+                        output.accept(SpectralFluids.MOLTEN_YAG.bucket().get());
                     })
                     .build());
 
@@ -556,6 +581,7 @@ public class Spectralization {
     public Spectralization(IEventBus modEventBus, ModContainer modContainer) {
         modContainer.registerConfig(ModConfig.Type.COMMON, SpectralizationConfig.SPEC);
 
+        SpectralFluids.register(modEventBus);
         BLOCKS.register(modEventBus);
         ITEMS.register(modEventBus);
         RECIPE_SERIALIZERS.register(modEventBus);
@@ -589,6 +615,16 @@ public class Spectralization {
                 Capabilities.ItemHandler.BLOCK,
                 SpectralBlockEntities.PHOTOTHERMAL_GENERATOR.get(),
                 (generator, side) -> generator.getFuelItems(side)
+        );
+        event.registerBlockEntity(
+                Capabilities.ItemHandler.BLOCK,
+                SpectralBlockEntities.THERMAL_SMELTER.get(),
+                (smelter, side) -> smelter.getItems(side)
+        );
+        event.registerBlockEntity(
+                Capabilities.FluidHandler.BLOCK,
+                SpectralBlockEntities.THERMAL_SMELTER.get(),
+                (smelter, side) -> smelter.getFluidHandler(side)
         );
     }
 
@@ -695,6 +731,7 @@ public class Spectralization {
             event.register(SpectralMenus.COATING_BRUSH.get(), CoatingBrushScreen::new);
             event.register(SpectralMenus.SPECTROMETER.get(), SpectrometerScreen::new);
             event.register(SpectralMenus.PHOTOTHERMAL_GENERATOR.get(), PhotothermalGeneratorScreen::new);
+            event.register(SpectralMenus.THERMAL_SMELTER.get(), ThermalSmelterScreen::new);
         }
     }
 }

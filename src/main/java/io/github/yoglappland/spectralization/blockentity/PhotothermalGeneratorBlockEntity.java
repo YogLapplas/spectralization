@@ -1,7 +1,11 @@
 package io.github.yoglappland.spectralization.blockentity;
 
 import io.github.yoglappland.spectralization.energy.SpectralEnergyStorage;
-import io.github.yoglappland.spectralization.optics.cache.ReadoutSample;
+import io.github.yoglappland.spectralization.heat.PhotothermalAbsorberProfile;
+import io.github.yoglappland.spectralization.heat.PhotothermalCouplingModel;
+import io.github.yoglappland.spectralization.heat.PhotothermalCouplingResult;
+import io.github.yoglappland.spectralization.heat.PhotothermalReceiver;
+import io.github.yoglappland.spectralization.heat.PhotothermalReadoutSample;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
@@ -18,7 +22,7 @@ import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.energy.IEnergyStorage;
 import net.neoforged.neoforge.items.ItemStackHandler;
 
-public class PhotothermalGeneratorBlockEntity extends BlockEntity {
+public class PhotothermalGeneratorBlockEntity extends BlockEntity implements PhotothermalReceiver {
     public static final int DATA_ENERGY = 0;
     public static final int DATA_CAPACITY = 1;
     public static final int DATA_BURN_REMAINING = 2;
@@ -73,9 +77,9 @@ public class PhotothermalGeneratorBlockEntity extends BlockEntity {
     private long lastReceivedGameTime = Long.MIN_VALUE;
     private long lastReceivedSampleStep = Long.MIN_VALUE;
     private long lastObservedSampleStep = Long.MIN_VALUE;
-    private double receivedPowerThisStep = 0.0;
+    private PhotothermalCouplingResult receivedCouplingThisStep = PhotothermalCouplingResult.zero();
     private boolean receivedReliableThisStep = false;
-    private double committedOpticalPower = 0.0;
+    private PhotothermalCouplingResult committedCoupling = PhotothermalCouplingResult.zero();
     private double burnTicksRemaining = 0.0;
     private int baseBurnDuration = 0;
     private double generationRemainder = 0.0;
@@ -98,20 +102,39 @@ public class PhotothermalGeneratorBlockEntity extends BlockEntity {
         return !stack.isEmpty() && stack.getBurnTime(null) > 0;
     }
 
-    public void receiveOpticalSample(ReadoutSample sample) {
+    public void receiveOpticalSample(PhotothermalReadoutSample sample) {
+        receivePhotothermalSample(sample);
+    }
+
+    @Override
+    public PhotothermalAbsorberProfile photothermalAbsorberProfile() {
+        return PhotothermalAbsorberProfile.DEFAULT_MACHINE_FACE;
+    }
+
+    @Override
+    public PhotothermalCouplingResult photothermalCoupling() {
+        return committedCoupling;
+    }
+
+    @Override
+    public void receivePhotothermalSample(PhotothermalReadoutSample sample) {
         if (this.level == null || this.level.isClientSide) {
             return;
         }
 
         long gameTime = this.level.getGameTime();
         this.lastReceivedGameTime = gameTime;
+        PhotothermalCouplingResult coupling = PhotothermalCouplingModel.calculate(
+                sample,
+                photothermalAbsorberProfile()
+        );
 
         if (this.lastReceivedSampleStep == sample.step()) {
-            this.receivedPowerThisStep += sample.power();
+            this.receivedCouplingThisStep = combine(receivedCouplingThisStep, coupling);
             this.receivedReliableThisStep &= sample.reliable();
         } else {
             this.lastReceivedSampleStep = sample.step();
-            this.receivedPowerThisStep = sample.power();
+            this.receivedCouplingThisStep = coupling;
             this.receivedReliableThisStep = sample.reliable();
         }
     }
@@ -136,7 +159,7 @@ public class PhotothermalGeneratorBlockEntity extends BlockEntity {
 
     private void tickOpticalSample(Level level) {
         if (level.getGameTime() - this.lastReceivedGameTime > SAMPLE_HOLD_TICKS) {
-            commitOpticalPower(0.0);
+            commitCoupling(PhotothermalCouplingResult.zero());
             return;
         }
 
@@ -145,14 +168,13 @@ public class PhotothermalGeneratorBlockEntity extends BlockEntity {
         }
 
         this.lastObservedSampleStep = this.lastReceivedSampleStep;
-        commitOpticalPower(receivedReliableThisStep ? receivedPowerThisStep : 0.0);
+        commitCoupling(receivedReliableThisStep ? receivedCouplingThisStep : PhotothermalCouplingResult.zero());
     }
 
-    private void commitOpticalPower(double power) {
-        double clampedPower = Double.isFinite(power) && power > 0.0 ? power : 0.0;
-
-        if (Math.abs(committedOpticalPower - clampedPower) > 1.0E-6) {
-            committedOpticalPower = clampedPower;
+    private void commitCoupling(PhotothermalCouplingResult coupling) {
+        if (Math.abs(committedCoupling.heatPower() - coupling.heatPower()) > 1.0E-6
+                || Math.abs(committedCoupling.totalEfficiency() - coupling.totalEfficiency()) > 1.0E-6) {
+            committedCoupling = coupling;
             setChanged();
         }
     }
@@ -258,7 +280,7 @@ public class PhotothermalGeneratorBlockEntity extends BlockEntity {
     }
 
     private double opticalBoostProgress() {
-        return Math.max(0.0, Math.min(1.0, committedOpticalPower / FULL_OPTICAL_BOOST_POWER));
+        return Math.max(0.0, Math.min(1.0, committedCoupling.heatPower() / FULL_OPTICAL_BOOST_POWER));
     }
 
     @Override
@@ -268,7 +290,7 @@ public class PhotothermalGeneratorBlockEntity extends BlockEntity {
         burnTicksRemaining = tag.getDouble(BURN_REMAINING_TAG);
         baseBurnDuration = tag.getInt(BURN_DURATION_TAG);
         generationRemainder = tag.getDouble(GENERATION_REMAINDER_TAG);
-        committedOpticalPower = tag.getDouble(OPTICAL_POWER_TAG);
+        committedCoupling = restoredCoupling(tag.getDouble(OPTICAL_POWER_TAG));
 
         if (tag.contains(FUEL_TAG)) {
             fuelItems.deserializeNBT(registries, tag.getCompound(FUEL_TAG));
@@ -283,6 +305,68 @@ public class PhotothermalGeneratorBlockEntity extends BlockEntity {
         tag.putDouble(BURN_REMAINING_TAG, burnTicksRemaining);
         tag.putInt(BURN_DURATION_TAG, baseBurnDuration);
         tag.putDouble(GENERATION_REMAINDER_TAG, generationRemainder);
-        tag.putDouble(OPTICAL_POWER_TAG, committedOpticalPower);
+        tag.putDouble(OPTICAL_POWER_TAG, committedCoupling.heatPower());
+    }
+
+    private static PhotothermalCouplingResult combine(
+            PhotothermalCouplingResult left,
+            PhotothermalCouplingResult right
+    ) {
+        if (left.inputPower() <= 0.0) {
+            return right;
+        }
+
+        if (right.inputPower() <= 0.0) {
+            return left;
+        }
+
+        double inputPower = left.inputPower() + right.inputPower();
+        double heatPower = left.heatPower() + right.heatPower();
+        double absorbedPower = left.absorbedOpticalPower() + right.absorbedOpticalPower();
+        double spectralEfficiency = weightedAverage(left.spectralEfficiency(), left.inputPower(), right.spectralEfficiency(), right.inputPower());
+        double radiusEfficiency = weightedAverage(left.radiusEfficiency(), left.inputPower(), right.radiusEfficiency(), right.inputPower());
+        double uniformityEfficiency = weightedAverage(left.uniformityEfficiency(), left.inputPower(), right.uniformityEfficiency(), right.inputPower());
+        double totalEfficiency = inputPower <= 0.0 ? 0.0 : Math.max(0.0, Math.min(1.0, heatPower / inputPower));
+        double beamRadius = weightedAverage(left.beamRadius(), left.inputPower(), right.beamRadius(), right.inputPower());
+        double irradiance = Math.max(left.irradiance(), right.irradiance());
+
+        return new PhotothermalCouplingResult(
+                inputPower,
+                absorbedPower,
+                heatPower,
+                spectralEfficiency,
+                radiusEfficiency,
+                uniformityEfficiency,
+                totalEfficiency,
+                beamRadius,
+                irradiance,
+                left.state().ordinal() >= right.state().ordinal() ? left.state() : right.state()
+        );
+    }
+
+    private static double weightedAverage(double left, double leftWeight, double right, double rightWeight) {
+        double totalWeight = leftWeight + rightWeight;
+        return totalWeight <= 0.0 ? 0.0 : (left * leftWeight + right * rightWeight) / totalWeight;
+    }
+
+    private static PhotothermalCouplingResult restoredCoupling(double heatPower) {
+        double power = Double.isFinite(heatPower) && heatPower > 0.0 ? heatPower : 0.0;
+
+        if (power <= 0.0) {
+            return PhotothermalCouplingResult.zero();
+        }
+
+        return new PhotothermalCouplingResult(
+                power,
+                power,
+                power,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                PhotothermalAbsorberProfile.DEFAULT_MACHINE_FACE.absorptionRadius(),
+                0.0,
+                io.github.yoglappland.spectralization.heat.PhotothermalCouplingState.MATCHED
+        );
     }
 }

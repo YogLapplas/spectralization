@@ -1,18 +1,26 @@
 package io.github.yoglappland.spectralization.optics.surface;
 
 import io.github.yoglappland.spectralization.Spectralization;
+import io.github.yoglappland.spectralization.optics.FrequencyKey;
 import io.github.yoglappland.spectralization.optics.OpticalMaterialProfile;
 import io.github.yoglappland.spectralization.optics.OpticalMaterialResponse;
+import io.github.yoglappland.spectralization.optics.OpticalMaterialSample;
+import io.github.yoglappland.spectralization.optics.SpectralRegion;
 import io.github.yoglappland.spectralization.optics.medium.OpticalMediumProfiles;
 import java.util.Objects;
 import net.minecraft.resources.ResourceLocation;
 
 public final class SurfaceTreatments {
-    private static final OpticalMaterialProfile SILVERING_PROFILE = OpticalMaterialProfile.constant(
-            OpticalMaterialResponse.of(0.0, 0.96, 0.02)
+    private static final OpticalMaterialProfile SILVERING_PROFILE = OpticalMaterialProfile.of(
+            sample(SpectralRegion.INFRARED, 16, 0.0, 0.985, 0.010),
+            sample(SpectralRegion.VISIBLE, 16, 0.0, 0.970, 0.020),
+            sample(SpectralRegion.ULTRAVIOLET, 16, 0.0, 0.620, 0.300)
     );
-    private static final OpticalMaterialProfile GOLDING_PROFILE = OpticalMaterialProfile.constant(
-            OpticalMaterialResponse.of(0.0, 0.88, 0.04)
+    private static final OpticalMaterialProfile GOLDING_PROFILE = OpticalMaterialProfile.of(
+            sample(SpectralRegion.INFRARED, 16, 0.0, 0.960, 0.025),
+            sample(SpectralRegion.VISIBLE, 4, 0.0, 0.420, 0.480),
+            sample(SpectralRegion.VISIBLE, 26, 0.0, 0.930, 0.050),
+            sample(SpectralRegion.ULTRAVIOLET, 16, 0.0, 0.320, 0.580)
     );
 
     public static SurfaceProfile profileFor(SurfaceTreatmentKind kind) {
@@ -38,6 +46,19 @@ public final class SurfaceTreatments {
                 kind,
                 SurfacePersistence.WORLD_STATE_ONLY,
                 OpticalInterfaceProfile.MATCHED
+        );
+    }
+
+    private static OpticalMaterialSample sample(
+            SpectralRegion region,
+            int bin,
+            double transmittance,
+            double reflectance,
+            double absorption
+    ) {
+        return new OpticalMaterialSample(
+                new FrequencyKey(region, bin),
+                OpticalMaterialResponse.of(transmittance, reflectance, absorption)
         );
     }
 

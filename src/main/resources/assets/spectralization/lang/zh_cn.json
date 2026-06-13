@@ -69,6 +69,7 @@
   "fluid_type.spectralization.molten_yag": "\u7194\u878d YAG",
   "block.spectralization.fiber_optic_interface": "\u5149\u7ea4\u63a5\u53e3",
   "block.spectralization.fiber_relay": "\u5149\u7ea4\u4e2d\u7ee7\u5668",
+  "block.spectralization.holographic_storage_crystal": "\u5168\u606f\u5b58\u50a8\u6676\u4f53",
   "block.spectralization.lens_holder": "\u900f\u955c\u652f\u67b6",
   "block.spectralization.mirror": "\u955c\u5b50",
   "block.spectralization.dynamic_mirror": "\u52a8\u6001\u955c",

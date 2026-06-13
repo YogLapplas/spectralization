@@ -69,6 +69,7 @@
   "fluid_type.spectralization.molten_yag": "Molten YAG",
   "block.spectralization.fiber_optic_interface": "Fiber Optic Interface",
   "block.spectralization.fiber_relay": "Fiber Relay",
+  "block.spectralization.holographic_storage_crystal": "Holographic Storage Crystal",
   "block.spectralization.lens_holder": "Lens Holder",
   "block.spectralization.mirror": "Mirror",
   "block.spectralization.dynamic_mirror": "Dynamic Mirror",

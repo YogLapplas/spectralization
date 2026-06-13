@@ -6,6 +6,7 @@ import io.github.yoglappland.spectralization.blockentity.CmosSensorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.CreativeLightSourceBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.FiberOpticInterfaceBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.FiberRelayBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.HolographicStorageCrystalBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.LensHolderBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.PassThroughSensorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.PhotonicGradientGeneratorBlockEntity;
@@ -35,6 +36,13 @@ public final class SpectralBlockEntities {
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<FiberRelayBlockEntity>> FIBER_RELAY =
             BLOCK_ENTITY_TYPES.register("fiber_relay", () ->
                     BlockEntityType.Builder.of(FiberRelayBlockEntity::new, Spectralization.FIBER_RELAY.get()).build(null));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<HolographicStorageCrystalBlockEntity>> HOLOGRAPHIC_STORAGE_CRYSTAL =
+            BLOCK_ENTITY_TYPES.register("holographic_storage_crystal", () ->
+                    BlockEntityType.Builder.of(
+                            HolographicStorageCrystalBlockEntity::new,
+                            Spectralization.HOLOGRAPHIC_STORAGE_CRYSTAL.get()
+                    ).build(null));
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<CreativeLightSourceBlockEntity>> CREATIVE_LIGHT_SOURCE =
             BLOCK_ENTITY_TYPES.register("creative_light_source", () ->

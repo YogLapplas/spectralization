@@ -1,0 +1,9 @@
+{
+  "replace": false,
+  "values": [
+    "spectralization:holographic_storage_shell",
+    "spectralization:holographic_storage_crystal",
+    "spectralization:holographic_storage_main_core",
+    "spectralization:holographic_storage_screen"
+  ]
+}

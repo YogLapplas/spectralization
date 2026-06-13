@@ -6,7 +6,7 @@
 	"texture_size": [32, 32],
 	"textures": {
 		"shell": "spectralization:block/holographic_storage_crystal",
-		"core": "spectralization:block/storage_core_blue",
+		"core": "spectralization:block/holographic_storage_main_core",
 		"particle": "spectralization:block/holographic_storage_crystal"
 	},
 	"elements": [
@@ -88,28 +88,18 @@
 			}
 		},
 		{
-			"from": [5, 5, 5],
-			"to": [11, 11, 11],
-			"rotation": {"angle": 0, "axis": "y", "origin": [5, 5, 5]},
+			"from": [4, 4, 4],
+			"to": [12, 12, 12],
+			"rotation": {"angle": 45, "axis": "y", "origin": [8, 8, 8]},
 			"shade": false,
 			"faces": {
-				"north": {"uv": [0, 0, 6, 6], "texture": "#core"},
-				"east": {"uv": [0, 0, 6, 6], "texture": "#core"},
-				"south": {"uv": [0, 0, 6, 6], "texture": "#core"},
-				"west": {"uv": [0, 0, 6, 6], "texture": "#core"},
-				"up": {"uv": [0, 0, 6, 6], "texture": "#core"},
-				"down": {"uv": [6, 0, 0, 6], "texture": "#core"}
+				"north": {"uv": [0, 0, 8, 8], "texture": "#core"},
+				"east": {"uv": [0, 0, 8, 8], "texture": "#core"},
+				"south": {"uv": [0, 0, 8, 8], "texture": "#core"},
+				"west": {"uv": [0, 0, 8, 8], "texture": "#core"},
+				"up": {"uv": [0, 0, 8, 8], "texture": "#core"},
+				"down": {"uv": [0, 0, 8, 8], "texture": "#core"}
 			}
 		}
-	],
-	"groups": [
-		{
-			"name": "shell",
-			"origin": [8, 15.5, 8],
-			"scope": 0,
-			"color": 0,
-			"children": [0, 1, 2, 3, 4, 5]
-		},
-		6
 	]
 }

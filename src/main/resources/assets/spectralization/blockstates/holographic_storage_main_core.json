@@ -7,18 +7,18 @@
     },
     {
       "when": {
-        "linked": "false"
+        "error": "false"
       },
       "apply": {
-        "model": "spectralization:block/holographic_storage_core_blue"
+        "model": "spectralization:block/holographic_storage_main_core"
       }
     },
     {
       "when": {
-        "linked": "true"
+        "error": "true"
       },
       "apply": {
-        "model": "spectralization:block/holographic_storage_core_green"
+        "model": "spectralization:block/holographic_storage_main_core_error"
       }
     }
   ]

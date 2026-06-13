@@ -19,7 +19,7 @@ public final class SpectralGuiTheme {
     public static final int BURN = 0xFFFF9F43;
     public static final int FLUID = 0xFF5DB7FF;
     public static final int PROGRESS = 0xFFFFB04A;
-    public static final int OPTICAL = 0xFFB08CFF;
+    public static final int OPTICAL = 0xFF7CEAD9;
     public static final int SIGNAL = 0xFFFF3E3E;
     public static final int STABLE = 0xFF7FDB8A;
 

@@ -7,7 +7,7 @@ public enum SpectralSlotKind {
     CONTAINER(0xFF5DB7FF),
     FUEL(0xFFFF9F43),
     POWER(0xFF58D68D),
-    OPTICAL(0xFFB08CFF),
+    OPTICAL(0xFF9EFFF1),
     FLUID(0xFF5DB7FF);
 
     private final int borderColor;

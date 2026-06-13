@@ -12,6 +12,7 @@ public final class SpectralBlockTags {
     public static final TagKey<Block> LASER_GAIN_MEDIUM = block("laser_gain_medium");
     public static final TagKey<Block> HIGH_REFLECTANCE_MATERIAL = block("high_reflectance_material");
     public static final TagKey<Block> REFLECTIVE_MATERIAL = block("reflective_material");
+    public static final TagKey<Block> HOLOGRAPHIC_STORAGE = block("holographic_storage");
 
     private SpectralBlockTags() {
     }

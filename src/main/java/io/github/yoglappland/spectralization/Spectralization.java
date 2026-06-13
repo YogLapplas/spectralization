@@ -9,6 +9,9 @@ import io.github.yoglappland.spectralization.block.DynamicMirrorBlock;
 import io.github.yoglappland.spectralization.block.FiberOpticInterfaceBlock;
 import io.github.yoglappland.spectralization.block.FiberRelayBlock;
 import io.github.yoglappland.spectralization.block.HolographicStorageCrystalBlock;
+import io.github.yoglappland.spectralization.block.HolographicStorageMainCoreBlock;
+import io.github.yoglappland.spectralization.block.HolographicStorageScreenBlock;
+import io.github.yoglappland.spectralization.block.HolographicStorageShellBlock;
 import io.github.yoglappland.spectralization.block.LensHolderBlock;
 import io.github.yoglappland.spectralization.block.MirrorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
@@ -20,10 +23,11 @@ import io.github.yoglappland.spectralization.block.SpectrometerBlock;
 import io.github.yoglappland.spectralization.block.StrayLightEmitterBlock;
 import io.github.yoglappland.spectralization.block.ThermalSmelterBlock;
 import io.github.yoglappland.spectralization.blockentity.RubyBlockEntity;
-import io.github.yoglappland.spectralization.client.renderer.HolographicStorageCrystalRenderer;
 import io.github.yoglappland.spectralization.client.renderer.LensHolderRenderer;
 import io.github.yoglappland.spectralization.client.screen.CoatingBrushScreen;
 import io.github.yoglappland.spectralization.client.screen.CreativeLightSourceScreen;
+import io.github.yoglappland.spectralization.client.screen.HolographicStorageCoreScreen;
+import io.github.yoglappland.spectralization.client.screen.HolographicStorageScreen;
 import io.github.yoglappland.spectralization.client.screen.PhotothermalGeneratorScreen;
 import io.github.yoglappland.spectralization.client.screen.SpectrometerScreen;
 import io.github.yoglappland.spectralization.client.screen.ThermalSmelterScreen;
@@ -245,6 +249,18 @@ public class Spectralization {
     public static final DeferredItem<BlockItem> FIBER_RELAY_ITEM =
             ITEMS.registerSimpleBlockItem("fiber_relay", FIBER_RELAY);
 
+    public static final DeferredBlock<HolographicStorageShellBlock> HOLOGRAPHIC_STORAGE_SHELL = BLOCKS.register(
+            "holographic_storage_shell",
+            () -> new HolographicStorageShellBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_LIGHT_BLUE)
+                    .strength(1.5F, 6.0F)
+                    .sound(SoundType.AMETHYST)
+                    .noOcclusion())
+    );
+
+    public static final DeferredItem<BlockItem> HOLOGRAPHIC_STORAGE_SHELL_ITEM =
+            ITEMS.registerSimpleBlockItem("holographic_storage_shell", HOLOGRAPHIC_STORAGE_SHELL);
+
     public static final DeferredBlock<HolographicStorageCrystalBlock> HOLOGRAPHIC_STORAGE_CRYSTAL = BLOCKS.register(
             "holographic_storage_crystal",
             () -> new HolographicStorageCrystalBlock(BlockBehaviour.Properties.of()
@@ -257,6 +273,31 @@ public class Spectralization {
 
     public static final DeferredItem<BlockItem> HOLOGRAPHIC_STORAGE_CRYSTAL_ITEM =
             ITEMS.registerSimpleBlockItem("holographic_storage_crystal", HOLOGRAPHIC_STORAGE_CRYSTAL);
+
+    public static final DeferredBlock<HolographicStorageMainCoreBlock> HOLOGRAPHIC_STORAGE_MAIN_CORE = BLOCKS.register(
+            "holographic_storage_main_core",
+            () -> new HolographicStorageMainCoreBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_LIGHT_BLUE)
+                    .strength(1.5F, 6.0F)
+                    .sound(SoundType.AMETHYST)
+                    .lightLevel(state -> 10)
+                    .noOcclusion())
+    );
+
+    public static final DeferredItem<BlockItem> HOLOGRAPHIC_STORAGE_MAIN_CORE_ITEM =
+            ITEMS.registerSimpleBlockItem("holographic_storage_main_core", HOLOGRAPHIC_STORAGE_MAIN_CORE);
+
+    public static final DeferredBlock<HolographicStorageScreenBlock> HOLOGRAPHIC_STORAGE_SCREEN = BLOCKS.register(
+            "holographic_storage_screen",
+            () -> new HolographicStorageScreenBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_LIGHT_BLUE)
+                    .strength(1.5F, 6.0F)
+                    .sound(SoundType.AMETHYST)
+                    .noOcclusion())
+    );
+
+    public static final DeferredItem<BlockItem> HOLOGRAPHIC_STORAGE_SCREEN_ITEM =
+            ITEMS.registerSimpleBlockItem("holographic_storage_screen", HOLOGRAPHIC_STORAGE_SCREEN);
 
     public static final DeferredBlock<MirrorBlock> MIRROR = BLOCKS.register(
             "mirror",
@@ -568,7 +609,10 @@ public class Spectralization {
                         output.accept(LENS_HOLDER_ITEM.get());
                         output.accept(FIBER_OPTIC_INTERFACE_ITEM.get());
                         output.accept(FIBER_RELAY_ITEM.get());
+                        output.accept(HOLOGRAPHIC_STORAGE_SHELL_ITEM.get());
                         output.accept(HOLOGRAPHIC_STORAGE_CRYSTAL_ITEM.get());
+                        output.accept(HOLOGRAPHIC_STORAGE_MAIN_CORE_ITEM.get());
+                        output.accept(HOLOGRAPHIC_STORAGE_SCREEN_ITEM.get());
                         output.accept(MIRROR_ITEM.get());
                         output.accept(DYNAMIC_MIRROR_ITEM.get());
                         output.accept(BEAM_SPLITTER_ITEM.get());
@@ -809,7 +853,6 @@ public class Spectralization {
         @SubscribeEvent
         static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
             event.registerBlockEntityRenderer(SpectralBlockEntities.LENS_HOLDER.get(), LensHolderRenderer::new);
-            event.registerBlockEntityRenderer(SpectralBlockEntities.HOLOGRAPHIC_STORAGE_CRYSTAL.get(), HolographicStorageCrystalRenderer::new);
         }
 
         @SubscribeEvent
@@ -819,6 +862,8 @@ public class Spectralization {
             event.register(SpectralMenus.SPECTROMETER.get(), SpectrometerScreen::new);
             event.register(SpectralMenus.PHOTOTHERMAL_GENERATOR.get(), PhotothermalGeneratorScreen::new);
             event.register(SpectralMenus.THERMAL_SMELTER.get(), ThermalSmelterScreen::new);
+            event.register(SpectralMenus.HOLOGRAPHIC_STORAGE.get(), HolographicStorageScreen::new);
+            event.register(SpectralMenus.HOLOGRAPHIC_STORAGE_CORE.get(), HolographicStorageCoreScreen::new);
         }
     }
 }

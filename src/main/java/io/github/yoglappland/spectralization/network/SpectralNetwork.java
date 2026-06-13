@@ -2,9 +2,11 @@ package io.github.yoglappland.spectralization.network;
 
 import io.github.yoglappland.spectralization.client.beam.ClientBeamPathPayloadHandler;
 import io.github.yoglappland.spectralization.client.networkoverlay.ClientNetworkOverlayPayloadHandler;
+import io.github.yoglappland.spectralization.client.storage.ClientHolographicStoragePayloadHandler;
 import io.github.yoglappland.spectralization.client.surface.ClientSurfaceInspectionPayloadHandler;
 import io.github.yoglappland.spectralization.client.spot.ClientSpotPayloadHandler;
 import io.github.yoglappland.spectralization.menu.CreativeLightSourceMenu;
+import io.github.yoglappland.spectralization.menu.HolographicStorageMenu;
 import io.github.yoglappland.spectralization.optics.surface.SurfaceCoatingData;
 import io.github.yoglappland.spectralization.optics.surface.SurfaceKey;
 import net.neoforged.api.distmarker.Dist;
@@ -52,6 +54,12 @@ public final class SpectralNetwork {
                 (payload, context) -> context.enqueueWork(() -> handleSurfaceCoatingOverlay(payload))
         );
 
+        registrar.playToClient(
+                HolographicStorageSnapshotPayload.TYPE,
+                HolographicStorageSnapshotPayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> handleHolographicStorageSnapshot(payload))
+        );
+
         registrar.playToServer(
                 SurfaceInspectionRequestPayload.TYPE,
                 SurfaceInspectionRequestPayload.STREAM_CODEC,
@@ -62,6 +70,12 @@ public final class SpectralNetwork {
                 CreativeLightSpectrumPayload.TYPE,
                 CreativeLightSpectrumPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleCreativeLightSpectrum(payload, context.player()))
+        );
+
+        registrar.playToServer(
+                HolographicStorageActionPayload.TYPE,
+                HolographicStorageActionPayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> handleHolographicStorageAction(payload, context.player()))
         );
     }
 
@@ -98,6 +112,12 @@ public final class SpectralNetwork {
     private static void handleSurfaceCoatingOverlay(SurfaceCoatingOverlayPayload payload) {
         if (FMLEnvironment.dist == Dist.CLIENT) {
             ClientSurfaceInspectionPayloadHandler.handleOverlay(payload);
+        }
+    }
+
+    private static void handleHolographicStorageSnapshot(HolographicStorageSnapshotPayload payload) {
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            ClientHolographicStoragePayloadHandler.handle(payload);
         }
     }
 
@@ -141,6 +161,19 @@ public final class SpectralNetwork {
         }
 
         menu.setSpectrumWeight(payload.bin(), payload.weight());
+    }
+
+    private static void handleHolographicStorageAction(
+            HolographicStorageActionPayload payload,
+            net.minecraft.world.entity.player.Player player
+    ) {
+        if (!(player instanceof net.minecraft.server.level.ServerPlayer serverPlayer)
+                || !(player.containerMenu instanceof HolographicStorageMenu menu)
+                || menu.containerId != payload.containerId()) {
+            return;
+        }
+
+        menu.handleAction(payload, serverPlayer);
     }
 
     private static void contextReply(

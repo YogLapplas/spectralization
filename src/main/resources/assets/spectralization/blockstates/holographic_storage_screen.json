@@ -1,0 +1,56 @@
+{
+  "variants": {
+    "connected=false,facing=down": {
+      "model": "spectralization:block/holographic_storage_screen_unconnected"
+    },
+    "connected=true,facing=down": {
+      "model": "spectralization:block/holographic_storage_screen"
+    },
+    "connected=false,facing=up": {
+      "model": "spectralization:block/holographic_storage_screen_unconnected",
+      "x": 180
+    },
+    "connected=true,facing=up": {
+      "model": "spectralization:block/holographic_storage_screen",
+      "x": 180
+    },
+    "connected=false,facing=north": {
+      "model": "spectralization:block/holographic_storage_screen_unconnected",
+      "x": 90,
+      "y": 180
+    },
+    "connected=true,facing=north": {
+      "model": "spectralization:block/holographic_storage_screen",
+      "x": 90,
+      "y": 180
+    },
+    "connected=false,facing=east": {
+      "model": "spectralization:block/holographic_storage_screen_unconnected",
+      "x": 90,
+      "y": 270
+    },
+    "connected=true,facing=east": {
+      "model": "spectralization:block/holographic_storage_screen",
+      "x": 90,
+      "y": 270
+    },
+    "connected=false,facing=south": {
+      "model": "spectralization:block/holographic_storage_screen_unconnected",
+      "x": 90
+    },
+    "connected=true,facing=south": {
+      "model": "spectralization:block/holographic_storage_screen",
+      "x": 90
+    },
+    "connected=false,facing=west": {
+      "model": "spectralization:block/holographic_storage_screen_unconnected",
+      "x": 90,
+      "y": 90
+    },
+    "connected=true,facing=west": {
+      "model": "spectralization:block/holographic_storage_screen",
+      "x": 90,
+      "y": 90
+    }
+  }
+}

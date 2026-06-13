@@ -5,12 +5,14 @@ import io.github.yoglappland.spectralization.optics.CoherenceKind;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalTrace;
 import io.github.yoglappland.spectralization.optics.OpticalPropagationEdge;
 import io.github.yoglappland.spectralization.optics.PlaneWaveComponent;
-import io.github.yoglappland.spectralization.optics.SpectralRegion;
+import io.github.yoglappland.spectralization.optics.SpectralColorMap;
 import java.util.List;
 import java.util.Objects;
 import net.minecraft.core.Direction;
 
 public final class BeamVisualSegments {
+    private static final int DEFAULT_BEAM_RGB = 0xFF2300;
+
     public static List<BeamVisualSegment> fromTrace(
             CompiledOpticalTrace trace,
             BeamVisibilityKind visibilityKind
@@ -33,16 +35,17 @@ public final class BeamVisualSegments {
 
         BeamPacket beam = edge.beam();
         Direction direction = edge.from().side();
+        CoherenceKind coherence = dominantCoherence(beam);
 
         return new BeamVisualSegment(
                 edge.from().pos(),
                 edge.to().pos(),
                 direction,
-                dominantCoherence(beam),
+                coherence,
                 visibilityKind,
                 BeamGeometryOps.sample(beam.envelope(), beam.totalPower()),
                 beam.totalPower(),
-                visibleColorBin(beam)
+                visibleColorRgb(beam, coherence)
         );
     }
 
@@ -61,18 +64,8 @@ public final class BeamVisualSegments {
         return coherentPower >= incoherentPower ? CoherenceKind.COHERENT : CoherenceKind.INCOHERENT;
     }
 
-    private static int visibleColorBin(BeamPacket beam) {
-        double strongestPower = -1.0;
-        int colorBin = SpectralRegion.VISIBLE.defaultBins() - 1;
-
-        for (PlaneWaveComponent component : beam.components()) {
-            if (component.frequency().region() == SpectralRegion.VISIBLE && component.power() > strongestPower) {
-                strongestPower = component.power();
-                colorBin = component.frequency().bin();
-            }
-        }
-
-        return colorBin;
+    private static int visibleColorRgb(BeamPacket beam, CoherenceKind coherence) {
+        return SpectralColorMap.mixVisibleRgbForComponents(beam.components(), coherence, DEFAULT_BEAM_RGB);
     }
 
     private BeamVisualSegments() {

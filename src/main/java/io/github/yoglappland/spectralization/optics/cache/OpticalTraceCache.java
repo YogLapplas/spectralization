@@ -27,6 +27,7 @@ import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
 import io.github.yoglappland.spectralization.optics.SpotRecord;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
+import io.github.yoglappland.spectralization.optics.fiber.FiberOverloadMonitor;
 import io.github.yoglappland.spectralization.optics.geometry.BeamPathOverlayTracker;
 import io.github.yoglappland.spectralization.optics.pump.OpticalPumpSources;
 import io.github.yoglappland.spectralization.optics.compiler.BeamProfileSource;
@@ -189,6 +190,12 @@ public final class OpticalTraceCache {
             flushRetiredHudOwners(serverLevel, cache);
         }
         return changed;
+    }
+
+    public static void invalidateTopologyCaches(LevelAccessor level) {
+        if (level instanceof ServerLevel serverLevel) {
+            cacheFor(serverLevel).invalidateTopologyCompilationCaches();
+        }
     }
 
     public static void markSurfaceChanged(LevelAccessor level, SurfaceKey key) {
@@ -399,6 +406,11 @@ public final class OpticalTraceCache {
                         List.of(new BeamProfileSource(request.sourcePos(), request.sourceOutput()))
                 );
             }
+
+            if (handleFiberOverload(level, cache, request, existingTrace, directGraph, scalarPowerSolution)) {
+                continue;
+            }
+
             List<ReceiverOutput> directReceiverOutputs = directReadoutLayer.sample(scalarPowerSolution);
             boolean directReadoutDemand = hasReadoutDemand(directReadoutLayer, directReceiverOutputs);
             CompiledOpticalTrace trace = traceLegacyIfNeeded(
@@ -473,11 +485,14 @@ public final class OpticalTraceCache {
                 cache.unregisterDirectSourceForNetwork(request.networkId());
             }
 
-            if (!directReadoutDemand) {
+            boolean fiberSystemDemand = hasFiberRemoteTransfer(directGraph);
+            boolean systemDemand = directReadoutDemand || fiberSystemDemand;
+
+            if (!systemDemand) {
                 cache.clearSystemMappingForNetwork(request.networkId());
             }
 
-            if (directReadoutDemand && canTrackDirectSource) {
+            if (systemDemand && canTrackDirectSource) {
                 cache.enqueueSystemRebuild(request.networkId());
 
                 if (directGeometryCacheHit) {
@@ -711,6 +726,30 @@ public final class OpticalTraceCache {
         return level.getGameTime() - activityTick < quietTicks;
     }
 
+    private static boolean handleFiberOverload(
+            ServerLevel level,
+            LevelTraceCache cache,
+            TraceRequest request,
+            CachedOpticalTrace existingTrace,
+            CompiledPortGraph graph,
+            ScalarPowerSolution solution
+    ) {
+        if (!FiberOverloadMonitor.burnOverloadedFibers(level, graph, solution)) {
+            return false;
+        }
+
+        cache.invalidateTopologyCompilationCaches();
+        applyInterruptedAuthoritativeOutputs(
+                level,
+                cache,
+                request.networkId(),
+                existingTrace,
+                "fiber_overload"
+        );
+        cache.enqueue(request, level.getGameTime());
+        return true;
+    }
+
     private static CompiledOpticalTrace traceLegacyIfNeeded(
             ServerLevel level,
             TraceRequest request,
@@ -810,6 +849,10 @@ public final class OpticalTraceCache {
                 return false;
             }
 
+            return false;
+        }
+
+        if (cachedTrace == null) {
             return false;
         }
 
@@ -978,6 +1021,7 @@ public final class OpticalTraceCache {
                 cachedTrace.portGraph().sourceDirection(),
                 mode,
                 cachedTrace.hudSegments().size(),
+                cachedTrace.hudSegments(),
                 sentPlayers,
                 BeamPathOverlayTracker.terminalRayBlocks(),
                 serverLevel.getGameTime()
@@ -1039,6 +1083,7 @@ public final class OpticalTraceCache {
                 system.graph().sourceDirection(),
                 mode,
                 segments.size(),
+                segments,
                 sentPlayers,
                 BeamPathOverlayTracker.terminalRayBlocks(),
                 serverLevel.getGameTime()
@@ -1142,7 +1187,7 @@ public final class OpticalTraceCache {
             boolean reliable,
             long readoutStep
     ) {
-        if (!SpectralizationConfig.opticalCompilerDebugLog()) {
+        if (!SpectralizationConfig.opticalCompilerDebugLog() || cachedTrace == null) {
             return;
         }
 
@@ -1212,6 +1257,17 @@ public final class OpticalTraceCache {
             List<ReceiverOutput> receiverOutputs
     ) {
         return readoutLayer.size() > 0 || !receiverOutputs.isEmpty();
+    }
+
+    private static boolean hasFiberRemoteTransfer(CompiledPortGraph graph) {
+        for (PortGraphEdge edge : graph.edges()) {
+            if (edge.kind() == PortGraphEdgeKind.LOCAL_SCATTERING
+                    && !edge.from().pos().equals(edge.to().pos())) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static int directGraphSourceOutputCount(Level level, CompiledPortGraph graph) {
@@ -1485,6 +1541,10 @@ public final class OpticalTraceCache {
         }
 
         BuiltOpticalSystem builtSystem = buildCachedSystem(level, cache, componentKeys);
+        if (builtSystem == null) {
+            return rebuiltNetworkIds;
+        }
+
         IntSet componentNetworkIds = networkIdsFor(cache, builtSystem.sourceKeys());
         cache.installSystem(builtSystem.system(), componentNetworkIds);
         cache.dropQueuedSystemRebuilds(componentNetworkIds);
@@ -1593,6 +1653,11 @@ public final class OpticalTraceCache {
                         directCoherentSourcePowersByLane
                 );
                 ScalarPowerSolution solution = solvedChannels.solution();
+                if (FiberOverloadMonitor.burnOverloadedFibers(level, solvedChannels.graph(), solution)) {
+                    cache.invalidateTopologyCompilationCaches();
+                    return null;
+                }
+
                 Map<PortGraphNode, Double> sourcePowersByNode = mergedPowerMap(
                         collapseLanePowerMap(incoherentSourcePowersByLane),
                         solvedChannels.coherentSourcePowersByNode()
@@ -1661,6 +1726,11 @@ public final class OpticalTraceCache {
         graph = solvedChannels.graph();
         CompiledPortGraph coherentGraph = solvedChannels.coherentGraph();
         ScalarPowerSolution solution = solvedChannels.solution();
+        if (FiberOverloadMonitor.burnOverloadedFibers(level, graph, solution)) {
+            cache.invalidateTopologyCompilationCaches();
+            return null;
+        }
+
         Map<PortGraphNode, Double> sourcePowersByNode = mergedPowerMap(
                 collapseLanePowerMap(incoherentSourcePowersByLane),
                 solvedChannels.coherentSourcePowersByNode()
@@ -3403,6 +3473,10 @@ public final class OpticalTraceCache {
                 return false;
             }
 
+            if (dirtyKind == OpticalDirtyKind.STRUCTURE || dirtyKind == OpticalDirtyKind.TOPOLOGY) {
+                invalidateTopologyCompilationCachesFor(affectedNetworkIds);
+            }
+
             epochs = epochs.advance(dirtyKind);
 
             for (int networkId : affectedNetworkIds) {
@@ -3413,6 +3487,44 @@ public final class OpticalTraceCache {
             }
 
             return true;
+        }
+
+        void invalidateTopologyCompilationCaches() {
+            directCompilationCache.clear();
+            systemCompilationCache.clear();
+        }
+
+        private void invalidateTopologyCompilationCachesFor(IntSet networkIds) {
+            if (networkIds.isEmpty()) {
+                return;
+            }
+
+            Set<SourceTraceKey> sourceKeys = new HashSet<>();
+
+            for (int networkId : networkIds) {
+                SourceTraceKey sourceKey = sourceKeyForNetwork(networkId);
+
+                if (sourceKey != null) {
+                    sourceKeys.add(sourceKey);
+                }
+            }
+
+            if (sourceKeys.isEmpty()) {
+                return;
+            }
+
+            directCompilationCache.entrySet().removeIf(entry -> sourceKeys.contains(entry.getKey().sourceKey()));
+            systemCompilationCache.entrySet().removeIf(entry -> containsAnySourceKey(entry.getKey(), sourceKeys));
+        }
+
+        private static boolean containsAnySourceKey(SystemCompilationKey key, Set<SourceTraceKey> sourceKeys) {
+            for (DirectCompilationKey directKey : key.sourceCompilationKeys()) {
+                if (sourceKeys.contains(directKey.sourceKey())) {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         void invalidateSurfaceParameterData() {

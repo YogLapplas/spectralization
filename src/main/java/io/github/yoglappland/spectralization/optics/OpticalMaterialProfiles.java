@@ -233,7 +233,9 @@ public final class OpticalMaterialProfiles {
     }
 
     public static boolean isAirLike(BlockState state) {
-        return state.isAir() || AIR_LIKE_BLOCKS.contains(state.getBlock());
+        return state.isAir()
+                || AIR_LIKE_BLOCKS.contains(state.getBlock())
+                || state.getBlock() == Spectralization.FIBER_RELAY.get();
     }
 
     public static boolean isExplicitOpticalMaterial(BlockState state) {

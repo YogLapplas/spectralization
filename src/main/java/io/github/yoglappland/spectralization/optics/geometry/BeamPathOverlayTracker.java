@@ -4,7 +4,6 @@ import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.network.BeamPathOverlayPayload;
 import io.github.yoglappland.spectralization.optics.CoherenceKind;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalTrace;
-import io.github.yoglappland.spectralization.optics.SpectralColorMap;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledPortGraph;
 import io.github.yoglappland.spectralization.optics.compiler.PortGraphEdge;
 import io.github.yoglappland.spectralization.optics.compiler.PortGraphEdgeKind;
@@ -251,7 +250,7 @@ public final class BeamPathOverlayTracker {
                 segment.to(),
                 segment.direction(),
                 segment.coherence() == CoherenceKind.COHERENT,
-                SpectralColorMap.visibleRgbForBin(segment.colorBin()),
+                segment.colorRgb(),
                 Math.max(1, Math.min(8, BeamGeometryOps.widthLevel(segment.geometry().envelope()))),
                 Math.max(1, Math.min(8, segment.geometry().visualLevel()))
         );

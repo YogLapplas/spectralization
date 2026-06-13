@@ -3,6 +3,8 @@ package io.github.yoglappland.spectralization.integration.jade;
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.block.BeamProfilerBlock;
 import io.github.yoglappland.spectralization.block.CmosSensorBlock;
+import io.github.yoglappland.spectralization.block.FiberOpticInterfaceBlock;
+import io.github.yoglappland.spectralization.block.FiberRelayBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
 import net.minecraft.resources.ResourceLocation;
 import snownee.jade.api.IWailaClientRegistration;
@@ -18,9 +20,13 @@ public class SpectralJadePlugin implements IWailaPlugin {
             ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "cmos_sensor");
     public static final ResourceLocation BEAM_PROFILER =
             ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "beam_profiler");
+    public static final ResourceLocation FIBER_NODE =
+            ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "fiber_node");
 
     @Override
     public void register(IWailaCommonRegistration registration) {
+        registration.registerBlockDataProvider(FiberNodeComponentProvider.INSTANCE, FiberOpticInterfaceBlock.class);
+        registration.registerBlockDataProvider(FiberNodeComponentProvider.INSTANCE, FiberRelayBlock.class);
     }
 
     @Override
@@ -28,5 +34,7 @@ public class SpectralJadePlugin implements IWailaPlugin {
         registration.registerBlockComponent(CmosSensorComponentProvider.INSTANCE, CmosSensorBlock.class);
         registration.registerBlockComponent(PassThroughSensorComponentProvider.INSTANCE, PassThroughSensorBlock.class);
         registration.registerBlockComponent(BeamProfilerComponentProvider.INSTANCE, BeamProfilerBlock.class);
+        registration.registerBlockComponent(FiberNodeComponentProvider.INSTANCE, FiberOpticInterfaceBlock.class);
+        registration.registerBlockComponent(FiberNodeComponentProvider.INSTANCE, FiberRelayBlock.class);
     }
 }

@@ -13,7 +13,7 @@ public record BeamVisualSegment(
         BeamVisibilityKind visibilityKind,
         BeamGeometrySample geometry,
         double power,
-        int colorBin
+        int colorRgb
 ) {
     public BeamVisualSegment {
         Objects.requireNonNull(from, "from");
@@ -30,8 +30,8 @@ public record BeamVisualSegment(
             throw new IllegalArgumentException("Visual segment power must be finite and non-negative");
         }
 
-        if (colorBin < 0) {
-            throw new IllegalArgumentException("Visual segment color bin must not be negative");
+        if (colorRgb < 0 || colorRgb > 0xFFFFFF) {
+            throw new IllegalArgumentException("Visual segment color must be a 24-bit RGB value");
         }
     }
 

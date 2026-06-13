@@ -33,6 +33,7 @@ public final class OpticalSpotTracker {
     private static final double MIN_VISIBLE_SPOT_POWER = 0.125;
     private static final double SPOT_POWER_PER_ALPHA_LEVEL = 8.0;
     private static final double DEFAULT_OPTICAL_DIFFUSE_YIELD = 0.85;
+    private static final int DEFAULT_SPOT_RGB = 0xFF4630;
     private static final Comparator<SpotRecord> SPOT_COMPARATOR = Comparator
             .comparingInt((SpotRecord spot) -> spot.pos().getX())
             .thenComparingInt(spot -> spot.pos().getY())
@@ -545,21 +546,30 @@ public final class OpticalSpotTracker {
         return power;
     }
 
-    private static int[] colorForAccumulator(double red, double green, double blue, double power) {
-        if (power <= 0.0 || (red <= 0.0 && green <= 0.0 && blue <= 0.0)) {
-            return new int[]{255, 70, 48};
+    private static int[] colorForFrequencyPower(Map<FrequencyKey, Double> powerByFrequency, double power) {
+        if (power <= 0.0 || powerByFrequency.isEmpty()) {
+            return colorChannels(DEFAULT_SPOT_RGB);
         }
 
-        double max = Math.max(red, Math.max(green, blue));
+        int rgb = SpectralColorMap.mixVisibleRgb(weightedFrequencies(powerByFrequency), DEFAULT_SPOT_RGB);
+        return colorChannels(rgb);
+    }
 
-        if (max <= 0.0) {
-            return new int[]{255, 70, 48};
+    private static List<SpectralColorMap.WeightedFrequency> weightedFrequencies(Map<FrequencyKey, Double> powerByFrequency) {
+        List<SpectralColorMap.WeightedFrequency> frequencies = new ArrayList<>();
+
+        for (Map.Entry<FrequencyKey, Double> entry : powerByFrequency.entrySet()) {
+            frequencies.add(new SpectralColorMap.WeightedFrequency(entry.getKey(), entry.getValue()));
         }
 
+        return frequencies;
+    }
+
+    private static int[] colorChannels(int rgb) {
         return new int[]{
-                Mth.clamp((int) Math.round(red / max * 255.0), 0, 255),
-                Mth.clamp((int) Math.round(green / max * 255.0), 0, 255),
-                Mth.clamp((int) Math.round(blue / max * 255.0), 0, 255)
+                SpectralColorMap.red(rgb),
+                SpectralColorMap.green(rgb),
+                SpectralColorMap.blue(rgb)
         };
     }
 
@@ -583,31 +593,25 @@ public final class OpticalSpotTracker {
 
     private static final class SpotPowerAccumulator {
         private double coherentPower;
-        private double coherentRed;
-        private double coherentGreen;
-        private double coherentBlue;
+        private final Map<FrequencyKey, Double> coherentPowerByFrequency = new HashMap<>();
         private double strayPower;
-        private double strayRed;
-        private double strayGreen;
-        private double strayBlue;
+        private final Map<FrequencyKey, Double> strayPowerByFrequency = new HashMap<>();
 
         void accept(PlaneWaveComponent component, double power) {
             if (power <= 0.0) {
                 return;
             }
 
-            int rgb = SpectralColorMap.rgbFor(component.frequency());
+            if (component.frequency().region() != SpectralRegion.VISIBLE) {
+                return;
+            }
 
             if (component.coherence() == CoherenceKind.COHERENT) {
                 coherentPower += power;
-                coherentRed += SpectralColorMap.red(rgb) * power;
-                coherentGreen += SpectralColorMap.green(rgb) * power;
-                coherentBlue += SpectralColorMap.blue(rgb) * power;
+                coherentPowerByFrequency.merge(component.frequency(), power, Double::sum);
             } else {
                 strayPower += power;
-                strayRed += SpectralColorMap.red(rgb) * power;
-                strayGreen += SpectralColorMap.green(rgb) * power;
-                strayBlue += SpectralColorMap.blue(rgb) * power;
+                strayPowerByFrequency.merge(component.frequency(), power, Double::sum);
             }
         }
 
@@ -624,11 +628,11 @@ public final class OpticalSpotTracker {
         }
 
         int[] coherentColor() {
-            return colorForAccumulator(coherentRed, coherentGreen, coherentBlue, coherentPower);
+            return colorForFrequencyPower(coherentPowerByFrequency, coherentPower);
         }
 
         int[] strayColor() {
-            return colorForAccumulator(strayRed, strayGreen, strayBlue, strayPower);
+            return colorForFrequencyPower(strayPowerByFrequency, strayPower);
         }
     }
 

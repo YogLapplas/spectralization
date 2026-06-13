@@ -81,19 +81,29 @@ public record ReceiverOutput(
     }
 
     public static ReceiverOutput spectrometer(BlockPos pos, Map<FrequencyKey, Double> powerByFrequency) {
+        return spectrometer(pos, powerByFrequency, 0.0);
+    }
+
+    public static ReceiverOutput spectrometer(
+            BlockPos pos,
+            Map<FrequencyKey, Double> powerByFrequency,
+            double coherentPower
+    ) {
         double totalPower = 0.0;
 
         for (double power : powerByFrequency.values()) {
             totalPower += power;
         }
 
+        double clampedCoherentPower = Math.max(0.0, Math.min(totalPower, coherentPower));
+
         return new ReceiverOutput(
                 pos,
                 ReceiverOutputKind.SPECTROMETER,
                 totalPower,
                 false,
-                0.0,
-                totalPower,
+                clampedCoherentPower,
+                Math.max(0.0, totalPower - clampedCoherentPower),
                 BeamEnvelope.DEFAULT_COLLIMATED,
                 powerByFrequency
         );

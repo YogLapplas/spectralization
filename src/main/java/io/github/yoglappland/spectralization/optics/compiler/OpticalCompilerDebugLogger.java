@@ -9,6 +9,7 @@ import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.SpotRecord;
 import io.github.yoglappland.spectralization.optics.cache.ReceiverOutput;
 import io.github.yoglappland.spectralization.optics.compiler.gain.GainSchedule;
+import io.github.yoglappland.spectralization.network.BeamPathOverlayPayload;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -534,6 +535,7 @@ public final class OpticalCompilerDebugLogger {
             Direction sourceDirection,
             String mode,
             int segmentCount,
+            List<BeamPathOverlayPayload.Segment> segments,
             int sentPlayers,
             int terminalRayBlocks,
             long gameTime
@@ -558,6 +560,36 @@ public final class OpticalCompilerDebugLogger {
                 .append(" terminal_ray_blocks=").append(terminalRayBlocks)
                 .append(" game_time=").append(gameTime)
                 .append('\n');
+
+        if (segments.isEmpty()) {
+            builder.append("segment_details: none\n\n");
+            write(builder.toString());
+            return;
+        }
+
+        builder.append("segment_details:\n");
+        int maxRows = Math.max(1, Math.min(32, SpectralizationConfig.opticalCompilerDebugMaxEdges()));
+        int rowCount = 0;
+
+        for (BeamPathOverlayPayload.Segment segment : segments) {
+            if (rowCount >= maxRows) {
+                builder.append("  ... ").append(segments.size() - rowCount).append(" more segments\n");
+                break;
+            }
+
+            builder.append("  ")
+                    .append(formatPos(segment.from()))
+                    .append(" -> ")
+                    .append(formatPos(segment.to()))
+                    .append(" direction=").append(segment.direction())
+                    .append(" coherent=").append(segment.coherent())
+                    .append(" rgb=").append(formatRgb(segment.colorRgb()))
+                    .append(" width=").append(segment.widthLevel())
+                    .append(" visual=").append(segment.visualLevel())
+                    .append('\n');
+            rowCount++;
+        }
+
         builder.append('\n');
         write(builder.toString());
     }
@@ -1573,6 +1605,10 @@ public final class OpticalCompilerDebugLogger {
 
     private static String formatRgb(int red, int green, int blue) {
         return String.format(Locale.ROOT, "#%02X%02X%02X", red, green, blue);
+    }
+
+    private static String formatRgb(int rgb) {
+        return String.format(Locale.ROOT, "#%06X", rgb & 0xFFFFFF);
     }
 
     private static void write(String content) {

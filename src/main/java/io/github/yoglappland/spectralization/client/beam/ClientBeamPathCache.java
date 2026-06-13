@@ -1,7 +1,9 @@
 package io.github.yoglappland.spectralization.client.beam;
 
 import io.github.yoglappland.spectralization.network.BeamPathOverlayPayload;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -10,6 +12,14 @@ import net.minecraft.core.BlockPos;
 
 public final class ClientBeamPathCache {
     private static final Map<SegmentKey, BeamPathOverlayPayload.Segment> SEGMENTS = new HashMap<>();
+    private static final Comparator<BeamPathOverlayPayload.Segment> SEGMENT_ORDER = Comparator
+            .comparingInt((BeamPathOverlayPayload.Segment segment) -> segment.from().getX())
+            .thenComparingInt(segment -> segment.from().getY())
+            .thenComparingInt(segment -> segment.from().getZ())
+            .thenComparingInt(segment -> segment.to().getX())
+            .thenComparingInt(segment -> segment.to().getY())
+            .thenComparingInt(segment -> segment.to().getZ())
+            .thenComparingInt(segment -> segment.direction().ordinal());
     private static List<BeamPathOverlayPayload.Segment> activeSegments = List.of();
     private static Object lastLevel;
 
@@ -66,7 +76,47 @@ public final class ClientBeamPathCache {
     }
 
     private static void rebuildActiveSegments() {
-        activeSegments = SEGMENTS.isEmpty() ? List.of() : List.copyOf(SEGMENTS.values());
+        if (SEGMENTS.isEmpty()) {
+            activeSegments = List.of();
+            return;
+        }
+
+        Map<PhysicalSegmentKey, OwnedSegment> mergedSegments = new HashMap<>();
+
+        for (Map.Entry<SegmentKey, BeamPathOverlayPayload.Segment> entry : SEGMENTS.entrySet()) {
+            OwnedSegment ownedSegment = new OwnedSegment(entry.getKey().ownerId(), entry.getValue());
+            mergedSegments.merge(
+                    PhysicalSegmentKey.of(entry.getValue()),
+                    ownedSegment,
+                    ClientBeamPathCache::mergeOwnedSegment
+            );
+        }
+
+        List<BeamPathOverlayPayload.Segment> rebuilt = new ArrayList<>(mergedSegments.size());
+
+        for (OwnedSegment ownedSegment : mergedSegments.values()) {
+            rebuilt.add(ownedSegment.segment());
+        }
+
+        rebuilt.sort(SEGMENT_ORDER);
+        activeSegments = List.copyOf(rebuilt);
+    }
+
+    private static OwnedSegment mergeOwnedSegment(OwnedSegment first, OwnedSegment second) {
+        boolean firstSystem = first.ownerId() < 0;
+        boolean secondSystem = second.ownerId() < 0;
+
+        if (firstSystem != secondSystem) {
+            return firstSystem ? first : second;
+        }
+
+        int visualCompare = Integer.compare(first.segment().visualLevel(), second.segment().visualLevel());
+        if (visualCompare != 0) {
+            return visualCompare > 0 ? first : second;
+        }
+
+        int ownerCompare = Integer.compare(first.ownerId(), second.ownerId());
+        return ownerCompare <= 0 ? first : second;
     }
 
     private record SegmentKey(int ownerId, BlockPos from, BlockPos to) {
@@ -75,6 +125,37 @@ public final class ClientBeamPathCache {
             to = to.immutable();
         }
     }
+
+    private record PhysicalSegmentKey(BlockPos first, BlockPos second) {
+        private static PhysicalSegmentKey of(BeamPathOverlayPayload.Segment segment) {
+            return compare(segment.from(), segment.to()) <= 0
+                    ? new PhysicalSegmentKey(segment.from(), segment.to())
+                    : new PhysicalSegmentKey(segment.to(), segment.from());
+        }
+
+        private PhysicalSegmentKey {
+            first = first.immutable();
+            second = second.immutable();
+        }
+    }
+
+    private record OwnedSegment(int ownerId, BeamPathOverlayPayload.Segment segment) {
+    }
+
+    private static int compare(BlockPos left, BlockPos right) {
+        int dx = Integer.compare(left.getX(), right.getX());
+        if (dx != 0) {
+            return dx;
+        }
+
+        int dy = Integer.compare(left.getY(), right.getY());
+        if (dy != 0) {
+            return dy;
+        }
+
+        return Integer.compare(left.getZ(), right.getZ());
+    }
+
     private ClientBeamPathCache() {
     }
 }

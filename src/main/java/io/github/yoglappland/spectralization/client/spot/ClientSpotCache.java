@@ -4,6 +4,7 @@ import io.github.yoglappland.spectralization.optics.SpotRecord;
 import io.github.yoglappland.spectralization.network.SpotOverlayPayload;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,6 +19,11 @@ public final class ClientSpotCache {
     private static final int LEGACY_OWNER_ID = Integer.MIN_VALUE;
     private static final double SURFACE_OFFSET = 0.003D;
     private static final Map<Integer, Map<SpotKey, RenderedSpot>> SPOTS_BY_OWNER = new HashMap<>();
+    private static final Comparator<SpotKey> SPOT_KEY_ORDER = Comparator
+            .comparingInt((SpotKey key) -> key.pos().getX())
+            .thenComparingInt(key -> key.pos().getY())
+            .thenComparingInt(key -> key.pos().getZ())
+            .thenComparingInt(key -> key.face().ordinal());
     private static List<RenderedSpot> activeSpots = List.of();
     private static Object lastLevel;
 
@@ -91,8 +97,20 @@ public final class ClientSpotCache {
         }
 
         Map<SpotKey, RenderedSpot> mergedSpots = new HashMap<>();
-        for (Map<SpotKey, RenderedSpot> ownerSpots : SPOTS_BY_OWNER.values()) {
-            for (Map.Entry<SpotKey, RenderedSpot> entry : ownerSpots.entrySet()) {
+        List<Integer> ownerIds = new ArrayList<>(SPOTS_BY_OWNER.keySet());
+        ownerIds.sort(Integer::compare);
+
+        for (int ownerId : ownerIds) {
+            Map<SpotKey, RenderedSpot> ownerSpots = SPOTS_BY_OWNER.get(ownerId);
+
+            if (ownerSpots == null) {
+                continue;
+            }
+
+            List<Map.Entry<SpotKey, RenderedSpot>> entries = new ArrayList<>(ownerSpots.entrySet());
+            entries.sort(Map.Entry.comparingByKey(SPOT_KEY_ORDER));
+
+            for (Map.Entry<SpotKey, RenderedSpot> entry : entries) {
                 mergedSpots.merge(entry.getKey(), entry.getValue(), ClientSpotCache::mergeSpot);
             }
         }
@@ -162,9 +180,9 @@ public final class ClientSpotCache {
     }
 
     private static RenderedSpot mergeSpot(RenderedSpot first, RenderedSpot second) {
-        RenderedSpot coherentSource = first.coherentAlphaLevel() >= second.coherentAlphaLevel() ? first : second;
-        RenderedSpot straySource = first.strayAlphaLevel() >= second.strayAlphaLevel() ? first : second;
-        RenderedSpot ringSource = first.ringAlphaLevel() >= second.ringAlphaLevel() ? first : second;
+        RenderedSpot coherentColor = first.coherentAlpha() >= second.coherentAlpha() ? first : second;
+        RenderedSpot strayColor = first.strayAlpha() >= second.strayAlpha() ? first : second;
+        RenderedSpot ringColor = first.ringAlpha() >= second.ringAlpha() ? first : second;
 
         return new RenderedSpot(
                 first.pos(),
@@ -175,21 +193,21 @@ public final class ClientSpotCache {
                 Math.max(first.coherentAlphaLevel(), second.coherentAlphaLevel()),
                 Math.max(first.coherentRadius(), second.coherentRadius()),
                 Math.max(first.coherentAlpha(), second.coherentAlpha()),
-                coherentSource.coherentRed(),
-                coherentSource.coherentGreen(),
-                coherentSource.coherentBlue(),
+                coherentColor.coherentRed(),
+                coherentColor.coherentGreen(),
+                coherentColor.coherentBlue(),
                 Math.max(first.strayAlphaLevel(), second.strayAlphaLevel()),
                 Math.max(first.strayRadius(), second.strayRadius()),
                 Math.max(first.strayAlpha(), second.strayAlpha()),
-                straySource.strayRed(),
-                straySource.strayGreen(),
-                straySource.strayBlue(),
+                strayColor.strayRed(),
+                strayColor.strayGreen(),
+                strayColor.strayBlue(),
                 Math.max(first.ringAlphaLevel(), second.ringAlphaLevel()),
                 Math.max(first.ringRadius(), second.ringRadius()),
                 Math.max(first.ringAlpha(), second.ringAlpha()),
-                ringSource.ringRed(),
-                ringSource.ringGreen(),
-                ringSource.ringBlue()
+                ringColor.ringRed(),
+                ringColor.ringGreen(),
+                ringColor.ringBlue()
         );
     }
 

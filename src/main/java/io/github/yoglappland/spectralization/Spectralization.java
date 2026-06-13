@@ -6,6 +6,8 @@ import io.github.yoglappland.spectralization.block.BeamSplitterBlock;
 import io.github.yoglappland.spectralization.block.CmosSensorBlock;
 import io.github.yoglappland.spectralization.block.CreativeLightSourceBlock;
 import io.github.yoglappland.spectralization.block.DynamicMirrorBlock;
+import io.github.yoglappland.spectralization.block.FiberOpticInterfaceBlock;
+import io.github.yoglappland.spectralization.block.FiberRelayBlock;
 import io.github.yoglappland.spectralization.block.LensHolderBlock;
 import io.github.yoglappland.spectralization.block.MirrorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
@@ -28,6 +30,7 @@ import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.item.CoatingBrushItem;
 import io.github.yoglappland.spectralization.item.CreativeBrushItem;
 import io.github.yoglappland.spectralization.item.LensItem;
+import io.github.yoglappland.spectralization.item.OpticalFiberCoilItem;
 import io.github.yoglappland.spectralization.item.PaintBucketItem;
 import io.github.yoglappland.spectralization.item.PhosphorTubeItem;
 import io.github.yoglappland.spectralization.item.SandpaperItem;
@@ -38,6 +41,9 @@ import io.github.yoglappland.spectralization.optics.OpticalSpotTracker;
 import io.github.yoglappland.spectralization.optics.cache.OpticalDirtyKind;
 import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
+import io.github.yoglappland.spectralization.optics.fiber.FiberOverlayPublisher;
+import io.github.yoglappland.spectralization.optics.fiber.FiberNetworkIndex;
+import io.github.yoglappland.spectralization.optics.fiber.FiberShearsInteraction;
 import io.github.yoglappland.spectralization.optics.surface.SurfaceCoatingData;
 import io.github.yoglappland.spectralization.optics.surface.SurfaceKey;
 import io.github.yoglappland.spectralization.optics.surface.SurfaceTreatmentKind;
@@ -62,6 +68,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraft.world.level.material.PushReaction;
 import net.neoforged.api.distmarker.Dist;
@@ -110,6 +117,10 @@ public class Spectralization {
     public static final DeferredItem<LensItem> LENS = ITEMS.register(
             "lens",
             () -> new LensItem(new Item.Properties())
+    );
+    public static final DeferredItem<OpticalFiberCoilItem> OPTICAL_FIBER_COIL = ITEMS.register(
+            "optical_fiber_coil",
+            () -> new OpticalFiberCoilItem(new Item.Properties().stacksTo(1))
     );
     public static final DeferredItem<Item> PHOSPHOR_DUST =
             ITEMS.registerSimpleItem("phosphor_dust", new Item.Properties());
@@ -207,6 +218,30 @@ public class Spectralization {
 
     public static final DeferredItem<BlockItem> LENS_HOLDER_ITEM =
             ITEMS.registerSimpleBlockItem("lens_holder", LENS_HOLDER);
+
+    public static final DeferredBlock<FiberOpticInterfaceBlock> FIBER_OPTIC_INTERFACE = BLOCKS.register(
+            "fiber_optic_interface",
+            () -> new FiberOpticInterfaceBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_LIGHT_BLUE)
+                    .strength(1.5F, 3.0F)
+                    .sound(SoundType.METAL)
+                    .noOcclusion())
+    );
+
+    public static final DeferredItem<BlockItem> FIBER_OPTIC_INTERFACE_ITEM =
+            ITEMS.registerSimpleBlockItem("fiber_optic_interface", FIBER_OPTIC_INTERFACE);
+
+    public static final DeferredBlock<FiberRelayBlock> FIBER_RELAY = BLOCKS.register(
+            "fiber_relay",
+            () -> new FiberRelayBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_LIGHT_BLUE)
+                    .strength(1.5F, 3.0F)
+                    .sound(SoundType.METAL)
+                    .noOcclusion())
+    );
+
+    public static final DeferredItem<BlockItem> FIBER_RELAY_ITEM =
+            ITEMS.registerSimpleBlockItem("fiber_relay", FIBER_RELAY);
 
     public static final DeferredBlock<MirrorBlock> MIRROR = BLOCKS.register(
             "mirror",
@@ -492,6 +527,7 @@ public class Spectralization {
                     .icon(() -> LENS.get().getDefaultInstance())
                     .displayItems((parameters, output) -> {
                         output.accept(LENS.get());
+                        output.accept(OPTICAL_FIBER_COIL.get());
                         output.accept(PHOSPHOR_DUST.get());
                         output.accept(PHOSPHOR_TUBE.get());
                         output.accept(EMPTY_PAINT_BUCKET.get());
@@ -515,6 +551,8 @@ public class Spectralization {
                         output.accept(RAW_SILVER.get());
                         output.accept(SILVER_INGOT.get());
                         output.accept(LENS_HOLDER_ITEM.get());
+                        output.accept(FIBER_OPTIC_INTERFACE_ITEM.get());
+                        output.accept(FIBER_RELAY_ITEM.get());
                         output.accept(MIRROR_ITEM.get());
                         output.accept(DYNAMIC_MIRROR_ITEM.get());
                         output.accept(BEAM_SPLITTER_ITEM.get());
@@ -652,24 +690,38 @@ public class Spectralization {
         if (event.getLevel() instanceof Level level) {
             SurfaceCoatingData.removeAll(level, event.getPos());
         }
-        OpticalFieldSources.invalidate(event.getLevel());
-        OpticalWorldIndex.onBlockPlaced(event.getLevel(), event.getPos());
-        OpticalTraceCache.rememberSourceState(event.getLevel(), event.getPos());
-        OpticalTraceCache.markChanged(event.getLevel(), event.getPos(), OpticalDirtyKind.STRUCTURE);
-        RubyBlockEntity.refreshNear(event.getLevel(), event.getPos());
-        OpticalTraceCache.requestIntrinsicSourcesNear(event.getLevel(), event.getPos());
-        OpticalNetworkIndex.markDirty(event.getLevel());
+
+        if (!isFiberRelayOnly(event.getLevel().getBlockState(event.getPos()))) {
+            OpticalFieldSources.invalidate(event.getLevel());
+            OpticalWorldIndex.onBlockPlaced(event.getLevel(), event.getPos());
+            OpticalTraceCache.rememberSourceState(event.getLevel(), event.getPos());
+            OpticalTraceCache.markChanged(event.getLevel(), event.getPos(), OpticalDirtyKind.STRUCTURE);
+            RubyBlockEntity.refreshNear(event.getLevel(), event.getPos());
+            OpticalTraceCache.requestIntrinsicSourcesNear(event.getLevel(), event.getPos());
+            OpticalNetworkIndex.markDirty(event.getLevel());
+        }
+
+        FiberNetworkIndex.onBlockPlaced(event.getLevel(), event.getPos());
     }
 
     @SubscribeEvent
     public void onBlockBroken(BlockEvent.BreakEvent event) {
         SurfaceCoatingData.removeAll(event.getPlayer().level(), event.getPos());
-        OpticalFieldSources.invalidate(event.getLevel());
-        OpticalWorldIndex.onBlockBroken(event.getLevel(), event.getPos());
-        OpticalTraceCache.forgetDormantSource(event.getLevel(), event.getPos());
-        OpticalTraceCache.markChanged(event.getLevel(), event.getPos(), OpticalDirtyKind.STRUCTURE);
-        OpticalTraceCache.requestIntrinsicSourcesNear(event.getLevel(), event.getPos());
-        OpticalNetworkIndex.markDirty(event.getLevel());
+
+        if (!isFiberRelayOnly(event.getState())) {
+            OpticalFieldSources.invalidate(event.getLevel());
+            OpticalWorldIndex.onBlockBroken(event.getLevel(), event.getPos());
+            OpticalTraceCache.forgetDormantSource(event.getLevel(), event.getPos());
+            OpticalTraceCache.markChanged(event.getLevel(), event.getPos(), OpticalDirtyKind.STRUCTURE);
+            OpticalTraceCache.requestIntrinsicSourcesNear(event.getLevel(), event.getPos());
+            OpticalNetworkIndex.markDirty(event.getLevel());
+        }
+
+        FiberNetworkIndex.onBlockBroken(event.getLevel(), event.getPos());
+    }
+
+    private static boolean isFiberRelayOnly(BlockState state) {
+        return state.getBlock() instanceof FiberRelayBlock;
     }
 
     @SubscribeEvent
@@ -684,6 +736,17 @@ public class Spectralization {
 
     @SubscribeEvent
     public void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
+        if (event.getHand() == net.minecraft.world.InteractionHand.MAIN_HAND
+                && event.getItemStack().is(Items.SHEARS)
+                && FiberShearsInteraction.isFiberNodeTarget(event.getLevel(), event.getPos())) {
+            net.minecraft.world.InteractionResult result = event.getLevel() instanceof net.minecraft.server.level.ServerLevel level
+                    ? FiberShearsInteraction.useOn(level, event.getEntity(), event.getItemStack(), event.getPos().immutable())
+                    : net.minecraft.world.InteractionResult.SUCCESS;
+            event.setCancellationResult(result);
+            event.setCanceled(true);
+            return;
+        }
+
         if (event.getHand() != net.minecraft.world.InteractionHand.MAIN_HAND
                 || !event.getItemStack().is(Items.BRUSH)
                 || !(event.getEntity().getOffhandItem().getItem() instanceof PaintBucketItem)) {
@@ -704,12 +767,14 @@ public class Spectralization {
     @SubscribeEvent
     public void onServerTickPost(ServerTickEvent.Post event) {
         OpticalTraceCache.processQueues(event.getServer());
+        FiberOverlayPublisher.publishToInterestedPlayers(event.getServer());
     }
 
     private static void resetOpticalRuntimeCaches() {
         OpticalTraceCache.clearAll();
         OpticalWorldIndex.clearAll();
         OpticalNetworkIndex.clearAll();
+        FiberNetworkIndex.clearAll();
         OpticalFieldSources.clearAll();
         OpticalSpotTracker.clearAll();
     }
@@ -718,6 +783,7 @@ public class Spectralization {
         OpticalTraceCache.clear(level);
         OpticalWorldIndex.clear(level);
         OpticalNetworkIndex.clear(level);
+        FiberNetworkIndex.clear(level);
         OpticalFieldSources.invalidate(level);
         OpticalSpotTracker.clear(level);
     }

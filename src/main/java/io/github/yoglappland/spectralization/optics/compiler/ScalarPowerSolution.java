@@ -63,7 +63,21 @@ public record ScalarPowerSolution(
     }
 
     public double coherentPowerAt(PortGraphNode node) {
-        return coherentPowerByNode.getOrDefault(node, 0.0);
+        double coherentPower = coherentPowerByNode.getOrDefault(node, 0.0);
+
+        if (coherentPower > 0.0) {
+            return coherentPower;
+        }
+
+        double lanePower = 0.0;
+
+        for (Map.Entry<SpectralPowerLane, Map<PortGraphNode, Double>> entry : powerByLane.entrySet()) {
+            if (entry.getKey().coherence() == CoherenceKind.COHERENT) {
+                lanePower += entry.getValue().getOrDefault(node, 0.0);
+            }
+        }
+
+        return lanePower;
     }
 
     public double powerAt(PortGraphNode node, SpectralPowerLane lane) {

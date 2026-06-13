@@ -4,6 +4,8 @@ import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.blockentity.BeamProfilerBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.CmosSensorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.CreativeLightSourceBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.FiberOpticInterfaceBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.FiberRelayBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.LensHolderBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.PassThroughSensorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.PhotonicGradientGeneratorBlockEntity;
@@ -25,6 +27,14 @@ public final class SpectralBlockEntities {
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<LensHolderBlockEntity>> LENS_HOLDER =
             BLOCK_ENTITY_TYPES.register("lens_holder", () ->
                     BlockEntityType.Builder.of(LensHolderBlockEntity::new, Spectralization.LENS_HOLDER.get()).build(null));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<FiberOpticInterfaceBlockEntity>> FIBER_OPTIC_INTERFACE =
+            BLOCK_ENTITY_TYPES.register("fiber_optic_interface", () ->
+                    BlockEntityType.Builder.of(FiberOpticInterfaceBlockEntity::new, Spectralization.FIBER_OPTIC_INTERFACE.get()).build(null));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<FiberRelayBlockEntity>> FIBER_RELAY =
+            BLOCK_ENTITY_TYPES.register("fiber_relay", () ->
+                    BlockEntityType.Builder.of(FiberRelayBlockEntity::new, Spectralization.FIBER_RELAY.get()).build(null));
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<CreativeLightSourceBlockEntity>> CREATIVE_LIGHT_SOURCE =
             BLOCK_ENTITY_TYPES.register("creative_light_source", () ->

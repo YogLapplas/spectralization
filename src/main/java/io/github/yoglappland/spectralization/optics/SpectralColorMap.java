@@ -1,5 +1,8 @@
 package io.github.yoglappland.spectralization.optics;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public final class SpectralColorMap {
     public static final int VISIBLE_BINS = 32;
 
@@ -59,6 +62,24 @@ public final class SpectralColorMap {
         return (clampChannel(red / max * 255.0) << 16)
                 | (clampChannel(green / max * 255.0) << 8)
                 | clampChannel(blue / max * 255.0);
+    }
+
+    public static int mixVisibleRgbForComponents(
+            Iterable<PlaneWaveComponent> components,
+            CoherenceKind coherence,
+            int fallbackRgb
+    ) {
+        List<WeightedFrequency> frequencies = new ArrayList<>();
+
+        for (PlaneWaveComponent component : components) {
+            if (coherence != null && component.coherence() != coherence) {
+                continue;
+            }
+
+            frequencies.add(new WeightedFrequency(component.frequency(), component.power()));
+        }
+
+        return mixVisibleRgb(frequencies, fallbackRgb);
     }
 
     public static int red(int rgb) {

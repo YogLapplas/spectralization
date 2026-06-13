@@ -13,6 +13,7 @@ import io.github.yoglappland.spectralization.optics.OpticalTraceStep;
 import io.github.yoglappland.spectralization.optics.OpticalTraceTermination;
 import io.github.yoglappland.spectralization.optics.OpticalTransferEdge;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
+import io.github.yoglappland.spectralization.optics.fiber.FiberOpticalTransfer;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -26,6 +27,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -229,7 +231,7 @@ public final class PortGraphCompiler {
             terminationCount += graph.terminationCount();
 
             for (PortGraphEdge edge : graph.edges()) {
-                EdgeKey key = new EdgeKey(edge.kind(), edge.from(), edge.to(), edge.sampleFrequency());
+                EdgeKey key = new EdgeKey(edge.kind(), edge.from(), edge.to());
                 edgeAccumulators.computeIfAbsent(
                                 key,
                                 ignored -> new EdgeAccumulator(edge.kind(), edge.from(), edge.to(), edge.distance(), edge.sampleFrequency())
@@ -371,6 +373,66 @@ public final class PortGraphCompiler {
                     )
             );
         }
+
+        addFiberRemoteScattering(
+                level,
+                pos,
+                incomingDirection,
+                inputBeam,
+                estimatedInputPower,
+                edgeAccumulators,
+                interestingNodes,
+                pendingOutgoingNodes,
+                bestEstimatedOutgoingPower
+        );
+    }
+
+    private static void addFiberRemoteScattering(
+            Level level,
+            BlockPos pos,
+            Direction incomingDirection,
+            BeamPacket inputBeam,
+            double estimatedInputPower,
+            Map<EdgeKey, EdgeAccumulator> edgeAccumulators,
+            Set<PortGraphNode> interestingNodes,
+            ArrayDeque<DirectPendingNode> pendingOutgoingNodes,
+            Map<PortGraphNode, Double> bestEstimatedOutgoingPower
+    ) {
+        if (!(level instanceof ServerLevel serverLevel)) {
+            return;
+        }
+
+        List<FiberOpticalTransfer.OutputPort> outputPorts =
+                FiberOpticalTransfer.remoteOutputPorts(serverLevel, pos, incomingDirection);
+
+        if (outputPorts.isEmpty()) {
+            return;
+        }
+
+        PortGraphNode incomingNode = PortGraphNode.incoming(new OpticalPort(pos, incomingDirection));
+
+        for (FiberOpticalTransfer.OutputPort outputPort : outputPorts) {
+            PortGraphNode outgoingNode = PortGraphNode.outgoing(new OpticalPort(outputPort.pos(), outputPort.direction()));
+            double splitGain = outputPort.gain();
+            interestingNodes.add(outgoingNode);
+            enqueueDirectOutgoing(
+                    pendingOutgoingNodes,
+                    bestEstimatedOutgoingPower,
+                    outgoingNode,
+                    estimatedInputPower * splitGain
+            );
+            addRawEdge(
+                    edgeAccumulators,
+                    PortGraphEdgeKind.LOCAL_SCATTERING,
+                    incomingNode,
+                    outgoingNode,
+                    0,
+                    inputBeam.totalPower(),
+                    inputBeam.totalPower() * splitGain,
+                    sampleFrequency(inputBeam),
+                    flatFrequencyGains(inputBeam, splitGain)
+            );
+        }
     }
 
     private static double scatteringGain(OpticalLocalScattering scattering) {
@@ -497,7 +559,7 @@ public final class PortGraphCompiler {
             return;
         }
 
-        EdgeKey key = new EdgeKey(kind, from, to, sampleFrequency);
+        EdgeKey key = new EdgeKey(kind, from, to);
         edgeAccumulators.computeIfAbsent(key, ignored -> new EdgeAccumulator(kind, from, to, distance, sampleFrequency))
                 .accept(distance, sampleInputPower, sampleOutputPower, sampleGainByFrequency);
     }
@@ -591,7 +653,7 @@ public final class PortGraphCompiler {
             PortGraphNode from,
             PathState path
     ) {
-        EdgeKey key = new EdgeKey(path.kind(), from, path.node(), path.sampleFrequency());
+        EdgeKey key = new EdgeKey(path.kind(), from, path.node());
         compactAccumulators.computeIfAbsent(
                         key,
                         ignored -> new EdgeAccumulator(path.kind(), from, path.node(), path.distance(), path.sampleFrequency())
@@ -836,12 +898,11 @@ public final class PortGraphCompiler {
                 + Math.abs(from.getZ() - to.getZ());
     }
 
-    private record EdgeKey(PortGraphEdgeKind kind, PortGraphNode from, PortGraphNode to, FrequencyKey sampleFrequency) {
+    private record EdgeKey(PortGraphEdgeKind kind, PortGraphNode from, PortGraphNode to) {
         private EdgeKey {
             Objects.requireNonNull(kind, "kind");
             Objects.requireNonNull(from, "from");
             Objects.requireNonNull(to, "to");
-            Objects.requireNonNull(sampleFrequency, "sampleFrequency");
         }
     }
 

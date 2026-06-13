@@ -32,7 +32,7 @@ public final class BeamPathRenderEvents {
 
         if (minecraft.level == null
                 || minecraft.player == null
-                || !hasBeamViewerHelmet(minecraft)) {
+                || !hasBeamPathViewer(minecraft)) {
             ClientBeamPathCache.clear();
             return;
         }
@@ -118,14 +118,18 @@ public final class BeamPathRenderEvents {
                 .setColor(SpectralColorMap.red(color), SpectralColorMap.green(color), SpectralColorMap.blue(color), alpha);
     }
 
-    private static boolean hasBeamViewerHelmet(Minecraft minecraft) {
+    private static boolean hasBeamPathViewer(Minecraft minecraft) {
         if (minecraft.player == null) {
             return false;
         }
 
         var helmet = minecraft.player.getItemBySlot(EquipmentSlot.HEAD);
         return helmet.is(Items.LEATHER_HELMET)
-                || helmet.is(Spectralization.VERITY_HELM_OF_ALL_SEEING_INSIGHT.get());
+                || helmet.is(Spectralization.VERITY_HELM_OF_ALL_SEEING_INSIGHT.get())
+                || minecraft.player.getMainHandItem().is(Spectralization.OPTICAL_FIBER_COIL.get())
+                || minecraft.player.getOffhandItem().is(Spectralization.OPTICAL_FIBER_COIL.get())
+                || minecraft.player.getMainHandItem().is(Items.SHEARS)
+                || minecraft.player.getOffhandItem().is(Items.SHEARS);
     }
 
     private BeamPathRenderEvents() {

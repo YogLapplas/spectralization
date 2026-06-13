@@ -31,7 +31,8 @@ public record OpticalReadoutBinding(
             case PASS_THROUGH_SENSOR -> ReceiverOutput.passThroughSensor(pos, positiveZ, coherentPower);
             case SPECTROMETER -> ReceiverOutput.spectrometer(
                     pos,
-                    inputNode == null ? Map.of() : solution.powerByFrequencyAt(inputNode)
+                    inputNode == null ? Map.of() : solution.powerByFrequencyAt(inputNode),
+                    coherentPower
             );
             case PHOTOTHERMAL_GENERATOR -> ReceiverOutput.photothermalGenerator(
                     pos,

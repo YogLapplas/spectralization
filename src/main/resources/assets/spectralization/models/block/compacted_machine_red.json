@@ -1,6 +1,6 @@
 {
   "parent": "minecraft:block/cube_all",
   "textures": {
-    "all": "spectralization:block/compacted_machine"
+    "all": "spectralization:block/compacted_machine_red"
   }
 }

@@ -250,6 +250,33 @@ public final class OpticalTraceCache {
         }
     }
 
+    public static void requestIntrinsicSourceAt(LevelAccessor accessor, BlockPos pos) {
+        if (!(accessor instanceof ServerLevel level) || !level.isLoaded(pos)) {
+            return;
+        }
+
+        BlockState state = level.getBlockState(pos);
+
+        if (!IntrinsicOpticalSources.isSource(state)) {
+            return;
+        }
+
+        rememberPersistentSourceState(level, pos);
+
+        LevelTraceCache cache = cacheFor(level);
+        long gameTime = level.getGameTime();
+
+        for (OutputBeam outputBeam : IntrinsicOpticalSources.outputBeams(state, level, pos)) {
+            if (outputBeam.beam().isEmpty()) {
+                continue;
+            }
+
+            SourceTraceKey key = new SourceTraceKey(pos, outputBeam.outgoingDirection());
+            int networkId = cache.networkIdFor(key);
+            cache.enqueuePriority(new TraceRequest(networkId, pos, outputBeam), gameTime);
+        }
+    }
+
     public static void rememberSourceState(LevelAccessor accessor, BlockPos pos) {
         if (!(accessor instanceof ServerLevel level) || !level.isLoaded(pos)) {
             return;

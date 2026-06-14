@@ -29,9 +29,11 @@ import io.github.yoglappland.spectralization.block.SpectrometerBlock;
 import io.github.yoglappland.spectralization.block.StrayLightEmitterBlock;
 import io.github.yoglappland.spectralization.block.ThermalSmelterBlock;
 import io.github.yoglappland.spectralization.blockentity.RubyBlockEntity;
+import io.github.yoglappland.spectralization.client.model.CompactedMachineDynamicModel;
 import io.github.yoglappland.spectralization.client.renderer.LensHolderRenderer;
 import io.github.yoglappland.spectralization.client.screen.CoatingBrushScreen;
 import io.github.yoglappland.spectralization.client.screen.CompactMachineCoreScreen;
+import io.github.yoglappland.spectralization.client.screen.CompactedMachineScreen;
 import io.github.yoglappland.spectralization.client.screen.CreativeLightSourceScreen;
 import io.github.yoglappland.spectralization.client.screen.HolographicStorageCoreScreen;
 import io.github.yoglappland.spectralization.client.screen.HolographicStorageScreen;
@@ -95,6 +97,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
+import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.neoforged.neoforge.common.NeoForge;
@@ -939,6 +942,16 @@ public class Spectralization {
         }
 
         @SubscribeEvent
+        static void registerAdditionalModels(ModelEvent.RegisterAdditional event) {
+            CompactedMachineDynamicModel.registerAdditionalModels(event);
+        }
+
+        @SubscribeEvent
+        static void modifyBakingResult(ModelEvent.ModifyBakingResult event) {
+            CompactedMachineDynamicModel.modifyBakingResult(event);
+        }
+
+        @SubscribeEvent
         static void registerScreens(RegisterMenuScreensEvent event) {
             event.register(SpectralMenus.CREATIVE_LIGHT_SOURCE.get(), CreativeLightSourceScreen::new);
             event.register(SpectralMenus.COATING_BRUSH.get(), CoatingBrushScreen::new);
@@ -948,6 +961,7 @@ public class Spectralization {
             event.register(SpectralMenus.HOLOGRAPHIC_STORAGE.get(), HolographicStorageScreen::new);
             event.register(SpectralMenus.HOLOGRAPHIC_STORAGE_CORE.get(), HolographicStorageCoreScreen::new);
             event.register(SpectralMenus.COMPACT_MACHINE_CORE.get(), CompactMachineCoreScreen::new);
+            event.register(SpectralMenus.COMPACTED_MACHINE.get(), CompactedMachineScreen::new);
         }
     }
 }

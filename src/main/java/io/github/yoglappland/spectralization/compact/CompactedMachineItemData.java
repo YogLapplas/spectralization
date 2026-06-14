@@ -9,6 +9,7 @@ import io.github.yoglappland.spectralization.optics.FrequencyKey;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.PlaneWaveComponent;
 import io.github.yoglappland.spectralization.optics.SpectralRegion;
+import io.github.yoglappland.spectralization.optics.pump.OpticalPumpSources;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -45,6 +46,10 @@ public final class CompactedMachineItemData {
     private static final String TRANSFERS_KEY = "transfers";
     private static final String SOURCES_KEY = "sources";
     private static final String BLOCKS_KEY = "blocks";
+    private static final String FACING_KEY = "facing";
+    private static final String FACE_COLORS_KEY = "face_colors";
+    private static final String FACE_KEY = "face";
+    private static final String COLOR_KEY = "color";
     private static final String X_KEY = "x";
     private static final String Y_KEY = "y";
     private static final String Z_KEY = "z";
@@ -94,6 +99,7 @@ public final class CompactedMachineItemData {
         data.put(IO_FACES_KEY, writeIoFaces(ports));
         data.put(TRANSFERS_KEY, writeTransfers(transfers));
         data.put(SOURCES_KEY, writeSources(sourceOutputs));
+        ensureVisualDefaults(data);
 
         for (BlockPos pos : BlockPos.betweenClosed(workMin, workMax)) {
             BlockState state = level.getBlockState(pos);
@@ -110,7 +116,17 @@ public final class CompactedMachineItemData {
         }
 
         data.put(BLOCKS_KEY, blocks);
-        CustomData.update(DataComponents.CUSTOM_DATA, stack, tag -> tag.put(ROOT_KEY, data));
+        putRoot(stack, data);
+        RubyPayloadStats rubyStats = rubyPayloadStats(level, workMin, workMax);
+        if (rubyStats.rubyBlocks() > 0) {
+            Spectralization.LOGGER.info(
+                    "Compacted machine ruby payload in {}: ruby block(s) {}, pumped ruby block(s) {}, max pump rate {}",
+                    level.dimension().location(),
+                    rubyStats.rubyBlocks(),
+                    rubyStats.pumpedRubyBlocks(),
+                    rubyStats.maxPumpRate()
+            );
+        }
         Spectralization.LOGGER.info(
                 "Compacted machine optical transfer compiled in {}: {} io port(s), {} transfer(s), {} source output(s)",
                 level.dimension().location(),
@@ -123,7 +139,7 @@ public final class CompactedMachineItemData {
 
     public static void describeTo(Player player, ItemStack stack) {
         CompoundTag data = root(stack);
-        if (data.isEmpty()) {
+        if (!hasFunctionalData(data)) {
             player.displayClientMessage(Component.translatable("screen.spectralization.compact_machine_core.output_empty_data"), false);
             return;
         }
@@ -151,11 +167,117 @@ public final class CompactedMachineItemData {
     }
 
     public static boolean hasData(ItemStack stack) {
-        return !root(stack).isEmpty();
+        return hasFunctionalData(root(stack));
     }
 
     public static CompoundTag copyRoot(ItemStack stack) {
-        return root(stack).copy();
+        CompoundTag data = root(stack).copy();
+        ensureVisualDefaults(data);
+        return data;
+    }
+
+    public static void putRoot(ItemStack stack, CompoundTag data) {
+        CompoundTag copy = data.copy();
+        ensureVisualDefaults(copy);
+        CustomData.update(DataComponents.CUSTOM_DATA, stack, tag -> tag.put(ROOT_KEY, copy));
+    }
+
+    public static ItemStack createStackFromRoot(CompoundTag data) {
+        ItemStack stack = new ItemStack(Spectralization.COMPACTED_MACHINE.get());
+        putRoot(stack, data);
+        return stack;
+    }
+
+    public static int sizeX(CompoundTag data) {
+        return Math.max(0, data.getInt(SIZE_X_KEY));
+    }
+
+    public static int sizeY(CompoundTag data) {
+        return Math.max(0, data.getInt(SIZE_Y_KEY));
+    }
+
+    public static int sizeZ(CompoundTag data) {
+        return Math.max(0, data.getInt(SIZE_Z_KEY));
+    }
+
+    public static int blockCount(CompoundTag data) {
+        return data.getList(BLOCKS_KEY, Tag.TAG_COMPOUND).size();
+    }
+
+    public static int blockTypeCount(CompoundTag data) {
+        ListTag blocks = data.getList(BLOCKS_KEY, Tag.TAG_COMPOUND);
+        Set<String> blockIds = new java.util.HashSet<>();
+
+        for (int index = 0; index < blocks.size(); index++) {
+            String blockId = blocks.getCompound(index).getString(BLOCK_KEY);
+            if (!blockId.isBlank()) {
+                blockIds.add(blockId);
+            }
+        }
+
+        return blockIds.size();
+    }
+
+    public static int transferCount(CompoundTag data) {
+        return data.getList(TRANSFERS_KEY, Tag.TAG_COMPOUND).size();
+    }
+
+    public static int sourceCount(CompoundTag data) {
+        return data.getList(SOURCES_KEY, Tag.TAG_COMPOUND).size();
+    }
+
+    public static Direction facing(CompoundTag data) {
+        Direction facing = Direction.byName(data.getString(FACING_KEY));
+        return CompactedMachineTransform.horizontal(facing);
+    }
+
+    public static void setFacing(CompoundTag data, Direction facing) {
+        data.putString(FACING_KEY, CompactedMachineTransform.horizontal(facing).getName());
+    }
+
+    public static CompactedMachineFaceColor faceColor(CompoundTag data, Direction face) {
+        ListTag colors = data.getList(FACE_COLORS_KEY, Tag.TAG_COMPOUND);
+        CompactedMachineFaceColor fallback = defaultFaceColor(face);
+
+        for (int index = 0; index < colors.size(); index++) {
+            CompoundTag colorTag = colors.getCompound(index);
+            Direction taggedFace = Direction.byName(colorTag.getString(FACE_KEY));
+            if (taggedFace == face) {
+                return CompactedMachineFaceColor.byName(colorTag.getString(COLOR_KEY), fallback);
+            }
+        }
+
+        return fallback;
+    }
+
+    public static void setFaceColor(CompoundTag data, Direction face, CompactedMachineFaceColor color) {
+        ListTag oldColors = data.getList(FACE_COLORS_KEY, Tag.TAG_COMPOUND);
+        ListTag newColors = new ListTag();
+        boolean written = false;
+
+        for (int index = 0; index < oldColors.size(); index++) {
+            CompoundTag oldColorTag = oldColors.getCompound(index);
+            Direction taggedFace = Direction.byName(oldColorTag.getString(FACE_KEY));
+            if (taggedFace == null) {
+                continue;
+            }
+
+            CompoundTag newColorTag = oldColorTag.copy();
+            if (taggedFace == face) {
+                newColorTag.putString(COLOR_KEY, color.serializedName());
+                written = true;
+            }
+            newColors.add(newColorTag);
+        }
+
+        if (!written) {
+            CompoundTag colorTag = new CompoundTag();
+            colorTag.putString(FACE_KEY, face.getName());
+            colorTag.putString(COLOR_KEY, color.serializedName());
+            newColors.add(colorTag);
+        }
+
+        data.put(FACE_COLORS_KEY, newColors);
     }
 
     public static Set<Direction> ioFaces(CompoundTag data) {
@@ -216,6 +338,58 @@ public final class CompactedMachineItemData {
         CustomData data = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY);
         CompoundTag tag = data.copyTag();
         return tag.getCompound(ROOT_KEY);
+    }
+
+    private static boolean hasFunctionalData(CompoundTag data) {
+        return data.contains(VERSION_KEY, Tag.TAG_INT)
+                || data.contains(BLOCKS_KEY, Tag.TAG_LIST)
+                || data.contains(TRANSFERS_KEY, Tag.TAG_LIST)
+                || data.contains(SOURCES_KEY, Tag.TAG_LIST);
+    }
+
+    private static RubyPayloadStats rubyPayloadStats(ServerLevel level, BlockPos workMin, BlockPos workMax) {
+        int rubyBlocks = 0;
+        int pumpedRubyBlocks = 0;
+        int maxPumpRate = 0;
+
+        for (BlockPos pos : BlockPos.betweenClosed(workMin, workMax)) {
+            BlockPos immutablePos = pos.immutable();
+            BlockState state = level.getBlockState(immutablePos);
+            if (!state.is(Spectralization.RUBY_BLOCK.get())) {
+                continue;
+            }
+
+            rubyBlocks++;
+            int pumpRate = OpticalPumpSources.adjacentPumpRate(level, immutablePos);
+            if (pumpRate > 0) {
+                pumpedRubyBlocks++;
+            }
+            maxPumpRate = Math.max(maxPumpRate, pumpRate);
+        }
+
+        return new RubyPayloadStats(rubyBlocks, pumpedRubyBlocks, maxPumpRate);
+    }
+
+    private static void ensureVisualDefaults(CompoundTag data) {
+        Direction facing = Direction.byName(data.getString(FACING_KEY));
+        if (facing == null || facing.getAxis().isVertical()) {
+            setFacing(data, Direction.NORTH);
+        }
+
+        for (Direction face : Direction.values()) {
+            setFaceColor(data, face, faceColor(data, face));
+        }
+    }
+
+    private static CompactedMachineFaceColor defaultFaceColor(Direction face) {
+        return switch (face) {
+            case NORTH -> CompactedMachineFaceColor.BLUE;
+            case SOUTH -> CompactedMachineFaceColor.GREEN;
+            case EAST -> CompactedMachineFaceColor.CYAN;
+            case WEST -> CompactedMachineFaceColor.PURPLE;
+            case UP -> CompactedMachineFaceColor.YELLOW;
+            case DOWN -> CompactedMachineFaceColor.RED;
+        };
     }
 
     private static List<BoundaryPort> boundaryPorts(ServerLevel level, BlockPos frameMin, BlockPos frameMax) {
@@ -478,6 +652,9 @@ public final class CompactedMachineItemData {
         private PlaneWaveComponent component(double power) {
             return new PlaneWaveComponent(frequency, power, direction, coherence);
         }
+    }
+
+    private record RubyPayloadStats(int rubyBlocks, int pumpedRubyBlocks, int maxPumpRate) {
     }
 
     private CompactedMachineItemData() {

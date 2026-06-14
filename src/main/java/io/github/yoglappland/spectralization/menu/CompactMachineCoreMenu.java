@@ -259,6 +259,24 @@ public class CompactMachineCoreMenu extends AbstractContainerMenu {
 
         CompactMachineFrameInfo info = CompactMachineNetworkData.frameInfoAt(level, corePos);
         if (!info.valid() || info.workSizeX() <= 0 || info.workSizeY() <= 0 || info.workSizeZ() <= 0) {
+            Spectralization.LOGGER.warn(
+                    "Compact machine start rejected in {} at {}: present={}, valid={}, reason={}, shell={}x{}x{}, work={}x{}x{}, frame_parts={}, io={}, payload={} type(s) {}",
+                    level.dimension().location(),
+                    corePos,
+                    info.present(),
+                    info.valid(),
+                    info.reason(),
+                    info.sizeX(),
+                    info.sizeY(),
+                    info.sizeZ(),
+                    info.workSizeX(),
+                    info.workSizeY(),
+                    info.workSizeZ(),
+                    info.framePartCount(),
+                    info.ioPortCount(),
+                    info.payloadBlockCount(),
+                    info.payloadTypeCount()
+            );
             player.displayClientMessage(Component.translatable("screen.spectralization.compact_machine_core.compact_not_ready"), false);
             return false;
         }

@@ -260,6 +260,18 @@ public final class CompactMachineOpticalTransferCompiler {
 
             enqueueFiberRemoteOutputs(level, frameMin, frameMax, pending, state.pos(), incomingDirection, beam);
         }
+
+        if (!pending.isEmpty()) {
+            Spectralization.LOGGER.warn(
+                    "Compact machine optical trace reached state limit in {}: frame {} -> {}, start {} toward {}, pending state(s) {}",
+                    level.dimension().location(),
+                    frameMin,
+                    frameMax,
+                    startPos,
+                    startDirection,
+                    pending.size()
+            );
+        }
     }
 
     private static void enqueueFiberRemoteOutputs(

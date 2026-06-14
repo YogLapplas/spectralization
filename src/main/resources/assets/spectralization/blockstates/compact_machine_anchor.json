@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "error=false": {
+      "model": "spectralization:block/compact_machine_anchor"
+    },
+    "error=true": {
+      "model": "spectralization:block/compact_machine_anchor"
+    }
+  }
+}

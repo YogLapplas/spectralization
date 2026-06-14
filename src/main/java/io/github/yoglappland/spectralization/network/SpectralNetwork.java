@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization.network;
 
 import io.github.yoglappland.spectralization.client.beam.ClientBeamPathPayloadHandler;
+import io.github.yoglappland.spectralization.client.compact.ClientCompactMachineOverlayPayloadHandler;
 import io.github.yoglappland.spectralization.client.networkoverlay.ClientNetworkOverlayPayloadHandler;
 import io.github.yoglappland.spectralization.client.storage.ClientHolographicStoragePayloadHandler;
 import io.github.yoglappland.spectralization.client.surface.ClientSurfaceInspectionPayloadHandler;
@@ -58,6 +59,12 @@ public final class SpectralNetwork {
                 HolographicStorageSnapshotPayload.TYPE,
                 HolographicStorageSnapshotPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleHolographicStorageSnapshot(payload))
+        );
+
+        registrar.playToClient(
+                CompactMachineOverlayPayload.TYPE,
+                CompactMachineOverlayPayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> handleCompactMachineOverlay(payload))
         );
 
         registrar.playToServer(
@@ -118,6 +125,12 @@ public final class SpectralNetwork {
     private static void handleHolographicStorageSnapshot(HolographicStorageSnapshotPayload payload) {
         if (FMLEnvironment.dist == Dist.CLIENT) {
             ClientHolographicStoragePayloadHandler.handle(payload);
+        }
+    }
+
+    private static void handleCompactMachineOverlay(CompactMachineOverlayPayload payload) {
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            ClientCompactMachineOverlayPayloadHandler.handle(payload);
         }
     }
 

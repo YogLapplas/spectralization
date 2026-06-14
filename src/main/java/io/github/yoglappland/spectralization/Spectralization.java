@@ -4,6 +4,11 @@ import com.mojang.logging.LogUtils;
 import io.github.yoglappland.spectralization.block.BeamProfilerBlock;
 import io.github.yoglappland.spectralization.block.BeamSplitterBlock;
 import io.github.yoglappland.spectralization.block.CmosSensorBlock;
+import io.github.yoglappland.spectralization.block.CompactMachineAnchorBlock;
+import io.github.yoglappland.spectralization.block.CompactMachineCoreBlock;
+import io.github.yoglappland.spectralization.block.CompactMachineLightIoPortBlock;
+import io.github.yoglappland.spectralization.block.CompactMachinePartBlock;
+import io.github.yoglappland.spectralization.block.CompactedMachineBlock;
 import io.github.yoglappland.spectralization.block.CreativeLightSourceBlock;
 import io.github.yoglappland.spectralization.block.DynamicMirrorBlock;
 import io.github.yoglappland.spectralization.block.FiberOpticInterfaceBlock;
@@ -33,6 +38,8 @@ import io.github.yoglappland.spectralization.client.screen.SpectrometerScreen;
 import io.github.yoglappland.spectralization.client.screen.ThermalSmelterScreen;
 import io.github.yoglappland.spectralization.command.SpectralCommands;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
+import io.github.yoglappland.spectralization.compact.CompactMachineNetworkData;
+import io.github.yoglappland.spectralization.compact.CompactMachineOverlayPublisher;
 import io.github.yoglappland.spectralization.item.CoatingBrushItem;
 import io.github.yoglappland.spectralization.item.CreativeBrushItem;
 import io.github.yoglappland.spectralization.item.LensItem;
@@ -298,6 +305,48 @@ public class Spectralization {
 
     public static final DeferredItem<BlockItem> HOLOGRAPHIC_STORAGE_SCREEN_ITEM =
             ITEMS.registerSimpleBlockItem("holographic_storage_screen", HOLOGRAPHIC_STORAGE_SCREEN);
+
+    public static final DeferredBlock<CompactMachineAnchorBlock> COMPACT_MACHINE_ANCHOR = BLOCKS.register(
+            "compact_machine_anchor",
+            () -> new CompactMachineAnchorBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_LIGHT_BLUE)
+                    .strength(3.0F, 9.0F)
+                    .sound(SoundType.METAL)
+                    .lightLevel(state -> 15))
+    );
+    public static final DeferredItem<BlockItem> COMPACT_MACHINE_ANCHOR_ITEM =
+            ITEMS.registerSimpleBlockItem("compact_machine_anchor", COMPACT_MACHINE_ANCHOR);
+
+    public static final DeferredBlock<CompactMachineCoreBlock> COMPACT_MACHINE_CORE = BLOCKS.register(
+            "compact_machine_core",
+            () -> new CompactMachineCoreBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_LIGHT_BLUE)
+                    .strength(4.0F, 12.0F)
+                    .sound(SoundType.METAL)
+                    .lightLevel(state -> 15))
+    );
+    public static final DeferredItem<BlockItem> COMPACT_MACHINE_CORE_ITEM =
+            ITEMS.registerSimpleBlockItem("compact_machine_core", COMPACT_MACHINE_CORE);
+
+    public static final DeferredBlock<CompactMachineLightIoPortBlock> COMPACT_MACHINE_LIGHT_IO_PORT = BLOCKS.register(
+            "compact_machine_light_io_port",
+            () -> new CompactMachineLightIoPortBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_LIGHT_BLUE)
+                    .strength(3.0F, 9.0F)
+                    .sound(SoundType.METAL))
+    );
+    public static final DeferredItem<BlockItem> COMPACT_MACHINE_LIGHT_IO_PORT_ITEM =
+            ITEMS.registerSimpleBlockItem("compact_machine_light_io_port", COMPACT_MACHINE_LIGHT_IO_PORT);
+
+    public static final DeferredBlock<CompactedMachineBlock> COMPACTED_MACHINE = BLOCKS.register(
+            "compacted_machine",
+            () -> new CompactedMachineBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_LIGHT_BLUE)
+                    .strength(4.0F, 12.0F)
+                    .sound(SoundType.METAL))
+    );
+    public static final DeferredItem<BlockItem> COMPACTED_MACHINE_ITEM =
+            ITEMS.registerSimpleBlockItem("compacted_machine", COMPACTED_MACHINE);
 
     public static final DeferredBlock<MirrorBlock> MIRROR = BLOCKS.register(
             "mirror",
@@ -613,6 +662,10 @@ public class Spectralization {
                         output.accept(HOLOGRAPHIC_STORAGE_CRYSTAL_ITEM.get());
                         output.accept(HOLOGRAPHIC_STORAGE_MAIN_CORE_ITEM.get());
                         output.accept(HOLOGRAPHIC_STORAGE_SCREEN_ITEM.get());
+                        output.accept(COMPACT_MACHINE_ANCHOR_ITEM.get());
+                        output.accept(COMPACT_MACHINE_CORE_ITEM.get());
+                        output.accept(COMPACT_MACHINE_LIGHT_IO_PORT_ITEM.get());
+                        output.accept(COMPACTED_MACHINE_ITEM.get());
                         output.accept(MIRROR_ITEM.get());
                         output.accept(DYNAMIC_MIRROR_ITEM.get());
                         output.accept(BEAM_SPLITTER_ITEM.get());
@@ -762,6 +815,12 @@ public class Spectralization {
         }
 
         FiberNetworkIndex.onBlockPlaced(event.getLevel(), event.getPos());
+        if (event.getLevel() instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+            BlockState placedState = serverLevel.getBlockState(event.getPos());
+            if (!(placedState.getBlock() instanceof CompactMachinePartBlock)) {
+                CompactMachineNetworkData.refreshNear(serverLevel, event.getPos().immutable(), "block placed");
+            }
+        }
     }
 
     @SubscribeEvent
@@ -778,6 +837,11 @@ public class Spectralization {
         }
 
         FiberNetworkIndex.onBlockBroken(event.getLevel(), event.getPos());
+        if (event.getLevel() instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+            if (!(event.getState().getBlock() instanceof CompactMachinePartBlock)) {
+                CompactMachineNetworkData.scheduleRefresh(serverLevel, event.getPos().immutable(), "block broken");
+            }
+        }
     }
 
     private static boolean isFiberRelayOnly(BlockState state) {
@@ -827,7 +891,9 @@ public class Spectralization {
     @SubscribeEvent
     public void onServerTickPost(ServerTickEvent.Post event) {
         OpticalTraceCache.processQueues(event.getServer());
+        CompactMachineNetworkData.processPendingRefreshes(event.getServer());
         FiberOverlayPublisher.publishToInterestedPlayers(event.getServer());
+        CompactMachineOverlayPublisher.publishToPlayers(event.getServer());
     }
 
     private static void resetOpticalRuntimeCaches() {

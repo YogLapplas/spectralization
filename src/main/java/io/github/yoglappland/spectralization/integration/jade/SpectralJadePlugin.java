@@ -3,6 +3,7 @@ package io.github.yoglappland.spectralization.integration.jade;
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.block.BeamProfilerBlock;
 import io.github.yoglappland.spectralization.block.CmosSensorBlock;
+import io.github.yoglappland.spectralization.block.CompactMachineCoreBlock;
 import io.github.yoglappland.spectralization.block.FiberOpticInterfaceBlock;
 import io.github.yoglappland.spectralization.block.FiberRelayBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
@@ -22,11 +23,14 @@ public class SpectralJadePlugin implements IWailaPlugin {
             ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "beam_profiler");
     public static final ResourceLocation FIBER_NODE =
             ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "fiber_node");
+    public static final ResourceLocation COMPACT_MACHINE_CORE =
+            ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "compact_machine_core");
 
     @Override
     public void register(IWailaCommonRegistration registration) {
         registration.registerBlockDataProvider(FiberNodeComponentProvider.INSTANCE, FiberOpticInterfaceBlock.class);
         registration.registerBlockDataProvider(FiberNodeComponentProvider.INSTANCE, FiberRelayBlock.class);
+        registration.registerBlockDataProvider(CompactMachineCoreComponentProvider.INSTANCE, CompactMachineCoreBlock.class);
     }
 
     @Override
@@ -36,5 +40,6 @@ public class SpectralJadePlugin implements IWailaPlugin {
         registration.registerBlockComponent(BeamProfilerComponentProvider.INSTANCE, BeamProfilerBlock.class);
         registration.registerBlockComponent(FiberNodeComponentProvider.INSTANCE, FiberOpticInterfaceBlock.class);
         registration.registerBlockComponent(FiberNodeComponentProvider.INSTANCE, FiberRelayBlock.class);
+        registration.registerBlockComponent(CompactMachineCoreComponentProvider.INSTANCE, CompactMachineCoreBlock.class);
     }
 }

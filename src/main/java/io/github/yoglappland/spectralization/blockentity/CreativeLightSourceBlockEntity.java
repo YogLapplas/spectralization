@@ -4,6 +4,7 @@ import io.github.yoglappland.spectralization.optics.BeamEnvelope;
 import io.github.yoglappland.spectralization.optics.BeamModel;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
 import io.github.yoglappland.spectralization.optics.CoherenceKind;
+import io.github.yoglappland.spectralization.optics.EnvironmentLightSpectra;
 import io.github.yoglappland.spectralization.optics.FrequencyKey;
 import io.github.yoglappland.spectralization.optics.OpticalSource;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
@@ -14,6 +15,7 @@ import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
@@ -50,7 +52,7 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
     private int focusDistanceMilli = 0;
     private int modeM = 0;
     private int modeN = 0;
-    private final int[] spectrumWeights = new int[MAX_SPECTRUM_BINS];
+    private final int[] spectrumWeights = defaultVisibleWhiteSpectrumWeights();
 
     public CreativeLightSourceBlockEntity(BlockPos pos, BlockState blockState) {
         super(SpectralBlockEntities.CREATIVE_LIGHT_SOURCE.get(), pos, blockState);
@@ -372,5 +374,41 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
         }
 
         return List.copyOf(merged);
+    }
+
+    private static int[] defaultVisibleWhiteSpectrumWeights() {
+        int[] weights = new int[MAX_SPECTRUM_BINS];
+        Map<FrequencyKey, Double> spectrum = EnvironmentLightSpectra.creativeVisibleWhiteProfile().normalizedSpectrum();
+        double maxWeight = 0.0;
+
+        for (Map.Entry<FrequencyKey, Double> entry : spectrum.entrySet()) {
+            if (entry.getKey().region() == SpectralRegion.VISIBLE) {
+                maxWeight = Math.max(maxWeight, entry.getValue());
+            }
+        }
+
+        if (maxWeight <= 0.0) {
+            return weights;
+        }
+
+        for (Map.Entry<FrequencyKey, Double> entry : spectrum.entrySet()) {
+            FrequencyKey frequency = entry.getKey();
+
+            if (frequency.region() != SpectralRegion.VISIBLE) {
+                continue;
+            }
+
+            int bin = frequency.bin();
+
+            if (bin >= 0 && bin < weights.length) {
+                weights[bin] = Mth.clamp(
+                        (int) Math.round(entry.getValue() / maxWeight * MAX_SPECTRUM_WEIGHT),
+                        1,
+                        MAX_SPECTRUM_WEIGHT
+                );
+            }
+        }
+
+        return weights;
     }
 }

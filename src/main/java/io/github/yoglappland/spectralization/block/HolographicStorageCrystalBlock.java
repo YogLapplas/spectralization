@@ -66,18 +66,7 @@ public class HolographicStorageCrystalBlock extends Block {
     }
 
     public static void refreshNearbyStorageVisuals(Level level, BlockPos origin) {
-        if (level.isClientSide) {
-            return;
-        }
-
-        int radius = HolographicStorageMultiblock.CORE_RADIUS * 2;
-        for (BlockPos pos : BlockPos.betweenClosed(
-                origin.offset(-radius, -radius, -radius),
-                origin.offset(radius, radius, radius)
-        )) {
-            refreshVisualState(level, pos);
-            HolographicStorageScreenBlock.refreshVisualState(level, pos);
-        }
+        HolographicStorageMultiblock.scheduleRefresh(level, origin, "storage visual refresh requested");
     }
 
     public static void refreshVisualState(Level level, BlockPos pos) {

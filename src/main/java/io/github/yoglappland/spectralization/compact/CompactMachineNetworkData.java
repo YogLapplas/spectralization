@@ -49,6 +49,40 @@ public final class CompactMachineNetworkData extends SavedData {
                 .orElse(List.of());
     }
 
+    public static CompactMachineFrameInfo frameInfoAt(ServerLevel level, BlockPos corePos) {
+        return maybeGet(level)
+                .map(data -> CompactMachineValidator.inspectAt(level, data.connections(), corePos))
+                .orElseGet(CompactMachineFrameInfo::missing);
+    }
+
+    public static boolean isRelevantPlacement(ServerLevel level, BlockPos pos, BlockState placedState) {
+        if (placedState.getBlock() instanceof CompactMachinePartBlock) {
+            return true;
+        }
+
+        Optional<CompactMachineNetworkData> maybeData = maybeGet(level);
+        return maybeData.isPresent()
+                && (maybeData.get().hasConnectionCrossing(pos)
+                || CompactMachineValidator.hasCandidateShellContaining(maybeData.get().connections(), pos));
+    }
+
+    public static boolean isRelevantRemoval(ServerLevel level, BlockPos pos, BlockState removedState) {
+        if (removedState.getBlock() instanceof CompactMachinePartBlock) {
+            return true;
+        }
+
+        Optional<CompactMachineNetworkData> maybeData = maybeGet(level);
+        if (maybeData.isPresent() && maybeData.get().hasConnectionCrossing(pos)) {
+            return true;
+        }
+
+        if (maybeData.isPresent() && CompactMachineValidator.hasCandidateShellContaining(maybeData.get().connections(), pos)) {
+            return true;
+        }
+
+        return hasEndpointAcrossPotentialGap(level, pos);
+    }
+
     public static void refreshNear(ServerLevel level, BlockPos changedPos, String reason) {
         Optional<CompactMachineNetworkData> maybeData = maybeGet(level);
         if (maybeData.isEmpty()) {
@@ -78,7 +112,8 @@ public final class CompactMachineNetworkData extends SavedData {
         }
 
         boolean includeContainingFrames = level.getBlockState(immutableChangedPos).getBlock() instanceof CompactMachinePartBlock
-                || reason.startsWith("compact part");
+                || reason.startsWith("compact part")
+                || CompactMachineValidator.hasCandidateShellContaining(data.connections(), immutableChangedPos);
         CompactMachineValidationResult validation = CompactMachineValidator.refreshAffected(
                 level,
                 data.connections(),
@@ -167,8 +202,17 @@ public final class CompactMachineNetworkData extends SavedData {
     private ConnectionMutation tryConnectFrom(ServerLevel level, BlockPos endpoint) {
         Set<BlockPos> affectedPositions = new HashSet<>();
 
-        for (Direction direction : Direction.values()) {
-            BlockPos target = nearestEndpoint(level, endpoint, direction);
+        for (Direction.Axis axis : Direction.Axis.values()) {
+            if (hasAxisConnection(endpoint, axis)) {
+                continue;
+            }
+
+            Direction positive = Direction.fromAxisAndDirection(axis, Direction.AxisDirection.POSITIVE);
+            Direction negative = Direction.fromAxisAndDirection(axis, Direction.AxisDirection.NEGATIVE);
+            BlockPos positiveTarget = nearestEndpoint(level, endpoint, positive);
+            BlockPos negativeTarget = nearestEndpoint(level, endpoint, negative);
+            Direction direction = nearestDirection(endpoint, positiveTarget, positive, negativeTarget, negative);
+            BlockPos target = direction == positive ? positiveTarget : negativeTarget;
             if (target != null) {
                 CompactMachineConnection connection = tryAddConnection(level, endpoint, target, direction);
                 if (connection != null) {
@@ -191,7 +235,7 @@ public final class CompactMachineNetworkData extends SavedData {
             return null;
         }
 
-        if (hasDirectionalConnection(from, direction) || hasDirectionalConnection(to, direction.getOpposite())) {
+        if (hasAxisConnection(from, direction.getAxis()) || hasAxisConnection(to, direction.getAxis())) {
             return null;
         }
 
@@ -246,9 +290,51 @@ public final class CompactMachineNetworkData extends SavedData {
         return new ConnectionMutation(!removed.isEmpty(), affectedPositions);
     }
 
-    private boolean hasDirectionalConnection(BlockPos endpoint, Direction direction) {
+    private boolean hasAxisConnection(BlockPos endpoint, Direction.Axis axis) {
         for (CompactMachineConnection connection : connectionsByKey.values()) {
-            if (connection.touches(endpoint) && connection.directionFrom(endpoint) == direction) {
+            if (connection.touches(endpoint) && connection.direction().getAxis() == axis) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static Direction nearestDirection(
+            BlockPos origin,
+            BlockPos positiveTarget,
+            Direction positive,
+            BlockPos negativeTarget,
+            Direction negative
+    ) {
+        if (positiveTarget == null) {
+            return negativeTarget == null ? positive : negative;
+        }
+
+        if (negativeTarget == null) {
+            return positive;
+        }
+
+        int positiveDistance = distanceBetween(origin, positiveTarget);
+        int negativeDistance = distanceBetween(origin, negativeTarget);
+        return positiveDistance <= negativeDistance ? positive : negative;
+    }
+
+    private boolean hasConnectionCrossing(BlockPos pos) {
+        for (CompactMachineConnection connection : connectionsByKey.values()) {
+            if (connection.touches(pos) || crosses(connection, pos)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static boolean hasEndpointAcrossPotentialGap(ServerLevel level, BlockPos pos) {
+        for (Direction.Axis axis : Direction.Axis.values()) {
+            Direction positive = Direction.fromAxisAndDirection(axis, Direction.AxisDirection.POSITIVE);
+            Direction negative = Direction.fromAxisAndDirection(axis, Direction.AxisDirection.NEGATIVE);
+            if (nearestEndpoint(level, pos, positive) != null && nearestEndpoint(level, pos, negative) != null) {
                 return true;
             }
         }

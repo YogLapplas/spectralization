@@ -2,6 +2,7 @@ package io.github.yoglappland.spectralization.compact;
 
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.block.CompactMachinePartBlock;
+import io.github.yoglappland.spectralization.tag.SpectralBlockTags;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -91,6 +92,67 @@ public final class CompactMachineValidator {
         return new CompactMachineValidationResult(validFrames, invalidFrames, changedErrorStates);
     }
 
+    public static CompactMachineFrameInfo inspectAt(
+            ServerLevel level,
+            List<CompactMachineConnection> connections,
+            BlockPos corePos
+    ) {
+        if (connections.isEmpty()) {
+            return CompactMachineFrameInfo.missing();
+        }
+
+        Map<BlockPos, List<CompactMachineConnection>> graph = graph(connections);
+        for (ConnectionComponent component : components(graph, connections)) {
+            Bounds bounds = Bounds.of(component.endpoints());
+            if (bounds == null || !bounds.contains(corePos)) {
+                continue;
+            }
+
+            FrameCheck check = checkFrame(level, component.endpoints(), component.connections());
+            Bounds workBounds = bounds.workBounds();
+            return new CompactMachineFrameInfo(
+                    true,
+                    check.valid(),
+                    bounds.min(),
+                    bounds.max(),
+                    bounds.sizeX(),
+                    bounds.sizeY(),
+                    bounds.sizeZ(),
+                    workBounds == null ? BlockPos.ZERO : workBounds.min(),
+                    workBounds == null ? BlockPos.ZERO : workBounds.max(),
+                    workBounds == null ? 0 : workBounds.sizeX(),
+                    workBounds == null ? 0 : workBounds.sizeY(),
+                    workBounds == null ? 0 : workBounds.sizeZ(),
+                    component.connections().size(),
+                    check.partPositions().size(),
+                    check.compactBlockCount(),
+                    check.compactTypeCount(),
+                    check.ioCount(),
+                    check.payloadBlockCount(),
+                    check.payloadTypeCount(),
+                    check.reason()
+            );
+        }
+
+        return CompactMachineFrameInfo.missing();
+    }
+
+    public static boolean hasCandidateShellContaining(List<CompactMachineConnection> connections, BlockPos pos) {
+        if (connections.isEmpty()) {
+            return false;
+        }
+
+        Map<BlockPos, List<CompactMachineConnection>> graph = graph(connections);
+        for (ConnectionComponent component : components(graph, connections)) {
+            Bounds bounds = Bounds.of(component.endpoints());
+            if (bounds != null && bounds.hasVolume() && bounds.contains(pos) && bounds.isOnSurface(pos)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static FrameCheck checkFrame(
             ServerLevel level,
             Set<BlockPos> endpoints,
@@ -102,13 +164,17 @@ public final class CompactMachineValidator {
         }
 
         Set<BlockPos> corners = bounds.corners();
-        PartScan scan = scanParts(level, bounds, corners);
+        MachineScan scan = scanMachineArea(level, bounds, corners);
         if (!bounds.hasVolume()) {
-            return FrameCheck.invalid("bounds are not a 3D rectangular frame", scan.partPositions(), scan.coreCount(), scan.ioCount());
+            return FrameCheck.invalid("bounds are not a 3D rectangular frame", scan);
+        }
+
+        if (!bounds.hasWorkArea()) {
+            return FrameCheck.invalid("frame has no internal work area", scan);
         }
 
         if (!endpoints.equals(corners)) {
-            return FrameCheck.invalid("connection endpoints are not exactly the 8 frame corners", scan.partPositions(), scan.coreCount(), scan.ioCount());
+            return FrameCheck.invalid("connection endpoints are not exactly the 8 frame corners", scan);
         }
 
         Set<CompactMachineConnectionKey> edgeKeys = new HashSet<>();
@@ -120,26 +186,24 @@ public final class CompactMachineValidator {
             if (!edgeKeys.contains(requiredEdge)) {
                 return FrameCheck.invalid(
                         "missing frame edge " + formatPos(requiredEdge.first()) + " -> " + formatPos(requiredEdge.second()),
-                        scan.partPositions(),
-                        scan.coreCount(),
-                        scan.ioCount()
+                        scan
                 );
             }
         }
 
         if (!scan.validPlacement()) {
-            return FrameCheck.invalid(scan.invalidReason(), scan.partPositions(), scan.coreCount(), scan.ioCount());
+            return FrameCheck.invalid(scan.invalidReason(), scan);
         }
 
         if (scan.coreCount() != 1) {
-            return FrameCheck.invalid("expected exactly one core, found " + scan.coreCount(), scan.partPositions(), scan.coreCount(), scan.ioCount());
+            return FrameCheck.invalid("expected exactly one core, found " + scan.coreCount(), scan);
         }
 
         if (scan.ioCount() > 6) {
-            return FrameCheck.invalid("expected at most 6 io ports, found " + scan.ioCount(), scan.partPositions(), scan.coreCount(), scan.ioCount());
+            return FrameCheck.invalid("expected at most 6 io ports, found " + scan.ioCount(), scan);
         }
 
-        return FrameCheck.valid(bounds.min(), bounds.max(), scan.partPositions(), scan.coreCount(), scan.ioCount());
+        return FrameCheck.valid(bounds.min(), bounds.max(), scan);
     }
 
     private static Map<BlockPos, List<CompactMachineConnection>> graph(List<CompactMachineConnection> connections) {
@@ -214,26 +278,51 @@ public final class CompactMachineValidator {
                 continue;
             }
 
-            level.setBlock(pos, state.setValue(CompactMachinePartBlock.ERROR, error), Block.UPDATE_CLIENTS);
+            level.setBlock(pos, state.setValue(CompactMachinePartBlock.ERROR, error), Block.UPDATE_ALL);
             changed = true;
         }
 
         return changed;
     }
 
-    private static PartScan scanParts(ServerLevel level, Bounds bounds, Set<BlockPos> corners) {
+    private static MachineScan scanMachineArea(ServerLevel level, Bounds bounds, Set<BlockPos> corners) {
         Set<BlockPos> partPositions = new HashSet<>();
+        Set<Block> compactTypes = new HashSet<>();
+        Set<Block> payloadTypes = new HashSet<>();
+        int compactBlockCount = 0;
+        int payloadBlockCount = 0;
         int coreCount = 0;
         int ioCount = 0;
         String invalidReason = null;
 
         for (BlockPos pos : BlockPos.betweenClosed(bounds.min(), bounds.max())) {
             BlockState state = level.getBlockState(pos);
+            BlockPos immutablePos = pos.immutable();
+            boolean onSurface = bounds.isOnSurface(immutablePos);
+            boolean compactTagged = state.is(SpectralBlockTags.COMPACT_MACHINE);
+
+            if (compactTagged) {
+                compactBlockCount++;
+                compactTypes.add(state.getBlock());
+            }
+
+            if (onSurface) {
+                if (!state.isAir() && !compactTagged && invalidReason == null) {
+                    invalidReason = "non compact block on frame shell at " + formatPos(immutablePos);
+                }
+            } else if (compactTagged) {
+                if (invalidReason == null) {
+                    invalidReason = "compact machine block is inside work area at " + formatPos(immutablePos);
+                }
+            } else if (!state.isAir()) {
+                payloadBlockCount++;
+                payloadTypes.add(state.getBlock());
+            }
+
             if (!(state.getBlock() instanceof CompactMachinePartBlock part)) {
                 continue;
             }
 
-            BlockPos immutablePos = pos.immutable();
             partPositions.add(immutablePos);
 
             if (part.kind() == CompactMachinePartKind.ANCHOR && !corners.contains(immutablePos) && invalidReason == null) {
@@ -255,7 +344,16 @@ public final class CompactMachineValidator {
             }
         }
 
-        return new PartScan(Set.copyOf(partPositions), coreCount, ioCount, invalidReason);
+        return new MachineScan(
+                Set.copyOf(partPositions),
+                compactBlockCount,
+                compactTypes.size(),
+                coreCount,
+                ioCount,
+                payloadBlockCount,
+                payloadTypes.size(),
+                invalidReason
+        );
     }
 
     private static Set<BlockPos> compactSeedParts(ServerLevel level, Set<BlockPos> seeds) {
@@ -284,22 +382,59 @@ public final class CompactMachineValidator {
             BlockPos max,
             Set<BlockPos> partPositions,
             int coreCount,
-        int ioCount
+            int ioCount,
+            int compactBlockCount,
+            int compactTypeCount,
+            int payloadBlockCount,
+            int payloadTypeCount
     ) {
-        private static FrameCheck valid(BlockPos min, BlockPos max, Set<BlockPos> partPositions, int coreCount, int ioCount) {
-            return new FrameCheck(true, "", min, max, partPositions, coreCount, ioCount);
+        private static FrameCheck valid(BlockPos min, BlockPos max, MachineScan scan) {
+            return new FrameCheck(
+                    true,
+                    "",
+                    min,
+                    max,
+                    scan.partPositions(),
+                    scan.coreCount(),
+                    scan.ioCount(),
+                    scan.compactBlockCount(),
+                    scan.compactTypeCount(),
+                    scan.payloadBlockCount(),
+                    scan.payloadTypeCount()
+            );
         }
 
         private static FrameCheck invalid(String reason, Set<BlockPos> partPositions) {
-            return invalid(reason, partPositions, 0, 0);
+            return new FrameCheck(false, reason, BlockPos.ZERO, BlockPos.ZERO, partPositions, 0, 0, 0, 0, 0, 0);
         }
 
-        private static FrameCheck invalid(String reason, Set<BlockPos> partPositions, int coreCount, int ioCount) {
-            return new FrameCheck(false, reason, BlockPos.ZERO, BlockPos.ZERO, partPositions, coreCount, ioCount);
+        private static FrameCheck invalid(String reason, MachineScan scan) {
+            return new FrameCheck(
+                    false,
+                    reason,
+                    BlockPos.ZERO,
+                    BlockPos.ZERO,
+                    scan.partPositions(),
+                    scan.coreCount(),
+                    scan.ioCount(),
+                    scan.compactBlockCount(),
+                    scan.compactTypeCount(),
+                    scan.payloadBlockCount(),
+                    scan.payloadTypeCount()
+            );
         }
     }
 
-    private record PartScan(Set<BlockPos> partPositions, int coreCount, int ioCount, String invalidReason) {
+    private record MachineScan(
+            Set<BlockPos> partPositions,
+            int compactBlockCount,
+            int compactTypeCount,
+            int coreCount,
+            int ioCount,
+            int payloadBlockCount,
+            int payloadTypeCount,
+            String invalidReason
+    ) {
         private boolean validPlacement() {
             return invalidReason == null;
         }
@@ -371,17 +506,34 @@ public final class CompactMachineValidator {
             return min.getX() < max.getX() && min.getY() < max.getY() && min.getZ() < max.getZ();
         }
 
-        private Set<BlockPos> corners() {
-            return Set.of(
-                    new BlockPos(min.getX(), min.getY(), min.getZ()),
-                    new BlockPos(max.getX(), min.getY(), min.getZ()),
-                    new BlockPos(min.getX(), max.getY(), min.getZ()),
-                    new BlockPos(max.getX(), max.getY(), min.getZ()),
-                    new BlockPos(min.getX(), min.getY(), max.getZ()),
-                    new BlockPos(max.getX(), min.getY(), max.getZ()),
-                    new BlockPos(min.getX(), max.getY(), max.getZ()),
-                    new BlockPos(max.getX(), max.getY(), max.getZ())
+        private boolean hasWorkArea() {
+            return max.getX() - min.getX() > 1
+                    && max.getY() - min.getY() > 1
+                    && max.getZ() - min.getZ() > 1;
+        }
+
+        private Bounds workBounds() {
+            if (!hasWorkArea()) {
+                return null;
+            }
+
+            return new Bounds(
+                    new BlockPos(min.getX() + 1, min.getY() + 1, min.getZ() + 1),
+                    new BlockPos(max.getX() - 1, max.getY() - 1, max.getZ() - 1)
             );
+        }
+
+        private Set<BlockPos> corners() {
+            Set<BlockPos> corners = new HashSet<>();
+            corners.add(new BlockPos(min.getX(), min.getY(), min.getZ()));
+            corners.add(new BlockPos(max.getX(), min.getY(), min.getZ()));
+            corners.add(new BlockPos(min.getX(), max.getY(), min.getZ()));
+            corners.add(new BlockPos(max.getX(), max.getY(), min.getZ()));
+            corners.add(new BlockPos(min.getX(), min.getY(), max.getZ()));
+            corners.add(new BlockPos(max.getX(), min.getY(), max.getZ()));
+            corners.add(new BlockPos(min.getX(), max.getY(), max.getZ()));
+            corners.add(new BlockPos(max.getX(), max.getY(), max.getZ()));
+            return Set.copyOf(corners);
         }
 
         private List<CompactMachineConnectionKey> requiredEdges() {
@@ -433,6 +585,18 @@ public final class CompactMachineValidator {
                     && pos.getY() <= max.getY()
                     && pos.getZ() >= min.getZ()
                     && pos.getZ() <= max.getZ();
+        }
+
+        private int sizeX() {
+            return max.getX() - min.getX() + 1;
+        }
+
+        private int sizeY() {
+            return max.getY() - min.getY() + 1;
+        }
+
+        private int sizeZ() {
+            return max.getZ() - min.getZ() + 1;
         }
     }
 

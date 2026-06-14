@@ -20,7 +20,7 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 @EventBusSubscriber(modid = Spectralization.MODID, value = Dist.CLIENT)
 public final class BeamPathRenderEvents {
     private static final double EDGE_OFFSET = 0.0D;
-    private static final double BEAM_WIDTH = 0.035D;
+    private static final double BEAM_WIDTH = 0.5D / 16.0D;
 
     @SubscribeEvent
     public static void renderBeamPaths(RenderLevelStageEvent event) {
@@ -76,15 +76,15 @@ public final class BeamPathRenderEvents {
         switch (direction.getAxis()) {
             case X -> {
                 addQuad(consumer, pose, sx, sy - width, sz, ex, ey - width, ez, ex, ey + width, ez, sx, sy + width, sz, color, alpha);
-                addQuad(consumer, pose, sx, sy, sz - width, ex, ey, ez - width, ex, ey, ez + width, sx, sy, sz + width, color, alpha);
+                addQuad(consumer, pose, sx, sy, sz - width, sx, sy, sz + width, ex, ey, ez + width, ex, ey, ez - width, color, alpha);
             }
             case Y -> {
-                addQuad(consumer, pose, sx - width, sy, sz, ex - width, ey, ez, ex + width, ey, ez, sx + width, sy, sz, color, alpha);
+                addQuad(consumer, pose, sx - width, sy, sz, sx + width, sy, sz, ex + width, ey, ez, ex - width, ey, ez, color, alpha);
                 addQuad(consumer, pose, sx, sy, sz - width, ex, ey, ez - width, ex, ey, ez + width, sx, sy, sz + width, color, alpha);
             }
             case Z -> {
                 addQuad(consumer, pose, sx - width, sy, sz, ex - width, ey, ez, ex + width, ey, ez, sx + width, sy, sz, color, alpha);
-                addQuad(consumer, pose, sx, sy - width, sz, ex, ey - width, ez, ex, ey + width, ez, sx, sy + width, sz, color, alpha);
+                addQuad(consumer, pose, sx, sy - width, sz, sx, sy + width, sz, ex, ey + width, ez, ex, ey - width, ez, color, alpha);
             }
         }
     }

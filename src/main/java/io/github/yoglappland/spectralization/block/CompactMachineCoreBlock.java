@@ -1,9 +1,11 @@
 package io.github.yoglappland.spectralization.block;
 
-import io.github.yoglappland.spectralization.compact.CompactMachineNetworkData;
 import io.github.yoglappland.spectralization.compact.CompactMachinePartKind;
+import io.github.yoglappland.spectralization.menu.CompactMachineCoreMenu;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
@@ -24,17 +26,13 @@ public class CompactMachineCoreBlock extends CompactMachinePartBlock {
             Player player,
             BlockHitResult hitResult
     ) {
-        if (!level.isClientSide) {
-            int connections = CompactMachineNetworkData.connections(level).stream()
-                    .filter(connection -> connection.touches(pos))
-                    .toList()
-                    .size();
-            player.displayClientMessage(Component.translatable(
-                    state.getValue(ERROR)
-                            ? "block.spectralization.compact_machine_core.message.error"
-                            : "block.spectralization.compact_machine_core.message.ready",
-                    connections
-            ), true);
+        if (level instanceof ServerLevel serverLevel) {
+            BlockPos corePos = pos.immutable();
+            player.openMenu(new SimpleMenuProvider(
+                    (containerId, inventory, menuPlayer) ->
+                            new CompactMachineCoreMenu(containerId, inventory, serverLevel, corePos),
+                    Component.translatable("container.spectralization.compact_machine_core")
+            ));
         }
 
         return InteractionResult.sidedSuccess(level.isClientSide);

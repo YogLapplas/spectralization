@@ -2,6 +2,7 @@ package io.github.yoglappland.spectralization.registry;
 
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.menu.CoatingBrushMenu;
+import io.github.yoglappland.spectralization.menu.CompactMachineCoreMenu;
 import io.github.yoglappland.spectralization.menu.CreativeLightSourceMenu;
 import io.github.yoglappland.spectralization.menu.HolographicStorageCoreMenu;
 import io.github.yoglappland.spectralization.menu.HolographicStorageMenu;
@@ -46,6 +47,10 @@ public final class SpectralMenus {
     public static final DeferredHolder<MenuType<?>, MenuType<HolographicStorageCoreMenu>> HOLOGRAPHIC_STORAGE_CORE =
             MENU_TYPES.register("holographic_storage_core", () ->
                     new MenuType<>(HolographicStorageCoreMenu::new, FeatureFlags.DEFAULT_FLAGS));
+
+    public static final DeferredHolder<MenuType<?>, MenuType<CompactMachineCoreMenu>> COMPACT_MACHINE_CORE =
+            MENU_TYPES.register("compact_machine_core", () ->
+                    new MenuType<>(CompactMachineCoreMenu::new, FeatureFlags.DEFAULT_FLAGS));
 
     public static void register(IEventBus modEventBus) {
         MENU_TYPES.register(modEventBus);

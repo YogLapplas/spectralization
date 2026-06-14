@@ -15,6 +15,7 @@ import io.github.yoglappland.spectralization.block.FiberOpticInterfaceBlock;
 import io.github.yoglappland.spectralization.block.FiberRelayBlock;
 import io.github.yoglappland.spectralization.block.HolographicStorageCrystalBlock;
 import io.github.yoglappland.spectralization.block.HolographicStorageMainCoreBlock;
+import io.github.yoglappland.spectralization.block.HolographicStorageMultiblock;
 import io.github.yoglappland.spectralization.block.HolographicStorageScreenBlock;
 import io.github.yoglappland.spectralization.block.HolographicStorageShellBlock;
 import io.github.yoglappland.spectralization.block.LensHolderBlock;
@@ -30,6 +31,7 @@ import io.github.yoglappland.spectralization.block.ThermalSmelterBlock;
 import io.github.yoglappland.spectralization.blockentity.RubyBlockEntity;
 import io.github.yoglappland.spectralization.client.renderer.LensHolderRenderer;
 import io.github.yoglappland.spectralization.client.screen.CoatingBrushScreen;
+import io.github.yoglappland.spectralization.client.screen.CompactMachineCoreScreen;
 import io.github.yoglappland.spectralization.client.screen.CreativeLightSourceScreen;
 import io.github.yoglappland.spectralization.client.screen.HolographicStorageCoreScreen;
 import io.github.yoglappland.spectralization.client.screen.HolographicStorageScreen;
@@ -815,9 +817,15 @@ public class Spectralization {
         }
 
         FiberNetworkIndex.onBlockPlaced(event.getLevel(), event.getPos());
+        if (HolographicStorageMultiblock.isRelevantChange(event.getLevel(), event.getPos(), event.getPlacedBlock())) {
+            if (event.getLevel() instanceof Level level) {
+                HolographicStorageMultiblock.scheduleRefresh(level, event.getPos().immutable(), "block placed");
+            }
+        }
         if (event.getLevel() instanceof net.minecraft.server.level.ServerLevel serverLevel) {
             BlockState placedState = serverLevel.getBlockState(event.getPos());
-            if (!(placedState.getBlock() instanceof CompactMachinePartBlock)) {
+            if (!(placedState.getBlock() instanceof CompactMachinePartBlock)
+                    && CompactMachineNetworkData.isRelevantPlacement(serverLevel, event.getPos(), placedState)) {
                 CompactMachineNetworkData.refreshNear(serverLevel, event.getPos().immutable(), "block placed");
             }
         }
@@ -837,8 +845,14 @@ public class Spectralization {
         }
 
         FiberNetworkIndex.onBlockBroken(event.getLevel(), event.getPos());
+        if (HolographicStorageMultiblock.isRelevantChange(event.getLevel(), event.getPos(), event.getState())) {
+            if (event.getLevel() instanceof Level level) {
+                HolographicStorageMultiblock.scheduleRefresh(level, event.getPos().immutable(), "block broken");
+            }
+        }
         if (event.getLevel() instanceof net.minecraft.server.level.ServerLevel serverLevel) {
-            if (!(event.getState().getBlock() instanceof CompactMachinePartBlock)) {
+            if (!(event.getState().getBlock() instanceof CompactMachinePartBlock)
+                    && CompactMachineNetworkData.isRelevantRemoval(serverLevel, event.getPos(), event.getState())) {
                 CompactMachineNetworkData.scheduleRefresh(serverLevel, event.getPos().immutable(), "block broken");
             }
         }
@@ -891,6 +905,7 @@ public class Spectralization {
     @SubscribeEvent
     public void onServerTickPost(ServerTickEvent.Post event) {
         OpticalTraceCache.processQueues(event.getServer());
+        HolographicStorageMultiblock.processPendingRefreshes(event.getServer());
         CompactMachineNetworkData.processPendingRefreshes(event.getServer());
         FiberOverlayPublisher.publishToInterestedPlayers(event.getServer());
         CompactMachineOverlayPublisher.publishToPlayers(event.getServer());
@@ -903,6 +918,7 @@ public class Spectralization {
         FiberNetworkIndex.clearAll();
         OpticalFieldSources.clearAll();
         OpticalSpotTracker.clearAll();
+        HolographicStorageMultiblock.clearAll();
     }
 
     private static void resetOpticalRuntimeCaches(net.minecraft.world.level.LevelAccessor level) {
@@ -912,6 +928,7 @@ public class Spectralization {
         FiberNetworkIndex.clear(level);
         OpticalFieldSources.invalidate(level);
         OpticalSpotTracker.clear(level);
+        HolographicStorageMultiblock.clear(level);
     }
 
     @EventBusSubscriber(modid = Spectralization.MODID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
@@ -930,6 +947,7 @@ public class Spectralization {
             event.register(SpectralMenus.THERMAL_SMELTER.get(), ThermalSmelterScreen::new);
             event.register(SpectralMenus.HOLOGRAPHIC_STORAGE.get(), HolographicStorageScreen::new);
             event.register(SpectralMenus.HOLOGRAPHIC_STORAGE_CORE.get(), HolographicStorageCoreScreen::new);
+            event.register(SpectralMenus.COMPACT_MACHINE_CORE.get(), CompactMachineCoreScreen::new);
         }
     }
 }

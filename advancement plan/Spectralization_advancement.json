@@ -1,0 +1,1035 @@
+{
+  "version": "30.2.1",
+  "pages": [
+    {
+      "id": "DB6wTVO1WHo7TnB0dYIv",
+      "name": "Page-1",
+      "cells": [
+        {
+          "id": "1",
+          "type": "layer"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-65",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-1",
+          "target": "gPkYdbDE81R9RcX4GGM6-12"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-66",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-1",
+          "target": "gPkYdbDE81R9RcX4GGM6-5"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-68",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-1",
+          "target": "gPkYdbDE81R9RcX4GGM6-13"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-96",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-1",
+          "target": "gPkYdbDE81R9RcX4GGM6-43"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-24",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-1",
+          "target": "3RV92MHUMhARg2wgbiaa-23"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-45",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-1",
+          "target": "3RV92MHUMhARg2wgbiaa-36"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-1",
+          "type": "node",
+          "parent": "1",
+          "label": "要有光！（获得火把）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-116",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-3",
+          "target": "gPkYdbDE81R9RcX4GGM6-4"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-117",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-3",
+          "target": "gPkYdbDE81R9RcX4GGM6-14"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-118",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-3",
+          "target": "gPkYdbDE81R9RcX4GGM6-88"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-121",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-3",
+          "target": "gPkYdbDE81R9RcX4GGM6-46"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-44",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-3",
+          "target": "gPkYdbDE81R9RcX4GGM6-29"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-66",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-3",
+          "target": "gPkYdbDE81R9RcX4GGM6-47"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-69",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-3",
+          "target": "3RV92MHUMhARg2wgbiaa-67"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-102",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-3",
+          "target": "gPkYdbDE81R9RcX4GGM6-100"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-3",
+          "type": "node",
+          "parent": "1",
+          "label": "第一台激光器（一个光学系统里包含散杂光源，红宝石，$泵浦源，和任何其他反射率大于80的光学材料）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-4",
+          "type": "node",
+          "parent": "1",
+          "label": "实验室的反面教材（被激光致盲/受到激光伤害）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-174",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-5",
+          "target": "3RV92MHUMhARg2wgbiaa-168"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-5",
+          "type": "node",
+          "parent": "1",
+          "label": "这里有光（获得一个布尔光电管）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-160",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-8",
+          "target": "3RV92MHUMhARg2wgbiaa-159"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-8",
+          "type": "node",
+          "parent": "1",
+          "label": "我是一个粉刷匠（获得涂料）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-10",
+          "type": "node",
+          "parent": "1",
+          "label": "我要把那新房子，刷得更漂亮（隐藏成就）（一个方块六面都被使用过涂料）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-167",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-11",
+          "target": "gPkYdbDE81R9RcX4GGM6-17"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-11",
+          "type": "node",
+          "parent": "1",
+          "label": "第一块半透镜（获得涂银玻璃）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-22",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-12",
+          "target": "3RV92MHUMhARg2wgbiaa-21"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-12",
+          "type": "node",
+          "parent": "1",
+          "label": "可以正衣冠（一个光学系统里包含了铜块/涂蜡铜块）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-151",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-13",
+          "target": "gPkYdbDE81R9RcX4GGM6-3"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-13",
+          "type": "node",
+          "parent": "1",
+          "label": "激光从哪里来？（获得红宝石）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-14",
+          "type": "node",
+          "parent": "1",
+          "label": "气体激光器（一个光学系统里包含奇异管，$泵浦源，和任何其他反射率大于90的光学材料）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-81",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-15",
+          "target": "gPkYdbDE81R9RcX4GGM6-24"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-15",
+          "type": "node",
+          "parent": "1",
+          "label": "科研民工（获得超材料设计台）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-95",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-16",
+          "target": "gPkYdbDE81R9RcX4GGM6-11"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-114",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-16",
+          "target": "gPkYdbDE81R9RcX4GGM6-8"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-119",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-16",
+          "target": "gPkYdbDE81R9RcX4GGM6-21"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-115",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-16",
+          "target": "3RV92MHUMhARg2wgbiaa-114"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-16",
+          "type": "node",
+          "parent": "1",
+          "label": "把它装进罐子里（获得灌装熔炼炉）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-17",
+          "type": "node",
+          "parent": "1",
+          "label": "我看见了（获得包含HUD功能的头盔）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-108",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-18",
+          "target": "gPkYdbDE81R9RcX4GGM6-33"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-142",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-18",
+          "target": "3RV92MHUMhARg2wgbiaa-12"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-18",
+          "type": "node",
+          "parent": "1",
+          "label": "全新存储方案（获得全息存储晶体）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-20",
+          "type": "node",
+          "parent": "1",
+          "label": "箱子？不需要了。（建立虚空存储）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-58",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-21",
+          "target": "gPkYdbDE81R9RcX4GGM6-37"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-59",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-21",
+          "target": "gPkYdbDE81R9RcX4GGM6-50"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-97",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-21",
+          "target": "3RV92MHUMhARg2wgbiaa-53"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-21",
+          "type": "node",
+          "parent": "1",
+          "label": "曲线传播（获得$光纤）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-124",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-22",
+          "target": "3RV92MHUMhARg2wgbiaa-16"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-131",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-22",
+          "target": "gPkYdbDE81R9RcX4GGM6-23"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-143",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-22",
+          "target": "3RV92MHUMhARg2wgbiaa-12"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-22",
+          "type": "node",
+          "parent": "1",
+          "label": "现代网络（获得调制解调器）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-23",
+          "type": "node",
+          "parent": "1",
+          "label": "坏猫！哈！（隐藏成就）（获得损坏的调制解调器）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-82",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-24",
+          "target": "gPkYdbDE81R9RcX4GGM6-26"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-81",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-24",
+          "target": "3RV92MHUMhARg2wgbiaa-80"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-130",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-24",
+          "target": "gPkYdbDE81R9RcX4GGM6-28"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-24",
+          "type": "node",
+          "parent": "1",
+          "label": "期末论文（获得任意标准$超材料模板）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-25",
+          "type": "node",
+          "parent": "1",
+          "label": "身临其境（使用无人机的全息模式）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-131",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-26",
+          "target": "gPkYdbDE81R9RcX4GGM6-42"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-26",
+          "type": "node",
+          "parent": "1",
+          "label": "毕业论文（获得所有的标准超材料模板）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-28",
+          "type": "node",
+          "parent": "1",
+          "label": "我一作，老登拿通讯（设计属于自己的超材料模板）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-29",
+          "type": "node",
+          "parent": "1",
+          "label": "实验室的正面教材（激光的致盲效果被护目镜防止）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-140",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-30",
+          "target": "3RV92MHUMhARg2wgbiaa-132"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-152",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-30",
+          "target": "3RV92MHUMhARg2wgbiaa-86"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-30",
+          "type": "node",
+          "parent": "1",
+          "label": "跳进盒子里思考（获得微缩机器）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-94",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-31",
+          "target": "gPkYdbDE81R9RcX4GGM6-33"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-95",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-31",
+          "target": "gPkYdbDE81R9RcX4GGM6-32"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-31",
+          "type": "node",
+          "parent": "1",
+          "label": "都让开！要炸啦！（获得不稳定的机器）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-32",
+          "type": "node",
+          "parent": "1",
+          "label": "炸啦！（物品栏里有不稳定的机器时受到伤害）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-52",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-33",
+          "target": "3RV92MHUMhARg2wgbiaa-26"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-91",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-33",
+          "target": "3RV92MHUMhARg2wgbiaa-90"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-93",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-33",
+          "target": "gPkYdbDE81R9RcX4GGM6-35"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-154",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-33",
+          "target": "3RV92MHUMhARg2wgbiaa-153"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-33",
+          "type": "node",
+          "parent": "1",
+          "label": "天上一天，地上一年（获得稳定的黑洞）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-34",
+          "type": "node",
+          "parent": "1",
+          "label": "一条通向星之彩（隐藏成就）（获得特殊的奇异材料）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-80",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-35",
+          "target": "gPkYdbDE81R9RcX4GGM6-34"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-104",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-35",
+          "target": "3RV92MHUMhARg2wgbiaa-68"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-105",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-35",
+          "target": "gPkYdbDE81R9RcX4GGM6-45"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-109",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-35",
+          "target": "3RV92MHUMhARg2wgbiaa-38"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-35",
+          "type": "node",
+          "parent": "1",
+          "label": "黄色树林里分出两条路（获得奇异材料）",
+          "html": "<div>黄色树林里分出两条路（获得奇异材料）</div>"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-37",
+          "type": "node",
+          "parent": "1",
+          "label": "999ms（拉断一根光纤）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-40",
+          "type": "node",
+          "parent": "1",
+          "label": "攻防一体的艺术品（获得光剑）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-41",
+          "type": "node",
+          "parent": "1",
+          "label": "汇聚还是发散，这是个问题（获得$透镜）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-113",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-42",
+          "target": "gPkYdbDE81R9RcX4GGM6-30"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-42",
+          "type": "node",
+          "parent": "1",
+          "label": "小！小！小！（获得微缩核心）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-43",
+          "type": "node",
+          "parent": "1",
+          "label": "达利园效应（利用沙子等材料显示光路）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-182",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-45",
+          "target": "3RV92MHUMhARg2wgbiaa-180"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-183",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-45",
+          "target": "3RV92MHUMhARg2wgbiaa-181"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-45",
+          "type": "node",
+          "parent": "1",
+          "label": "宇~宙~冷~漠~（获得真理系列盔甲）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-86",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-46",
+          "target": "gPkYdbDE81R9RcX4GGM6-15"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-98",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-46",
+          "target": "gPkYdbDE81R9RcX4GGM6-51"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-46",
+          "type": "node",
+          "parent": "1",
+          "label": "掩膜与准直（制造基础光刻机）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-150",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-47",
+          "target": "3RV92MHUMhARg2wgbiaa-148"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-47",
+          "type": "node",
+          "parent": "1",
+          "label": "赞美太阳（获得太阳能掺杂器）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-50",
+          "type": "node",
+          "parent": "1",
+          "label": "审稿人的要求（获得材料光谱仪）",
+          "html": "<div>审稿人的要求（获得材料光谱仪）</div>"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-146",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-51",
+          "target": "3RV92MHUMhARg2wgbiaa-119"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-147",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-51",
+          "target": "3RV92MHUMhARg2wgbiaa-75"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-51",
+          "type": "node",
+          "parent": "1",
+          "label": "边缘计算（获得小型计算芯片）"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-91",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-88",
+          "target": "gPkYdbDE81R9RcX4GGM6-25"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-149",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-88",
+          "target": "gPkYdbDE81R9RcX4GGM6-18"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-88",
+          "type": "node",
+          "parent": "1",
+          "label": "全息骑士（获得全息刻录系统）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-101",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-100",
+          "target": "gPkYdbDE81R9RcX4GGM6-40"
+        },
+        {
+          "id": "gPkYdbDE81R9RcX4GGM6-100",
+          "type": "node",
+          "parent": "1",
+          "label": "毁灭光束（激光电离了空气）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-9",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-3",
+          "target": "gPkYdbDE81R9RcX4GGM6-21"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-12",
+          "type": "node",
+          "parent": "1",
+          "label": "光学箱子（搭建全息存储矩阵）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-127",
+          "type": "edge",
+          "parent": "1",
+          "source": "3RV92MHUMhARg2wgbiaa-16",
+          "target": "gPkYdbDE81R9RcX4GGM6-30"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-16",
+          "type": "node",
+          "parent": "1",
+          "label": "智能家居（获得万能远程控制面板）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-21",
+          "type": "node",
+          "parent": "1",
+          "label": "可以明得失（隐藏成就）（穿着全套光学盔甲站在相干光路上）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-63",
+          "type": "edge",
+          "parent": "1",
+          "source": "3RV92MHUMhARg2wgbiaa-23",
+          "target": "3RV92MHUMhARg2wgbiaa-25"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-23",
+          "type": "node",
+          "parent": "1",
+          "label": "火把神（获得光差发电机）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-78",
+          "type": "edge",
+          "parent": "1",
+          "source": "3RV92MHUMhARg2wgbiaa-25",
+          "target": "3RV92MHUMhARg2wgbiaa-71"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-25",
+          "type": "node",
+          "parent": "1",
+          "label": "充分燃烧（获得光热发电机）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-111",
+          "type": "edge",
+          "parent": "1",
+          "source": "3RV92MHUMhARg2wgbiaa-26",
+          "target": "3RV92MHUMhARg2wgbiaa-38"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-173",
+          "type": "edge",
+          "parent": "1",
+          "source": "3RV92MHUMhARg2wgbiaa-26",
+          "target": "3RV92MHUMhARg2wgbiaa-171"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-26",
+          "type": "node",
+          "parent": "1",
+          "label": "工程师之梦（获得任意工程师之梦系列机器）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-34",
+          "type": "edge",
+          "parent": "1"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-113",
+          "type": "edge",
+          "parent": "1",
+          "source": "3RV92MHUMhARg2wgbiaa-36",
+          "target": "gPkYdbDE81R9RcX4GGM6-16"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-164",
+          "type": "edge",
+          "parent": "1",
+          "source": "3RV92MHUMhARg2wgbiaa-36",
+          "target": "gPkYdbDE81R9RcX4GGM6-3"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-36",
+          "type": "node",
+          "parent": "1",
+          "label": "掬水月在手（获得环境光收集器）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-38",
+          "type": "node",
+          "parent": "1",
+          "label": "把无限握在你的手掌里，把永恒放进一刹那的时光。（获得凝结的时空）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-145",
+          "type": "edge",
+          "parent": "1",
+          "source": "3RV92MHUMhARg2wgbiaa-53",
+          "target": "3RV92MHUMhARg2wgbiaa-119"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-53",
+          "type": "node",
+          "parent": "1",
+          "label": "光纤激光器（获得光纤激光器）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-64",
+          "type": "node",
+          "parent": "1",
+          "label": "劳逸结合（获得自动电容）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-67",
+          "type": "node",
+          "parent": "1",
+          "label": "反向激光器（获得脉冲发电机）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-68",
+          "type": "node",
+          "parent": "1",
+          "label": "一条通往发电厂（获得随机发电机）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-77",
+          "type": "edge",
+          "parent": "1",
+          "source": "3RV92MHUMhARg2wgbiaa-71",
+          "target": "3RV92MHUMhARg2wgbiaa-75"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-71",
+          "type": "node",
+          "parent": "1",
+          "label": "若你错过太阳时流泪，也会错过群星（获得简易太阳能板）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-75",
+          "type": "node",
+          "parent": "1",
+          "label": "太阳照常升起（获得智能太阳能板）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-79",
+          "type": "edge",
+          "parent": "1",
+          "source": "3RV92MHUMhARg2wgbiaa-25",
+          "target": "3RV92MHUMhARg2wgbiaa-64"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-80",
+          "type": "node",
+          "parent": "1",
+          "label": "跨界能源（获得光催化发电机核心）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-83",
+          "type": "node",
+          "parent": "1",
+          "label": "光纤里的太阳（获得光纤发电机）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-86",
+          "type": "node",
+          "parent": "1",
+          "label": "锡拉库萨的正午（获得光热塔核心）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-112",
+          "type": "edge",
+          "parent": "1",
+          "source": "3RV92MHUMhARg2wgbiaa-90",
+          "target": "3RV92MHUMhARg2wgbiaa-38"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-90",
+          "type": "node",
+          "parent": "1",
+          "label": "！光光！（光反应堆）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-114",
+          "type": "node",
+          "parent": "1",
+          "label": "烫烫烫（用光束加热一个熔炉）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-129",
+          "type": "edge",
+          "parent": "1",
+          "source": "3RV92MHUMhARg2wgbiaa-119",
+          "target": "gPkYdbDE81R9RcX4GGM6-22"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-119",
+          "type": "node",
+          "parent": "1",
+          "label": "纳米战争（获得高级光刻机）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-137",
+          "type": "edge",
+          "parent": "1",
+          "source": "3RV92MHUMhARg2wgbiaa-132",
+          "target": "gPkYdbDE81R9RcX4GGM6-31"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-139",
+          "type": "edge",
+          "parent": "1",
+          "source": "3RV92MHUMhARg2wgbiaa-132",
+          "target": "3RV92MHUMhARg2wgbiaa-83"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-132",
+          "type": "node",
+          "parent": "1",
+          "label": "大国重器（获得精密光刻机）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-157",
+          "type": "edge",
+          "parent": "1",
+          "source": "3RV92MHUMhARg2wgbiaa-148",
+          "target": "3RV92MHUMhARg2wgbiaa-53"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-148",
+          "type": "node",
+          "parent": "1",
+          "label": "人工晶体（获得YAG）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-155",
+          "type": "edge",
+          "parent": "1",
+          "source": "3RV92MHUMhARg2wgbiaa-153",
+          "target": "gPkYdbDE81R9RcX4GGM6-20"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-156",
+          "type": "edge",
+          "parent": "1",
+          "source": "3RV92MHUMhARg2wgbiaa-153",
+          "target": "3RV92MHUMhARg2wgbiaa-38"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-153",
+          "type": "node",
+          "parent": "1",
+          "label": "手可摘星辰（启动天上天下天地无双激光器）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-161",
+          "type": "edge",
+          "parent": "1",
+          "source": "3RV92MHUMhARg2wgbiaa-159",
+          "target": "gPkYdbDE81R9RcX4GGM6-10"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-159",
+          "type": "node",
+          "parent": "1",
+          "label": "粉刷本领强（用涂料修改一个面的光学性质）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-166",
+          "type": "edge",
+          "parent": "1",
+          "source": "gPkYdbDE81R9RcX4GGM6-16",
+          "target": "gPkYdbDE81R9RcX4GGM6-41"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-175",
+          "type": "edge",
+          "parent": "1",
+          "source": "3RV92MHUMhARg2wgbiaa-168",
+          "target": "3RV92MHUMhARg2wgbiaa-169"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-168",
+          "type": "node",
+          "parent": "1",
+          "label": "直尺（获得光电管）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-178",
+          "type": "edge",
+          "parent": "1",
+          "source": "3RV92MHUMhARg2wgbiaa-169",
+          "target": "3RV92MHUMhARg2wgbiaa-177"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-169",
+          "type": "node",
+          "parent": "1",
+          "label": "游标卡尺（获得CMOS）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-172",
+          "type": "edge",
+          "parent": "1",
+          "source": "3RV92MHUMhARg2wgbiaa-170",
+          "target": "3RV92MHUMhARg2wgbiaa-171"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-170",
+          "type": "node",
+          "parent": "1",
+          "label": "我什么都知道了（获得光束信息读取器）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-171",
+          "type": "node",
+          "parent": "1",
+          "label": "彩虹色的梦（获得完美光谱仪）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-179",
+          "type": "edge",
+          "parent": "1",
+          "source": "3RV92MHUMhARg2wgbiaa-177",
+          "target": "3RV92MHUMhARg2wgbiaa-170"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-177",
+          "type": "node",
+          "parent": "1",
+          "label": "千分尺（获得贯通式传感器）"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-180",
+          "type": "node",
+          "parent": "1",
+          "label": "这框真帅吧"
+        },
+        {
+          "id": "3RV92MHUMhARg2wgbiaa-181",
+          "type": "node",
+          "parent": "1",
+          "label": "高斯不能理解随机过程，因为他可以预测随机数"
+        }
+      ]
+    }
+  ]
+}

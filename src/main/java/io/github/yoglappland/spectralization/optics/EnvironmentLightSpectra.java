@@ -2,12 +2,16 @@ package io.github.yoglappland.spectralization.optics;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -20,6 +24,186 @@ public final class EnvironmentLightSpectra {
     public static final double ADVANCED_EFFICIENCY = 1.5;
 
     private static final double BASE_POWER_PER_FULL_LIGHT = 1.0;
+    private static final SpectrumProfile CREATIVE_VISIBLE_WHITE = profile(
+            band(SpectralRegion.VISIBLE, 7.0, 7.0, 0.55, 0, 31, 1),
+            band(SpectralRegion.VISIBLE, 16.0, 8.5, 0.70, 0, 31, 1),
+            band(SpectralRegion.VISIBLE, 24.0, 7.0, 0.55, 0, 31, 1)
+    );
+    private static final SpectrumProfile NEUTRAL_WHITE = profile(
+            band(SpectralRegion.INFRARED, 14.0, 7.0, 0.04, 0, 31, 4),
+            band(SpectralRegion.VISIBLE, 7.0, 7.0, 0.45, 0, 31, 1),
+            band(SpectralRegion.VISIBLE, 16.0, 8.0, 0.62, 0, 31, 1),
+            band(SpectralRegion.VISIBLE, 24.0, 7.0, 0.45, 0, 31, 1),
+            band(SpectralRegion.ULTRAVIOLET, 4.0, 3.5, 0.03, 0, 12, 3)
+    );
+    private static final SpectrumProfile WARM_WHITE = profile(
+            band(SpectralRegion.INFRARED, 12.0, 8.0, 0.12, 0, 31, 3),
+            band(SpectralRegion.VISIBLE, 10.0, 8.5, 0.25, 0, 31, 1),
+            band(SpectralRegion.VISIBLE, 20.0, 8.0, 0.70, 0, 31, 1),
+            band(SpectralRegion.VISIBLE, 27.0, 5.0, 0.45, 0, 31, 1)
+    );
+    private static final SpectrumProfile COOL_WHITE = profile(
+            band(SpectralRegion.INFRARED, 12.0, 6.0, 0.02, 0, 31, 4),
+            band(SpectralRegion.VISIBLE, 5.0, 6.0, 0.52, 0, 31, 1),
+            band(SpectralRegion.VISIBLE, 12.0, 7.0, 0.60, 0, 31, 1),
+            band(SpectralRegion.VISIBLE, 18.0, 8.0, 0.35, 0, 31, 1),
+            band(SpectralRegion.ULTRAVIOLET, 4.0, 3.5, 0.08, 0, 14, 2)
+    );
+    private static final SpectrumProfile WARM_COMBUSTION = profile(
+            band(SpectralRegion.THZ, 8.0, 5.5, 0.05, 0, 15, 3),
+            band(SpectralRegion.INFRARED, 11.0, 9.0, 0.46, 0, 31, 2),
+            band(SpectralRegion.VISIBLE, 17.0, 5.5, 0.16, 8, 31, 1),
+            band(SpectralRegion.VISIBLE, 24.0, 4.8, 0.26, 8, 31, 1),
+            band(SpectralRegion.VISIBLE, 29.0, 2.8, 0.07, 18, 31, 1)
+    );
+    private static final SpectrumProfile HOT_MOLTEN = profile(
+            band(SpectralRegion.THZ, 9.0, 5.5, 0.05, 0, 15, 3),
+            band(SpectralRegion.INFRARED, 14.0, 9.5, 0.55, 0, 31, 2),
+            band(SpectralRegion.VISIBLE, 20.0, 5.0, 0.18, 10, 31, 1),
+            band(SpectralRegion.VISIBLE, 27.0, 4.0, 0.22, 14, 31, 1)
+    );
+    private static final SpectrumProfile REDSTONE_GLOW = profile(
+            band(SpectralRegion.MICROWAVE, 8.0, 4.0, 0.03, 0, 15, 4),
+            band(SpectralRegion.THZ, 8.0, 5.0, 0.07, 0, 15, 3),
+            band(SpectralRegion.INFRARED, 21.0, 7.0, 0.25, 5, 31, 2),
+            band(SpectralRegion.VISIBLE, 25.5, 4.0, 0.65, 15, 31, 1)
+    );
+    private static final SpectrumProfile SOUL_LIGHT = profile(
+            band(SpectralRegion.INFRARED, 6.0, 4.0, 0.03, 0, 20, 4),
+            band(SpectralRegion.VISIBLE, 4.0, 5.0, 0.45, 0, 18, 1),
+            band(SpectralRegion.VISIBLE, 10.0, 4.5, 0.45, 0, 22, 1),
+            band(SpectralRegion.ULTRAVIOLET, 5.0, 4.0, 0.12, 0, 16, 2)
+    );
+    private static final SpectrumProfile BIOLUMINESCENT = profile(
+            band(SpectralRegion.INFRARED, 8.0, 5.0, 0.02, 0, 20, 4),
+            band(SpectralRegion.VISIBLE, 8.0, 5.5, 0.45, 0, 22, 1),
+            band(SpectralRegion.VISIBLE, 14.0, 5.5, 0.55, 2, 26, 1),
+            band(SpectralRegion.ULTRAVIOLET, 3.0, 3.0, 0.03, 0, 12, 3)
+    );
+    private static final SpectrumProfile ARCANE_PURPLE = profile(
+            band(SpectralRegion.VISIBLE, 3.0, 4.0, 0.42, 0, 14, 1),
+            band(SpectralRegion.VISIBLE, 28.0, 3.0, 0.22, 20, 31, 1),
+            band(SpectralRegion.ULTRAVIOLET, 6.0, 4.0, 0.26, 0, 18, 2),
+            band(SpectralRegion.FAR_ULTRAVIOLET, 4.0, 3.0, 0.07, 0, 12, 3)
+    );
+    private static final SpectrumProfile TECHNOLOGY_CYAN = profile(
+            band(SpectralRegion.INFRARED, 10.0, 5.0, 0.04, 0, 24, 4),
+            band(SpectralRegion.VISIBLE, 7.0, 5.5, 0.46, 0, 24, 1),
+            band(SpectralRegion.VISIBLE, 13.0, 5.5, 0.46, 0, 28, 1),
+            band(SpectralRegion.ULTRAVIOLET, 5.0, 3.8, 0.10, 0, 16, 2)
+    );
+    private static final SpectrumProfile TECHNOLOGY_BLUE = profile(
+            band(SpectralRegion.INFRARED, 9.0, 5.0, 0.03, 0, 24, 4),
+            band(SpectralRegion.VISIBLE, 4.0, 4.8, 0.56, 0, 20, 1),
+            band(SpectralRegion.VISIBLE, 10.0, 5.5, 0.38, 0, 24, 1),
+            band(SpectralRegion.ULTRAVIOLET, 4.0, 3.5, 0.11, 0, 14, 2)
+    );
+    private static volatile Map<ResourceLocation, SpectrumProfile> editorSpectrumOverrides = Map.of();
+
+    private static final Set<Block> WARM_COMBUSTION_BLOCKS = Set.of(
+            Blocks.LAVA,
+            Blocks.MAGMA_BLOCK,
+            Blocks.CAMPFIRE,
+            Blocks.FIRE,
+            Blocks.LANTERN,
+            Blocks.TORCH,
+            Blocks.WALL_TORCH,
+            Blocks.CANDLE,
+            Blocks.WHITE_CANDLE,
+            Blocks.ORANGE_CANDLE,
+            Blocks.MAGENTA_CANDLE,
+            Blocks.LIGHT_BLUE_CANDLE,
+            Blocks.YELLOW_CANDLE,
+            Blocks.LIME_CANDLE,
+            Blocks.PINK_CANDLE,
+            Blocks.GRAY_CANDLE,
+            Blocks.LIGHT_GRAY_CANDLE,
+            Blocks.CYAN_CANDLE,
+            Blocks.PURPLE_CANDLE,
+            Blocks.BLUE_CANDLE,
+            Blocks.BROWN_CANDLE,
+            Blocks.GREEN_CANDLE,
+            Blocks.RED_CANDLE,
+            Blocks.BLACK_CANDLE,
+            Blocks.CANDLE_CAKE,
+            Blocks.WHITE_CANDLE_CAKE,
+            Blocks.ORANGE_CANDLE_CAKE,
+            Blocks.MAGENTA_CANDLE_CAKE,
+            Blocks.LIGHT_BLUE_CANDLE_CAKE,
+            Blocks.YELLOW_CANDLE_CAKE,
+            Blocks.LIME_CANDLE_CAKE,
+            Blocks.PINK_CANDLE_CAKE,
+            Blocks.GRAY_CANDLE_CAKE,
+            Blocks.LIGHT_GRAY_CANDLE_CAKE,
+            Blocks.CYAN_CANDLE_CAKE,
+            Blocks.PURPLE_CANDLE_CAKE,
+            Blocks.BLUE_CANDLE_CAKE,
+            Blocks.BROWN_CANDLE_CAKE,
+            Blocks.GREEN_CANDLE_CAKE,
+            Blocks.RED_CANDLE_CAKE,
+            Blocks.BLACK_CANDLE_CAKE,
+            Blocks.JACK_O_LANTERN
+    );
+    private static final Set<Block> SOUL_LIGHT_BLOCKS = Set.of(
+            Blocks.SOUL_CAMPFIRE,
+            Blocks.SOUL_FIRE,
+            Blocks.SOUL_LANTERN,
+            Blocks.SOUL_TORCH,
+            Blocks.SOUL_WALL_TORCH
+    );
+    private static final Set<Block> REDSTONE_GLOW_BLOCKS = Set.of(
+            Blocks.REDSTONE_TORCH,
+            Blocks.REDSTONE_WALL_TORCH,
+            Blocks.REDSTONE_LAMP,
+            Blocks.REDSTONE_ORE,
+            Blocks.DEEPSLATE_REDSTONE_ORE
+    );
+    private static final Set<Block> WARM_WHITE_BLOCKS = Set.of(
+            Blocks.GLOWSTONE,
+            Blocks.SHROOMLIGHT,
+            Blocks.OCHRE_FROGLIGHT,
+            Blocks.COPPER_BULB,
+            Blocks.EXPOSED_COPPER_BULB,
+            Blocks.WEATHERED_COPPER_BULB,
+            Blocks.OXIDIZED_COPPER_BULB,
+            Blocks.WAXED_COPPER_BULB,
+            Blocks.WAXED_EXPOSED_COPPER_BULB,
+            Blocks.WAXED_WEATHERED_COPPER_BULB,
+            Blocks.WAXED_OXIDIZED_COPPER_BULB
+    );
+    private static final Set<Block> COOL_WHITE_BLOCKS = Set.of(
+            Blocks.SEA_LANTERN,
+            Blocks.END_ROD,
+            Blocks.PEARLESCENT_FROGLIGHT,
+            Blocks.BEACON,
+            Blocks.CONDUIT
+    );
+    private static final Set<Block> BIOLUMINESCENT_BLOCKS = Set.of(
+            Blocks.GLOW_LICHEN,
+            Blocks.CAVE_VINES,
+            Blocks.CAVE_VINES_PLANT,
+            Blocks.SEA_PICKLE,
+            Blocks.VERDANT_FROGLIGHT
+    );
+    private static final Set<Block> ARCANE_PURPLE_BLOCKS = Set.of(
+            Blocks.NETHER_PORTAL,
+            Blocks.END_PORTAL,
+            Blocks.END_GATEWAY,
+            Blocks.END_PORTAL_FRAME,
+            Blocks.ENDER_CHEST,
+            Blocks.RESPAWN_ANCHOR,
+            Blocks.ENCHANTING_TABLE,
+            Blocks.AMETHYST_CLUSTER,
+            Blocks.LARGE_AMETHYST_BUD,
+            Blocks.MEDIUM_AMETHYST_BUD,
+            Blocks.SMALL_AMETHYST_BUD
+    );
+    private static final Set<Block> SCULK_LIGHT_BLOCKS = Set.of(
+            Blocks.SCULK_SENSOR,
+            Blocks.CALIBRATED_SCULK_SENSOR,
+            Blocks.SCULK_CATALYST,
+            Blocks.SCULK_SHRIEKER
+    );
 
     public static BeamPacket collect(
             Level level,
@@ -31,8 +215,7 @@ public final class EnvironmentLightSpectra {
         Direction detectionDirection = outputDirection.getOpposite();
         Direction[] axes = samplingAxes(detectionDirection);
         BlockPos center = collectorPos.relative(detectionDirection);
-        Map<FrequencyKey, Double> spectrumShapeSum = new LinkedHashMap<>();
-        int sourceCount = 0;
+        Map<FrequencyKey, Double> weightedSpectrum = new LinkedHashMap<>();
         double totalLightPower = 0.0;
 
         for (int u = -sampleRadius; u <= sampleRadius; u++) {
@@ -53,27 +236,25 @@ public final class EnvironmentLightSpectra {
                     continue;
                 }
 
+                double samplePower = light * BASE_POWER_PER_FULL_LIGHT / 15.0;
                 Map<FrequencyKey, Double> normalizedSpectrum = normalizedSpectrum(sampleState);
 
                 for (Map.Entry<FrequencyKey, Double> entry : normalizedSpectrum.entrySet()) {
-                    spectrumShapeSum.merge(entry.getKey(), entry.getValue(), Double::sum);
+                    weightedSpectrum.merge(entry.getKey(), entry.getValue() * samplePower, Double::sum);
                 }
 
-                sourceCount++;
-                totalLightPower += light * BASE_POWER_PER_FULL_LIGHT / 15.0;
+                totalLightPower += samplePower;
             }
         }
 
-        if (sourceCount <= 0 || totalLightPower <= 0.0) {
+        if (weightedSpectrum.isEmpty() || totalLightPower <= 0.0) {
             return BeamPacket.empty(STRAY_ENVIRONMENT_ENVELOPE);
         }
 
-        double outputPower = totalLightPower * efficiency;
-        int sampledSourceCount = sourceCount;
-        List<PlaneWaveComponent> components = spectrumShapeSum.entrySet().stream()
+        List<PlaneWaveComponent> components = weightedSpectrum.entrySet().stream()
                 .map(entry -> new PlaneWaveComponent(
                         entry.getKey(),
-                        outputPower * entry.getValue() / sampledSourceCount,
+                        efficiency * entry.getValue(),
                         outputDirection,
                         CoherenceKind.INCOHERENT
                 ))
@@ -122,130 +303,142 @@ public final class EnvironmentLightSpectra {
         return state.getLightEmission(level, pos);
     }
 
-    private static Map<FrequencyKey, Double> normalizedSpectrum(BlockState state) {
+    public static Map<FrequencyKey, Double> normalizedSpectrum(BlockState state) {
         Block block = state.getBlock();
+        ResourceLocation blockId = BuiltInRegistries.BLOCK.getKey(block);
+        SpectrumProfile override = editorSpectrumOverrides.get(blockId);
 
-        if (block == Blocks.LAVA
-                || block == Blocks.MAGMA_BLOCK
-                || block == Blocks.CAMPFIRE
-                || block == Blocks.FIRE
-                || block == Blocks.LANTERN
-                || block == Blocks.TORCH
-                || block == Blocks.WALL_TORCH) {
-            return warmCombustionSpectrum();
+        if (override != null) {
+            return override.normalizedSpectrum();
         }
 
-        if (block == Blocks.SOUL_CAMPFIRE
-                || block == Blocks.SOUL_FIRE
-                || block == Blocks.SOUL_LANTERN
-                || block == Blocks.SOUL_TORCH
-                || block == Blocks.SOUL_WALL_TORCH) {
-            return soulSpectrum();
+        return profileFor(block, blockId).normalizedSpectrum();
+    }
+
+    public static SpectrumProfile creativeVisibleWhiteProfile() {
+        return CREATIVE_VISIBLE_WHITE;
+    }
+
+    public static void replaceEditorSpectrumOverrides(Map<ResourceLocation, SpectrumProfile> overrides) {
+        Objects.requireNonNull(overrides, "overrides");
+
+        Map<ResourceLocation, SpectrumProfile> copied = new HashMap<>();
+
+        for (Map.Entry<ResourceLocation, SpectrumProfile> entry : overrides.entrySet()) {
+            copied.put(
+                    Objects.requireNonNull(entry.getKey(), "override block id"),
+                    Objects.requireNonNull(entry.getValue(), "override spectrum profile")
+            );
         }
 
-        if (block == Blocks.REDSTONE_TORCH
-                || block == Blocks.REDSTONE_WALL_TORCH
-                || block == Blocks.REDSTONE_LAMP) {
-            return redSpectrum();
+        editorSpectrumOverrides = Map.copyOf(copied);
+    }
+
+    private static SpectrumProfile profileFor(Block block, ResourceLocation blockId) {
+        if (isSpectralization(blockId, "molten_")) {
+            return HOT_MOLTEN;
         }
 
-        if (block == Blocks.SEA_LANTERN
-                || block == Blocks.END_ROD
-                || block == Blocks.PEARLESCENT_FROGLIGHT) {
-            return coolWhiteSpectrum();
+        if (isSpectralization(blockId, "holographic_storage_")) {
+            return TECHNOLOGY_CYAN;
         }
 
-        if (block == Blocks.OCHRE_FROGLIGHT
-                || block == Blocks.VERDANT_FROGLIGHT
-                || block == Blocks.SHROOMLIGHT
-                || block == Blocks.GLOWSTONE) {
-            return warmWhiteSpectrum();
+        if (isSpectralization(blockId, "compact_machine_")) {
+            return TECHNOLOGY_BLUE;
         }
 
-        return neutralWhiteSpectrum();
+        if (block == Blocks.LAVA || WARM_COMBUSTION_BLOCKS.contains(block)) {
+            return WARM_COMBUSTION;
+        }
+
+        if (SOUL_LIGHT_BLOCKS.contains(block)) {
+            return SOUL_LIGHT;
+        }
+
+        if (REDSTONE_GLOW_BLOCKS.contains(block)) {
+            return REDSTONE_GLOW;
+        }
+
+        if (WARM_WHITE_BLOCKS.contains(block)) {
+            return WARM_WHITE;
+        }
+
+        if (COOL_WHITE_BLOCKS.contains(block)) {
+            return COOL_WHITE;
+        }
+
+        if (BIOLUMINESCENT_BLOCKS.contains(block) || SCULK_LIGHT_BLOCKS.contains(block)) {
+            return BIOLUMINESCENT;
+        }
+
+        if (ARCANE_PURPLE_BLOCKS.contains(block)) {
+            return ARCANE_PURPLE;
+        }
+
+        return NEUTRAL_WHITE;
     }
 
-    private static Map<FrequencyKey, Double> warmCombustionSpectrum() {
-        return spectrum(
-                component(SpectralRegion.INFRARED, 9, 0.55),
-                component(SpectralRegion.VISIBLE, 19, 0.10),
-                component(SpectralRegion.VISIBLE, 22, 0.15),
-                component(SpectralRegion.VISIBLE, 25, 0.20)
-        );
+    private static boolean isSpectralization(ResourceLocation blockId, String pathPrefix) {
+        return "spectralization".equals(blockId.getNamespace()) && blockId.getPath().startsWith(pathPrefix);
     }
 
-    private static Map<FrequencyKey, Double> warmWhiteSpectrum() {
-        return spectrum(
-                component(SpectralRegion.INFRARED, 7, 0.15),
-                component(SpectralRegion.VISIBLE, 15, 0.12),
-                component(SpectralRegion.VISIBLE, 18, 0.20),
-                component(SpectralRegion.VISIBLE, 21, 0.28),
-                component(SpectralRegion.VISIBLE, 24, 0.25)
-        );
+    private static SpectrumProfile profile(SpectrumBand... bands) {
+        return new SpectrumProfile(List.of(bands));
     }
 
-    private static Map<FrequencyKey, Double> coolWhiteSpectrum() {
-        return spectrum(
-                component(SpectralRegion.VISIBLE, 5, 0.18),
-                component(SpectralRegion.VISIBLE, 8, 0.25),
-                component(SpectralRegion.VISIBLE, 12, 0.25),
-                component(SpectralRegion.VISIBLE, 16, 0.20),
-                component(SpectralRegion.VISIBLE, 20, 0.12)
-        );
+    public static SpectrumBand band(
+            SpectralRegion region,
+            double centerBin,
+            double widthBins,
+            double weight,
+            int minBin,
+            int maxBin,
+            int step
+    ) {
+        return new SpectrumBand(region, centerBin, widthBins, weight, minBin, maxBin, step);
     }
 
-    private static Map<FrequencyKey, Double> neutralWhiteSpectrum() {
-        return spectrum(
-                component(SpectralRegion.VISIBLE, 7, 0.16),
-                component(SpectralRegion.VISIBLE, 11, 0.22),
-                component(SpectralRegion.VISIBLE, 15, 0.24),
-                component(SpectralRegion.VISIBLE, 19, 0.22),
-                component(SpectralRegion.VISIBLE, 23, 0.16)
-        );
-    }
-
-    private static Map<FrequencyKey, Double> redSpectrum() {
-        return spectrum(component(SpectralRegion.VISIBLE, 25, 1.0));
-    }
-
-    private static Map<FrequencyKey, Double> soulSpectrum() {
-        return spectrum(
-                component(SpectralRegion.VISIBLE, 5, 0.25),
-                component(SpectralRegion.VISIBLE, 8, 0.35),
-                component(SpectralRegion.VISIBLE, 11, 0.25),
-                component(SpectralRegion.INFRARED, 4, 0.15)
-        );
-    }
-
-    private static Map<FrequencyKey, Double> spectrum(SpectrumComponent... components) {
-        Map<FrequencyKey, Double> spectrum = new LinkedHashMap<>();
+    private static Map<FrequencyKey, Double> normalizeAndLimit(Map<FrequencyKey, Double> rawSpectrum) {
         double total = 0.0;
 
-        for (SpectrumComponent component : components) {
-            if (component.weight() <= 0.0) {
-                continue;
-            }
-
-            total += component.weight();
+        for (double weight : rawSpectrum.values()) {
+            total += Math.max(0.0, weight);
         }
 
         if (total <= 0.0) {
             return Map.of(FrequencyKey.DEBUG_VISIBLE, 1.0);
         }
 
-        for (SpectrumComponent component : components) {
-            if (component.weight() <= 0.0) {
-                continue;
-            }
+        Map<FrequencyKey, Double> limited = new LinkedHashMap<>();
+        rawSpectrum.entrySet().stream()
+                .filter(entry -> entry.getValue() > 0.0)
+                .sorted(Map.Entry.<FrequencyKey, Double>comparingByValue().reversed())
+                .limit(BeamPacket.MAX_COMPONENTS)
+                .forEach(entry -> limited.put(entry.getKey(), entry.getValue()));
 
-            spectrum.merge(component.frequency(), component.weight() / total, Double::sum);
+        double limitedTotal = 0.0;
+        for (double weight : limited.values()) {
+            limitedTotal += weight;
+        }
+
+        if (limitedTotal <= 0.0) {
+            return Map.of(FrequencyKey.DEBUG_VISIBLE, 1.0);
+        }
+
+        Map<FrequencyKey, Double> spectrum = new LinkedHashMap<>();
+        List<Map.Entry<FrequencyKey, Double>> orderedEntries = limited.entrySet().stream()
+                .sorted(Comparator.comparingInt(entry -> spectralCoordinate(entry.getKey())))
+                .toList();
+
+        for (Map.Entry<FrequencyKey, Double> entry : orderedEntries) {
+            spectrum.put(entry.getKey(), entry.getValue() / limitedTotal);
         }
 
         return Map.copyOf(spectrum);
     }
 
-    private static SpectrumComponent component(SpectralRegion region, int bin, double weight) {
-        return new SpectrumComponent(new FrequencyKey(region, bin), weight);
+    private static int spectralCoordinate(FrequencyKey frequency) {
+        return frequency.region().ordinal() * 1024 + frequency.bin();
     }
 
     private static Direction[] samplingAxes(Direction direction) {
@@ -264,6 +457,63 @@ public final class EnvironmentLightSpectra {
     private EnvironmentLightSpectra() {
     }
 
-    private record SpectrumComponent(FrequencyKey frequency, double weight) {
+    public record SpectrumProfile(List<SpectrumBand> bands) {
+        public SpectrumProfile {
+            Objects.requireNonNull(bands, "bands");
+            bands = List.copyOf(bands);
+        }
+
+        public Map<FrequencyKey, Double> normalizedSpectrum() {
+            Map<FrequencyKey, Double> rawSpectrum = new LinkedHashMap<>();
+
+            for (SpectrumBand band : bands) {
+                band.addTo(rawSpectrum);
+            }
+
+            return normalizeAndLimit(rawSpectrum);
+        }
+    }
+
+    public record SpectrumBand(
+            SpectralRegion region,
+            double centerBin,
+            double widthBins,
+            double weight,
+            int minBin,
+            int maxBin,
+            int step
+    ) {
+        public SpectrumBand {
+            Objects.requireNonNull(region, "region");
+
+            if (!Double.isFinite(centerBin)) {
+                throw new IllegalArgumentException("Spectrum band center must be finite");
+            }
+
+            if (!Double.isFinite(widthBins) || widthBins <= 0.0) {
+                throw new IllegalArgumentException("Spectrum band width must be positive and finite");
+            }
+
+            if (!Double.isFinite(weight) || weight < 0.0) {
+                throw new IllegalArgumentException("Spectrum band weight must be finite and non-negative");
+            }
+
+            if (minBin < 0 || maxBin < minBin || step <= 0) {
+                throw new IllegalArgumentException("Spectrum band bin range is invalid");
+            }
+        }
+
+        private void addTo(Map<FrequencyKey, Double> rawSpectrum) {
+            int clampedMax = Math.min(maxBin, region.defaultBins() - 1);
+
+            for (int bin = minBin; bin <= clampedMax; bin += step) {
+                double distance = (bin - centerBin) / widthBins;
+                double contribution = weight * Math.exp(-0.5 * distance * distance);
+
+                if (contribution > 0.0) {
+                    rawSpectrum.merge(new FrequencyKey(region, bin), contribution, Double::sum);
+                }
+            }
+        }
     }
 }

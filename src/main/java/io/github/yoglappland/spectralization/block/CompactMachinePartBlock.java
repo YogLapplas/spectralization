@@ -36,7 +36,7 @@ public class CompactMachinePartBlock extends Block {
     protected void onPlace(BlockState state, Level level, BlockPos pos, BlockState oldState, boolean movedByPiston) {
         super.onPlace(state, level, pos, oldState, movedByPiston);
         if (!state.is(oldState.getBlock()) && level instanceof ServerLevel serverLevel) {
-            CompactMachineNetworkData.refreshNear(serverLevel, pos.immutable(), "compact part placed");
+            CompactMachineNetworkData.scheduleRefresh(serverLevel, pos.immutable(), "compact part placed");
         }
     }
 
@@ -44,7 +44,7 @@ public class CompactMachinePartBlock extends Block {
     protected void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean movedByPiston) {
         super.onRemove(state, level, pos, newState, movedByPiston);
         if (!state.is(newState.getBlock()) && level instanceof ServerLevel serverLevel) {
-            CompactMachineNetworkData.refreshNear(serverLevel, pos.immutable(), "compact part removed");
+            CompactMachineNetworkData.scheduleRefresh(serverLevel, pos.immutable(), "compact part removed");
         }
     }
 

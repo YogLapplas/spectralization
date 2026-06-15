@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization.network;
 
 import io.github.yoglappland.spectralization.client.beam.ClientBeamPathPayloadHandler;
+import io.github.yoglappland.spectralization.client.compact.ClientCompactMachineAnimationPayloadHandler;
 import io.github.yoglappland.spectralization.client.compact.ClientCompactMachineOverlayPayloadHandler;
 import io.github.yoglappland.spectralization.client.networkoverlay.ClientNetworkOverlayPayloadHandler;
 import io.github.yoglappland.spectralization.client.storage.ClientHolographicStoragePayloadHandler;
@@ -67,6 +68,12 @@ public final class SpectralNetwork {
                 (payload, context) -> context.enqueueWork(() -> handleCompactMachineOverlay(payload))
         );
 
+        registrar.playToClient(
+                CompactMachineAnimationPayload.TYPE,
+                CompactMachineAnimationPayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> handleCompactMachineAnimation(payload))
+        );
+
         registrar.playToServer(
                 SurfaceInspectionRequestPayload.TYPE,
                 SurfaceInspectionRequestPayload.STREAM_CODEC,
@@ -131,6 +138,12 @@ public final class SpectralNetwork {
     private static void handleCompactMachineOverlay(CompactMachineOverlayPayload payload) {
         if (FMLEnvironment.dist == Dist.CLIENT) {
             ClientCompactMachineOverlayPayloadHandler.handle(payload);
+        }
+    }
+
+    private static void handleCompactMachineAnimation(CompactMachineAnimationPayload payload) {
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            ClientCompactMachineAnimationPayloadHandler.handle(payload);
         }
     }
 

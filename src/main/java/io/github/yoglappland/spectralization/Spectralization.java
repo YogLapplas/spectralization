@@ -782,6 +782,11 @@ public class Spectralization {
                 (smelter, side) -> smelter.getItems(side)
         );
         event.registerBlockEntity(
+                Capabilities.ItemHandler.BLOCK,
+                SpectralBlockEntities.COMPACT_MACHINE_CORE.get(),
+                (core, side) -> core.getOutputItems(side)
+        );
+        event.registerBlockEntity(
                 Capabilities.FluidHandler.BLOCK,
                 SpectralBlockEntities.THERMAL_SMELTER.get(),
                 (smelter, side) -> smelter.getFluidHandler(side)

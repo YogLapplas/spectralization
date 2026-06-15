@@ -3,6 +3,7 @@ package io.github.yoglappland.spectralization.registry;
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.blockentity.BeamProfilerBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.CmosSensorBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.CompactMachineCoreBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.CompactedMachineBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.CreativeLightSourceBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.FiberOpticInterfaceBlockEntity;
@@ -58,6 +59,13 @@ public final class SpectralBlockEntities {
                     BlockEntityType.Builder.of(
                             CompactedMachineBlockEntity::new,
                             Spectralization.COMPACTED_MACHINE.get()
+                    ).build(null));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<CompactMachineCoreBlockEntity>> COMPACT_MACHINE_CORE =
+            BLOCK_ENTITY_TYPES.register("compact_machine_core", () ->
+                    BlockEntityType.Builder.of(
+                            CompactMachineCoreBlockEntity::new,
+                            Spectralization.COMPACT_MACHINE_CORE.get()
                     ).build(null));
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<CreativeLightSourceBlockEntity>> CREATIVE_LIGHT_SOURCE =

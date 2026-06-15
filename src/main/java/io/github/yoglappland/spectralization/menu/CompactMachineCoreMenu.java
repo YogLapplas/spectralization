@@ -1,21 +1,14 @@
 package io.github.yoglappland.spectralization.menu;
 
 import io.github.yoglappland.spectralization.Spectralization;
+import io.github.yoglappland.spectralization.blockentity.CompactMachineCoreBlockEntity;
 import io.github.yoglappland.spectralization.compact.CompactedMachineItemData;
 import io.github.yoglappland.spectralization.compact.CompactMachineFrameInfo;
 import io.github.yoglappland.spectralization.compact.CompactMachineNetworkData;
-import io.github.yoglappland.spectralization.optics.cache.OpticalDirtyKind;
-import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
-import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
-import io.github.yoglappland.spectralization.optics.fiber.FiberNetworkIndex;
-import io.github.yoglappland.spectralization.optics.topology.OpticalNetworkIndex;
-import io.github.yoglappland.spectralization.optics.world.OpticalWorldIndex;
 import io.github.yoglappland.spectralization.registry.SpectralMenus;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.Container;
-import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -24,8 +17,9 @@ import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.inventory.SimpleContainerData;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.items.ItemStackHandler;
+import net.neoforged.neoforge.items.SlotItemHandler;
 
 public class CompactMachineCoreMenu extends AbstractContainerMenu {
     public static final int BUTTON_START_COMPACTING = 0;
@@ -66,36 +60,63 @@ public class CompactMachineCoreMenu extends AbstractContainerMenu {
     private static final int DATA_COUNT = 30;
 
     private final ContainerData data;
-    private final Container output = new SimpleContainer(1);
+    private final ContainerData coreData;
+    private final CompactMachineCoreBlockEntity core;
+    private final ItemStackHandler outputItems;
     private final ServerLevel level;
     private final BlockPos corePos;
 
     public CompactMachineCoreMenu(int containerId, Inventory inventory) {
-        this(containerId, inventory, null, BlockPos.ZERO, new SimpleContainerData(DATA_COUNT));
+        this(
+                containerId,
+                inventory,
+                null,
+                null,
+                BlockPos.ZERO,
+                new SimpleContainerData(DATA_COUNT),
+                new ItemStackHandler(CompactMachineCoreBlockEntity.SLOT_COUNT),
+                new SimpleContainerData(CompactMachineCoreBlockEntity.DATA_COUNT)
+        );
     }
 
-    public CompactMachineCoreMenu(int containerId, Inventory inventory, ServerLevel level, BlockPos corePos) {
-        this(containerId, inventory, level, corePos, new LiveData(level, corePos));
+    public CompactMachineCoreMenu(int containerId, Inventory inventory, CompactMachineCoreBlockEntity core) {
+        this(
+                containerId,
+                inventory,
+                core,
+                serverLevel(core),
+                core.getBlockPos(),
+                frameData(core),
+                core.outputItems(),
+                core.createDataAccess()
+        );
     }
 
     private CompactMachineCoreMenu(
             int containerId,
             Inventory inventory,
+            CompactMachineCoreBlockEntity core,
             ServerLevel level,
             BlockPos corePos,
-            ContainerData data
+            ContainerData data,
+            ItemStackHandler outputItems,
+            ContainerData coreData
     ) {
         super(SpectralMenus.COMPACT_MACHINE_CORE.get(), containerId);
+        this.core = core;
         this.level = level;
         this.corePos = corePos.immutable();
         this.data = data;
-        addSlot(new Slot(output, 0, OUTPUT_SLOT_X, OUTPUT_SLOT_Y) {
+        this.outputItems = outputItems;
+        this.coreData = coreData;
+        addSlot(new SlotItemHandler(outputItems, CompactMachineCoreBlockEntity.SLOT_OUTPUT, OUTPUT_SLOT_X, OUTPUT_SLOT_Y) {
             @Override
             public boolean mayPlace(ItemStack stack) {
                 return false;
             }
         });
         addDataSlots(data);
+        addDataSlots(coreData);
     }
 
     public boolean present() {
@@ -183,7 +204,11 @@ public class CompactMachineCoreMenu extends AbstractContainerMenu {
     }
 
     public boolean outputEmpty() {
-        return output.getItem(0).isEmpty();
+        return outputItems.getStackInSlot(CompactMachineCoreBlockEntity.SLOT_OUTPUT).isEmpty() && !compacting();
+    }
+
+    public boolean compacting() {
+        return coreData.get(CompactMachineCoreBlockEntity.DATA_COMPACTING) != 0;
     }
 
     @Override
@@ -198,7 +223,7 @@ public class CompactMachineCoreMenu extends AbstractContainerMenu {
     @Override
     public void clicked(int slotId, int button, ClickType clickType, Player player) {
         if (slotId == OUTPUT_SLOT_INDEX && button == 1 && clickType == ClickType.PICKUP) {
-            ItemStack stack = output.getItem(0);
+            ItemStack stack = outputItems.getStackInSlot(CompactMachineCoreBlockEntity.SLOT_OUTPUT);
             if (!stack.isEmpty() && !player.level().isClientSide) {
                 CompactedMachineItemData.describeTo(player, stack);
             }
@@ -214,7 +239,7 @@ public class CompactMachineCoreMenu extends AbstractContainerMenu {
             return ItemStack.EMPTY;
         }
 
-        ItemStack stack = output.getItem(0);
+        ItemStack stack = outputItems.getStackInSlot(CompactMachineCoreBlockEntity.SLOT_OUTPUT);
         if (stack.isEmpty()) {
             return ItemStack.EMPTY;
         }
@@ -223,24 +248,18 @@ public class CompactMachineCoreMenu extends AbstractContainerMenu {
         if (!player.level().isClientSide) {
             player.getInventory().placeItemBackInInventory(copy.copy());
         }
-        output.setItem(0, ItemStack.EMPTY);
+        outputItems.setStackInSlot(CompactMachineCoreBlockEntity.SLOT_OUTPUT, ItemStack.EMPTY);
         return copy;
     }
 
     @Override
     public void removed(Player player) {
         super.removed(player);
-        if (!player.level().isClientSide) {
-            ItemStack stack = output.removeItemNoUpdate(0);
-            if (!stack.isEmpty()) {
-                player.getInventory().placeItemBackInInventory(stack);
-            }
-        }
     }
 
     @Override
     public boolean stillValid(Player player) {
-        if (level == null) {
+        if (core == null || level == null || core.isRemoved()) {
             return true;
         }
 
@@ -252,8 +271,17 @@ public class CompactMachineCoreMenu extends AbstractContainerMenu {
         return new BlockPos(data.get(xIndex), data.get(yIndex), data.get(zIndex));
     }
 
+    private static ServerLevel serverLevel(CompactMachineCoreBlockEntity core) {
+        return core.getLevel() instanceof ServerLevel serverLevel ? serverLevel : null;
+    }
+
+    private static ContainerData frameData(CompactMachineCoreBlockEntity core) {
+        ServerLevel serverLevel = serverLevel(core);
+        return serverLevel == null ? new SimpleContainerData(DATA_COUNT) : new LiveData(serverLevel, core.getBlockPos());
+    }
+
     private boolean startCompacting(Player player) {
-        if (level == null || !output.getItem(0).isEmpty()) {
+        if (level == null || core == null || core.isCompacting() || !core.outputEmpty()) {
             return false;
         }
 
@@ -281,36 +309,12 @@ public class CompactMachineCoreMenu extends AbstractContainerMenu {
             return false;
         }
 
-        ItemStack stack = CompactedMachineItemData.createStack(level, info.min(), info.max(), info.workMin(), info.workMax());
-        clearWorkArea(info.workMin(), info.workMax());
-        output.setItem(0, stack);
+        if (!core.startCompacting(level, info)) {
+            return false;
+        }
+
         player.displayClientMessage(Component.translatable("screen.spectralization.compact_machine_core.compact_started"), false);
         return true;
-    }
-
-    private void clearWorkArea(BlockPos min, BlockPos max) {
-        boolean changedOptics = false;
-
-        for (BlockPos pos : BlockPos.betweenClosed(min, max)) {
-            if (level.getBlockState(pos).isAir()) {
-                continue;
-            }
-
-            BlockPos immutablePos = pos.immutable();
-            OpticalWorldIndex.onBlockBroken(level, immutablePos);
-            FiberNetworkIndex.onBlockBroken(level, immutablePos);
-            OpticalTraceCache.forgetDormantSource(level, immutablePos);
-            OpticalTraceCache.markChanged(level, immutablePos, OpticalDirtyKind.STRUCTURE);
-            OpticalTraceCache.requestIntrinsicSourcesNear(level, immutablePos);
-            level.setBlockAndUpdate(immutablePos, Blocks.AIR.defaultBlockState());
-            changedOptics = true;
-        }
-
-        if (changedOptics) {
-            OpticalFieldSources.invalidate(level);
-            OpticalNetworkIndex.markDirty(level);
-            CompactMachineNetworkData.scheduleRefresh(level, corePos, "compact machine started");
-        }
     }
 
     private static final class LiveData implements ContainerData {

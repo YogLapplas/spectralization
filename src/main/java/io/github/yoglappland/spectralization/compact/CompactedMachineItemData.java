@@ -21,10 +21,14 @@ import java.util.Objects;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.HolderGetter;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtUtils;
 import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
@@ -34,6 +38,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
 public final class CompactedMachineItemData {
@@ -43,6 +48,7 @@ public final class CompactedMachineItemData {
     private static final String SIZE_Y_KEY = "size_y";
     private static final String SIZE_Z_KEY = "size_z";
     private static final String IO_FACES_KEY = "io_faces";
+    private static final String IO_PORTS_KEY = "io_ports";
     private static final String TRANSFERS_KEY = "transfers";
     private static final String SOURCES_KEY = "sources";
     private static final String BLOCKS_KEY = "blocks";
@@ -54,6 +60,7 @@ public final class CompactedMachineItemData {
     private static final String Y_KEY = "y";
     private static final String Z_KEY = "z";
     private static final String BLOCK_KEY = "block";
+    private static final String STATE_KEY = "state";
     private static final String FROM_KEY = "from";
     private static final String TO_KEY = "to";
     private static final String GAIN_KEY = "gain";
@@ -97,6 +104,7 @@ public final class CompactedMachineItemData {
         data.putInt(SIZE_Y_KEY, workMax.getY() - workMin.getY() + 1);
         data.putInt(SIZE_Z_KEY, workMax.getZ() - workMin.getZ() + 1);
         data.put(IO_FACES_KEY, writeIoFaces(ports));
+        data.put(IO_PORTS_KEY, writeIoPorts(level, ports, workMin));
         data.put(TRANSFERS_KEY, writeTransfers(transfers));
         data.put(SOURCES_KEY, writeSources(sourceOutputs));
         ensureVisualDefaults(data);
@@ -112,6 +120,7 @@ public final class CompactedMachineItemData {
             blockTag.putInt(Y_KEY, pos.getY() - workMin.getY());
             blockTag.putInt(Z_KEY, pos.getZ() - workMin.getZ());
             blockTag.putString(BLOCK_KEY, BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString());
+            blockTag.put(STATE_KEY, NbtUtils.writeBlockState(state));
             blocks.add(blockTag);
         }
 
@@ -218,6 +227,30 @@ public final class CompactedMachineItemData {
         return blockIds.size();
     }
 
+    public static List<BlockEntry> blockEntries(CompoundTag data, HolderLookup.Provider registries) {
+        ListTag blocks = data.getList(BLOCKS_KEY, Tag.TAG_COMPOUND);
+        List<BlockEntry> entries = new ArrayList<>();
+        HolderGetter<Block> blockGetter = registries == null ? null : registries.lookupOrThrow(Registries.BLOCK);
+
+        for (int index = 0; index < blocks.size(); index++) {
+            CompoundTag blockTag = blocks.getCompound(index);
+            BlockState state = readBlockState(blockTag, blockGetter);
+
+            if (state.isAir()) {
+                continue;
+            }
+
+            entries.add(new BlockEntry(
+                    blockTag.getInt(X_KEY),
+                    blockTag.getInt(Y_KEY),
+                    blockTag.getInt(Z_KEY),
+                    state
+            ));
+        }
+
+        return List.copyOf(entries);
+    }
+
     public static int transferCount(CompoundTag data) {
         return data.getList(TRANSFERS_KEY, Tag.TAG_COMPOUND).size();
     }
@@ -292,6 +325,34 @@ public final class CompactedMachineItemData {
         }
 
         return directions.isEmpty() ? Set.of() : Set.copyOf(directions);
+    }
+
+    public static List<IoPortEntry> ioPortEntries(CompoundTag data, HolderLookup.Provider registries) {
+        ListTag portTags = data.getList(IO_PORTS_KEY, Tag.TAG_COMPOUND);
+        List<IoPortEntry> entries = new ArrayList<>();
+        HolderGetter<Block> blockGetter = registries == null ? null : registries.lookupOrThrow(Registries.BLOCK);
+
+        for (int index = 0; index < portTags.size(); index++) {
+            CompoundTag portTag = portTags.getCompound(index);
+            Direction face = Direction.byName(portTag.getString(FACE_KEY));
+            if (face == null) {
+                continue;
+            }
+
+            entries.add(new IoPortEntry(
+                    face,
+                    portTag.getInt(X_KEY),
+                    portTag.getInt(Y_KEY),
+                    portTag.getInt(Z_KEY),
+                    readBlockState(portTag, blockGetter)
+            ));
+        }
+
+        if (!entries.isEmpty()) {
+            return List.copyOf(entries);
+        }
+
+        return fallbackIoPortEntries(data);
     }
 
     public static List<Transfer> transfers(CompoundTag data) {
@@ -425,6 +486,24 @@ public final class CompactedMachineItemData {
         return tag;
     }
 
+    private static ListTag writeIoPorts(ServerLevel level, List<BoundaryPort> ports, BlockPos workMin) {
+        ListTag portTags = new ListTag();
+
+        for (BoundaryPort port : ports) {
+            BlockState state = level.getBlockState(port.pos());
+            CompoundTag portTag = new CompoundTag();
+            portTag.putString(FACE_KEY, port.face().getName());
+            portTag.putInt(X_KEY, port.pos().getX() - workMin.getX());
+            portTag.putInt(Y_KEY, port.pos().getY() - workMin.getY());
+            portTag.putInt(Z_KEY, port.pos().getZ() - workMin.getZ());
+            portTag.putString(BLOCK_KEY, BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString());
+            portTag.put(STATE_KEY, NbtUtils.writeBlockState(state));
+            portTags.add(portTag);
+        }
+
+        return portTags;
+    }
+
     private static ListTag writeTransfers(List<Transfer> transfers) {
         ListTag transferTags = new ListTag();
 
@@ -531,6 +610,81 @@ public final class CompactedMachineItemData {
         }
 
         return new BeamPacket(normalized, readEnvelope(beamTag.getCompound(ENVELOPE_KEY)));
+    }
+
+    private static List<IoPortEntry> fallbackIoPortEntries(CompoundTag data) {
+        Set<Direction> faces = ioFaces(data);
+        if (faces.isEmpty()) {
+            return List.of();
+        }
+
+        int sizeX = sizeX(data);
+        int sizeY = sizeY(data);
+        int sizeZ = sizeZ(data);
+        List<IoPortEntry> entries = new ArrayList<>();
+        BlockState fallbackState = Spectralization.COMPACT_MACHINE_LIGHT_IO_PORT.get().defaultBlockState();
+
+        for (Direction face : faces) {
+            entries.add(new IoPortEntry(
+                    face,
+                    fallbackX(face, sizeX),
+                    fallbackY(face, sizeY),
+                    fallbackZ(face, sizeZ),
+                    fallbackState
+            ));
+        }
+
+        return List.copyOf(entries);
+    }
+
+    private static int fallbackX(Direction face, int sizeX) {
+        return switch (face) {
+            case WEST -> -1;
+            case EAST -> Math.max(0, sizeX);
+            default -> Math.max(0, sizeX - 1) / 2;
+        };
+    }
+
+    private static int fallbackY(Direction face, int sizeY) {
+        return switch (face) {
+            case DOWN -> -1;
+            case UP -> Math.max(0, sizeY);
+            default -> Math.max(0, sizeY - 1) / 2;
+        };
+    }
+
+    private static int fallbackZ(Direction face, int sizeZ) {
+        return switch (face) {
+            case NORTH -> -1;
+            case SOUTH -> Math.max(0, sizeZ);
+            default -> Math.max(0, sizeZ - 1) / 2;
+        };
+    }
+
+    private static BlockState readBlockState(CompoundTag blockTag, HolderGetter<Block> blockGetter) {
+        if (blockGetter != null && blockTag.contains(STATE_KEY, Tag.TAG_COMPOUND)) {
+            try {
+                return NbtUtils.readBlockState(blockGetter, blockTag.getCompound(STATE_KEY));
+            } catch (RuntimeException exception) {
+                Spectralization.LOGGER.warn(
+                        "Could not read compacted machine block state {}, falling back to block id",
+                        blockTag.getCompound(STATE_KEY),
+                        exception
+                );
+            }
+        }
+
+        String blockId = blockTag.getString(BLOCK_KEY);
+        if (blockId.isBlank()) {
+            return Blocks.AIR.defaultBlockState();
+        }
+
+        try {
+            return BuiltInRegistries.BLOCK.get(ResourceLocation.parse(blockId)).defaultBlockState();
+        } catch (RuntimeException exception) {
+            Spectralization.LOGGER.warn("Could not read compacted machine block id {}", blockId, exception);
+            return Blocks.AIR.defaultBlockState();
+        }
     }
 
     private static BeamEnvelope readEnvelope(CompoundTag envelopeTag) {
@@ -645,6 +799,27 @@ public final class CompactedMachineItemData {
             if (!Double.isFinite(gain) || gain <= 0.0D) {
                 throw new IllegalArgumentException("Compact machine optical transfer gain must be positive and finite");
             }
+        }
+    }
+
+    public record BlockEntry(int x, int y, int z, BlockState state) {
+        public BlockEntry {
+            Objects.requireNonNull(state, "state");
+        }
+
+        public BlockPos pos() {
+            return new BlockPos(x, y, z);
+        }
+    }
+
+    public record IoPortEntry(Direction face, int x, int y, int z, BlockState state) {
+        public IoPortEntry {
+            Objects.requireNonNull(face, "face");
+            Objects.requireNonNull(state, "state");
+        }
+
+        public BlockPos pos() {
+            return new BlockPos(x, y, z);
         }
     }
 

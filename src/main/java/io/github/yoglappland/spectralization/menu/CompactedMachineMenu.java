@@ -5,9 +5,12 @@ import io.github.yoglappland.spectralization.blockentity.CompactedMachineBlockEn
 import io.github.yoglappland.spectralization.compact.CompactedMachineFaceColor;
 import io.github.yoglappland.spectralization.compact.CompactedMachineItemData;
 import io.github.yoglappland.spectralization.registry.SpectralMenus;
+import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -37,13 +40,36 @@ public class CompactedMachineMenu extends AbstractContainerMenu {
     private final ServerLevel level;
     private final BlockPos machinePos;
     private final ContainerData data;
+    private final CompoundTag snapshotData;
+    private final List<CompactedMachineItemData.BlockEntry> snapshotBlocks;
+    private final List<CompactedMachineItemData.IoPortEntry> snapshotIoPorts;
 
     public CompactedMachineMenu(int containerId, Inventory inventory) {
-        this(containerId, inventory, null, BlockPos.ZERO, new SimpleContainerData(DATA_COUNT));
+        this(containerId, inventory, null, BlockPos.ZERO, new SimpleContainerData(DATA_COUNT), new CompoundTag(), null);
+    }
+
+    public CompactedMachineMenu(int containerId, Inventory inventory, RegistryFriendlyByteBuf buffer) {
+        this(
+                containerId,
+                inventory,
+                null,
+                BlockPos.ZERO,
+                new SimpleContainerData(DATA_COUNT),
+                readSnapshot(buffer),
+                buffer.registryAccess()
+        );
     }
 
     public CompactedMachineMenu(int containerId, Inventory inventory, ServerLevel level, BlockPos machinePos) {
-        this(containerId, inventory, level, machinePos, new LiveData(level, machinePos));
+        this(
+                containerId,
+                inventory,
+                level,
+                machinePos,
+                new LiveData(level, machinePos),
+                snapshotData(level, machinePos),
+                level.registryAccess()
+        );
     }
 
     private CompactedMachineMenu(
@@ -51,12 +77,17 @@ public class CompactedMachineMenu extends AbstractContainerMenu {
             Inventory inventory,
             ServerLevel level,
             BlockPos machinePos,
-            ContainerData data
+            ContainerData data,
+            CompoundTag snapshotData,
+            HolderLookup.Provider registries
     ) {
         super(SpectralMenus.COMPACTED_MACHINE.get(), containerId);
         this.level = level;
         this.machinePos = machinePos.immutable();
         this.data = data;
+        this.snapshotData = snapshotData.copy();
+        this.snapshotBlocks = CompactedMachineItemData.blockEntries(this.snapshotData, registries);
+        this.snapshotIoPorts = CompactedMachineItemData.ioPortEntries(this.snapshotData, registries);
         addDataSlots(data);
     }
 
@@ -106,6 +137,18 @@ public class CompactedMachineMenu extends AbstractContainerMenu {
         return CompactedMachineFaceColor.byIndex(data.get(FACE_COLOR_BASE + face.ordinal()));
     }
 
+    public CompoundTag snapshotData() {
+        return snapshotData.copy();
+    }
+
+    public List<CompactedMachineItemData.BlockEntry> snapshotBlocks() {
+        return snapshotBlocks;
+    }
+
+    public List<CompactedMachineItemData.IoPortEntry> snapshotIoPorts() {
+        return snapshotIoPorts;
+    }
+
     @Override
     public boolean clickMenuButton(Player player, int id) {
         if (level == null) {
@@ -149,6 +192,23 @@ public class CompactedMachineMenu extends AbstractContainerMenu {
 
         return player.distanceToSqr(Vec3.atCenterOf(machinePos)) <= 64.0
                 && level.getBlockState(machinePos).is(Spectralization.COMPACTED_MACHINE.get());
+    }
+
+    public static void writeSnapshot(RegistryFriendlyByteBuf buffer, ServerLevel level, BlockPos machinePos) {
+        buffer.writeNbt(snapshotData(level, machinePos));
+    }
+
+    private static CompoundTag readSnapshot(RegistryFriendlyByteBuf buffer) {
+        CompoundTag tag = buffer.readNbt();
+        return tag == null ? new CompoundTag() : tag;
+    }
+
+    private static CompoundTag snapshotData(ServerLevel level, BlockPos machinePos) {
+        if (level != null && level.getBlockEntity(machinePos) instanceof CompactedMachineBlockEntity compactedMachine) {
+            return compactedMachine.compactedData();
+        }
+
+        return new CompoundTag();
     }
 
     private static final class LiveData implements ContainerData {

@@ -206,7 +206,7 @@ public class CompactedMachineBlock extends Block implements EntityBlock, Optical
                     (containerId, inventory, menuPlayer) ->
                             new CompactedMachineMenu(containerId, inventory, serverLevel, machinePos),
                     Component.translatable("container.spectralization.compacted_machine")
-            ));
+            ), buffer -> CompactedMachineMenu.writeSnapshot(buffer, serverLevel, machinePos));
         }
     }
 }

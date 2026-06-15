@@ -2,6 +2,7 @@ package io.github.yoglappland.spectralization.compact;
 
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.block.CompactMachinePartBlock;
+import io.github.yoglappland.spectralization.diagnostics.SpectralDiagnostics;
 import io.github.yoglappland.spectralization.tag.SpectralBlockTags;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -141,6 +142,16 @@ public final class CompactMachineNetworkData extends SavedData {
                     validation.invalidFrames(),
                     validation.changedErrorStates()
             );
+            SpectralDiagnostics.event(level, "compact_machine", "network_refresh")
+                    .pos("changed_pos", immutableChangedPos)
+                    .field("reason", reason)
+                    .field("connections_before", before)
+                    .field("connections_after", data.connectionsByKey.size())
+                    .field("validation_seeds", validationSeeds.size())
+                    .field("valid_frames", validation.validFrames())
+                    .field("invalid_frames", validation.invalidFrames())
+                    .field("error_states_changed", validation.changedErrorStates())
+                    .write();
         }
     }
 
@@ -254,6 +265,13 @@ public final class CompactMachineNetworkData extends SavedData {
                 formatPos(to),
                 direction.getAxis()
         );
+        SpectralDiagnostics.event(level, "compact_machine", "anchor_connection_added")
+                .pos("from", from)
+                .pos("to", to)
+                .field("axis", direction.getAxis())
+                .field("geometry_changed", true)
+                .field("topology_changed", true)
+                .write();
         return connection;
     }
 
@@ -280,6 +298,13 @@ public final class CompactMachineNetworkData extends SavedData {
                         formatPos(connection.from()),
                         formatPos(connection.to())
                 );
+                SpectralDiagnostics.event(level, "compact_machine", "anchor_connection_removed")
+                        .field("reason", reason)
+                        .pos("from", connection.from())
+                        .pos("to", connection.to())
+                        .field("geometry_changed", true)
+                        .field("topology_changed", true)
+                        .write();
             }
         }
 

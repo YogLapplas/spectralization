@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization.block;
 
 import io.github.yoglappland.spectralization.Spectralization;
+import io.github.yoglappland.spectralization.diagnostics.SpectralDiagnostics;
 import io.github.yoglappland.spectralization.tag.SpectralBlockTags;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -215,6 +216,15 @@ public final class HolographicStorageMultiblock {
                     removedReports,
                     visualPositions.size()
             );
+            SpectralDiagnostics.event(level, "holographic_storage", "multiblock_refresh")
+                    .pos("origin", origin)
+                    .field("reason", reason)
+                    .field("affected_cores", affectedCores.size())
+                    .field("changed_reports", changedReports)
+                    .field("valid_reports", validReports)
+                    .field("removed_reports", removedReports)
+                    .field("visual_positions", visualPositions.size())
+                    .write();
         }
     }
 

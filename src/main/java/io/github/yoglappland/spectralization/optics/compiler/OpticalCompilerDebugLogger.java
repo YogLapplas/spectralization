@@ -2,6 +2,7 @@ package io.github.yoglappland.spectralization.optics.compiler;
 
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
+import io.github.yoglappland.spectralization.diagnostics.SpectralDiagnostics;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalTrace;
 import io.github.yoglappland.spectralization.optics.OpticalTraceTermination;
 import io.github.yoglappland.spectralization.optics.OpticalTraceTerminationReason;
@@ -10,11 +11,6 @@ import io.github.yoglappland.spectralization.optics.SpotRecord;
 import io.github.yoglappland.spectralization.optics.cache.ReceiverOutput;
 import io.github.yoglappland.spectralization.optics.compiler.gain.GainSchedule;
 import io.github.yoglappland.spectralization.network.BeamPathOverlayPayload;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -31,7 +27,6 @@ import java.util.TreeSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
-import net.neoforged.fml.loading.FMLPaths;
 
 public final class OpticalCompilerDebugLogger {
     private static final DateTimeFormatter SESSION_LOG_TIMESTAMP = DateTimeFormatter
@@ -76,9 +71,13 @@ public final class OpticalCompilerDebugLogger {
                 .append('\n');
 
         appendTerminationSummary(builder, trace);
-        appendSccs(builder, graph);
-        appendChords(builder, graph);
-        appendEdges(builder, graph);
+        if (verboseLog()) {
+            appendSccs(builder, graph);
+            appendChords(builder, graph);
+            appendEdges(builder, graph);
+        } else {
+            appendVerboseSectionsSkipped(builder);
+        }
         builder.append('\n');
         write(builder.toString());
     }
@@ -222,19 +221,23 @@ public final class OpticalCompilerDebugLogger {
                 .append('\n');
 
         appendTerminationSummary(builder, trace);
-        appendSccs(builder, "observed", observedGraph);
-        appendChords(builder, "observed", observedGraph);
-        appendSccs(builder, "direct", directGraph);
-        appendChords(builder, "direct", directGraph);
-        appendStrongestNodes(builder, "direct_scalar", scalarPowerSolution);
+        if (verboseLog()) {
+            appendSccs(builder, "observed", observedGraph);
+            appendChords(builder, "observed", observedGraph);
+            appendSccs(builder, "direct", directGraph);
+            appendChords(builder, "direct", directGraph);
+            appendStrongestNodes(builder, "direct_scalar", scalarPowerSolution);
 
-        if (networkGraph != null && networkSolution != null) {
-            appendSccs(builder, "network", networkGraph);
-            appendChords(builder, "network", networkGraph);
-            appendStrongestNodes(builder, "network_scalar", networkSolution);
+            if (networkGraph != null && networkSolution != null) {
+                appendSccs(builder, "network", networkGraph);
+                appendChords(builder, "network", networkGraph);
+                appendStrongestNodes(builder, "network_scalar", networkSolution);
+            }
+
+            appendEdges(builder, "direct", directGraph);
+        } else {
+            appendVerboseSectionsSkipped(builder);
         }
-
-        appendEdges(builder, "direct", directGraph);
         builder.append('\n');
         write(builder.toString());
     }
@@ -314,17 +317,21 @@ public final class OpticalCompilerDebugLogger {
                 directReadoutBindingCount,
                 networkReadoutBindingCount
         );
-        appendSccs(builder, "direct", directGraph);
-        appendChords(builder, "direct", directGraph);
-        appendStrongestNodes(builder, "direct_scalar", scalarPowerSolution);
+        if (verboseLog()) {
+            appendSccs(builder, "direct", directGraph);
+            appendChords(builder, "direct", directGraph);
+            appendStrongestNodes(builder, "direct_scalar", scalarPowerSolution);
 
-        if (networkGraph != null && networkSolution != null) {
-            appendSccs(builder, "network", networkGraph);
-            appendChords(builder, "network", networkGraph);
-            appendStrongestNodes(builder, "network_scalar", networkSolution);
+            if (networkGraph != null && networkSolution != null) {
+                appendSccs(builder, "network", networkGraph);
+                appendChords(builder, "network", networkGraph);
+                appendStrongestNodes(builder, "network_scalar", networkSolution);
+            }
+
+            appendEdges(builder, "direct", directGraph);
+        } else {
+            appendVerboseSectionsSkipped(builder);
         }
-
-        appendEdges(builder, "direct", directGraph);
         builder.append('\n');
         write(builder.toString());
     }
@@ -504,7 +511,8 @@ public final class OpticalCompilerDebugLogger {
             List<ReceiverOutput> systemReceiverOutputs,
             List<ReceiverOutput> heldReceiverOutputs
     ) {
-        if (!SpectralizationConfig.opticalCompilerDebugLog()) {
+        if (!SpectralizationConfig.opticalCompilerDebugLog()
+                || (!verboseLog() && reliable)) {
             return;
         }
 
@@ -560,6 +568,12 @@ public final class OpticalCompilerDebugLogger {
                 .append(" terminal_ray_blocks=").append(terminalRayBlocks)
                 .append(" game_time=").append(gameTime)
                 .append('\n');
+
+        if (!verboseLog()) {
+            builder.append("segment_details=skipped_non_verbose\n\n");
+            write(builder.toString());
+            return;
+        }
 
         if (segments.isEmpty()) {
             builder.append("segment_details: none\n\n");
@@ -618,6 +632,12 @@ public final class OpticalCompilerDebugLogger {
                 .append(" quantization_levels=16")
                 .append(" game_time=").append(gameTime)
                 .append('\n');
+
+        if (!verboseLog()) {
+            builder.append("spot_details=skipped_non_verbose\n\n");
+            write(builder.toString());
+            return;
+        }
 
         if (activeSpots.isEmpty()) {
             builder.append("spot_details: none\n\n");
@@ -808,8 +828,12 @@ public final class OpticalCompilerDebugLogger {
         appendScalarSolution(builder, "incoherent_channel", incoherentSolution);
         appendScalarSolution(builder, "coherent_channel", coherentSolution);
         appendScalarSolution(builder, "combined_channels", combinedSolution);
-        appendStrongestNodes(builder, "coherent_channel", coherentSolution);
-        appendStrongestNodes(builder, "combined_channels", combinedSolution);
+        if (verboseLog()) {
+            appendStrongestNodes(builder, "coherent_channel", coherentSolution);
+            appendStrongestNodes(builder, "combined_channels", combinedSolution);
+        } else {
+            appendVerboseSectionsSkipped(builder);
+        }
         builder.append('\n');
         write(builder.toString());
     }
@@ -1178,9 +1202,11 @@ public final class OpticalCompilerDebugLogger {
                 .append(" total_node_power=").append(formatPower(solution.totalNodePower()))
                 .append(" lanes=").append(solution.powerByLane().size())
                 .append('\n');
-        appendPowerLanes(builder, label, solution);
         appendSolverPlan(builder, label, solution.solverPlan());
-        appendSolverRegionResults(builder, label, solution);
+        if (verboseLog()) {
+            appendPowerLanes(builder, label, solution);
+            appendSolverRegionResults(builder, label, solution);
+        }
     }
 
     private static void appendPowerLanes(
@@ -1241,6 +1267,10 @@ public final class OpticalCompilerDebugLogger {
                 .append(" fallback_regions=").append(solverPlan.fallbackRegionCount())
                 .append(" max_beta1=").append(solverPlan.maxBeta1())
                 .append('\n');
+        if (!verboseLog()) {
+            return;
+        }
+
         appendSolverCapabilities(builder, label);
         appendChordFeedbackPlan(builder, label, solverPlan.chordFeedbackPlan());
 
@@ -1571,6 +1601,14 @@ public final class OpticalCompilerDebugLogger {
         builder.append(label.isEmpty() ? section : label + "_" + section).append(":\n");
     }
 
+    private static void appendVerboseSectionsSkipped(StringBuilder builder) {
+        builder.append("verbose_sections=skipped_non_verbose\n");
+    }
+
+    private static boolean verboseLog() {
+        return SpectralizationConfig.opticalCompilerDebugVerbose();
+    }
+
     private static String formatNode(PortGraphNode node) {
         return formatPos(node.pos()) + "/" + node.side().getSerializedName() + "/" + node.waveKind().name().toLowerCase(Locale.ROOT);
     }
@@ -1612,20 +1650,7 @@ public final class OpticalCompilerDebugLogger {
     }
 
     private static void write(String content) {
-        Path logPath = FMLPaths.GAMEDIR.get().resolve(LOG_RELATIVE_PATH);
-
-        try {
-            Files.createDirectories(logPath.getParent());
-            Files.writeString(
-                    logPath,
-                    content,
-                    StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.APPEND
-            );
-        } catch (IOException exception) {
-            Spectralization.LOGGER.warn("Failed to write optical compiler debug log", exception);
-        }
+        SpectralDiagnostics.appendLog(LOG_RELATIVE_PATH, content, "optical compiler debug");
     }
 
     private OpticalCompilerDebugLogger() {

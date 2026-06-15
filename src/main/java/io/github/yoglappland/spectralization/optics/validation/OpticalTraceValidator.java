@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization.optics.validation;
 
 import io.github.yoglappland.spectralization.Spectralization;
+import io.github.yoglappland.spectralization.diagnostics.SpectralDiagnostics;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalTrace;
 import io.github.yoglappland.spectralization.optics.OpticalElement;
 import io.github.yoglappland.spectralization.optics.OpticalInteractionKind;
@@ -10,10 +11,6 @@ import io.github.yoglappland.spectralization.optics.OpticalTraceStep;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldEffectType;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -28,7 +25,6 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
-import net.neoforged.fml.loading.FMLPaths;
 
 public final class OpticalTraceValidator {
     private static final int LOG_INTERVAL_TICKS = 100;
@@ -211,26 +207,14 @@ public final class OpticalTraceValidator {
 
         builder.append('\n');
 
-        Path logPath = FMLPaths.GAMEDIR.get().resolve(LOG_RELATIVE_PATH);
-
-        try {
-            Files.createDirectories(logPath.getParent());
-            Files.writeString(
-                    logPath,
-                    builder.toString(),
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.APPEND
-            );
-            Spectralization.LOGGER.warn(
-                    "Optical solver mismatch at {} in {}; wrote {} differences to {}",
-                    sourcePos,
-                    level.dimension().location(),
-                    differences.size(),
-                    LOG_RELATIVE_PATH
-            );
-        } catch (IOException exception) {
-            Spectralization.LOGGER.warn("Failed to write optical solver comparison log", exception);
-        }
+        SpectralDiagnostics.appendLog(LOG_RELATIVE_PATH, builder.toString(), "optical solver comparison");
+        Spectralization.LOGGER.warn(
+                "Optical solver mismatch at {} in {}; wrote {} differences to {}",
+                sourcePos,
+                level.dimension().location(),
+                differences.size(),
+                LOG_RELATIVE_PATH
+        );
     }
 
     private static String formatPort(OpticalPort port) {

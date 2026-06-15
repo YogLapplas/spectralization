@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization.optics.fiber;
 
 import io.github.yoglappland.spectralization.Spectralization;
+import io.github.yoglappland.spectralization.diagnostics.SpectralDiagnostics;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledPortGraph;
 import io.github.yoglappland.spectralization.optics.compiler.PortGraphEdge;
 import io.github.yoglappland.spectralization.optics.compiler.PortGraphEdgeKind;
@@ -70,6 +71,14 @@ public final class FiberOverloadMonitor {
                 overloadedSegments.size(),
                 String.join(", ", overloadLogParts)
         );
+        SpectralDiagnostics.anomaly(level, "fiber", "overload")
+                .field("segments", overloadedSegments.size())
+                .field("graph_nodes", graph.nodes().size())
+                .field("graph_edges", graph.edges().size())
+                .field("solver", solution.solverKind())
+                .field("reliable", solution.reliableForReadout())
+                .field("capacity_per_fiber", POWER_CAPACITY_PER_FIBER)
+                .write();
         return FiberNetworkData.removeConnectionsUsingAnySegment(level, overloadedSegments, "overload");
     }
 

@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization.optics.fiber;
 
 import io.github.yoglappland.spectralization.Spectralization;
+import io.github.yoglappland.spectralization.diagnostics.SpectralDiagnostics;
 import io.github.yoglappland.spectralization.optics.cache.OpticalDirtyKind;
 import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
 import io.github.yoglappland.spectralization.optics.topology.OpticalNetworkIndex;
@@ -71,6 +72,14 @@ public final class FiberNetworkData extends SavedData {
                 String.format(java.util.Locale.ROOT, "%.3f", connection.totalLength()),
                 parallelCount
         );
+        SpectralDiagnostics.event(level, "fiber", "connection_added")
+                .pos("endpoint_a", connection.endpointA())
+                .pos("endpoint_b", connection.endpointB())
+                .field("nodes", connection.nodes().size())
+                .field("length", connection.totalLength())
+                .field("parallel", parallelCount)
+                .field("optical_dirty", true)
+                .write();
         return Optional.of(connection);
     }
 
@@ -112,6 +121,13 @@ public final class FiberNetworkData extends SavedData {
                 formatPos(removedConnection.endpointB()),
                 data.connectionCountBetween(removedConnection.endpointA(), removedConnection.endpointB())
         );
+        SpectralDiagnostics.event(level, "fiber", "connection_removed")
+                .field("reason", "shears")
+                .pos("endpoint_a", removedConnection.endpointA())
+                .pos("endpoint_b", removedConnection.endpointB())
+                .field("remaining_parallel", data.connectionCountBetween(removedConnection.endpointA(), removedConnection.endpointB()))
+                .field("optical_dirty", true)
+                .write();
         return Optional.of(removedConnection);
     }
 
@@ -130,6 +146,7 @@ public final class FiberNetworkData extends SavedData {
 
         FiberNetworkData data = maybeData.get();
         Set<BlockPos> dirtyEndpoints = new HashSet<>();
+        int previousSize = data.connectionsById.size();
         boolean changed = data.connectionsById.entrySet().removeIf(entry -> {
             FiberConnection connection = entry.getValue();
 
@@ -154,6 +171,13 @@ public final class FiberNetworkData extends SavedData {
                         serverLevel.dimension().location(),
                         formatPos(pos)
                 );
+                SpectralDiagnostics.event(serverLevel, "fiber", "connections_removed")
+                        .field("reason", "touching_block")
+                        .pos("pos", pos)
+                        .field("removed", previousSize - data.connectionsById.size())
+                        .field("dirty_endpoints", dirtyEndpoints.size())
+                        .field("optical_dirty", true)
+                        .write();
             }
         }
 
@@ -197,6 +221,13 @@ public final class FiberNetworkData extends SavedData {
                     immutablePositions.stream().map(FiberNetworkData::formatPos).sorted().toList(),
                     previousSize - data.connectionsById.size()
             );
+            SpectralDiagnostics.event(level, "fiber", "connections_removed")
+                    .field("reason", reason)
+                    .field("positions", immutablePositions.size())
+                    .field("removed", previousSize - data.connectionsById.size())
+                    .field("dirty_endpoints", dirtyEndpoints.size())
+                    .field("optical_dirty", true)
+                    .write();
         }
 
         return changed;
@@ -239,6 +270,13 @@ public final class FiberNetworkData extends SavedData {
                     immutableSegments.size(),
                     previousSize - data.connectionsById.size()
             );
+            SpectralDiagnostics.event(level, "fiber", "connections_removed")
+                    .field("reason", reason)
+                    .field("segments", immutableSegments.size())
+                    .field("removed", previousSize - data.connectionsById.size())
+                    .field("dirty_endpoints", dirtyEndpoints.size())
+                    .field("optical_dirty", true)
+                    .write();
         }
 
         return changed;
@@ -276,6 +314,12 @@ public final class FiberNetworkData extends SavedData {
                     level.dimension().location(),
                     previousSize - data.connectionsById.size()
             );
+            SpectralDiagnostics.event(level, "fiber", "connections_removed")
+                    .field("reason", "blocked")
+                    .field("removed", previousSize - data.connectionsById.size())
+                    .field("dirty_endpoints", dirtyEndpoints.size())
+                    .field("optical_dirty", true)
+                    .write();
         }
 
         return changed;

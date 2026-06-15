@@ -13,6 +13,7 @@ public final class SpectralizationConfig {
     private static final ModConfigSpec.BooleanValue LASER_BLINDNESS;
     private static final ModConfigSpec.BooleanValue UI_DEBUG;
     private static final ModConfigSpec.BooleanValue UI_DEBUG_LABELS;
+    private static final ModConfigSpec.BooleanValue DIAGNOSTICS_EVENT_LOG;
     private static final ModConfigSpec.BooleanValue SCATTERING_FIELD_ENABLED;
     private static final ModConfigSpec.IntValue SCATTERING_FIELD_RADIUS;
     private static final ModConfigSpec.DoubleValue SCATTERING_FIELD_PROPAGATION_FACTOR;
@@ -20,6 +21,7 @@ public final class SpectralizationConfig {
     private static final ModConfigSpec.IntValue OPTICAL_SOLVER_BUDGET_MICROS;
     private static final ModConfigSpec.IntValue OPTICAL_EFFECT_TRACE_MAX_STATES;
     private static final ModConfigSpec.BooleanValue OPTICAL_COMPILER_DEBUG_LOG;
+    private static final ModConfigSpec.BooleanValue OPTICAL_COMPILER_DEBUG_VERBOSE;
     private static final ModConfigSpec.IntValue OPTICAL_COMPILER_DEBUG_MAX_EDGES;
     private static final ModConfigSpec.IntValue OPTICAL_COMPILER_MAX_DIRECT_OUTGOING_NODES;
     private static final ModConfigSpec.IntValue OPTICAL_COMPILER_DEBUG_SAMPLE_INTERVAL_TICKS;
@@ -60,6 +62,12 @@ public final class SpectralizationConfig {
                 .define("ui_debug_labels", true);
         builder.pop();
 
+        builder.push("diagnostics");
+        DIAGNOSTICS_EVENT_LOG = builder
+                .comment("Whether sparse subsystem event summaries are written to logs/spectralization/diagnostics_*.log.")
+                .define("event_log", true);
+        builder.pop();
+
         builder.push("optical_field_sources");
         builder.push("scattering");
         SCATTERING_FIELD_ENABLED = builder
@@ -90,6 +98,9 @@ public final class SpectralizationConfig {
         OPTICAL_COMPILER_DEBUG_LOG = builder
                 .comment("Whether every optical compiler run writes a debug entry to logs/spectralization/optical_compiler.log.")
                 .define("debug_log", false);
+        OPTICAL_COMPILER_DEBUG_VERBOSE = builder
+                .comment("Whether optical compiler debug entries include heavy detail sections such as lanes, solver regions, SCCs, chords, edges, HUD segments, and readout output lists.")
+                .define("debug_log_verbose", false);
         OPTICAL_COMPILER_DEBUG_MAX_EDGES = builder
                 .comment("Maximum edge lines written for each optical compiler debug entry.")
                 .defineInRange("debug_log_max_edges", 128, 0, 4096);
@@ -180,6 +191,10 @@ public final class SpectralizationConfig {
         SPEC.save();
     }
 
+    public static boolean diagnosticsEventLog() {
+        return DIAGNOSTICS_EVENT_LOG.get();
+    }
+
     public static boolean scatteringFieldEnabled() {
         return SCATTERING_FIELD_ENABLED.get();
     }
@@ -206,6 +221,10 @@ public final class SpectralizationConfig {
 
     public static boolean opticalCompilerDebugLog() {
         return OPTICAL_COMPILER_DEBUG_LOG.get();
+    }
+
+    public static boolean opticalCompilerDebugVerbose() {
+        return OPTICAL_COMPILER_DEBUG_VERBOSE.get();
     }
 
     public static void setOpticalCompilerDebugLog(boolean enabled) {

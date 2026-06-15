@@ -5,6 +5,7 @@ import io.github.yoglappland.spectralization.compact.CompactMachineAnimationPubl
 import io.github.yoglappland.spectralization.compact.CompactMachineFrameInfo;
 import io.github.yoglappland.spectralization.compact.CompactMachineNetworkData;
 import io.github.yoglappland.spectralization.compact.CompactedMachineItemData;
+import io.github.yoglappland.spectralization.diagnostics.SpectralDiagnostics;
 import io.github.yoglappland.spectralization.network.CompactMachineAnimationPayload;
 import io.github.yoglappland.spectralization.optics.cache.OpticalDirtyKind;
 import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
@@ -137,6 +138,14 @@ public class CompactMachineCoreBlockEntity extends BlockEntity {
                 pendingWorkMax,
                 info.payloadBlockCount()
         );
+        SpectralDiagnostics.event(level, "compact_machine", "compression_started")
+                .pos("core", worldPosition)
+                .pos("work_min", pendingWorkMin)
+                .pos("work_max", pendingWorkMax)
+                .field("payload_blocks", info.payloadBlockCount())
+                .field("duration_ticks", CompactMachineAnimationPayload.DEFAULT_DURATION_TICKS)
+                .field("clear_at_tick", CompactMachineAnimationPayload.CLEAR_WORK_AREA_AT_TICKS)
+                .write();
         return true;
     }
 
@@ -194,6 +203,10 @@ public class CompactMachineCoreBlockEntity extends BlockEntity {
                     "Compact machine output at {} was occupied when animation finished; dropping result",
                     pos
             );
+            SpectralDiagnostics.anomaly(level, "compact_machine", "compression_output_occupied")
+                    .pos("core", pos)
+                    .field("result_dropped", true)
+                    .write();
         }
 
         Spectralization.LOGGER.info(
@@ -201,6 +214,10 @@ public class CompactMachineCoreBlockEntity extends BlockEntity {
                 level.dimension().location(),
                 pos
         );
+        SpectralDiagnostics.event(level, "compact_machine", "compression_finished")
+                .pos("core", pos)
+                .field("output_slot_empty", outputItems.getStackInSlot(SLOT_OUTPUT).isEmpty())
+                .write();
         setChanged();
     }
 
@@ -236,6 +253,14 @@ public class CompactMachineCoreBlockEntity extends BlockEntity {
                 level.dimension().location(),
                 worldPosition
         );
+        SpectralDiagnostics.event(level, "compact_machine", "work_area_cleared")
+                .pos("core", worldPosition)
+                .pos("work_min", min)
+                .pos("work_max", max)
+                .field("cleared_blocks", clearedBlocks)
+                .field("optical_dirty", changedOptics)
+                .field("fiber_dirty", changedOptics)
+                .write();
     }
 
     @Override

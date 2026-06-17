@@ -16,20 +16,15 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
-import net.neoforged.neoforge.fluids.FluidStack;
-import net.neoforged.neoforge.fluids.FluidType;
-import net.neoforged.neoforge.fluids.capability.IFluidHandler;
-import net.neoforged.neoforge.fluids.capability.templates.FluidTank;
 import net.neoforged.neoforge.items.ItemStackHandler;
 
 public class ThermalSmelterBlockEntity extends BlockEntity implements PhotothermalReceiver {
     public static final int SLOT_INPUT = 0;
-    public static final int SLOT_CONTAINER = 1;
+    public static final int SLOT_ADDITIVE = 1;
     public static final int SLOT_OUTPUT = 2;
     public static final int SLOT_COUNT = 3;
 
@@ -38,19 +33,15 @@ public class ThermalSmelterBlockEntity extends BlockEntity implements Phototherm
     public static final int DATA_MAX_HEAT = 2;
     public static final int DATA_PROGRESS = 3;
     public static final int DATA_PROGRESS_REQUIRED = 4;
-    public static final int DATA_FLUID_AMOUNT = 5;
-    public static final int DATA_FLUID_CAPACITY = 6;
-    public static final int DATA_HEAT_POWER_X100 = 7;
-    public static final int DATA_COUNT = 8;
+    public static final int DATA_HEAT_POWER_X100 = 5;
+    public static final int DATA_COUNT = 6;
 
-    private static final int TANK_CAPACITY = 8 * FluidType.BUCKET_VOLUME;
     private static final long SAMPLE_HOLD_TICKS = 1L;
     private static final double HEAT_CAPACITY = 1.0;
     private static final double AMBIENT_TEMPERATURE = 300.0;
     private static final double MAX_TEMPERATURE = 2600.0;
     private static final double PASSIVE_COOLING = 0.0025;
     private static final String ITEMS_TAG = "items";
-    private static final String TANK_TAG = "tank";
     private static final String HEAT_TAG = "heat";
     private static final String PROGRESS_TAG = "progress";
     private static final String OPTICAL_POWER_TAG = "optical_power";
@@ -61,18 +52,12 @@ public class ThermalSmelterBlockEntity extends BlockEntity implements Phototherm
             MAX_TEMPERATURE,
             this::setChanged
     );
-    private final FluidTank tank = new FluidTank(TANK_CAPACITY) {
-        @Override
-        protected void onContentsChanged() {
-            setChanged();
-        }
-    };
     private final ItemStackHandler items = new ItemStackHandler(SLOT_COUNT) {
         @Override
         public boolean isItemValid(int slot, ItemStack stack) {
             return switch (slot) {
-                case SLOT_INPUT -> ThermalSmelterRecipe.isMeltable(stack);
-                case SLOT_CONTAINER -> stack.is(Items.BUCKET);
+                case SLOT_INPUT -> ThermalSmelterRecipe.isProcessable(stack);
+                case SLOT_ADDITIVE -> ThermalSmelterRecipe.isPotentialAdditive(stack);
                 default -> false;
             };
         }
@@ -119,7 +104,6 @@ public class ThermalSmelterBlockEntity extends BlockEntity implements Phototherm
         smelter.tickOpticalSample(level);
         smelter.applyOpticalHeat();
         smelter.tickRecipe();
-        smelter.tryFillBucket();
         smelter.heat.coolTowardAmbient(PASSIVE_COOLING);
     }
 
@@ -130,11 +114,6 @@ public class ThermalSmelterBlockEntity extends BlockEntity implements Phototherm
     @Nullable
     public ItemStackHandler getItems(@Nullable Direction side) {
         return side == null || side == ThermalSmelterBlock.ITEM_PORT_SIDE ? items : null;
-    }
-
-    @Nullable
-    public IFluidHandler getFluidHandler(@Nullable Direction side) {
-        return side == null || side == ThermalSmelterBlock.FLUID_PORT_SIDE ? tank : null;
     }
 
     public ContainerData createDataAccess() {
@@ -216,7 +195,8 @@ public class ThermalSmelterBlockEntity extends BlockEntity implements Phototherm
 
     private void tickRecipe() {
         ItemStack input = items.getStackInSlot(SLOT_INPUT);
-        var recipe = ThermalSmelterRecipe.find(input);
+        ItemStack additive = items.getStackInSlot(SLOT_ADDITIVE);
+        var recipe = ThermalSmelterRecipe.find(input, additive);
 
         if (recipe.isEmpty()) {
             resetProgress();
@@ -245,45 +225,42 @@ public class ThermalSmelterBlockEntity extends BlockEntity implements Phototherm
         progress++;
 
         if (progress >= active.processTicks()) {
-            FluidStack output = active.resultStack();
-            int accepted = tank.fill(output, IFluidHandler.FluidAction.EXECUTE);
-
-            if (accepted >= output.getAmount()) {
-                input.shrink(1);
-                items.setStackInSlot(SLOT_INPUT, input);
-                progress = 0;
-            }
+            completeRecipe(active, input, additive);
+            progress = 0;
         }
 
         setChanged();
     }
 
-    private boolean canAccept(FluidStack output) {
-        return tank.fill(output, IFluidHandler.FluidAction.SIMULATE) >= output.getAmount();
-    }
-
-    private void tryFillBucket() {
-        ItemStack container = items.getStackInSlot(SLOT_CONTAINER);
+    private void completeRecipe(ThermalSmelterRecipe recipe, ItemStack input, ItemStack additive) {
+        ItemStack result = recipe.resultStack();
         ItemStack output = items.getStackInSlot(SLOT_OUTPUT);
 
-        if (!container.is(Items.BUCKET) || !output.isEmpty() || tank.getFluidAmount() < FluidType.BUCKET_VOLUME) {
-            return;
+        input.shrink(1);
+        items.setStackInSlot(SLOT_INPUT, input);
+
+        if (recipe.consumesAdditive()) {
+            additive.shrink(recipe.additiveCost());
+            items.setStackInSlot(SLOT_ADDITIVE, additive);
         }
 
-        ItemStack bucket = new ItemStack(tank.getFluid().getFluid().getBucket());
+        if (output.isEmpty()) {
+            items.setStackInSlot(SLOT_OUTPUT, result);
+        } else {
+            output.grow(result.getCount());
+            items.setStackInSlot(SLOT_OUTPUT, output);
+        }
+    }
 
-        if (bucket.isEmpty()) {
-            return;
+    private boolean canAccept(ItemStack result) {
+        ItemStack output = items.getStackInSlot(SLOT_OUTPUT);
+
+        if (output.isEmpty()) {
+            return true;
         }
 
-        FluidStack drained = tank.drain(FluidType.BUCKET_VOLUME, IFluidHandler.FluidAction.EXECUTE);
-
-        if (drained.getAmount() == FluidType.BUCKET_VOLUME) {
-            container.shrink(1);
-            items.setStackInSlot(SLOT_CONTAINER, container);
-            items.setStackInSlot(SLOT_OUTPUT, bucket);
-            setChanged();
-        }
+        return ItemStack.isSameItemSameComponents(output, result)
+                && output.getCount() + result.getCount() <= Math.min(output.getMaxStackSize(), items.getSlotLimit(SLOT_OUTPUT));
     }
 
     private void resetProgress() {
@@ -301,8 +278,6 @@ public class ThermalSmelterBlockEntity extends BlockEntity implements Phototherm
             case DATA_MAX_HEAT -> (int) Math.round(heat.maxHeatStored());
             case DATA_PROGRESS -> progress;
             case DATA_PROGRESS_REQUIRED -> progressRequired;
-            case DATA_FLUID_AMOUNT -> tank.getFluidAmount();
-            case DATA_FLUID_CAPACITY -> tank.getCapacity();
             case DATA_HEAT_POWER_X100 -> (int) Math.round(committedCoupling.heatPower() * 100.0);
             default -> 0;
         };
@@ -319,16 +294,12 @@ public class ThermalSmelterBlockEntity extends BlockEntity implements Phototherm
             items.deserializeNBT(registries, tag.getCompound(ITEMS_TAG));
         }
 
-        if (tag.contains(TANK_TAG)) {
-            tank.readFromNBT(registries, tag.getCompound(TANK_TAG));
-        }
     }
 
     @Override
     protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.saveAdditional(tag, registries);
         tag.put(ITEMS_TAG, items.serializeNBT(registries));
-        tag.put(TANK_TAG, tank.writeToNBT(registries, new CompoundTag()));
         tag.putDouble(HEAT_TAG, heat.heatStored());
         tag.putInt(PROGRESS_TAG, progress);
         tag.putDouble(OPTICAL_POWER_TAG, committedCoupling.heatPower());

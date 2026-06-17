@@ -10,7 +10,9 @@ import io.github.yoglappland.spectralization.blockentity.FiberOpticInterfaceBloc
 import io.github.yoglappland.spectralization.blockentity.FiberRelayBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.HolographicStorageCrystalBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.HolographicStorageMainCoreBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.LensGrindingBenchBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.LensHolderBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.MetamaterialDesignTableBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.PassThroughSensorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.PhotonicGradientGeneratorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.PhotothermalGeneratorBlockEntity;
@@ -31,6 +33,20 @@ public final class SpectralBlockEntities {
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<LensHolderBlockEntity>> LENS_HOLDER =
             BLOCK_ENTITY_TYPES.register("lens_holder", () ->
                     BlockEntityType.Builder.of(LensHolderBlockEntity::new, Spectralization.LENS_HOLDER.get()).build(null));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<LensGrindingBenchBlockEntity>> LENS_GRINDING_BENCH =
+            BLOCK_ENTITY_TYPES.register("lens_grinding_bench", () ->
+                    BlockEntityType.Builder.of(
+                            LensGrindingBenchBlockEntity::new,
+                            Spectralization.LENS_GRINDING_BENCH.get()
+                    ).build(null));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<MetamaterialDesignTableBlockEntity>> METAMATERIAL_DESIGN_TABLE =
+            BLOCK_ENTITY_TYPES.register("metamaterial_design_table", () ->
+                    BlockEntityType.Builder.of(
+                            MetamaterialDesignTableBlockEntity::new,
+                            Spectralization.METAMATERIAL_DESIGN_TABLE.get()
+                    ).build(null));
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<FiberOpticInterfaceBlockEntity>> FIBER_OPTIC_INTERFACE =
             BLOCK_ENTITY_TYPES.register("fiber_optic_interface", () ->

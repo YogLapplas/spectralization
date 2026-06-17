@@ -12,6 +12,8 @@ public record BeamVisualSegment(
         CoherenceKind coherence,
         BeamVisibilityKind visibilityKind,
         BeamGeometrySample geometry,
+        double startRadius,
+        double endRadius,
         double power,
         int colorRgb
 ) {
@@ -28,6 +30,14 @@ public record BeamVisualSegment(
 
         if (!Double.isFinite(power) || power < 0.0) {
             throw new IllegalArgumentException("Visual segment power must be finite and non-negative");
+        }
+
+        if (!Double.isFinite(startRadius) || startRadius < 0.0) {
+            throw new IllegalArgumentException("Visual segment start radius must be finite and non-negative");
+        }
+
+        if (!Double.isFinite(endRadius) || endRadius < 0.0) {
+            throw new IllegalArgumentException("Visual segment end radius must be finite and non-negative");
         }
 
         if (colorRgb < 0 || colorRgb > 0xFFFFFF) {

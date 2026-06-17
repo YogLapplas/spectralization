@@ -19,6 +19,7 @@ public final class FiberOverlayPublisher {
     private static final int OWNER_ID = -0x0B0DCD2;
     private static final int MAX_SEGMENTS = 512;
     private static final int REFRESH_INTERVAL_TICKS = 20;
+    private static final double FIBER_RENDER_RADIUS = 1.0D / 16.0D;
     private static final Comparator<Map.Entry<FiberSegmentKey, Integer>> SEGMENT_ORDER = Comparator
             .comparingLong((Map.Entry<FiberSegmentKey, Integer> entry) -> entry.getKey().first())
             .thenComparingLong(entry -> entry.getKey().second());
@@ -82,7 +83,9 @@ public final class FiberOverlayPublisher {
                     false,
                     FiberRenderStyle.COLOR_RGB,
                     1,
-                    visualLevel
+                    visualLevel,
+                    FIBER_RENDER_RADIUS,
+                    FIBER_RENDER_RADIUS
             ));
 
             if (segments.size() >= MAX_SEGMENTS) {

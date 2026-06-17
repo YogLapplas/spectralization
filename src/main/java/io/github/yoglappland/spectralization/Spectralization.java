@@ -10,6 +10,7 @@ import io.github.yoglappland.spectralization.block.CompactMachineLightIoPortBloc
 import io.github.yoglappland.spectralization.block.CompactMachinePartBlock;
 import io.github.yoglappland.spectralization.block.CompactedMachineBlock;
 import io.github.yoglappland.spectralization.block.CreativeLightSourceBlock;
+import io.github.yoglappland.spectralization.block.DynamicBeamSplitterBlock;
 import io.github.yoglappland.spectralization.block.DynamicMirrorBlock;
 import io.github.yoglappland.spectralization.block.FiberOpticInterfaceBlock;
 import io.github.yoglappland.spectralization.block.FiberRelayBlock;
@@ -18,7 +19,9 @@ import io.github.yoglappland.spectralization.block.HolographicStorageMainCoreBlo
 import io.github.yoglappland.spectralization.block.HolographicStorageMultiblock;
 import io.github.yoglappland.spectralization.block.HolographicStorageScreenBlock;
 import io.github.yoglappland.spectralization.block.HolographicStorageShellBlock;
+import io.github.yoglappland.spectralization.block.LensGrindingBenchBlock;
 import io.github.yoglappland.spectralization.block.LensHolderBlock;
+import io.github.yoglappland.spectralization.block.MetamaterialDesignTableBlock;
 import io.github.yoglappland.spectralization.block.MirrorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
 import io.github.yoglappland.spectralization.block.PhotonicGradientGeneratorBlock;
@@ -37,6 +40,8 @@ import io.github.yoglappland.spectralization.client.screen.CompactedMachineScree
 import io.github.yoglappland.spectralization.client.screen.CreativeLightSourceScreen;
 import io.github.yoglappland.spectralization.client.screen.HolographicStorageCoreScreen;
 import io.github.yoglappland.spectralization.client.screen.HolographicStorageScreen;
+import io.github.yoglappland.spectralization.client.screen.LensGrindingBenchScreen;
+import io.github.yoglappland.spectralization.client.screen.MetamaterialDesignTableScreen;
 import io.github.yoglappland.spectralization.client.screen.PhotothermalGeneratorScreen;
 import io.github.yoglappland.spectralization.client.screen.SpectrometerScreen;
 import io.github.yoglappland.spectralization.client.screen.ThermalSmelterScreen;
@@ -47,6 +52,7 @@ import io.github.yoglappland.spectralization.compact.CompactMachineOverlayPublis
 import io.github.yoglappland.spectralization.item.CoatingBrushItem;
 import io.github.yoglappland.spectralization.item.CreativeBrushItem;
 import io.github.yoglappland.spectralization.item.LensItem;
+import io.github.yoglappland.spectralization.item.MetamaterialTemplateItem;
 import io.github.yoglappland.spectralization.item.OpticalFiberCoilItem;
 import io.github.yoglappland.spectralization.item.PaintBucketItem;
 import io.github.yoglappland.spectralization.item.PhosphorTubeItem;
@@ -135,6 +141,14 @@ public class Spectralization {
     public static final DeferredItem<LensItem> LENS = ITEMS.register(
             "lens",
             () -> new LensItem(new Item.Properties())
+    );
+    public static final DeferredItem<MetamaterialTemplateItem> STANDARD_METAMATERIAL_TEMPLATE = ITEMS.register(
+            "standard_metamaterial_template",
+            () -> new MetamaterialTemplateItem(new Item.Properties())
+    );
+    public static final DeferredItem<MetamaterialTemplateItem> CUSTOM_METAMATERIAL_TEMPLATE = ITEMS.register(
+            "custom_metamaterial_template",
+            () -> new MetamaterialTemplateItem(new Item.Properties())
     );
     public static final DeferredItem<OpticalFiberCoilItem> OPTICAL_FIBER_COIL = ITEMS.register(
             "optical_fiber_coil",
@@ -236,6 +250,30 @@ public class Spectralization {
 
     public static final DeferredItem<BlockItem> LENS_HOLDER_ITEM =
             ITEMS.registerSimpleBlockItem("lens_holder", LENS_HOLDER);
+
+    public static final DeferredBlock<LensGrindingBenchBlock> LENS_GRINDING_BENCH = BLOCKS.register(
+            "lens_grinding_bench",
+            () -> new LensGrindingBenchBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(2.0F, 6.0F)
+                    .sound(SoundType.STONE)
+                    .noOcclusion())
+    );
+
+    public static final DeferredItem<BlockItem> LENS_GRINDING_BENCH_ITEM =
+            ITEMS.registerSimpleBlockItem("lens_grinding_bench", LENS_GRINDING_BENCH);
+
+    public static final DeferredBlock<MetamaterialDesignTableBlock> METAMATERIAL_DESIGN_TABLE = BLOCKS.register(
+            "metamaterial_design_table",
+            () -> new MetamaterialDesignTableBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(2.0F, 6.0F)
+                    .sound(SoundType.METAL)
+                    .noOcclusion())
+    );
+
+    public static final DeferredItem<BlockItem> METAMATERIAL_DESIGN_TABLE_ITEM =
+            ITEMS.registerSimpleBlockItem("metamaterial_design_table", METAMATERIAL_DESIGN_TABLE);
 
     public static final DeferredBlock<FiberOpticInterfaceBlock> FIBER_OPTIC_INTERFACE = BLOCKS.register(
             "fiber_optic_interface",
@@ -388,6 +426,18 @@ public class Spectralization {
 
     public static final DeferredItem<BlockItem> BEAM_SPLITTER_ITEM =
             ITEMS.registerSimpleBlockItem("beam_splitter", BEAM_SPLITTER);
+
+    public static final DeferredBlock<DynamicBeamSplitterBlock> DYNAMIC_BEAM_SPLITTER = BLOCKS.register(
+            "dynamic_beam_splitter",
+            () -> new DynamicBeamSplitterBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(0.0F)
+                    .sound(SoundType.METAL)
+                    .noOcclusion())
+    );
+
+    public static final DeferredItem<BlockItem> DYNAMIC_BEAM_SPLITTER_ITEM =
+            ITEMS.registerSimpleBlockItem("dynamic_beam_splitter", DYNAMIC_BEAM_SPLITTER);
 
     public static final DeferredBlock<CreativeLightSourceBlock> CREATIVE_LIGHT_SOURCE = BLOCKS.register(
             "creative_light_source",
@@ -637,6 +687,8 @@ public class Spectralization {
                     .icon(() -> LENS.get().getDefaultInstance())
                     .displayItems((parameters, output) -> {
                         output.accept(LENS.get());
+                        output.accept(STANDARD_METAMATERIAL_TEMPLATE.get());
+                        output.accept(CUSTOM_METAMATERIAL_TEMPLATE.get());
                         output.accept(OPTICAL_FIBER_COIL.get());
                         output.accept(PHOSPHOR_DUST.get());
                         output.accept(PHOSPHOR_TUBE.get());
@@ -661,6 +713,8 @@ public class Spectralization {
                         output.accept(RAW_SILVER.get());
                         output.accept(SILVER_INGOT.get());
                         output.accept(LENS_HOLDER_ITEM.get());
+                        output.accept(LENS_GRINDING_BENCH_ITEM.get());
+                        output.accept(METAMATERIAL_DESIGN_TABLE_ITEM.get());
                         output.accept(FIBER_OPTIC_INTERFACE_ITEM.get());
                         output.accept(FIBER_RELAY_ITEM.get());
                         output.accept(HOLOGRAPHIC_STORAGE_SHELL_ITEM.get());
@@ -674,6 +728,7 @@ public class Spectralization {
                         output.accept(MIRROR_ITEM.get());
                         output.accept(DYNAMIC_MIRROR_ITEM.get());
                         output.accept(BEAM_SPLITTER_ITEM.get());
+                        output.accept(DYNAMIC_BEAM_SPLITTER_ITEM.get());
                         output.accept(CREATIVE_LIGHT_SOURCE_ITEM.get());
                         output.accept(CMOS_SENSOR_ITEM.get());
                         output.accept(PASS_THROUGH_SENSOR_ITEM.get());
@@ -704,15 +759,6 @@ public class Spectralization {
                         output.accept(RUTILE_BLOCK_ITEM.get());
                         output.accept(CORUNDUM_BLOCK_ITEM.get());
                         output.accept(FLUORITE_BLOCK_ITEM.get());
-                        output.accept(SpectralFluids.MOLTEN_SILVER.bucket().get());
-                        output.accept(SpectralFluids.MOLTEN_GOLD.bucket().get());
-                        output.accept(SpectralFluids.MOLTEN_COPPER.bucket().get());
-                        output.accept(SpectralFluids.MOLTEN_SILICA.bucket().get());
-                        output.accept(SpectralFluids.MOLTEN_ALUMINA.bucket().get());
-                        output.accept(SpectralFluids.MOLTEN_TITANIUM_DIOXIDE.bucket().get());
-                        output.accept(SpectralFluids.MOLTEN_FLUORITE.bucket().get());
-                        output.accept(SpectralFluids.MOLTEN_YTTRIUM_OXIDE.bucket().get());
-                        output.accept(SpectralFluids.MOLTEN_YAG.bucket().get());
                     })
                     .build());
 
@@ -783,13 +829,13 @@ public class Spectralization {
         );
         event.registerBlockEntity(
                 Capabilities.ItemHandler.BLOCK,
-                SpectralBlockEntities.COMPACT_MACHINE_CORE.get(),
-                (core, side) -> core.getOutputItems(side)
+                SpectralBlockEntities.METAMATERIAL_DESIGN_TABLE.get(),
+                (table, side) -> table.getItems(side)
         );
         event.registerBlockEntity(
-                Capabilities.FluidHandler.BLOCK,
-                SpectralBlockEntities.THERMAL_SMELTER.get(),
-                (smelter, side) -> smelter.getFluidHandler(side)
+                Capabilities.ItemHandler.BLOCK,
+                SpectralBlockEntities.COMPACT_MACHINE_CORE.get(),
+                (core, side) -> core.getOutputItems(side)
         );
     }
 
@@ -963,6 +1009,8 @@ public class Spectralization {
             event.register(SpectralMenus.SPECTROMETER.get(), SpectrometerScreen::new);
             event.register(SpectralMenus.PHOTOTHERMAL_GENERATOR.get(), PhotothermalGeneratorScreen::new);
             event.register(SpectralMenus.THERMAL_SMELTER.get(), ThermalSmelterScreen::new);
+            event.register(SpectralMenus.LENS_GRINDING_BENCH.get(), LensGrindingBenchScreen::new);
+            event.register(SpectralMenus.METAMATERIAL_DESIGN_TABLE.get(), MetamaterialDesignTableScreen::new);
             event.register(SpectralMenus.HOLOGRAPHIC_STORAGE.get(), HolographicStorageScreen::new);
             event.register(SpectralMenus.HOLOGRAPHIC_STORAGE_CORE.get(), HolographicStorageCoreScreen::new);
             event.register(SpectralMenus.COMPACT_MACHINE_CORE.get(), CompactMachineCoreScreen::new);

@@ -101,6 +101,19 @@ public final class SpectralGui {
         }
     }
 
+    public static void drawRightArrow(GuiGraphics graphics, int left, int centerY, int length, int color) {
+        int arrowLength = Math.max(8, length);
+        int headWidth = Math.min(8, arrowLength);
+        int headLeft = left + arrowLength - headWidth;
+        int pointX = left + arrowLength;
+        graphics.fill(left, centerY - 1, headLeft, centerY + 1, color);
+
+        for (int x = headLeft; x <= pointX; x++) {
+            int halfHeight = Math.max(0, (pointX - x) * 4 / headWidth);
+            graphics.fill(x, centerY - halfHeight, x + 1, centerY + halfHeight + 1, color);
+        }
+    }
+
     public static int tinted(int color, int alpha) {
         return ((alpha & 0xFF) << 24) | (color & 0x00FFFFFF);
     }

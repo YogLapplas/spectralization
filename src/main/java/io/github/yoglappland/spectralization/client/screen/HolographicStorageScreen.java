@@ -282,8 +282,7 @@ public class HolographicStorageScreen extends AbstractContainerScreen<Holographi
         SpectralGui.drawSlot(graphics, leftPos + resultX, topPos + resultY, SpectralSlotKind.OUTPUT);
         int arrowY = topPos + resultY + 8;
         int arrowLeft = leftPos + gridX + 64;
-        graphics.fill(arrowLeft, arrowY, arrowLeft + 36, arrowY + 2, SpectralGuiTheme.OPTICAL);
-        graphics.fill(arrowLeft + 32, arrowY - 3, arrowLeft + 38, arrowY + 5, 0x667CEAD9);
+        SpectralGui.drawRightArrow(graphics, arrowLeft, arrowY, 38, SpectralGuiTheme.OPTICAL);
     }
 
     private void updateScrollFromMouse(double mouseY) {

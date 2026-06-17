@@ -29,6 +29,7 @@ public final class BeamPathOverlayTracker {
     private static final int TOPOLOGY_COLOR_RGB = 0xFF2300;
     private static final int TOPOLOGY_WIDTH_LEVEL = 1;
     private static final int TOPOLOGY_VISUAL_LEVEL = 5;
+    private static final double TOPOLOGY_RADIUS = 1.0D / 16.0D;
     private static final double HUD_COHERENT_POWER_THRESHOLD = 1.0E-6D;
 
     public static boolean hasHudViewerNear(ServerLevel level, BlockPos pos) {
@@ -75,6 +76,8 @@ public final class BeamPathOverlayTracker {
             signature = mix(signature, segment.colorRgb());
             signature = mix(signature, segment.widthLevel());
             signature = mix(signature, segment.visualLevel());
+            signature = mix(signature, Double.doubleToLongBits(segment.startRadius()));
+            signature = mix(signature, Double.doubleToLongBits(segment.endRadius()));
         }
 
         return signature;
@@ -252,7 +255,9 @@ public final class BeamPathOverlayTracker {
                 segment.coherence() == CoherenceKind.COHERENT,
                 segment.colorRgb(),
                 Math.max(1, Math.min(8, BeamGeometryOps.widthLevel(segment.geometry().envelope()))),
-                Math.max(1, Math.min(8, segment.geometry().visualLevel()))
+                Math.max(1, Math.min(8, segment.geometry().visualLevel())),
+                Math.max(0.0D, segment.startRadius()),
+                Math.max(0.0D, segment.endRadius())
         );
     }
 
@@ -270,7 +275,9 @@ public final class BeamPathOverlayTracker {
                 true,
                 solutionColorRgb(solution, from),
                 TOPOLOGY_WIDTH_LEVEL,
-                topologyVisualLevel(coherentPower)
+                topologyVisualLevel(coherentPower),
+                TOPOLOGY_RADIUS,
+                TOPOLOGY_RADIUS
         );
     }
 

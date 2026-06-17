@@ -1,5 +1,6 @@
 package io.github.yoglappland.spectralization.item;
 
+import io.github.yoglappland.spectralization.optics.lens.LensKind;
 import io.github.yoglappland.spectralization.optics.lens.LensProfile;
 import java.util.List;
 import net.minecraft.ChatFormatting;
@@ -21,18 +22,16 @@ public class LensItem extends Item {
             TooltipFlag tooltipFlag
     ) {
         LensProfile profile = LensProfile.fromStack(stack);
+        LensKind kind = LensKind.byId(profile.tag());
 
         tooltipComponents.add(Component.translatable(
-                "item.spectralization.lens.tooltip.tag",
-                profile.tag()
+                "item.spectralization.lens.tooltip.kind",
+                Component.translatable(kind.translationKey())
         ).withStyle(ChatFormatting.GRAY));
         tooltipComponents.add(Component.translatable(
-                "item.spectralization.lens.tooltip.focal_length",
+                "item.spectralization.lens.tooltip.parameter",
+                Component.translatable(kind.parameterKey()),
                 profile.focalLength()
-        ).withStyle(ChatFormatting.GRAY));
-        tooltipComponents.add(Component.translatable(
-                "item.spectralization.lens.tooltip.aperture",
-                profile.aperture()
         ).withStyle(ChatFormatting.GRAY));
         tooltipComponents.add(Component.translatable(
                 "item.spectralization.lens.tooltip.quality",

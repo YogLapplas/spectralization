@@ -1,19 +1,19 @@
 {
   "variants": {
     "facing=north": {
-      "model": "spectralization:block/lens_holder"
-    },
-    "facing=east": {
       "model": "spectralization:block/lens_holder",
       "y": 90
     },
-    "facing=south": {
+    "facing=east": {
       "model": "spectralization:block/lens_holder",
       "y": 180
     },
-    "facing=west": {
+    "facing=south": {
       "model": "spectralization:block/lens_holder",
       "y": 270
+    },
+    "facing=west": {
+      "model": "spectralization:block/lens_holder"
     }
   }
 }

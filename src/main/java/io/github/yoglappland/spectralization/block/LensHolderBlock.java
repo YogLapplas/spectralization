@@ -41,19 +41,27 @@ public class LensHolderBlock extends Block implements EntityBlock, OpticalElemen
     private static final double LENS_REFLECTANCE = 0.02;
 
     private static final double[][] BASE_BOXES = {
-            {5.0, 0.0, 4.0, 11.0, 2.0, 12.0},
-            {4.0, 0.0, 5.0, 12.0, 2.0, 11.0},
-            {7.0, 2.0, 7.0, 9.0, 8.0, 9.0},
-            {4.0, 8.0, 7.0, 6.0, 16.0, 9.0},
-            {10.0, 8.0, 7.0, 12.0, 16.0, 9.0},
-            {5.0, 8.0, 7.0, 11.0, 10.0, 9.0},
-            {5.0, 14.0, 7.0, 11.0, 16.0, 9.0}
+            {0.0, 0.0, 5.0, 16.0, 1.0, 11.0},
+            {1.0, 0.0, 3.0, 15.0, 1.0, 13.0},
+            {2.0, 0.0, 2.0, 14.0, 1.0, 14.0},
+            {3.0, 0.0, 1.0, 13.0, 1.0, 15.0},
+            {5.0, 0.0, 0.0, 11.0, 1.0, 16.0},
+            {4.0, 1.0, 3.0, 12.0, 2.0, 13.0},
+            {5.0, 2.0, 6.0, 11.0, 3.0, 10.0},
+            {7.0, 1.0, 1.0, 9.0, 3.0, 15.0},
+            {7.0, 13.0, 1.0, 9.0, 15.0, 15.0},
+            {7.0, 3.0, 1.0, 9.0, 13.0, 3.0},
+            {7.0, 3.0, 13.0, 9.0, 13.0, 15.0},
+            {7.0, 3.0, 3.0, 9.0, 5.0, 5.0},
+            {7.0, 11.0, 3.0, 9.0, 13.0, 5.0},
+            {7.0, 3.0, 11.0, 9.0, 5.0, 13.0},
+            {7.0, 11.0, 11.0, 9.0, 13.0, 13.0}
     };
 
-    private static final VoxelShape NORTH_SHAPE = buildShape(0.0);
-    private static final VoxelShape EAST_SHAPE = buildShape(90.0);
-    private static final VoxelShape SOUTH_SHAPE = buildShape(180.0);
-    private static final VoxelShape WEST_SHAPE = buildShape(270.0);
+    private static final VoxelShape NORTH_SHAPE = buildShape(90.0);
+    private static final VoxelShape EAST_SHAPE = buildShape(180.0);
+    private static final VoxelShape SOUTH_SHAPE = buildShape(270.0);
+    private static final VoxelShape WEST_SHAPE = buildShape(0.0);
 
     public LensHolderBlock(Properties properties) {
         super(properties);

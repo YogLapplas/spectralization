@@ -3,6 +3,7 @@ package io.github.yoglappland.spectralization.client.compact;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import io.github.yoglappland.spectralization.Spectralization;
+import io.github.yoglappland.spectralization.client.ClientHudState;
 import io.github.yoglappland.spectralization.network.CompactMachineAnimationPayload;
 import io.github.yoglappland.spectralization.network.CompactMachineOverlayPayload;
 import net.minecraft.client.Minecraft;
@@ -68,6 +69,7 @@ public final class CompactMachineOverlayRenderEvents {
         if (minecraft.level == null || minecraft.player == null) {
             ClientCompactMachineOverlayCache.clear();
             ClientCompactMachineAnimationCache.clear();
+            ClientCompactMachineWorkAreaOverlayCache.clear();
             return;
         }
 
@@ -77,7 +79,8 @@ public final class CompactMachineOverlayRenderEvents {
                 minecraft.level.getGameTime(),
                 event.getPartialTick().getGameTimeDeltaPartialTick(false)
         );
-        if (segments.isEmpty() && workArea.isEmpty() && animations.isEmpty()) {
+        boolean hudVisible = ClientHudState.visible();
+        if ((!hudVisible || segments.isEmpty()) && (!hudVisible || workArea.isEmpty()) && animations.isEmpty()) {
             return;
         }
 
@@ -90,11 +93,14 @@ public final class CompactMachineOverlayRenderEvents {
         poseStack.translate(-cameraPosition.x, -cameraPosition.y, -cameraPosition.z);
         PoseStack.Pose pose = poseStack.last();
 
-        for (CompactMachineOverlayPayload.Segment segment : segments) {
-            renderSegment(consumer, pose, segment);
+        if (hudVisible) {
+            for (CompactMachineOverlayPayload.Segment segment : segments) {
+                renderSegment(consumer, pose, segment);
+            }
+
+            workArea.ifPresent(area -> renderWorkArea(consumer, pose, area));
         }
 
-        workArea.ifPresent(area -> renderWorkArea(consumer, pose, area));
         for (ClientCompactMachineAnimationCache.ActiveAnimation animation : animations) {
             renderCompressionProjection(consumer, pose, animation);
         }

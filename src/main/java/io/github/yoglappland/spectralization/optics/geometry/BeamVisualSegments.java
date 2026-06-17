@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization.optics.geometry;
 
 import io.github.yoglappland.spectralization.optics.BeamPacket;
+import io.github.yoglappland.spectralization.optics.BeamEnvelope;
 import io.github.yoglappland.spectralization.optics.CoherenceKind;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalTrace;
 import io.github.yoglappland.spectralization.optics.OpticalPropagationEdge;
@@ -36,6 +37,11 @@ public final class BeamVisualSegments {
         BeamPacket beam = edge.beam();
         Direction direction = edge.from().side();
         CoherenceKind coherence = dominantCoherence(beam);
+        double distance = distance(edge.from().pos(), edge.to().pos());
+        BeamEnvelope startEnvelope = beam.envelope();
+        BeamEnvelope endEnvelope = BeamGeometryOps.propagate(startEnvelope, distance);
+        BeamGeometrySample startGeometry = BeamGeometryOps.sample(startEnvelope, beam.totalPower());
+        BeamGeometrySample endGeometry = BeamGeometryOps.sample(endEnvelope, beam.totalPower());
 
         return new BeamVisualSegment(
                 edge.from().pos(),
@@ -43,7 +49,9 @@ public final class BeamVisualSegments {
                 direction,
                 coherence,
                 visibilityKind,
-                BeamGeometryOps.sample(beam.envelope(), beam.totalPower()),
+                strongerGeometry(startGeometry, endGeometry),
+                startEnvelope.radius(),
+                endEnvelope.radius(),
                 beam.totalPower(),
                 visibleColorRgb(beam, coherence)
         );
@@ -66,6 +74,17 @@ public final class BeamVisualSegments {
 
     private static int visibleColorRgb(BeamPacket beam, CoherenceKind coherence) {
         return SpectralColorMap.mixVisibleRgbForComponents(beam.components(), coherence, DEFAULT_BEAM_RGB);
+    }
+
+    private static BeamGeometrySample strongerGeometry(BeamGeometrySample start, BeamGeometrySample end) {
+        return end.visualLevel() > start.visualLevel() ? end : start;
+    }
+
+    private static double distance(net.minecraft.core.BlockPos from, net.minecraft.core.BlockPos to) {
+        double dx = to.getX() - from.getX();
+        double dy = to.getY() - from.getY();
+        double dz = to.getZ() - from.getZ();
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
     private BeamVisualSegments() {

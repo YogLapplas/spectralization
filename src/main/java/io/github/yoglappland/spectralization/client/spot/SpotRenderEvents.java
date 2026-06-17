@@ -3,6 +3,7 @@ package io.github.yoglappland.spectralization.client.spot;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import io.github.yoglappland.spectralization.Spectralization;
+import io.github.yoglappland.spectralization.client.ClientHudState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -34,7 +35,8 @@ public final class SpotRenderEvents {
     @SubscribeEvent
     public static void renderSpots(RenderLevelStageEvent event) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS
-                || Minecraft.getInstance().level == null) {
+                || Minecraft.getInstance().level == null
+                || !ClientHudState.visible()) {
             return;
         }
 

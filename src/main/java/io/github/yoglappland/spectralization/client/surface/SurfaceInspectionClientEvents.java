@@ -3,6 +3,7 @@ package io.github.yoglappland.spectralization.client.surface;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import io.github.yoglappland.spectralization.Spectralization;
+import io.github.yoglappland.spectralization.client.ClientHudState;
 import io.github.yoglappland.spectralization.network.SurfaceInspectionRequestPayload;
 import io.github.yoglappland.spectralization.network.SurfaceInspectionResponsePayload;
 import net.minecraft.client.Minecraft;
@@ -45,6 +46,10 @@ public final class SurfaceInspectionClientEvents {
             return;
         }
 
+        if (!ClientHudState.visible()) {
+            return;
+        }
+
         long gameTime = minecraft.level.getGameTime();
         BlockHitResult hit = minecraft.hitResult instanceof BlockHitResult blockHit && blockHit.getType() == HitResult.Type.BLOCK
                 ? blockHit
@@ -69,7 +74,7 @@ public final class SurfaceInspectionClientEvents {
     public static void renderHud(RenderGuiEvent.Post event) {
         Minecraft minecraft = Minecraft.getInstance();
 
-        if (minecraft.level == null || minecraft.player == null || !hasInspectionHelmet(minecraft)) {
+        if (minecraft.level == null || minecraft.player == null || !ClientHudState.visible() || !hasInspectionHelmet(minecraft)) {
             return;
         }
 
@@ -102,6 +107,7 @@ public final class SurfaceInspectionClientEvents {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS
                 || minecraft.level == null
                 || minecraft.player == null
+                || !ClientHudState.visible()
                 || !hasInspectionHelmet(minecraft)) {
             return;
         }

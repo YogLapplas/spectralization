@@ -1,0 +1,12 @@
+{
+  "parent": "minecraft:block/cube",
+  "textures": {
+    "particle": "spectralization:block/photonic_gradient_generator_body",
+    "down": "spectralization:block/power_port",
+    "up": "spectralization:block/photonic_gradient_generator_core",
+    "north": "spectralization:block/photonic_gradient_generator_body",
+    "east": "spectralization:block/photonic_gradient_generator_body",
+    "south": "spectralization:block/photonic_gradient_generator_body",
+    "west": "spectralization:block/photonic_gradient_generator_body"
+  }
+}

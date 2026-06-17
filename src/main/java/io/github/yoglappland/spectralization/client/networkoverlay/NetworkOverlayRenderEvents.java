@@ -3,6 +3,7 @@ package io.github.yoglappland.spectralization.client.networkoverlay;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import io.github.yoglappland.spectralization.Spectralization;
+import io.github.yoglappland.spectralization.client.ClientHudState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
@@ -25,6 +26,7 @@ public final class NetworkOverlayRenderEvents {
     public static void renderNetworkOverlay(RenderLevelStageEvent event) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS
                 || Minecraft.getInstance().level == null
+                || !ClientHudState.visible()
                 || !ClientNetworkOverlayCache.isVisible()) {
             return;
         }

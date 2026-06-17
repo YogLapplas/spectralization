@@ -31,6 +31,11 @@ public final class ClientNetworkOverlayCache {
         return visible ? positions : List.of();
     }
 
+    public static void clear() {
+        visible = false;
+        positions = Set.of();
+    }
+
     private ClientNetworkOverlayCache() {
     }
 }

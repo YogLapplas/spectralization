@@ -4,6 +4,7 @@
     "spectralization:mirror",
     "spectralization:dynamic_mirror",
     "spectralization:beam_splitter",
+    "spectralization:dynamic_beam_splitter",
     "spectralization:silver_glass"
   ]
 }

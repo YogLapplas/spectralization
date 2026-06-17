@@ -118,7 +118,7 @@ public final class ClientSpotCache {
         activeSpots = List.copyOf(new ArrayList<>(mergedSpots.values()));
     }
 
-    private static void clear() {
+    public static void clear() {
         SPOTS_BY_OWNER.clear();
         activeSpots = List.of();
         lastLevel = null;

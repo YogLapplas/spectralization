@@ -30,7 +30,6 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 public class ThermalSmelterBlock extends Block implements EntityBlock, OpticalReceiver, PhotothermalReceiverBlock {
     public static final Direction PHOTOTHERMAL_INPUT_SIDE = Direction.NORTH;
     public static final Direction ITEM_PORT_SIDE = Direction.SOUTH;
-    public static final Direction FLUID_PORT_SIDE = Direction.EAST;
     public static final Direction RESERVED_FIBER_SIDE = Direction.DOWN;
 
     private static final VoxelShape SHAPE = Block.box(0.0, 0.0, 0.0, 16.0, 16.0, 16.0);

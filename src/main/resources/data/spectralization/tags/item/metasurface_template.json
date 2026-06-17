@@ -1,4 +1,7 @@
 {
   "replace": false,
-  "values": []
+  "values": [
+    "#spectralization:standard_metamaterial_template",
+    "#spectralization:custom_metamaterial_template"
+  ]
 }

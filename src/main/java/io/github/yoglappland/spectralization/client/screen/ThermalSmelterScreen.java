@@ -23,12 +23,12 @@ public class ThermalSmelterScreen extends SpectralMachineScreen<ThermalSmelterMe
         panel(graphics, "machine_panel", 18, 22, 220, 74);
         panel(graphics, "inventory_panel", 42, 104, 172, 104);
         slot(graphics, "slot_input", 67, 44, SpectralSlotKind.INPUT);
-        slot(graphics, "slot_container", 67, 71, SpectralSlotKind.CONTAINER);
+        slot(graphics, "slot_additive", 67, 71, SpectralSlotKind.OPTICAL);
         slot(graphics, "slot_output", 192, 57, SpectralSlotKind.OUTPUT);
         playerInventorySlots(graphics, INVENTORY_X, INVENTORY_Y);
         renderProgressBar(graphics);
         renderHeatBar(graphics);
-        renderFluidBar(graphics);
+        renderFlowArrow(graphics);
     }
 
     @Override
@@ -37,8 +37,7 @@ public class ThermalSmelterScreen extends SpectralMachineScreen<ThermalSmelterMe
         text(graphics, "temperature_text", "Temp: " + data(ThermalSmelterBlockEntity.DATA_TEMPERATURE) + " K", 112, 34, 90);
         text(graphics, "heat_text", "Heat: " + data(ThermalSmelterBlockEntity.DATA_HEAT)
                 + "/" + data(ThermalSmelterBlockEntity.DATA_MAX_HEAT), 0, 212, 4);
-        text(graphics, "fluid_text", "Fluid: " + data(ThermalSmelterBlockEntity.DATA_FLUID_AMOUNT)
-                + "/" + data(ThermalSmelterBlockEntity.DATA_FLUID_CAPACITY) + " mB", 112, 78, 90);
+        text(graphics, "process_text", "Solid output", 112, 78, 90);
         mutedText(graphics, "optical_heat_text", "Optical heat: " + (data(ThermalSmelterBlockEntity.DATA_HEAT_POWER_X100) / 100.0) + " SP/t", 0, 212, 4);
     }
 
@@ -54,10 +53,14 @@ public class ThermalSmelterScreen extends SpectralMachineScreen<ThermalSmelterMe
         verticalBar(graphics, "heat_bar", 36, 36, 10, 54, heat, maxHeat, SpectralBarKind.HEAT);
     }
 
-    private void renderFluidBar(GuiGraphics graphics) {
-        int capacity = Math.max(1, data(ThermalSmelterBlockEntity.DATA_FLUID_CAPACITY));
-        int amount = data(ThermalSmelterBlockEntity.DATA_FLUID_AMOUNT);
-        verticalBar(graphics, "fluid_bar", 156, 36, 10, 54, amount, capacity, SpectralBarKind.FLUID);
+    private void renderFlowArrow(GuiGraphics graphics) {
+        io.github.yoglappland.spectralization.client.gui.SpectralGui.drawRightArrow(
+                graphics,
+                leftPos + 98,
+                topPos + 67,
+                50,
+                io.github.yoglappland.spectralization.client.gui.SpectralGuiTheme.OPTICAL
+        );
     }
 
     private int data(int index) {

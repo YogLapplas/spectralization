@@ -7,6 +7,8 @@ import io.github.yoglappland.spectralization.menu.CompactedMachineMenu;
 import io.github.yoglappland.spectralization.menu.CreativeLightSourceMenu;
 import io.github.yoglappland.spectralization.menu.HolographicStorageCoreMenu;
 import io.github.yoglappland.spectralization.menu.HolographicStorageMenu;
+import io.github.yoglappland.spectralization.menu.LensGrindingBenchMenu;
+import io.github.yoglappland.spectralization.menu.MetamaterialDesignTableMenu;
 import io.github.yoglappland.spectralization.menu.PhotothermalGeneratorMenu;
 import io.github.yoglappland.spectralization.menu.SpectrometerMenu;
 import io.github.yoglappland.spectralization.menu.ThermalSmelterMenu;
@@ -41,6 +43,14 @@ public final class SpectralMenus {
     public static final DeferredHolder<MenuType<?>, MenuType<ThermalSmelterMenu>> THERMAL_SMELTER =
             MENU_TYPES.register("thermal_smelter", () ->
                     new MenuType<>(ThermalSmelterMenu::new, FeatureFlags.DEFAULT_FLAGS));
+
+    public static final DeferredHolder<MenuType<?>, MenuType<LensGrindingBenchMenu>> LENS_GRINDING_BENCH =
+            MENU_TYPES.register("lens_grinding_bench", () ->
+                    new MenuType<>(LensGrindingBenchMenu::new, FeatureFlags.DEFAULT_FLAGS));
+
+    public static final DeferredHolder<MenuType<?>, MenuType<MetamaterialDesignTableMenu>> METAMATERIAL_DESIGN_TABLE =
+            MENU_TYPES.register("metamaterial_design_table", () ->
+                    new MenuType<>(MetamaterialDesignTableMenu::new, FeatureFlags.DEFAULT_FLAGS));
 
     public static final DeferredHolder<MenuType<?>, MenuType<HolographicStorageMenu>> HOLOGRAPHIC_STORAGE =
             MENU_TYPES.register("holographic_storage", () ->

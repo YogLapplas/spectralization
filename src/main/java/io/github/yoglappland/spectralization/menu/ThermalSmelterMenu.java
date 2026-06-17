@@ -10,7 +10,6 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.inventory.SimpleContainerData;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.items.ItemStackHandler;
 import net.neoforged.neoforge.items.SlotItemHandler;
@@ -46,7 +45,7 @@ public class ThermalSmelterMenu extends AbstractContainerMenu {
         this.data = data;
 
         addSlot(new SlotItemHandler(items, ThermalSmelterBlockEntity.SLOT_INPUT, 67, 44));
-        addSlot(new SlotItemHandler(items, ThermalSmelterBlockEntity.SLOT_CONTAINER, 67, 71));
+        addSlot(new SlotItemHandler(items, ThermalSmelterBlockEntity.SLOT_ADDITIVE, 67, 71));
         addSlot(new SlotItemHandler(items, ThermalSmelterBlockEntity.SLOT_OUTPUT, 192, 57));
         addPlayerInventory(inventory, 48, 124);
         addDataSlots(data);
@@ -72,12 +71,12 @@ public class ThermalSmelterMenu extends AbstractContainerMenu {
             if (!moveItemStackTo(stack, PLAYER_INVENTORY_START, HOTBAR_END, true)) {
                 return ItemStack.EMPTY;
             }
-        } else if (ThermalSmelterRecipe.isMeltable(stack)) {
+        } else if (ThermalSmelterRecipe.isProcessable(stack)) {
             if (!moveItemStackTo(stack, ThermalSmelterBlockEntity.SLOT_INPUT, ThermalSmelterBlockEntity.SLOT_INPUT + 1, false)) {
                 return ItemStack.EMPTY;
             }
-        } else if (stack.is(Items.BUCKET)) {
-            if (!moveItemStackTo(stack, ThermalSmelterBlockEntity.SLOT_CONTAINER, ThermalSmelterBlockEntity.SLOT_CONTAINER + 1, false)) {
+        } else if (ThermalSmelterRecipe.isPotentialAdditive(stack)) {
+            if (!moveItemStackTo(stack, ThermalSmelterBlockEntity.SLOT_ADDITIVE, ThermalSmelterBlockEntity.SLOT_ADDITIVE + 1, false)) {
                 return ItemStack.EMPTY;
             }
         } else if (index >= PLAYER_INVENTORY_START && index < PLAYER_INVENTORY_END) {

@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "spectralization:block/metamaterial_design_table"
+    }
+  }
+}

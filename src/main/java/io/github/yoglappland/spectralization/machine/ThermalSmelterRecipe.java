@@ -1,7 +1,6 @@
 package io.github.yoglappland.spectralization.machine;
 
 import io.github.yoglappland.spectralization.Spectralization;
-import io.github.yoglappland.spectralization.registry.SpectralFluids;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Predicate;
@@ -12,75 +11,158 @@ import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.material.Fluid;
-import net.neoforged.neoforge.fluids.FluidStack;
+import net.minecraft.world.level.ItemLike;
 
 public record ThermalSmelterRecipe(
         Predicate<ItemStack> ingredient,
-        Supplier<? extends Fluid> fluid,
-        int amount,
+        Predicate<ItemStack> additive,
+        Supplier<ItemStack> result,
+        int additiveCost,
         int minimumTemperature,
         double heatCost,
         int processTicks
 ) {
     private static final List<ThermalSmelterRecipe> RECIPES = List.of(
-            tagged(c("ingots/silver"), SpectralFluids.MOLTEN_SILVER.still()::get, 250, 1235, 180.0, 120),
-            tagged(c("raw_materials/silver"), SpectralFluids.MOLTEN_SILVER.still()::get, 250, 1235, 220.0, 150),
-            tagged(c("ingots/gold"), SpectralFluids.MOLTEN_GOLD.still()::get, 250, 1337, 190.0, 130),
-            tagged(c("ingots/copper"), SpectralFluids.MOLTEN_COPPER.still()::get, 250, 1358, 170.0, 120),
-            item(Items.GLASS, SpectralFluids.MOLTEN_SILICA.still()::get, 250, 1980, 310.0, 180),
-            item(Items.SAND, SpectralFluids.MOLTEN_SILICA.still()::get, 125, 1980, 210.0, 160),
-            item(Items.RED_SAND, SpectralFluids.MOLTEN_SILICA.still()::get, 125, 1980, 210.0, 160),
-            tagged(c("dusts/titanium_dioxide"), SpectralFluids.MOLTEN_TITANIUM_DIOXIDE.still()::get, 250, 2110, 360.0, 190),
-            tagged(c("gems/rutile"), SpectralFluids.MOLTEN_TITANIUM_DIOXIDE.still()::get, 250, 2110, 400.0, 220),
-            tagged(c("dusts/alumina"), SpectralFluids.MOLTEN_ALUMINA.still()::get, 250, 2320, 450.0, 220),
-            tagged(c("gems/corundum"), SpectralFluids.MOLTEN_ALUMINA.still()::get, 250, 2320, 520.0, 260),
-            tagged(c("gems/ruby"), SpectralFluids.MOLTEN_ALUMINA.still()::get, 250, 2320, 520.0, 260),
-            tagged(c("gems/fluorite"), SpectralFluids.MOLTEN_FLUORITE.still()::get, 250, 1680, 260.0, 150),
-            tagged(c("dusts/yttrium_oxide"), SpectralFluids.MOLTEN_YTTRIUM_OXIDE.still()::get, 250, 2420, 520.0, 260),
-            tagged(c("gems/yag"), SpectralFluids.MOLTEN_YAG.still()::get, 250, 2240, 470.0, 240)
+            tagged(c("raw_materials/silver"), Spectralization.SILVER_INGOT, 1235, 220.0, 150),
+            item(Items.SAND, Items.GLASS, 1600, 180.0, 120),
+            item(Items.RED_SAND, Items.GLASS, 1600, 180.0, 120),
+            itemWithAdditive(
+                    Items.GLASS,
+                    stack -> stack.is(c("ingots/silver")) || stack.is(Spectralization.SILVER_INGOT.get()),
+                    Spectralization.SILVER_GLASS_ITEM,
+                    1,
+                    1350,
+                    240.0,
+                    160
+            ),
+            tagged(c("gems/rutile"), Spectralization.TITANIUM_DIOXIDE_DUST, 2110, 360.0, 190),
+            tagged(c("gems/corundum"), Spectralization.ALUMINA_DUST, 2320, 450.0, 220),
+            tagged(c("gems/ruby"), Spectralization.ALUMINA_DUST, 2320, 520.0, 260),
+            taggedWithAdditive(
+                    c("dusts/yttrium_oxide"),
+                    stack -> stack.is(Spectralization.ALUMINA_DUST.get()) || stack.is(c("dusts/alumina")),
+                    Spectralization.YAG_CRYSTAL,
+                    1,
+                    2240,
+                    470.0,
+                    240
+            )
     );
 
-    public static Optional<ThermalSmelterRecipe> find(ItemStack stack) {
-        if (stack.isEmpty()) {
+    public static Optional<ThermalSmelterRecipe> find(ItemStack input, ItemStack additive) {
+        if (input.isEmpty()) {
             return Optional.empty();
         }
 
-        return RECIPES.stream().filter(recipe -> recipe.matches(stack)).findFirst();
+        return RECIPES.stream().filter(recipe -> recipe.matches(input, additive)).findFirst();
+    }
+
+    public static boolean isProcessable(ItemStack stack) {
+        return !stack.isEmpty() && RECIPES.stream().anyMatch(recipe -> recipe.matchesIngredient(stack));
+    }
+
+    public static boolean isPotentialAdditive(ItemStack stack) {
+        return !stack.isEmpty() && RECIPES.stream().anyMatch(recipe -> recipe.additiveCost > 0 && recipe.additive.test(stack));
     }
 
     public static boolean isMeltable(ItemStack stack) {
-        return find(stack).isPresent();
+        return isProcessable(stack);
     }
 
-    public boolean matches(ItemStack stack) {
+    public boolean matches(ItemStack input, ItemStack additiveStack) {
+        return matchesIngredient(input) && hasAdditive(additiveStack);
+    }
+
+    public boolean matchesIngredient(ItemStack stack) {
         return ingredient.test(stack);
     }
 
-    public FluidStack resultStack() {
-        return new FluidStack(fluid.get(), amount);
+    public ItemStack resultStack() {
+        return result.get().copy();
+    }
+
+    public boolean consumesAdditive() {
+        return additiveCost > 0;
+    }
+
+    private boolean hasAdditive(ItemStack stack) {
+        return additiveCost <= 0 || (!stack.isEmpty() && stack.getCount() >= additiveCost && additive.test(stack));
     }
 
     private static ThermalSmelterRecipe item(
             Item item,
-            Supplier<? extends Fluid> fluid,
-            int amount,
+            ItemLike result,
             int minimumTemperature,
             double heatCost,
             int processTicks
     ) {
-        return new ThermalSmelterRecipe(stack -> stack.is(item), fluid, amount, minimumTemperature, heatCost, processTicks);
+        return new ThermalSmelterRecipe(
+                stack -> stack.is(item),
+                ItemStack::isEmpty,
+                () -> new ItemStack(result),
+                0,
+                minimumTemperature,
+                heatCost,
+                processTicks
+        );
     }
 
     private static ThermalSmelterRecipe tagged(
             TagKey<Item> tag,
-            Supplier<? extends Fluid> fluid,
-            int amount,
+            Supplier<? extends ItemLike> result,
             int minimumTemperature,
             double heatCost,
             int processTicks
     ) {
-        return new ThermalSmelterRecipe(stack -> stack.is(tag), fluid, amount, minimumTemperature, heatCost, processTicks);
+        return new ThermalSmelterRecipe(
+                stack -> stack.is(tag),
+                ItemStack::isEmpty,
+                () -> new ItemStack(result.get()),
+                0,
+                minimumTemperature,
+                heatCost,
+                processTicks
+        );
+    }
+
+    private static ThermalSmelterRecipe itemWithAdditive(
+            Item item,
+            Predicate<ItemStack> additive,
+            Supplier<? extends ItemLike> result,
+            int additiveCost,
+            int minimumTemperature,
+            double heatCost,
+            int processTicks
+    ) {
+        return new ThermalSmelterRecipe(
+                stack -> stack.is(item),
+                additive,
+                () -> new ItemStack(result.get()),
+                additiveCost,
+                minimumTemperature,
+                heatCost,
+                processTicks
+        );
+    }
+
+    private static ThermalSmelterRecipe taggedWithAdditive(
+            TagKey<Item> tag,
+            Predicate<ItemStack> additive,
+            Supplier<? extends ItemLike> result,
+            int additiveCost,
+            int minimumTemperature,
+            double heatCost,
+            int processTicks
+    ) {
+        return new ThermalSmelterRecipe(
+                stack -> stack.is(tag),
+                additive,
+                () -> new ItemStack(result.get()),
+                additiveCost,
+                minimumTemperature,
+                heatCost,
+                processTicks
+        );
     }
 
     private static TagKey<Item> c(String path) {
@@ -88,7 +170,7 @@ public record ThermalSmelterRecipe(
     }
 
     public ThermalSmelterRecipe {
-        if (amount <= 0 || processTicks <= 0) {
+        if (additiveCost < 0 || processTicks <= 0) {
             throw new IllegalArgumentException("Thermal smelter recipes require positive output and time");
         }
     }

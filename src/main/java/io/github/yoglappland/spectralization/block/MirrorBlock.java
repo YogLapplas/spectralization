@@ -33,10 +33,32 @@ public class MirrorBlock extends Block implements OpticalElement {
     private static final double REFLECTANCE = 0.9;
 
     private static final double[][] BASE_BOXES = {
-            {5.0, 0.0, 4.0, 11.0, 2.0, 12.0},
-            {4.0, 0.0, 5.0, 12.0, 2.0, 11.0},
-            {7.0, 2.0, 7.0, 9.0, 8.0, 9.0},
-            {5.0, 8.0, 7.0, 11.0, 16.0, 9.0}
+            {0.0, 0.0, 5.0, 16.0, 1.0, 11.0},
+            {1.0, 0.0, 3.0, 15.0, 1.0, 5.0},
+            {2.0, 0.0, 2.0, 14.0, 1.0, 3.0},
+            {3.0, 0.0, 1.0, 13.0, 1.0, 2.0},
+            {1.0, 0.0, 11.0, 15.0, 1.0, 13.0},
+            {2.0, 0.0, 13.0, 14.0, 1.0, 14.0},
+            {5.0, 0.0, 0.0, 11.0, 1.0, 1.0},
+            {3.0, 0.0, 14.0, 13.0, 1.0, 15.0},
+            {5.0, 0.0, 15.0, 11.0, 1.0, 16.0}
+    };
+
+    private static final double[][] OPTIC_BOXES = {
+            {7.0, 1.0, 1.0, 9.0, 3.0, 15.0},
+            {7.0, 3.0, 13.0, 9.0, 13.0, 15.0},
+            {7.0, 3.0, 1.0, 9.0, 13.0, 3.0},
+            {7.0, 13.0, 1.0, 9.0, 15.0, 15.0},
+            {4.0, 1.0, 3.0, 7.0, 2.0, 13.0},
+            {9.0, 1.0, 3.0, 12.0, 2.0, 13.0},
+            {7.5, 3.0, 3.0, 8.5, 13.0, 13.0},
+            {5.0, 2.0, 6.0, 7.0, 3.0, 10.0},
+            {9.0, 2.0, 6.0, 11.0, 3.0, 10.0}
+    };
+
+    private static final double[][] DIAGONAL_BOXES = {
+            {0.0, 0.0, 0.0, 16.0, 1.0, 16.0},
+            {3.0, 1.0, 3.0, 13.0, 15.0, 13.0}
     };
 
     private static final VoxelShape[] SHAPES = buildShapes();
@@ -134,11 +156,15 @@ public class MirrorBlock extends Block implements OpticalElement {
         builder.add(ROTATION);
     }
 
-    private static void rotateMirror(BlockState state, Level level, BlockPos pos) {
+    protected static void rotateMirror(BlockState state, Level level, BlockPos pos) {
         if (!level.isClientSide) {
-            level.setBlock(pos, state.setValue(ROTATION, (state.getValue(ROTATION) + 1) & 7), 3);
+            level.setBlock(pos, rotateOnce(state), 3);
             OpticalTraceCache.markChanged(level, pos, OpticalDirtyKind.TOPOLOGY);
         }
+    }
+
+    protected static BlockState rotateOnce(BlockState state) {
+        return state.setValue(ROTATION, (state.getValue(ROTATION) + 1) & 7);
     }
 
     private static int getPlacementRotation(Direction direction) {
@@ -151,14 +177,38 @@ public class MirrorBlock extends Block implements OpticalElement {
         for (int rotation = 0; rotation < shapes.length; rotation++) {
             VoxelShape shape = Shapes.empty();
 
+            if ((rotation & 1) == 1) {
+                for (double[] box : DIAGONAL_BOXES) {
+                    shape = Shapes.or(shape, Block.box(box[0], box[1], box[2], box[3], box[4], box[5]));
+                }
+
+                shapes[rotation] = shape.optimize();
+                continue;
+            }
+
+            double baseDegrees = baseModelRotationDegrees(rotation);
+            double opticDegrees = opticModelRotationDegrees(rotation);
+
             for (double[] box : BASE_BOXES) {
-                shape = Shapes.or(shape, rotateBox(box, -45.0 * rotation));
+                shape = Shapes.or(shape, rotateBox(box, baseDegrees));
+            }
+
+            for (double[] box : OPTIC_BOXES) {
+                shape = Shapes.or(shape, rotateBox(box, opticDegrees));
             }
 
             shapes[rotation] = shape.optimize();
         }
 
         return shapes;
+    }
+
+    private static double baseModelRotationDegrees(int rotation) {
+        return 90.0 * (((rotation >> 1) + 1) & 3);
+    }
+
+    private static double opticModelRotationDegrees(int rotation) {
+        return baseModelRotationDegrees(rotation) - (rotation % 2 == 0 ? 0.0 : 45.0);
     }
 
     private static VoxelShape rotateBox(double[] box, double degrees) {

@@ -25,6 +25,9 @@ sourceSets.main.resources {
     exclude("**/*.bbmodel") // BlockBench project files
     exclude("src/generated/**/.cache") // datagen cache files
     exclude("spectralization (1).png") // local duplicate/reference image
+    exclude("assets/spectralization/**/backup*/**") // local model backups
+    exclude("assets/spectralization/**/* - Copy.json") // editor duplicate model files
+    exclude("assets/spectralization/**/*_backup.png") // editor duplicate textures
 }
 
 repositories {

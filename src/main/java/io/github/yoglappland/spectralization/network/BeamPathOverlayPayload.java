@@ -56,7 +56,9 @@ public record BeamPathOverlayPayload(int ownerId, List<Segment> segments) implem
             boolean coherent,
             int colorRgb,
             int widthLevel,
-            int visualLevel
+            int visualLevel,
+            double startRadius,
+            double endRadius
     ) {
         private static Segment read(RegistryFriendlyByteBuf buffer) {
             return new Segment(
@@ -66,7 +68,9 @@ public record BeamPathOverlayPayload(int ownerId, List<Segment> segments) implem
                     buffer.readBoolean(),
                     buffer.readVarInt(),
                     buffer.readVarInt(),
-                    buffer.readVarInt()
+                    buffer.readVarInt(),
+                    buffer.readDouble(),
+                    buffer.readDouble()
             );
         }
 
@@ -78,6 +82,8 @@ public record BeamPathOverlayPayload(int ownerId, List<Segment> segments) implem
             buffer.writeVarInt(colorRgb);
             buffer.writeVarInt(widthLevel);
             buffer.writeVarInt(visualLevel);
+            buffer.writeDouble(startRadius);
+            buffer.writeDouble(endRadius);
         }
     }
 }

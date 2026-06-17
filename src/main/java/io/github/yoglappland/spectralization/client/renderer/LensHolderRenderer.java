@@ -35,9 +35,9 @@ public class LensHolderRenderer implements BlockEntityRenderer<LensHolderBlockEn
         }
 
         poseStack.pushPose();
-        poseStack.translate(0.5, 0.75, 0.5);
+        poseStack.translate(0.5, 0.5, 0.5);
         poseStack.mulPose(Axis.YP.rotationDegrees(getYRotation(blockEntity.getBlockState().getValue(LensHolderBlock.FACING)) + 180.0F));
-        poseStack.scale(0.28F, 0.28F, 0.28F);
+        poseStack.scale(0.75F, 0.75F, 0.75F);
         this.itemRenderer.renderStatic(lens, ItemDisplayContext.FIXED, packedLight, packedOverlay, poseStack, bufferSource, null, 0);
         poseStack.popPose();
     }

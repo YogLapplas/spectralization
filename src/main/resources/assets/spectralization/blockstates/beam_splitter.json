@@ -2,67 +2,67 @@
   "multipart": [
     {
       "when": { "rotation": "0" },
-      "apply": { "model": "spectralization:block/beam_splitter_straight_frame" }
+      "apply": { "model": "spectralization:block/beam_splitter_straight", "y": 90 }
     },
     {
       "when": { "rotation": "0" },
-      "apply": { "model": "spectralization:block/beam_splitter_straight_mirror" }
-    },
-    {
-      "when": { "rotation": "1" },
-      "apply": { "model": "spectralization:block/beam_splitter_diagonal_frame" }
-    },
-    {
-      "when": { "rotation": "1" },
-      "apply": { "model": "spectralization:block/beam_splitter_diagonal_mirror" }
-    },
-    {
-      "when": { "rotation": "2" },
-      "apply": { "model": "spectralization:block/beam_splitter_straight_frame", "y": 90 }
-    },
-    {
-      "when": { "rotation": "2" },
       "apply": { "model": "spectralization:block/beam_splitter_straight_mirror", "y": 90 }
     },
     {
-      "when": { "rotation": "3" },
-      "apply": { "model": "spectralization:block/beam_splitter_diagonal_frame", "y": 90 }
+      "when": { "rotation": "1" },
+      "apply": { "model": "spectralization:block/beam_splitter_diagonal", "y": 90 }
     },
     {
-      "when": { "rotation": "3" },
+      "when": { "rotation": "1" },
       "apply": { "model": "spectralization:block/beam_splitter_diagonal_mirror", "y": 90 }
     },
     {
-      "when": { "rotation": "4" },
-      "apply": { "model": "spectralization:block/beam_splitter_straight_frame", "y": 180 }
+      "when": { "rotation": "2" },
+      "apply": { "model": "spectralization:block/beam_splitter_straight", "y": 180 }
     },
     {
-      "when": { "rotation": "4" },
+      "when": { "rotation": "2" },
       "apply": { "model": "spectralization:block/beam_splitter_straight_mirror", "y": 180 }
     },
     {
-      "when": { "rotation": "5" },
-      "apply": { "model": "spectralization:block/beam_splitter_diagonal_frame", "y": 180 }
+      "when": { "rotation": "3" },
+      "apply": { "model": "spectralization:block/beam_splitter_diagonal", "y": 180 }
     },
     {
-      "when": { "rotation": "5" },
+      "when": { "rotation": "3" },
       "apply": { "model": "spectralization:block/beam_splitter_diagonal_mirror", "y": 180 }
     },
     {
-      "when": { "rotation": "6" },
-      "apply": { "model": "spectralization:block/beam_splitter_straight_frame", "y": 270 }
+      "when": { "rotation": "4" },
+      "apply": { "model": "spectralization:block/beam_splitter_straight", "y": 270 }
     },
     {
-      "when": { "rotation": "6" },
+      "when": { "rotation": "4" },
       "apply": { "model": "spectralization:block/beam_splitter_straight_mirror", "y": 270 }
     },
     {
-      "when": { "rotation": "7" },
-      "apply": { "model": "spectralization:block/beam_splitter_diagonal_frame", "y": 270 }
+      "when": { "rotation": "5" },
+      "apply": { "model": "spectralization:block/beam_splitter_diagonal", "y": 270 }
+    },
+    {
+      "when": { "rotation": "5" },
+      "apply": { "model": "spectralization:block/beam_splitter_diagonal_mirror", "y": 270 }
+    },
+    {
+      "when": { "rotation": "6" },
+      "apply": { "model": "spectralization:block/beam_splitter_straight" }
+    },
+    {
+      "when": { "rotation": "6" },
+      "apply": { "model": "spectralization:block/beam_splitter_straight_mirror" }
     },
     {
       "when": { "rotation": "7" },
-      "apply": { "model": "spectralization:block/beam_splitter_diagonal_mirror", "y": 270 }
+      "apply": { "model": "spectralization:block/beam_splitter_diagonal" }
+    },
+    {
+      "when": { "rotation": "7" },
+      "apply": { "model": "spectralization:block/beam_splitter_diagonal_mirror" }
     }
   ]
 }

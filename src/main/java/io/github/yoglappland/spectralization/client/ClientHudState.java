@@ -6,6 +6,7 @@ import io.github.yoglappland.spectralization.client.beam.ClientBeamPathCache;
 import io.github.yoglappland.spectralization.client.compact.ClientCompactMachineAnimationCache;
 import io.github.yoglappland.spectralization.client.compact.ClientCompactMachineOverlayCache;
 import io.github.yoglappland.spectralization.client.compact.ClientCompactMachineWorkAreaOverlayCache;
+import io.github.yoglappland.spectralization.client.hud.SpectralHudEditScreen;
 import io.github.yoglappland.spectralization.client.networkoverlay.ClientNetworkOverlayCache;
 import io.github.yoglappland.spectralization.client.spot.ClientSpotCache;
 import io.github.yoglappland.spectralization.client.surface.ClientSurfaceInspectionCache;
@@ -22,10 +23,17 @@ import org.lwjgl.glfw.GLFW;
 public final class ClientHudState {
     private static final String CATEGORY_KEY = "key.categories.spectralization";
     private static final String TOGGLE_KEY = "key.spectralization.toggle_hud";
+    private static final String EDIT_KEY = "key.spectralization.edit_hud";
     private static final KeyMapping TOGGLE_HUD = new KeyMapping(
             TOGGLE_KEY,
             InputConstants.Type.KEYSYM,
             GLFW.GLFW_KEY_H,
+            CATEGORY_KEY
+    );
+    private static final KeyMapping EDIT_HUD = new KeyMapping(
+            EDIT_KEY,
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_LEFT_ALT,
             CATEGORY_KEY
     );
 
@@ -33,6 +41,17 @@ public final class ClientHudState {
 
     public static boolean visible() {
         return visible;
+    }
+
+    public static boolean editModeDown() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.getWindow() == null) {
+            return EDIT_HUD.isDown();
+        }
+
+        return EDIT_HUD.isDown()
+                || InputConstants.isKeyDown(minecraft.getWindow().getWindow(), GLFW.GLFW_KEY_LEFT_ALT)
+                || InputConstants.isKeyDown(minecraft.getWindow().getWindow(), GLFW.GLFW_KEY_RIGHT_ALT);
     }
 
     private static void toggle() {
@@ -61,6 +80,7 @@ public final class ClientHudState {
         @SubscribeEvent
         public static void registerKeyMappings(RegisterKeyMappingsEvent event) {
             event.register(TOGGLE_HUD);
+            event.register(EDIT_HUD);
         }
 
         private ModBusEvents() {
@@ -73,6 +93,15 @@ public final class ClientHudState {
         public static void clientTick(ClientTickEvent.Post event) {
             while (TOGGLE_HUD.consumeClick()) {
                 toggle();
+            }
+
+            Minecraft minecraft = Minecraft.getInstance();
+            if (visible
+                    && minecraft.level != null
+                    && minecraft.player != null
+                    && minecraft.screen == null
+                    && editModeDown()) {
+                minecraft.setScreen(new SpectralHudEditScreen());
             }
         }
 

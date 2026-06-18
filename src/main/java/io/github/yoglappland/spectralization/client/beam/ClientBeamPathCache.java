@@ -19,7 +19,8 @@ public final class ClientBeamPathCache {
             .thenComparingInt(segment -> segment.to().getX())
             .thenComparingInt(segment -> segment.to().getY())
             .thenComparingInt(segment -> segment.to().getZ())
-            .thenComparingInt(segment -> segment.direction().ordinal());
+            .thenComparingInt(segment -> segment.direction().ordinal())
+            .thenComparing(segment -> segment.coherent());
     private static List<BeamPathOverlayPayload.Segment> activeSegments = List.of();
     private static Object lastLevel;
 
@@ -36,7 +37,7 @@ public final class ClientBeamPathCache {
         SEGMENTS.keySet().removeIf(key -> key.ownerId() == payload.ownerId());
 
         for (BeamPathOverlayPayload.Segment segment : payload.segments()) {
-            SEGMENTS.put(new SegmentKey(payload.ownerId(), segment.from(), segment.to()), segment);
+            SEGMENTS.put(new SegmentKey(payload.ownerId(), segment.from(), segment.to(), segment.coherent()), segment);
         }
 
         rebuildActiveSegments();
@@ -119,18 +120,18 @@ public final class ClientBeamPathCache {
         return ownerCompare <= 0 ? first : second;
     }
 
-    private record SegmentKey(int ownerId, BlockPos from, BlockPos to) {
+    private record SegmentKey(int ownerId, BlockPos from, BlockPos to, boolean coherent) {
         private SegmentKey {
             from = from.immutable();
             to = to.immutable();
         }
     }
 
-    private record PhysicalSegmentKey(BlockPos first, BlockPos second) {
+    private record PhysicalSegmentKey(BlockPos first, BlockPos second, boolean coherent) {
         private static PhysicalSegmentKey of(BeamPathOverlayPayload.Segment segment) {
             return compare(segment.from(), segment.to()) <= 0
-                    ? new PhysicalSegmentKey(segment.from(), segment.to())
-                    : new PhysicalSegmentKey(segment.to(), segment.from());
+                    ? new PhysicalSegmentKey(segment.from(), segment.to(), segment.coherent())
+                    : new PhysicalSegmentKey(segment.to(), segment.from(), segment.coherent());
         }
 
         private PhysicalSegmentKey {

@@ -236,7 +236,7 @@ public final class OpticalTraceCache {
                         continue;
                     }
 
-                    for (OutputBeam outputBeam : IntrinsicOpticalSources.builtInOutputBeams(state)) {
+                    for (OutputBeam outputBeam : IntrinsicOpticalSources.builtInOutputBeams(state, level, pos)) {
                         if (outputBeam.beam().isEmpty()) {
                             continue;
                         }
@@ -1360,7 +1360,8 @@ public final class OpticalTraceCache {
                 BeamPathOverlayTracker.topologySegments(
                         portGraph,
                         coherentHudIntent || BeamPathOverlayTracker.hasCoherentSignal(scalarPowerSolution),
-                        scalarPowerSolution
+                        scalarPowerSolution,
+                        readoutLayer.beamProfileLayer()
                 ),
                 spotRecords,
                 trace == null ? !scalarPowerSolution.reliableForReadout() : isUnstable(trace)
@@ -1699,9 +1700,10 @@ public final class OpticalTraceCache {
                 boolean coherentHudIntent = solvedChannels.coherentHudIntent()
                         || BeamPathOverlayTracker.hasCoherentSignal(solution);
                 List<BeamPathOverlayPayload.Segment> hudSegments = BeamPathOverlayTracker.topologySegments(
-                        solvedChannels.coherentGraph(),
+                        solvedChannels.graph(),
                         coherentHudIntent,
-                        solution
+                        solution,
+                        readoutLayer.beamProfileLayer()
                 );
                 CachedOpticalSystem refreshedSystem = new CachedOpticalSystem(
                         systemId,
@@ -1771,9 +1773,10 @@ public final class OpticalTraceCache {
         boolean coherentHudIntent = solvedChannels.coherentHudIntent()
                 || BeamPathOverlayTracker.hasCoherentSignal(solution);
         List<BeamPathOverlayPayload.Segment> hudSegments = BeamPathOverlayTracker.topologySegments(
-                coherentGraph,
+                graph,
                 coherentHudIntent,
-                solution
+                solution,
+                readoutLayer.beamProfileLayer()
         );
         CachedOpticalSystem system = new CachedOpticalSystem(
                 systemId,

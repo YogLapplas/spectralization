@@ -83,6 +83,9 @@ public class LensHolderBlock extends Block implements EntityBlock, OpticalElemen
     public CompiledOpticalNetwork compileOpticalNetwork(BlockState state, Level level, BlockPos pos) {
         Direction positiveDirection = state.getValue(FACING);
         Direction negativeDirection = positiveDirection.getOpposite();
+        boolean hasLens = level.getBlockEntity(pos) instanceof LensHolderBlockEntity lensHolder && lensHolder.hasLens();
+        double transmittance = hasLens ? LENS_TRANSMITTANCE : 1.0D;
+        double reflectance = hasLens ? LENS_REFLECTANCE : 0.0D;
         CompiledOpticalNetwork.Builder builder = CompiledOpticalNetwork.builder();
 
         for (Direction incomingDirection : Direction.values()) {
@@ -92,8 +95,11 @@ public class LensHolderBlock extends Block implements EntityBlock, OpticalElemen
                 continue;
             }
 
-            builder.addRule(incomingDirection, transmittedDirection, CompiledOpticalNetwork.scale(LENS_TRANSMITTANCE));
-            builder.addRule(incomingDirection, incomingDirection, CompiledOpticalNetwork.scale(LENS_REFLECTANCE));
+            builder.addRule(incomingDirection, transmittedDirection, CompiledOpticalNetwork.scale(transmittance));
+
+            if (reflectance > 0.0D) {
+                builder.addRule(incomingDirection, incomingDirection, CompiledOpticalNetwork.scale(reflectance));
+            }
         }
 
         return builder.build();

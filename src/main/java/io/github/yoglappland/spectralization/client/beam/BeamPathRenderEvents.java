@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.client.ClientHudState;
+import io.github.yoglappland.spectralization.client.hud.SpectralBeamHudSettings;
 import io.github.yoglappland.spectralization.network.BeamPathOverlayPayload;
 import io.github.yoglappland.spectralization.optics.SpectralColorMap;
 import net.minecraft.client.Minecraft;
@@ -24,7 +25,10 @@ public final class BeamPathRenderEvents {
     private static final double MIN_RENDER_RADIUS = 0.75D / 16.0D;
     private static final double MAX_RENDER_RADIUS = 3.0D;
     private static final double RING_THICKNESS = 0.5D / 16.0D;
-    private static final int CYLINDER_SIDES = 12;
+    private static final double MAX_RENDER_DISTANCE_SQUARED = 96.0D * 96.0D;
+    private static final int MAX_RENDERED_SEGMENTS = 192;
+    private static final int RING_SIDES = 8;
+    private static final int SHELL_PLANES = 2;
 
     @SubscribeEvent
     public static void renderBeamPaths(RenderLevelStageEvent event) {
@@ -61,12 +65,33 @@ public final class BeamPathRenderEvents {
 
         PoseStack.Pose pose = poseStack.last();
 
+        int renderedSegments = 0;
+
         for (BeamPathOverlayPayload.Segment segment : segments) {
+            if (!shouldRender(segment)) {
+                continue;
+            }
+
+            if (!isNearCamera(cameraPosition, segment)) {
+                continue;
+            }
+
             renderSegment(consumer, pose, segment);
+            renderedSegments++;
+
+            if (renderedSegments >= MAX_RENDERED_SEGMENTS) {
+                break;
+            }
         }
 
         poseStack.popPose();
         bufferSource.endBatch(RenderType.debugQuads());
+    }
+
+    private static boolean shouldRender(BeamPathOverlayPayload.Segment segment) {
+        return segment.coherent()
+                ? SpectralBeamHudSettings.coherentVisible()
+                : SpectralBeamHudSettings.strayVisible();
     }
 
     private static void renderSegment(VertexConsumer consumer, PoseStack.Pose pose, BeamPathOverlayPayload.Segment segment) {
@@ -78,8 +103,8 @@ public final class BeamPathRenderEvents {
         double ey = segment.to().getY() + 0.5D - direction.getStepY() * EDGE_OFFSET;
         double ez = segment.to().getZ() + 0.5D - direction.getStepZ() * EDGE_OFFSET;
         int color = segment.colorRgb();
-        int shellAlpha = Math.min(92, 18 + Math.max(1, segment.visualLevel()) * 7 + (segment.coherent() ? 12 : 0));
-        int ringAlpha = Math.min(148, shellAlpha + 42);
+        int shellAlpha = shellAlpha(segment);
+        int ringAlpha = ringAlpha(segment, shellAlpha);
         renderBeamVolume(
                 consumer,
                 pose,
@@ -91,6 +116,19 @@ public final class BeamPathRenderEvents {
                 shellAlpha,
                 ringAlpha
         );
+    }
+
+    private static int shellAlpha(BeamPathOverlayPayload.Segment segment) {
+        int level = Math.max(1, segment.visualLevel());
+        return segment.coherent()
+                ? Math.min(92, 18 + level * 7 + 12)
+                : Math.min(96, 24 + level * 8);
+    }
+
+    private static int ringAlpha(BeamPathOverlayPayload.Segment segment, int shellAlpha) {
+        return segment.coherent()
+                ? Math.min(148, shellAlpha + 42)
+                : Math.min(166, shellAlpha + 58);
     }
 
     private static void renderBeamVolume(
@@ -114,17 +152,36 @@ public final class BeamPathRenderEvents {
         Vec3 basisA = perpendicular(forward);
         Vec3 basisB = forward.cross(basisA).normalize();
 
-        for (int index = 0; index < CYLINDER_SIDES; index++) {
+        renderBeamShell(consumer, pose, start, end, basisA, basisB, startRadius, endRadius, color, shellAlpha);
+
+        for (int index = 0; index < RING_SIDES; index++) {
             double a0 = angle(index);
             double a1 = angle(index + 1);
+            renderRingSegment(consumer, pose, start, basisA, basisB, a0, a1, startRadius, color, ringAlpha);
+            renderRingSegment(consumer, pose, end, basisA, basisB, a0, a1, endRadius, color, ringAlpha);
+        }
+    }
+
+    private static void renderBeamShell(
+            VertexConsumer consumer,
+            PoseStack.Pose pose,
+            Vec3 start,
+            Vec3 end,
+            Vec3 basisA,
+            Vec3 basisB,
+            double startRadius,
+            double endRadius,
+            int color,
+            int alpha
+    ) {
+        for (int index = 0; index < SHELL_PLANES; index++) {
+            double a0 = Math.PI * index / SHELL_PLANES;
+            double a1 = a0 + Math.PI;
             Vec3 start0 = start.add(radial(basisA, basisB, a0, startRadius));
             Vec3 start1 = start.add(radial(basisA, basisB, a1, startRadius));
             Vec3 end1 = end.add(radial(basisA, basisB, a1, endRadius));
             Vec3 end0 = end.add(radial(basisA, basisB, a0, endRadius));
-
-            addQuad(consumer, pose, start0, end0, end1, start1, color, shellAlpha);
-            renderRingSegment(consumer, pose, start, basisA, basisB, a0, a1, startRadius, color, ringAlpha);
-            renderRingSegment(consumer, pose, end, basisA, basisB, a0, a1, endRadius, color, ringAlpha);
+            addQuad(consumer, pose, start0, end0, end1, start1, color, alpha);
         }
     }
 
@@ -160,7 +217,7 @@ public final class BeamPathRenderEvents {
     }
 
     private static double angle(int index) {
-        return Math.PI * 2.0D * index / CYLINDER_SIDES;
+        return Math.PI * 2.0D * index / RING_SIDES;
     }
 
     private static double renderRadius(double radius, int fallbackWidthLevel) {
@@ -209,6 +266,33 @@ public final class BeamPathRenderEvents {
     private static void addVertex(VertexConsumer consumer, PoseStack.Pose pose, double x, double y, double z, int color, int alpha) {
         consumer.addVertex(pose, (float) x, (float) y, (float) z)
                 .setColor(SpectralColorMap.red(color), SpectralColorMap.green(color), SpectralColorMap.blue(color), alpha);
+    }
+
+    private static boolean isNearCamera(Vec3 cameraPosition, BeamPathOverlayPayload.Segment segment) {
+        double px = cameraPosition.x;
+        double py = cameraPosition.y;
+        double pz = cameraPosition.z;
+        double ax = segment.from().getX() + 0.5D;
+        double ay = segment.from().getY() + 0.5D;
+        double az = segment.from().getZ() + 0.5D;
+        double bx = segment.to().getX() + 0.5D;
+        double by = segment.to().getY() + 0.5D;
+        double bz = segment.to().getZ() + 0.5D;
+        double vx = bx - ax;
+        double vy = by - ay;
+        double vz = bz - az;
+        double lengthSquared = vx * vx + vy * vy + vz * vz;
+        double t = lengthSquared <= 0.0D
+                ? 0.0D
+                : ((px - ax) * vx + (py - ay) * vy + (pz - az) * vz) / lengthSquared;
+        double clampedT = Math.max(0.0D, Math.min(1.0D, t));
+        double cx = ax + vx * clampedT;
+        double cy = ay + vy * clampedT;
+        double cz = az + vz * clampedT;
+        double dx = px - cx;
+        double dy = py - cy;
+        double dz = pz - cz;
+        return dx * dx + dy * dy + dz * dz <= MAX_RENDER_DISTANCE_SQUARED;
     }
 
     private static boolean hasBeamPathViewer(Minecraft minecraft) {

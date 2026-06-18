@@ -2,6 +2,7 @@ package io.github.yoglappland.spectralization.optics.compiler;
 
 import io.github.yoglappland.spectralization.optics.BeamEnvelope;
 import io.github.yoglappland.spectralization.optics.BeamModel;
+import io.github.yoglappland.spectralization.optics.CoherenceKind;
 import io.github.yoglappland.spectralization.optics.OpticalPort;
 import io.github.yoglappland.spectralization.optics.PlaneWaveComponent;
 import io.github.yoglappland.spectralization.optics.geometry.BeamGeometryOps;
@@ -95,6 +96,36 @@ public record CompiledBeamProfileLayer(
         return weightedEnvelope.resultOr(defaultEnvelopeAt(node));
     }
 
+    public BeamEnvelope envelopeAtOrNull(PortGraphNode node, ScalarPowerSolution solution, CoherenceKind coherence) {
+        if (node == null || solution == null || coherence == null) {
+            return null;
+        }
+
+        WeightedEnvelope weightedEnvelope = new WeightedEnvelope();
+
+        for (Map.Entry<SpectralPowerLane, Map<PortGraphNode, Double>> entry : solution.powerByLane().entrySet()) {
+            SpectralPowerLane lane = entry.getKey();
+
+            if (lane.coherence() != coherence) {
+                continue;
+            }
+
+            double power = entry.getValue().getOrDefault(node, 0.0);
+
+            if (power <= 0.0) {
+                continue;
+            }
+
+            BeamEnvelope envelope = envelopeAt(lane, node);
+
+            if (envelope != null) {
+                weightedEnvelope.accept(envelope, power);
+            }
+        }
+
+        return weightedEnvelope.resultOr(defaultEnvelopeAt(node, coherence));
+    }
+
     private BeamEnvelope envelopeAt(SpectralPowerLane lane, PortGraphNode node) {
         Map<PortGraphNode, BeamEnvelope> envelopesByNode = envelopesByLane.get(lane);
 
@@ -115,6 +146,22 @@ public record CompiledBeamProfileLayer(
         }
 
         return BeamEnvelope.DEFAULT_COLLIMATED;
+    }
+
+    private BeamEnvelope defaultEnvelopeAt(PortGraphNode node, CoherenceKind coherence) {
+        for (Map.Entry<SpectralPowerLane, Map<PortGraphNode, BeamEnvelope>> entry : envelopesByLane.entrySet()) {
+            if (entry.getKey().coherence() != coherence) {
+                continue;
+            }
+
+            BeamEnvelope envelope = entry.getValue().get(node);
+
+            if (envelope != null) {
+                return envelope;
+            }
+        }
+
+        return null;
     }
 
     private static Map<SpectralPowerLane, List<ProfileSeed>> collectSeeds(

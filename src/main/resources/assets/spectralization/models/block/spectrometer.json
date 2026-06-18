@@ -1,12 +1,11 @@
 {
 	"format_version": "1.9.0",
 	"credit": "Made with Blockbench",
-	"texture_size": [64, 64],
 	"textures": {
 		"0": "spectralization:block/screen",
 		"2": "spectralization:block/spectrometer1",
 		"3": "spectralization:block/spectrometer2",
-		"4": "spectralization:block/spectrometer",
+		"4": "spectralization:block/blank_port",
 		"particle": "spectralization:block/screen"
 	},
 	"elements": [
@@ -14,12 +13,12 @@
 			"from": [0, 0, 1],
 			"to": [16, 16, 14],
 			"faces": {
-				"north": {"uv": [0, 0, 4, 4], "texture": "#4"},
-				"east": {"uv": [4, 0, 7.25, 4], "texture": "#4"},
-				"south": {"uv": [0, 4, 4, 8], "texture": "#4"},
-				"west": {"uv": [4, 4, 7.25, 8], "texture": "#4"},
-				"up": {"uv": [11.25, 3.25, 7.25, 0], "texture": "#4"},
-				"down": {"uv": [11.25, 3.25, 7.25, 6.5], "texture": "#4"}
+				"north": {"uv": [0, 0, 4, 4], "texture": "#missing"},
+				"east": {"uv": [2, 0, 15, 16], "texture": "#4"},
+				"south": {"uv": [0, 4, 4, 8], "texture": "#2"},
+				"west": {"uv": [1, 0, 14, 16], "texture": "#4"},
+				"up": {"uv": [16, 15, 0, 2], "texture": "#4"},
+				"down": {"uv": [16, 2, 0, 15], "texture": "#4"}
 			}
 		},
 		{

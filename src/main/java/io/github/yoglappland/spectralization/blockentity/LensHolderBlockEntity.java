@@ -37,23 +37,25 @@ public class LensHolderBlockEntity extends BlockEntity {
     }
 
     public void setLens(ItemStack lens) {
+        boolean hadLens = this.hasLens();
         this.lens = lens.copyWithCount(1);
-        this.syncChanged();
+        this.syncChanged(hadLens ? OpticalDirtyKind.DATA : OpticalDirtyKind.TOPOLOGY);
     }
 
     public ItemStack removeLens() {
+        boolean hadLens = this.hasLens();
         ItemStack removedLens = this.lens;
         this.lens = ItemStack.EMPTY;
-        this.syncChanged();
+        this.syncChanged(hadLens ? OpticalDirtyKind.TOPOLOGY : OpticalDirtyKind.DATA);
         return removedLens;
     }
 
-    private void syncChanged() {
+    private void syncChanged(OpticalDirtyKind dirtyKind) {
         this.setChanged();
 
         if (this.level != null) {
             if (!this.level.isClientSide) {
-                OpticalTraceCache.markChanged(this.level, this.worldPosition, OpticalDirtyKind.DATA);
+                OpticalTraceCache.markChanged(this.level, this.worldPosition, dirtyKind);
             }
 
             this.level.sendBlockUpdated(this.worldPosition, this.getBlockState(), this.getBlockState(), 3);

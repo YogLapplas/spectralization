@@ -1,12 +1,26 @@
 {
-  "parent": "minecraft:block/cube",
-  "textures": {
-    "particle": "spectralization:block/photonic_gradient_generator_body",
-    "down": "spectralization:block/power_port",
-    "up": "spectralization:block/photonic_gradient_generator_core",
-    "north": "spectralization:block/photonic_gradient_generator_body",
-    "east": "spectralization:block/photonic_gradient_generator_body",
-    "south": "spectralization:block/photonic_gradient_generator_body",
-    "west": "spectralization:block/photonic_gradient_generator_body"
-  }
+	"format_version": "1.21.11",
+	"credit": "Made with Blockbench",
+	"parent": "minecraft:block/cube",
+	"texture_size": [32, 32],
+	"textures": {
+		"0": "spectralization:block/blank_port",
+		"1": "spectralization:block/metamaterial_design_table",
+		"2": "spectralization:block/power_port",
+		"particle": "spectralization:block/blank_port"
+	},
+	"elements": [
+		{
+			"from": [0, 0, 0],
+			"to": [16, 16, 16],
+			"faces": {
+				"north": {"uv": [0, 0, 8, 8], "texture": "#1"},
+				"east": {"uv": [0, 8, 8, 16], "texture": "#1"},
+				"south": {"uv": [0, 0, 16, 16], "texture": "#2"},
+				"west": {"uv": [8, 0, 16, 8], "texture": "#1"},
+				"up": {"uv": [16, 16, 8, 8], "texture": "#1"},
+				"down": {"uv": [0, 0, 16, 16], "texture": "#0"}
+			}
+		}
+	]
 }

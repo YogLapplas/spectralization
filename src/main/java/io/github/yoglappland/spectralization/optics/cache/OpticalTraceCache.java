@@ -1123,7 +1123,7 @@ public final class OpticalTraceCache {
         for (ServerPlayer player : level.players()) {
             UUID playerId = player.getUUID();
 
-            if (!BeamPathOverlayTracker.hasHudHelmet(player)) {
+            if (!BeamPathOverlayTracker.hasHudViewer(player)) {
                 cache.hudHelmetPlayers.remove(playerId);
                 continue;
             }
@@ -1360,8 +1360,7 @@ public final class OpticalTraceCache {
                 BeamPathOverlayTracker.topologySegments(
                         portGraph,
                         coherentHudIntent || BeamPathOverlayTracker.hasCoherentSignal(scalarPowerSolution),
-                        scalarPowerSolution,
-                        readoutLayer.beamProfileLayer()
+                        scalarPowerSolution
                 ),
                 spotRecords,
                 trace == null ? !scalarPowerSolution.reliableForReadout() : isUnstable(trace)
@@ -1700,10 +1699,9 @@ public final class OpticalTraceCache {
                 boolean coherentHudIntent = solvedChannels.coherentHudIntent()
                         || BeamPathOverlayTracker.hasCoherentSignal(solution);
                 List<BeamPathOverlayPayload.Segment> hudSegments = BeamPathOverlayTracker.topologySegments(
-                        solvedChannels.graph(),
+                        solvedChannels.coherentGraph(),
                         coherentHudIntent,
-                        solution,
-                        readoutLayer.beamProfileLayer()
+                        solution
                 );
                 CachedOpticalSystem refreshedSystem = new CachedOpticalSystem(
                         systemId,
@@ -1773,10 +1771,9 @@ public final class OpticalTraceCache {
         boolean coherentHudIntent = solvedChannels.coherentHudIntent()
                 || BeamPathOverlayTracker.hasCoherentSignal(solution);
         List<BeamPathOverlayPayload.Segment> hudSegments = BeamPathOverlayTracker.topologySegments(
-                graph,
+                coherentGraph,
                 coherentHudIntent,
-                solution,
-                readoutLayer.beamProfileLayer()
+                solution
         );
         CachedOpticalSystem system = new CachedOpticalSystem(
                 systemId,

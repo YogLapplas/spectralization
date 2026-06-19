@@ -2,21 +2,17 @@ package io.github.yoglappland.spectralization.optics.geometry;
 
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.network.BeamPathOverlayPayload;
-import io.github.yoglappland.spectralization.optics.BeamEnvelope;
 import io.github.yoglappland.spectralization.optics.CoherenceKind;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalTrace;
-import io.github.yoglappland.spectralization.optics.compiler.CompiledBeamProfileLayer;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledPortGraph;
 import io.github.yoglappland.spectralization.optics.compiler.PortGraphEdge;
 import io.github.yoglappland.spectralization.optics.compiler.PortGraphEdgeKind;
 import io.github.yoglappland.spectralization.optics.compiler.PortGraphNode;
 import io.github.yoglappland.spectralization.optics.compiler.PortWaveKind;
 import io.github.yoglappland.spectralization.optics.compiler.ScalarPowerSolution;
-import io.github.yoglappland.spectralization.optics.compiler.SpectralPowerLane;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -31,11 +27,10 @@ public final class BeamPathOverlayTracker {
     private static final int MAX_SEGMENTS = 512;
     private static final int TERMINAL_RAY_BLOCKS = 64;
     private static final int TOPOLOGY_COLOR_RGB = 0xFF2300;
-    private static final int TOPOLOGY_STRAY_COLOR_RGB = 0xB0DCD2;
     private static final int TOPOLOGY_WIDTH_LEVEL = 1;
     private static final int TOPOLOGY_VISUAL_LEVEL = 5;
     private static final double TOPOLOGY_RADIUS = 1.0D / 16.0D;
-    private static final double HUD_POWER_THRESHOLD = 1.0E-6D;
+    private static final double HUD_COHERENT_POWER_THRESHOLD = 1.0E-6D;
 
     public static boolean hasHudViewerNear(ServerLevel level, BlockPos pos) {
         double sx = pos.getX() + 0.5D;
@@ -43,7 +38,7 @@ public final class BeamPathOverlayTracker {
         double sz = pos.getZ() + 0.5D;
 
         for (ServerPlayer player : level.players()) {
-            if (hasHudHelmet(player) && player.distanceToSqr(sx, sy, sz) <= SEND_RADIUS_SQUARED) {
+            if (hasHudViewer(player) && player.distanceToSqr(sx, sy, sz) <= SEND_RADIUS_SQUARED) {
                 return true;
             }
         }
@@ -57,7 +52,7 @@ public final class BeamPathOverlayTracker {
             List<BeamPathOverlayPayload.Segment> segments
     ) {
         for (ServerPlayer player : level.players()) {
-            if (hasHudHelmet(player) && isNearOverlayPath(player, sourcePos, segments)) {
+            if (hasHudViewer(player) && isNearOverlayPath(player, sourcePos, segments)) {
                 return true;
             }
         }
@@ -95,6 +90,7 @@ public final class BeamPathOverlayTracker {
 
         List<BeamPathOverlayPayload.Segment> segments = BeamVisualSegments.fromTrace(trace, BeamVisibilityKind.HUD)
                 .stream()
+                .filter(segment -> segment.coherence() == CoherenceKind.COHERENT)
                 .limit(MAX_SEGMENTS)
                 .map(BeamPathOverlayTracker::toPayloadSegment)
                 .toList();
@@ -110,41 +106,19 @@ public final class BeamPathOverlayTracker {
             CompiledPortGraph graph,
             ScalarPowerSolution solution
     ) {
-        return topologySegments(graph, hasHudSignal(solution), solution, CompiledBeamProfileLayer.EMPTY);
+        return topologySegments(graph, hasCoherentSignal(solution), solution);
     }
 
     public static List<BeamPathOverlayPayload.Segment> topologySegments(
             CompiledPortGraph graph,
-            boolean hasHudIntent,
+            boolean hasCoherentIntensity,
             ScalarPowerSolution solution
     ) {
-        return topologySegments(graph, hasHudIntent, solution, CompiledBeamProfileLayer.EMPTY);
-    }
-
-    public static List<BeamPathOverlayPayload.Segment> topologySegments(
-            CompiledPortGraph graph,
-            boolean hasHudIntent,
-            ScalarPowerSolution solution,
-            CompiledBeamProfileLayer beamProfileLayer
-    ) {
-        if (graph.nodes().isEmpty() || (!hasHudIntent && !hasHudSignal(solution))) {
+        if (graph.nodes().isEmpty() || !hasCoherentIntensity) {
             return List.of();
         }
 
         List<BeamPathOverlayPayload.Segment> segments = new ArrayList<>();
-        addTopologySegments(graph, solution, beamProfileLayer, CoherenceKind.COHERENT, segments);
-        addTopologySegments(graph, solution, beamProfileLayer, CoherenceKind.INCOHERENT, segments);
-
-        return List.copyOf(segments.size() > MAX_SEGMENTS ? segments.subList(0, MAX_SEGMENTS) : segments);
-    }
-
-    private static void addTopologySegments(
-            CompiledPortGraph graph,
-            ScalarPowerSolution solution,
-            CompiledBeamProfileLayer beamProfileLayer,
-            CoherenceKind coherence,
-            List<BeamPathOverlayPayload.Segment> segments
-    ) {
         Set<PortGraphNode> outgoingNodesWithPropagation = new HashSet<>();
 
         for (PortGraphEdge edge : graph.edges()) {
@@ -152,26 +126,13 @@ public final class BeamPathOverlayTracker {
                 continue;
             }
 
-            double power = topologyPower(solution, edge.from(), coherence);
-
-            if (power <= HUD_POWER_THRESHOLD) {
-                continue;
-            }
+            double coherentPower = topologyPower(solution, edge.from());
 
             outgoingNodesWithPropagation.add(edge.from());
-            segments.add(toTopologyPayloadSegment(
-                    edge.from(),
-                    edge.to(),
-                    edge.from().side(),
-                    coherence,
-                    power,
-                    solution,
-                    beamProfileLayer,
-                    Math.max(0.0D, edge.distance())
-            ));
+            segments.add(toTopologyPayloadSegment(edge.from(), edge.to(), edge.from().side(), coherentPower, solution));
 
             if (segments.size() >= MAX_SEGMENTS) {
-                return;
+                return List.copyOf(segments);
             }
         }
 
@@ -180,88 +141,41 @@ public final class BeamPathOverlayTracker {
                 continue;
             }
 
-            double power = topologyPower(solution, node, coherence);
-
-            if (power <= HUD_POWER_THRESHOLD) {
-                continue;
-            }
+            double coherentPower = topologyPower(solution, node);
 
             BlockPos to = node.pos().relative(node.side(), TERMINAL_RAY_BLOCKS);
             segments.add(toTopologyPayloadSegment(
                     node,
                     new PortGraphNode(to, node.side().getOpposite(), PortWaveKind.INCOMING),
                     node.side(),
-                    coherence,
-                    power,
-                    solution,
-                    beamProfileLayer,
-                    TERMINAL_RAY_BLOCKS
+                    coherentPower,
+                    solution
             ));
 
             if (segments.size() >= MAX_SEGMENTS) {
                 break;
             }
         }
+
+        return List.copyOf(segments);
     }
 
     public static boolean hasCoherentSignal(ScalarPowerSolution solution) {
-        return hasSignal(solution, CoherenceKind.COHERENT);
-    }
-
-    public static boolean hasHudSignal(ScalarPowerSolution solution) {
-        return hasSignal(solution, CoherenceKind.COHERENT) || hasSignal(solution, CoherenceKind.INCOHERENT);
-    }
-
-    private static boolean hasSignal(ScalarPowerSolution solution, CoherenceKind coherence) {
-        if (solution == null) {
-            return false;
-        }
-
-        if (coherence == CoherenceKind.COHERENT) {
-            for (double power : solution.coherentPowerByNode().values()) {
-                if (power > HUD_POWER_THRESHOLD) {
-                    return true;
-                }
-            }
-        }
-
-        for (Map.Entry<SpectralPowerLane, Map<PortGraphNode, Double>> entry : solution.powerByLane().entrySet()) {
-            if (entry.getKey().coherence() != coherence) {
-                continue;
-            }
-
-            for (double power : entry.getValue().values()) {
-                if (power > HUD_POWER_THRESHOLD) {
-                    return true;
-                }
+        for (double power : solution.coherentPowerByNode().values()) {
+            if (power > HUD_COHERENT_POWER_THRESHOLD) {
+                return true;
             }
         }
 
         return false;
     }
 
-    private static double topologyPower(ScalarPowerSolution solution, PortGraphNode node, CoherenceKind coherence) {
+    private static double topologyPower(ScalarPowerSolution solution, PortGraphNode node) {
         if (solution == null) {
-            return coherence == CoherenceKind.COHERENT ? 1.0D : 0.0D;
+            return 1.0D;
         }
 
-        return Math.max(powerAt(solution, node, coherence), 0.0D);
-    }
-
-    private static double powerAt(ScalarPowerSolution solution, PortGraphNode node, CoherenceKind coherence) {
-        if (coherence == CoherenceKind.COHERENT) {
-            return solution.coherentPowerAt(node);
-        }
-
-        double power = 0.0D;
-
-        for (Map.Entry<SpectralPowerLane, Map<PortGraphNode, Double>> entry : solution.powerByLane().entrySet()) {
-            if (entry.getKey().coherence() == CoherenceKind.INCOHERENT) {
-                power += entry.getValue().getOrDefault(node, 0.0D);
-            }
-        }
-
-        return power;
+        return Math.max(solution.coherentPowerAt(node), 1.0D);
     }
 
     public static int publish(
@@ -277,7 +191,7 @@ public final class BeamPathOverlayTracker {
         int sentPlayers = 0;
 
         for (ServerPlayer player : level.players()) {
-            if (hasHudHelmet(player) && isNearOverlayPath(player, sourcePos, segments)) {
+            if (hasHudViewer(player) && isNearOverlayPath(player, sourcePos, segments)) {
                 PacketDistributor.sendToPlayer(player, payload);
                 sentPlayers++;
             }
@@ -292,7 +206,7 @@ public final class BeamPathOverlayTracker {
             int ownerId,
             List<BeamPathOverlayPayload.Segment> segments
     ) {
-        if (!hasHudHelmet(player) || !isNearOverlayPath(player, sourcePos, segments)) {
+        if (!hasHudViewer(player) || !isNearOverlayPath(player, sourcePos, segments)) {
             return false;
         }
 
@@ -305,7 +219,7 @@ public final class BeamPathOverlayTracker {
         int sentPlayers = 0;
 
         for (ServerPlayer player : level.players()) {
-            if (!hasHudHelmet(player)) {
+            if (!hasHudViewer(player)) {
                 continue;
             }
 
@@ -324,6 +238,14 @@ public final class BeamPathOverlayTracker {
         var helmet = player.getItemBySlot(EquipmentSlot.HEAD);
         return helmet.is(Items.LEATHER_HELMET)
                 || helmet.is(Spectralization.VERITY_HELM_OF_ALL_SEEING_INSIGHT.get());
+    }
+
+    public static boolean hasHudViewer(ServerPlayer player) {
+        return hasHudHelmet(player)
+                || player.getMainHandItem().is(Spectralization.OPTICAL_FIBER_COIL.get())
+                || player.getOffhandItem().is(Spectralization.OPTICAL_FIBER_COIL.get())
+                || player.getMainHandItem().is(Items.SHEARS)
+                || player.getOffhandItem().is(Items.SHEARS);
     }
 
     private static BeamPathOverlayPayload payload(int ownerId, List<BeamPathOverlayPayload.Segment> segments) {
@@ -351,68 +273,28 @@ public final class BeamPathOverlayTracker {
             PortGraphNode from,
             PortGraphNode to,
             Direction direction,
-            CoherenceKind coherence,
-            double power,
-            ScalarPowerSolution solution,
-            CompiledBeamProfileLayer beamProfileLayer,
-            double distance
+            double coherentPower,
+            ScalarPowerSolution solution
     ) {
-        BeamEnvelope startEnvelope = profileEnvelopeAt(beamProfileLayer, from, solution, coherence);
-        BeamEnvelope endEnvelope = profileEnvelopeAt(beamProfileLayer, to, solution, coherence);
-
-        if (startEnvelope != null && endEnvelope == null) {
-            endEnvelope = BeamGeometryOps.propagate(startEnvelope, Math.max(0.0D, distance));
-        }
-
-        double startRadius = startEnvelope == null ? TOPOLOGY_RADIUS : startEnvelope.radius();
-        double endRadius = endEnvelope == null ? TOPOLOGY_RADIUS : endEnvelope.radius();
-        int widthLevel = widthLevelForRadius(Math.max(startRadius, endRadius));
-
         return new BeamPathOverlayPayload.Segment(
                 from.pos(),
                 to.pos(),
                 direction,
-                coherence == CoherenceKind.COHERENT,
-                solutionColorRgb(solution, from, coherence),
-                widthLevel,
-                topologyVisualLevel(power),
-                Math.max(0.0D, startRadius),
-                Math.max(0.0D, endRadius)
+                true,
+                solutionColorRgb(solution, from),
+                TOPOLOGY_WIDTH_LEVEL,
+                topologyVisualLevel(coherentPower),
+                TOPOLOGY_RADIUS,
+                TOPOLOGY_RADIUS
         );
     }
 
-    private static BeamEnvelope profileEnvelopeAt(
-            CompiledBeamProfileLayer beamProfileLayer,
-            PortGraphNode node,
-            ScalarPowerSolution solution,
-            CoherenceKind coherence
-    ) {
-        if (beamProfileLayer == null || beamProfileLayer.envelopesByLane().isEmpty() || solution == null) {
-            return null;
-        }
-
-        return beamProfileLayer.envelopeAtOrNull(node, solution, coherence);
-    }
-
-    private static int widthLevelForRadius(double radius) {
-        if (!Double.isFinite(radius) || radius <= 0.0D) {
-            return TOPOLOGY_WIDTH_LEVEL;
-        }
-
-        double clampedRadius = Math.max(BeamGeometryOps.MIN_RADIUS, radius);
-        return Math.max(1, Math.min(8, (int) Math.ceil(clampedRadius * 8.0D)));
-    }
-
-    private static int solutionColorRgb(ScalarPowerSolution solution, PortGraphNode node, CoherenceKind coherence) {
+    private static int solutionColorRgb(ScalarPowerSolution solution, PortGraphNode node) {
         if (solution == null) {
-            return coherence == CoherenceKind.COHERENT ? TOPOLOGY_COLOR_RGB : TOPOLOGY_STRAY_COLOR_RGB;
+            return TOPOLOGY_COLOR_RGB;
         }
 
-        return solution.mixedVisibleRgbAt(
-                node,
-                coherence,
-                coherence == CoherenceKind.COHERENT ? TOPOLOGY_COLOR_RGB : TOPOLOGY_STRAY_COLOR_RGB
-        );
+        return solution.mixedVisibleRgbAt(node, CoherenceKind.COHERENT, TOPOLOGY_COLOR_RGB);
     }
 
     private static int topologyVisualLevel(double coherentPower) {

@@ -1,23 +1,20 @@
 package io.github.yoglappland.spectralization.client.hud;
 
 public final class SpectralBeamHudSettings {
-    private static boolean coherentVisible = true;
-    private static boolean strayVisible;
-
     public static boolean coherentVisible() {
-        return coherentVisible;
+        return true;
     }
 
     public static boolean strayVisible() {
-        return strayVisible;
+        return true;
     }
 
     public static void toggleCoherentVisible() {
-        coherentVisible = !coherentVisible;
+        // The split coherent/stray renderer is temporarily disabled.
     }
 
     public static void toggleStrayVisible() {
-        strayVisible = !strayVisible;
+        // The split coherent/stray renderer is temporarily disabled.
     }
 
     private SpectralBeamHudSettings() {

@@ -42,6 +42,15 @@ public final class SpectralDiagnostics {
         return new Event("anomaly", level, subsystem, event);
     }
 
+    public static final class Subsystem {
+        public static final String COMPACT_MACHINE = "compact_machine";
+        public static final String FIBER = "fiber";
+        public static final String HOLOGRAPHIC_STORAGE = "holographic_storage";
+
+        private Subsystem() {
+        }
+    }
+
     public static synchronized void appendLog(String relativePath, String content, String failureLabel) {
         Path logPath = FMLPaths.GAMEDIR.get().resolve(relativePath);
 

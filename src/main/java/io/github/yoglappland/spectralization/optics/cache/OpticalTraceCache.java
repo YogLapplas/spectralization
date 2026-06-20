@@ -677,6 +677,10 @@ public final class OpticalTraceCache {
                 rebuiltSystem == null ? 0 : rebuiltSystem.readoutLayer().size(),
                 rebuiltSystem == null ? 0 : rebuiltSystem.receiverOutputs().size(),
                 rebuiltSystem != null && rebuiltSystem.usableForGameplay(),
+                rebuiltSystem != null && rebuiltSystem.structurallyFresh(),
+                rebuiltSystem != null && rebuiltSystem.parametricallyFresh(),
+                rebuiltSystem != null && canUseForGameplay(rebuiltSystem.graph(), rebuiltSystem.solution()),
+                rebuiltSystem != null && rebuiltSystem.solution().reliableForReadout(),
                 rebuiltSystem == null ? "none" : rebuiltSystem.solution().solverKind().name(),
                 rebuiltSystem == null ? null : rebuiltSystem.baseCoherentGraph(),
                 rebuiltSystem == null ? null : rebuiltSystem.coherentGraph()
@@ -718,6 +722,10 @@ public final class OpticalTraceCache {
                     rebuiltSystem == null ? 0 : rebuiltSystem.readoutLayer().size(),
                     rebuiltSystem == null ? 0 : rebuiltSystem.receiverOutputs().size(),
                     rebuiltSystem != null && rebuiltSystem.usableForGameplay(),
+                    rebuiltSystem != null && rebuiltSystem.structurallyFresh(),
+                    rebuiltSystem != null && rebuiltSystem.parametricallyFresh(),
+                    rebuiltSystem != null && canUseForGameplay(rebuiltSystem.graph(), rebuiltSystem.solution()),
+                    rebuiltSystem != null && rebuiltSystem.solution().reliableForReadout(),
                     rebuiltSystem == null ? "none" : rebuiltSystem.solution().solverKind().name(),
                     rebuiltSystem == null ? null : rebuiltSystem.baseCoherentGraph(),
                     rebuiltSystem == null ? null : rebuiltSystem.coherentGraph()

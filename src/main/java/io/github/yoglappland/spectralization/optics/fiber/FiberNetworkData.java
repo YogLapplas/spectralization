@@ -72,7 +72,7 @@ public final class FiberNetworkData extends SavedData {
                 String.format(java.util.Locale.ROOT, "%.3f", connection.totalLength()),
                 parallelCount
         );
-        SpectralDiagnostics.event(level, "fiber", "connection_added")
+        SpectralDiagnostics.event(level, SpectralDiagnostics.Subsystem.FIBER, "connection_added")
                 .pos("endpoint_a", connection.endpointA())
                 .pos("endpoint_b", connection.endpointB())
                 .field("nodes", connection.nodes().size())
@@ -121,7 +121,7 @@ public final class FiberNetworkData extends SavedData {
                 formatPos(removedConnection.endpointB()),
                 data.connectionCountBetween(removedConnection.endpointA(), removedConnection.endpointB())
         );
-        SpectralDiagnostics.event(level, "fiber", "connection_removed")
+        SpectralDiagnostics.event(level, SpectralDiagnostics.Subsystem.FIBER, "connection_removed")
                 .field("reason", "shears")
                 .pos("endpoint_a", removedConnection.endpointA())
                 .pos("endpoint_b", removedConnection.endpointB())
@@ -171,7 +171,7 @@ public final class FiberNetworkData extends SavedData {
                         serverLevel.dimension().location(),
                         formatPos(pos)
                 );
-                SpectralDiagnostics.event(serverLevel, "fiber", "connections_removed")
+                SpectralDiagnostics.event(serverLevel, SpectralDiagnostics.Subsystem.FIBER, "connections_removed")
                         .field("reason", "touching_block")
                         .pos("pos", pos)
                         .field("removed", previousSize - data.connectionsById.size())
@@ -221,7 +221,7 @@ public final class FiberNetworkData extends SavedData {
                     immutablePositions.stream().map(FiberNetworkData::formatPos).sorted().toList(),
                     previousSize - data.connectionsById.size()
             );
-            SpectralDiagnostics.event(level, "fiber", "connections_removed")
+            SpectralDiagnostics.event(level, SpectralDiagnostics.Subsystem.FIBER, "connections_removed")
                     .field("reason", reason)
                     .field("positions", immutablePositions.size())
                     .field("removed", previousSize - data.connectionsById.size())
@@ -270,7 +270,7 @@ public final class FiberNetworkData extends SavedData {
                     immutableSegments.size(),
                     previousSize - data.connectionsById.size()
             );
-            SpectralDiagnostics.event(level, "fiber", "connections_removed")
+            SpectralDiagnostics.event(level, SpectralDiagnostics.Subsystem.FIBER, "connections_removed")
                     .field("reason", reason)
                     .field("segments", immutableSegments.size())
                     .field("removed", previousSize - data.connectionsById.size())
@@ -314,7 +314,7 @@ public final class FiberNetworkData extends SavedData {
                     level.dimension().location(),
                     previousSize - data.connectionsById.size()
             );
-            SpectralDiagnostics.event(level, "fiber", "connections_removed")
+            SpectralDiagnostics.event(level, SpectralDiagnostics.Subsystem.FIBER, "connections_removed")
                     .field("reason", "blocked")
                     .field("removed", previousSize - data.connectionsById.size())
                     .field("dirty_endpoints", dirtyEndpoints.size())

@@ -8,6 +8,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientGamePacketListener;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.util.Mth;
 import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.item.ItemStack;
@@ -16,16 +19,24 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.items.ItemStackHandler;
+import org.jetbrains.annotations.Nullable;
 
 public class MetamaterialDesignTableBlockEntity extends BlockEntity {
     public static final int MODE_STANDARD = 0;
     public static final int MODE_CUSTOM = 1;
 
-    public static final int SLOT_X_BUDGET = 0;
-    public static final int SLOT_Y_BUDGET = 1;
-    public static final int SLOT_Z_BUDGET = 2;
-    public static final int SLOT_OUTPUT = 3;
-    public static final int SLOT_COUNT = 4;
+    public static final int SLOT_LEFT_TOP = 0;
+    public static final int SLOT_LEFT_MIDDLE = 1;
+    public static final int SLOT_LEFT_BOTTOM = 2;
+    public static final int SLOT_RIGHT_TOP = 3;
+    public static final int SLOT_RIGHT_MIDDLE = 4;
+    public static final int SLOT_RIGHT_BOTTOM = 5;
+    public static final int SLOT_OUTPUT = 6;
+    public static final int SLOT_COUNT = 7;
+
+    public static final int SLOT_X_BUDGET = SLOT_LEFT_TOP;
+    public static final int SLOT_Y_BUDGET = SLOT_LEFT_MIDDLE;
+    public static final int SLOT_Z_BUDGET = SLOT_LEFT_BOTTOM;
 
     public static final int DATA_MODE = 0;
     public static final int DATA_STANDARD = 1;
@@ -53,14 +64,24 @@ public class MetamaterialDesignTableBlockEntity extends BlockEntity {
         @Override
         public boolean isItemValid(int slot, ItemStack stack) {
             return switch (slot) {
-                case SLOT_X_BUDGET, SLOT_Y_BUDGET, SLOT_Z_BUDGET -> isDesignMaterial(stack);
+                case SLOT_LEFT_TOP, SLOT_LEFT_MIDDLE, SLOT_LEFT_BOTTOM,
+                        SLOT_RIGHT_TOP, SLOT_RIGHT_MIDDLE, SLOT_RIGHT_BOTTOM -> isDesignMaterial(stack);
                 default -> false;
             };
         }
 
         @Override
+        public int getSlotLimit(int slot) {
+            return switch (slot) {
+                case SLOT_LEFT_TOP, SLOT_LEFT_MIDDLE, SLOT_LEFT_BOTTOM,
+                        SLOT_RIGHT_TOP, SLOT_RIGHT_MIDDLE, SLOT_RIGHT_BOTTOM -> 1;
+                default -> super.getSlotLimit(slot);
+            };
+        }
+
+        @Override
         protected void onContentsChanged(int slot) {
-            setChanged();
+            syncChanged();
         }
     };
 
@@ -91,6 +112,14 @@ public class MetamaterialDesignTableBlockEntity extends BlockEntity {
 
     public ItemStackHandler getItems(Direction side) {
         return items;
+    }
+
+    public ItemStack getStackForDisplay(int slot) {
+        if (slot < 0 || slot >= items.getSlots()) {
+            return ItemStack.EMPTY;
+        }
+
+        return items.getStackInSlot(slot);
     }
 
     public ContainerData createDataAccess() {
@@ -219,6 +248,25 @@ public class MetamaterialDesignTableBlockEntity extends BlockEntity {
 
         if (tag.contains(ITEMS_TAG)) {
             items.deserializeNBT(registries, tag.getCompound(ITEMS_TAG));
+            normalizeItemSlots();
+        }
+    }
+
+    private void normalizeItemSlots() {
+        if (items.getSlots() == SLOT_COUNT) {
+            return;
+        }
+
+        ItemStack[] savedStacks = new ItemStack[Math.min(items.getSlots(), SLOT_COUNT)];
+
+        for (int slot = 0; slot < savedStacks.length; slot++) {
+            savedStacks[slot] = items.getStackInSlot(slot).copy();
+        }
+
+        items.setSize(SLOT_COUNT);
+
+        for (int slot = 0; slot < savedStacks.length; slot++) {
+            items.setStackInSlot(slot, savedStacks[slot]);
         }
     }
 
@@ -228,5 +276,27 @@ public class MetamaterialDesignTableBlockEntity extends BlockEntity {
         tag.put(ITEMS_TAG, items.serializeNBT(registries));
         tag.putInt(MODE_TAG, mode);
         tag.putInt(STANDARD_TAG, standardIndex);
+    }
+
+    private void syncChanged() {
+        setChanged();
+
+        if (level != null && !level.isClientSide) {
+            BlockState state = getBlockState();
+            level.sendBlockUpdated(worldPosition, state, state, Block.UPDATE_CLIENTS);
+        }
+    }
+
+    @Nullable
+    @Override
+    public Packet<ClientGamePacketListener> getUpdatePacket() {
+        return ClientboundBlockEntityDataPacket.create(this);
+    }
+
+    @Override
+    public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
+        CompoundTag tag = super.getUpdateTag(registries);
+        saveAdditional(tag, registries);
+        return tag;
     }
 }

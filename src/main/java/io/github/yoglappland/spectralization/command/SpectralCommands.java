@@ -6,12 +6,14 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
+import io.github.yoglappland.spectralization.compat.ldlib2.ThermalSmelterLdLibUi;
 import io.github.yoglappland.spectralization.network.NetworkOverlayPayload;
 import io.github.yoglappland.spectralization.optics.OpticalEntityInteractions;
 import io.github.yoglappland.spectralization.optics.OpticalPathVisualization;
 import io.github.yoglappland.spectralization.optics.lens.LensProfile;
 import io.github.yoglappland.spectralization.optics.topology.OpticalNetworkIndex;
 import io.github.yoglappland.spectralization.optics.topology.OpticalNetworkSnapshot;
+import java.io.File;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -101,6 +103,13 @@ public final class SpectralCommands {
                                         context.getSource(),
                                         !SpectralizationConfig.uiDebug()
                                 ))))
+                .then(Commands.literal("ldlib2ui")
+                        .then(Commands.literal("examples")
+                                .then(Commands.literal("install")
+                                        .executes(context -> installLdLib2Examples(context.getSource()))))
+                        .then(Commands.literal("thermal_smelter")
+                                .then(Commands.literal("starter")
+                                        .executes(context -> createThermalSmelterUiStarter(context.getSource())))))
                 .then(Commands.literal("lens")
                         .then(Commands.literal("give")
                                 .executes(context -> giveLens(context.getSource(), LensProfile.STANDARD))
@@ -268,6 +277,35 @@ public final class SpectralCommands {
         String state = SpectralizationConfig.uiDebugLabels() ? "on" : "off";
         source.sendSuccess(() -> Component.literal("Spectralization UI debug box labels: " + state), true);
         return 1;
+    }
+
+    private static int createThermalSmelterUiStarter(CommandSourceStack source) {
+        File file = ThermalSmelterLdLibUi.ensureEditableStarterTemplate();
+        boolean exists = file.isFile();
+
+        if (exists) {
+            source.sendSuccess(() -> Component.literal("Thermal Smelter LDLib2 starter UI: " + file.getPath()), true);
+            return 1;
+        }
+
+        source.sendFailure(Component.literal("Failed to create Thermal Smelter LDLib2 starter UI: " + file.getPath()));
+        return 0;
+    }
+
+    private static int installLdLib2Examples(CommandSourceStack source) {
+        List<File> files = ThermalSmelterLdLibUi.ensureOfficialEditorAssets();
+        List<File> missing = files.stream().filter(file -> !file.isFile()).toList();
+
+        if (missing.isEmpty()) {
+            source.sendSuccess(() -> Component.literal(
+                    "Installed LDLib2 official UI examples and styles into " + files.getFirst().getParentFile().getParentFile().getParent()
+            ), true);
+            return files.size();
+        }
+
+        source.sendFailure(Component.literal("Some LDLib2 official UI examples could not be installed. First missing: "
+                + missing.getFirst().getPath()));
+        return 0;
     }
 
     private static CompletableFuture<Suggestions> suggestLensTags(

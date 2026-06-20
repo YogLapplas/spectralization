@@ -1,0 +1,85 @@
+package io.github.yoglappland.spectralization.registry;
+
+import io.github.yoglappland.spectralization.Spectralization;
+import net.minecraft.world.item.CreativeModeTab;
+
+public final class SpectralCreativeTabItems {
+    private SpectralCreativeTabItems() {
+    }
+
+    public static void accept(CreativeModeTab.Output output) {
+        output.accept(Spectralization.LENS.get());
+        output.accept(Spectralization.STANDARD_METAMATERIAL_TEMPLATE.get());
+        output.accept(Spectralization.CUSTOM_METAMATERIAL_TEMPLATE.get());
+        output.accept(Spectralization.OPTICAL_FIBER_COIL.get());
+        output.accept(Spectralization.PHOSPHOR_DUST.get());
+        output.accept(Spectralization.PHOSPHOR_TUBE.get());
+        output.accept(Spectralization.EMPTY_PAINT_BUCKET.get());
+        output.accept(Spectralization.SILVER_PAINT_BUCKET.get());
+        output.accept(Spectralization.GOLD_PAINT_BUCKET.get());
+        output.accept(Spectralization.SANDPAPER.get());
+        output.accept(Spectralization.ADVANCED_BRUSH.get());
+        output.accept(Spectralization.CREATIVE_BRUSH.get());
+        output.accept(Spectralization.VERITY_HELM_OF_ALL_SEEING_INSIGHT.get());
+        output.accept(Spectralization.VERITY_CUIRASS_OF_COSMIC_INDIFFERENCE.get());
+        output.accept(Spectralization.VERITY_LEGGINGS_OF_ENTROPIC_RELEASE.get());
+        output.accept(Spectralization.VERITY_BOOTS_OF_LIGHT_CONE_TRANSITION.get());
+        output.accept(Spectralization.RUTILE.get());
+        output.accept(Spectralization.TITANIUM_DIOXIDE_DUST.get());
+        output.accept(Spectralization.CORUNDUM.get());
+        output.accept(Spectralization.ALUMINA_DUST.get());
+        output.accept(Spectralization.FLUORITE.get());
+        output.accept(Spectralization.YTTRIUM_OXIDE.get());
+        output.accept(Spectralization.YAG_CRYSTAL.get());
+        output.accept(Spectralization.RUBY.get());
+        output.accept(Spectralization.RAW_SILVER.get());
+        output.accept(Spectralization.SILVER_INGOT.get());
+        output.accept(Spectralization.LENS_HOLDER_ITEM.get());
+        output.accept(Spectralization.LENS_GRINDING_BENCH_ITEM.get());
+        output.accept(Spectralization.METAMATERIAL_DESIGN_TABLE_ITEM.get());
+        output.accept(Spectralization.FIBER_OPTIC_INTERFACE_ITEM.get());
+        output.accept(Spectralization.FIBER_RELAY_ITEM.get());
+        output.accept(Spectralization.HOLOGRAPHIC_STORAGE_SHELL_ITEM.get());
+        output.accept(Spectralization.HOLOGRAPHIC_STORAGE_CRYSTAL_ITEM.get());
+        output.accept(Spectralization.HOLOGRAPHIC_STORAGE_MAIN_CORE_ITEM.get());
+        output.accept(Spectralization.HOLOGRAPHIC_STORAGE_SCREEN_ITEM.get());
+        output.accept(Spectralization.COMPACT_MACHINE_ANCHOR_ITEM.get());
+        output.accept(Spectralization.COMPACT_MACHINE_CORE_ITEM.get());
+        output.accept(Spectralization.COMPACT_MACHINE_LIGHT_IO_PORT_ITEM.get());
+        output.accept(Spectralization.COMPACTED_MACHINE_ITEM.get());
+        output.accept(Spectralization.MIRROR_ITEM.get());
+        output.accept(Spectralization.DYNAMIC_MIRROR_ITEM.get());
+        output.accept(Spectralization.BEAM_SPLITTER_ITEM.get());
+        output.accept(Spectralization.DYNAMIC_BEAM_SPLITTER_ITEM.get());
+        output.accept(Spectralization.CREATIVE_LIGHT_SOURCE_ITEM.get());
+        output.accept(Spectralization.CMOS_SENSOR_ITEM.get());
+        output.accept(Spectralization.PASS_THROUGH_SENSOR_ITEM.get());
+        output.accept(Spectralization.BEAM_PROFILER_ITEM.get());
+        output.accept(Spectralization.SPECTROMETER_ITEM.get());
+        output.accept(Spectralization.PHOTONIC_GRADIENT_GENERATOR_ITEM.get());
+        output.accept(Spectralization.PHOTOTHERMAL_GENERATOR_ITEM.get());
+        output.accept(Spectralization.THERMAL_SMELTER_ITEM.get());
+        output.accept(Spectralization.STRAY_LIGHT_EMITTER_ITEM.get());
+        output.accept(Spectralization.ADVANCED_STRAY_LIGHT_EMITTER_ITEM.get());
+        output.accept(Spectralization.RUBY_BLOCK_ITEM.get());
+        output.accept(Spectralization.SILVER_BLOCK_ITEM.get());
+        output.accept(Spectralization.SILVER_GLASS_ITEM.get());
+        output.accept(Spectralization.SILVER_ORE_ITEM.get());
+        output.accept(Spectralization.DEEPSLATE_SILVER_ORE_ITEM.get());
+        output.accept(Spectralization.RUBY_ORE_ITEM.get());
+        output.accept(Spectralization.DEEPSLATE_RUBY_ORE_ITEM.get());
+        output.accept(Spectralization.RAW_SILVER_BLOCK_ITEM.get());
+        output.accept(Spectralization.RUTILE_ORE_ITEM.get());
+        output.accept(Spectralization.DEEPSLATE_RUTILE_ORE_ITEM.get());
+        output.accept(Spectralization.CORUNDUM_ORE_ITEM.get());
+        output.accept(Spectralization.DEEPSLATE_CORUNDUM_ORE_ITEM.get());
+        output.accept(Spectralization.FLUORITE_ORE_ITEM.get());
+        output.accept(Spectralization.DEEPSLATE_FLUORITE_ORE_ITEM.get());
+        output.accept(Spectralization.XENOTIME_ORE_ITEM.get());
+        output.accept(Spectralization.DEEPSLATE_XENOTIME_ORE_ITEM.get());
+        output.accept(Spectralization.RUBY_BEARING_CORUNDUM_ORE_ITEM.get());
+        output.accept(Spectralization.RUTILE_BLOCK_ITEM.get());
+        output.accept(Spectralization.CORUNDUM_BLOCK_ITEM.get());
+        output.accept(Spectralization.FLUORITE_BLOCK_ITEM.get());
+    }
+}

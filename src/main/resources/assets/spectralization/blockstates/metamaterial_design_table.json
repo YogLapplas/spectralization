@@ -1,7 +1,14 @@
 {
-  "variants": {
-    "": {
-      "model": "spectralization:block/metamaterial_design_table"
+  "multipart": [
+    {
+      "apply": {
+        "model": "spectralization:block/metamaterial_design_table"
+      }
+    },
+    {
+      "apply": {
+        "model": "spectralization:block/metamaterial_design_table_glass"
+      }
     }
-  }
+  ]
 }

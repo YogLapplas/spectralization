@@ -216,7 +216,7 @@ public final class HolographicStorageMultiblock {
                     removedReports,
                     visualPositions.size()
             );
-            SpectralDiagnostics.event(level, "holographic_storage", "multiblock_refresh")
+            SpectralDiagnostics.event(level, SpectralDiagnostics.Subsystem.HOLOGRAPHIC_STORAGE, "multiblock_refresh")
                     .pos("origin", origin)
                     .field("reason", reason)
                     .field("affected_cores", affectedCores.size())

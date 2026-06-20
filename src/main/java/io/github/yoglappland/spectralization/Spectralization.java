@@ -7,7 +7,6 @@ import io.github.yoglappland.spectralization.block.CmosSensorBlock;
 import io.github.yoglappland.spectralization.block.CompactMachineAnchorBlock;
 import io.github.yoglappland.spectralization.block.CompactMachineCoreBlock;
 import io.github.yoglappland.spectralization.block.CompactMachineLightIoPortBlock;
-import io.github.yoglappland.spectralization.block.CompactMachinePartBlock;
 import io.github.yoglappland.spectralization.block.CompactedMachineBlock;
 import io.github.yoglappland.spectralization.block.CreativeLightSourceBlock;
 import io.github.yoglappland.spectralization.block.DynamicBeamSplitterBlock;
@@ -16,7 +15,6 @@ import io.github.yoglappland.spectralization.block.FiberOpticInterfaceBlock;
 import io.github.yoglappland.spectralization.block.FiberRelayBlock;
 import io.github.yoglappland.spectralization.block.HolographicStorageCrystalBlock;
 import io.github.yoglappland.spectralization.block.HolographicStorageMainCoreBlock;
-import io.github.yoglappland.spectralization.block.HolographicStorageMultiblock;
 import io.github.yoglappland.spectralization.block.HolographicStorageScreenBlock;
 import io.github.yoglappland.spectralization.block.HolographicStorageShellBlock;
 import io.github.yoglappland.spectralization.block.LensGrindingBenchBlock;
@@ -31,24 +29,8 @@ import io.github.yoglappland.spectralization.block.SilverGlassBlock;
 import io.github.yoglappland.spectralization.block.SpectrometerBlock;
 import io.github.yoglappland.spectralization.block.StrayLightEmitterBlock;
 import io.github.yoglappland.spectralization.block.ThermalSmelterBlock;
-import io.github.yoglappland.spectralization.blockentity.RubyBlockEntity;
-import io.github.yoglappland.spectralization.client.model.CompactedMachineDynamicModel;
-import io.github.yoglappland.spectralization.client.renderer.LensHolderRenderer;
-import io.github.yoglappland.spectralization.client.screen.CoatingBrushScreen;
-import io.github.yoglappland.spectralization.client.screen.CompactMachineCoreScreen;
-import io.github.yoglappland.spectralization.client.screen.CompactedMachineScreen;
-import io.github.yoglappland.spectralization.client.screen.CreativeLightSourceScreen;
-import io.github.yoglappland.spectralization.client.screen.HolographicStorageCoreScreen;
-import io.github.yoglappland.spectralization.client.screen.HolographicStorageScreen;
-import io.github.yoglappland.spectralization.client.screen.LensGrindingBenchScreen;
-import io.github.yoglappland.spectralization.client.screen.MetamaterialDesignTableScreen;
-import io.github.yoglappland.spectralization.client.screen.PhotothermalGeneratorScreen;
-import io.github.yoglappland.spectralization.client.screen.SpectrometerScreen;
-import io.github.yoglappland.spectralization.client.screen.ThermalSmelterScreen;
-import io.github.yoglappland.spectralization.command.SpectralCommands;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
-import io.github.yoglappland.spectralization.compact.CompactMachineNetworkData;
-import io.github.yoglappland.spectralization.compact.CompactMachineOverlayPublisher;
+import io.github.yoglappland.spectralization.event.SpectralCommonEvents;
 import io.github.yoglappland.spectralization.item.CoatingBrushItem;
 import io.github.yoglappland.spectralization.item.CreativeBrushItem;
 import io.github.yoglappland.spectralization.item.LensItem;
@@ -57,63 +39,33 @@ import io.github.yoglappland.spectralization.item.OpticalFiberCoilItem;
 import io.github.yoglappland.spectralization.item.PaintBucketItem;
 import io.github.yoglappland.spectralization.item.PhosphorTubeItem;
 import io.github.yoglappland.spectralization.item.SandpaperItem;
-import io.github.yoglappland.spectralization.item.SurfaceCoatingInteraction;
 import io.github.yoglappland.spectralization.network.SpectralNetwork;
 import io.github.yoglappland.spectralization.optics.EnvironmentLightSpectra;
-import io.github.yoglappland.spectralization.optics.OpticalSpotTracker;
-import io.github.yoglappland.spectralization.optics.cache.OpticalDirtyKind;
-import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
-import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
-import io.github.yoglappland.spectralization.optics.fiber.FiberOverlayPublisher;
-import io.github.yoglappland.spectralization.optics.fiber.FiberNetworkIndex;
-import io.github.yoglappland.spectralization.optics.fiber.FiberShearsInteraction;
-import io.github.yoglappland.spectralization.optics.surface.SurfaceCoatingData;
-import io.github.yoglappland.spectralization.optics.surface.SurfaceKey;
 import io.github.yoglappland.spectralization.optics.surface.SurfaceTreatmentKind;
-import io.github.yoglappland.spectralization.optics.topology.OpticalNetworkIndex;
-import io.github.yoglappland.spectralization.optics.world.OpticalWorldIndex;
 import io.github.yoglappland.spectralization.recipe.AdvancedBrushLoadingRecipe;
-import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
-import io.github.yoglappland.spectralization.registry.SpectralFluids;
-import io.github.yoglappland.spectralization.registry.SpectralMenus;
+import io.github.yoglappland.spectralization.registry.SpectralCapabilities;
+import io.github.yoglappland.spectralization.registry.SpectralCreativeTabItems;
+import io.github.yoglappland.spectralization.registry.SpectralRegistryBootstrap;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ArmorMaterials;
+import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraft.world.level.material.PushReaction;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
-import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
-import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
-import net.neoforged.neoforge.client.event.EntityRenderersEvent;
-import net.neoforged.neoforge.client.event.ModelEvent;
-import net.neoforged.neoforge.capabilities.Capabilities;
-import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.RegisterCommandsEvent;
-import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
-import net.neoforged.neoforge.event.level.BlockEvent;
-import net.neoforged.neoforge.event.level.LevelEvent;
-import net.neoforged.neoforge.event.server.ServerStartingEvent;
-import net.neoforged.neoforge.event.server.ServerStoppedEvent;
-import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
@@ -269,7 +221,10 @@ public class Spectralization {
                     .mapColor(MapColor.METAL)
                     .strength(2.0F, 6.0F)
                     .sound(SoundType.METAL)
-                    .noOcclusion())
+                    .noOcclusion()
+                    .isRedstoneConductor((state, level, pos) -> false)
+                    .isSuffocating((state, level, pos) -> false)
+                    .isViewBlocking((state, level, pos) -> false))
     );
 
     public static final DeferredItem<BlockItem> METAMATERIAL_DESIGN_TABLE_ITEM =
@@ -685,81 +640,7 @@ public class Spectralization {
                     .title(Component.translatable("itemGroup.spectralization"))
                     .withTabsBefore(CreativeModeTabs.FUNCTIONAL_BLOCKS)
                     .icon(() -> LENS.get().getDefaultInstance())
-                    .displayItems((parameters, output) -> {
-                        output.accept(LENS.get());
-                        output.accept(STANDARD_METAMATERIAL_TEMPLATE.get());
-                        output.accept(CUSTOM_METAMATERIAL_TEMPLATE.get());
-                        output.accept(OPTICAL_FIBER_COIL.get());
-                        output.accept(PHOSPHOR_DUST.get());
-                        output.accept(PHOSPHOR_TUBE.get());
-                        output.accept(EMPTY_PAINT_BUCKET.get());
-                        output.accept(SILVER_PAINT_BUCKET.get());
-                        output.accept(GOLD_PAINT_BUCKET.get());
-                        output.accept(SANDPAPER.get());
-                        output.accept(ADVANCED_BRUSH.get());
-                        output.accept(CREATIVE_BRUSH.get());
-                        output.accept(VERITY_HELM_OF_ALL_SEEING_INSIGHT.get());
-                        output.accept(VERITY_CUIRASS_OF_COSMIC_INDIFFERENCE.get());
-                        output.accept(VERITY_LEGGINGS_OF_ENTROPIC_RELEASE.get());
-                        output.accept(VERITY_BOOTS_OF_LIGHT_CONE_TRANSITION.get());
-                        output.accept(RUTILE.get());
-                        output.accept(TITANIUM_DIOXIDE_DUST.get());
-                        output.accept(CORUNDUM.get());
-                        output.accept(ALUMINA_DUST.get());
-                        output.accept(FLUORITE.get());
-                        output.accept(YTTRIUM_OXIDE.get());
-                        output.accept(YAG_CRYSTAL.get());
-                        output.accept(RUBY.get());
-                        output.accept(RAW_SILVER.get());
-                        output.accept(SILVER_INGOT.get());
-                        output.accept(LENS_HOLDER_ITEM.get());
-                        output.accept(LENS_GRINDING_BENCH_ITEM.get());
-                        output.accept(METAMATERIAL_DESIGN_TABLE_ITEM.get());
-                        output.accept(FIBER_OPTIC_INTERFACE_ITEM.get());
-                        output.accept(FIBER_RELAY_ITEM.get());
-                        output.accept(HOLOGRAPHIC_STORAGE_SHELL_ITEM.get());
-                        output.accept(HOLOGRAPHIC_STORAGE_CRYSTAL_ITEM.get());
-                        output.accept(HOLOGRAPHIC_STORAGE_MAIN_CORE_ITEM.get());
-                        output.accept(HOLOGRAPHIC_STORAGE_SCREEN_ITEM.get());
-                        output.accept(COMPACT_MACHINE_ANCHOR_ITEM.get());
-                        output.accept(COMPACT_MACHINE_CORE_ITEM.get());
-                        output.accept(COMPACT_MACHINE_LIGHT_IO_PORT_ITEM.get());
-                        output.accept(COMPACTED_MACHINE_ITEM.get());
-                        output.accept(MIRROR_ITEM.get());
-                        output.accept(DYNAMIC_MIRROR_ITEM.get());
-                        output.accept(BEAM_SPLITTER_ITEM.get());
-                        output.accept(DYNAMIC_BEAM_SPLITTER_ITEM.get());
-                        output.accept(CREATIVE_LIGHT_SOURCE_ITEM.get());
-                        output.accept(CMOS_SENSOR_ITEM.get());
-                        output.accept(PASS_THROUGH_SENSOR_ITEM.get());
-                        output.accept(BEAM_PROFILER_ITEM.get());
-                        output.accept(SPECTROMETER_ITEM.get());
-                        output.accept(PHOTONIC_GRADIENT_GENERATOR_ITEM.get());
-                        output.accept(PHOTOTHERMAL_GENERATOR_ITEM.get());
-                        output.accept(THERMAL_SMELTER_ITEM.get());
-                        output.accept(STRAY_LIGHT_EMITTER_ITEM.get());
-                        output.accept(ADVANCED_STRAY_LIGHT_EMITTER_ITEM.get());
-                        output.accept(RUBY_BLOCK_ITEM.get());
-                        output.accept(SILVER_BLOCK_ITEM.get());
-                        output.accept(SILVER_GLASS_ITEM.get());
-                        output.accept(SILVER_ORE_ITEM.get());
-                        output.accept(DEEPSLATE_SILVER_ORE_ITEM.get());
-                        output.accept(RUBY_ORE_ITEM.get());
-                        output.accept(DEEPSLATE_RUBY_ORE_ITEM.get());
-                        output.accept(RAW_SILVER_BLOCK_ITEM.get());
-                        output.accept(RUTILE_ORE_ITEM.get());
-                        output.accept(DEEPSLATE_RUTILE_ORE_ITEM.get());
-                        output.accept(CORUNDUM_ORE_ITEM.get());
-                        output.accept(DEEPSLATE_CORUNDUM_ORE_ITEM.get());
-                        output.accept(FLUORITE_ORE_ITEM.get());
-                        output.accept(DEEPSLATE_FLUORITE_ORE_ITEM.get());
-                        output.accept(XENOTIME_ORE_ITEM.get());
-                        output.accept(DEEPSLATE_XENOTIME_ORE_ITEM.get());
-                        output.accept(RUBY_BEARING_CORUNDUM_ORE_ITEM.get());
-                        output.accept(RUTILE_BLOCK_ITEM.get());
-                        output.accept(CORUNDUM_BLOCK_ITEM.get());
-                        output.accept(FLUORITE_BLOCK_ITEM.get());
-                    })
+                    .displayItems((parameters, output) -> SpectralCreativeTabItems.accept(output))
                     .build());
 
     private static DeferredBlock<Block> oreBlock(String name, MapColor mapColor, float strength) {
@@ -787,234 +668,11 @@ public class Spectralization {
     public Spectralization(IEventBus modEventBus, ModContainer modContainer) {
         modContainer.registerConfig(ModConfig.Type.COMMON, SpectralizationConfig.SPEC);
 
-        SpectralFluids.register(modEventBus);
-        BLOCKS.register(modEventBus);
-        ITEMS.register(modEventBus);
-        RECIPE_SERIALIZERS.register(modEventBus);
-        CREATIVE_MODE_TABS.register(modEventBus);
-        SpectralBlockEntities.register(modEventBus);
-        SpectralMenus.register(modEventBus);
+        SpectralRegistryBootstrap.register(modEventBus);
         modEventBus.addListener(SpectralNetwork::register);
-        modEventBus.addListener(this::registerCapabilities);
+        modEventBus.addListener(SpectralCapabilities::register);
 
-        NeoForge.EVENT_BUS.register(this);
+        NeoForge.EVENT_BUS.register(new SpectralCommonEvents());
         LOGGER.info("Spectralization initialized");
-    }
-
-    @SubscribeEvent
-    public void onRegisterCommands(RegisterCommandsEvent event) {
-        SpectralCommands.register(event.getDispatcher());
-    }
-
-    private void registerCapabilities(RegisterCapabilitiesEvent event) {
-        event.registerBlockEntity(
-                Capabilities.EnergyStorage.BLOCK,
-                SpectralBlockEntities.PHOTONIC_GRADIENT_GENERATOR.get(),
-                (generator, side) -> generator.getEnergyStorage(side)
-        );
-        event.registerBlockEntity(
-                Capabilities.EnergyStorage.BLOCK,
-                SpectralBlockEntities.PHOTOTHERMAL_GENERATOR.get(),
-                (generator, side) -> generator.getEnergyStorage(side)
-        );
-        event.registerBlockEntity(
-                Capabilities.ItemHandler.BLOCK,
-                SpectralBlockEntities.PHOTOTHERMAL_GENERATOR.get(),
-                (generator, side) -> generator.getFuelItems(side)
-        );
-        event.registerBlockEntity(
-                Capabilities.ItemHandler.BLOCK,
-                SpectralBlockEntities.THERMAL_SMELTER.get(),
-                (smelter, side) -> smelter.getItems(side)
-        );
-        event.registerBlockEntity(
-                Capabilities.ItemHandler.BLOCK,
-                SpectralBlockEntities.METAMATERIAL_DESIGN_TABLE.get(),
-                (table, side) -> table.getItems(side)
-        );
-        event.registerBlockEntity(
-                Capabilities.ItemHandler.BLOCK,
-                SpectralBlockEntities.COMPACT_MACHINE_CORE.get(),
-                (core, side) -> core.getOutputItems(side)
-        );
-    }
-
-    @SubscribeEvent
-    public void onServerStarting(ServerStartingEvent event) {
-        resetOpticalRuntimeCaches();
-    }
-
-    @SubscribeEvent
-    public void onServerStopped(ServerStoppedEvent event) {
-        resetOpticalRuntimeCaches();
-    }
-
-    @SubscribeEvent
-    public void onLevelUnload(LevelEvent.Unload event) {
-        resetOpticalRuntimeCaches(event.getLevel());
-    }
-
-    @SubscribeEvent
-    public void onBlockPlaced(BlockEvent.EntityPlaceEvent event) {
-        if (event.getLevel() instanceof Level level) {
-            SurfaceCoatingData.removeAll(level, event.getPos());
-        }
-
-        if (!isFiberRelayOnly(event.getLevel().getBlockState(event.getPos()))) {
-            OpticalFieldSources.invalidate(event.getLevel());
-            OpticalWorldIndex.onBlockPlaced(event.getLevel(), event.getPos());
-            OpticalTraceCache.rememberSourceState(event.getLevel(), event.getPos());
-            OpticalTraceCache.markChanged(event.getLevel(), event.getPos(), OpticalDirtyKind.STRUCTURE);
-            RubyBlockEntity.refreshNear(event.getLevel(), event.getPos());
-            OpticalTraceCache.requestIntrinsicSourcesNear(event.getLevel(), event.getPos());
-            OpticalNetworkIndex.markDirty(event.getLevel());
-        }
-
-        FiberNetworkIndex.onBlockPlaced(event.getLevel(), event.getPos());
-        if (HolographicStorageMultiblock.isRelevantChange(event.getLevel(), event.getPos(), event.getPlacedBlock())) {
-            if (event.getLevel() instanceof Level level) {
-                HolographicStorageMultiblock.scheduleRefresh(level, event.getPos().immutable(), "block placed");
-            }
-        }
-        if (event.getLevel() instanceof net.minecraft.server.level.ServerLevel serverLevel) {
-            BlockState placedState = serverLevel.getBlockState(event.getPos());
-            if (!(placedState.getBlock() instanceof CompactMachinePartBlock)
-                    && CompactMachineNetworkData.isRelevantPlacement(serverLevel, event.getPos(), placedState)) {
-                CompactMachineNetworkData.refreshNear(serverLevel, event.getPos().immutable(), "block placed");
-            }
-        }
-    }
-
-    @SubscribeEvent
-    public void onBlockBroken(BlockEvent.BreakEvent event) {
-        SurfaceCoatingData.removeAll(event.getPlayer().level(), event.getPos());
-
-        if (!isFiberRelayOnly(event.getState())) {
-            OpticalFieldSources.invalidate(event.getLevel());
-            OpticalWorldIndex.onBlockBroken(event.getLevel(), event.getPos());
-            OpticalTraceCache.forgetDormantSource(event.getLevel(), event.getPos());
-            OpticalTraceCache.markChanged(event.getLevel(), event.getPos(), OpticalDirtyKind.STRUCTURE);
-            OpticalTraceCache.requestIntrinsicSourcesNear(event.getLevel(), event.getPos());
-            OpticalNetworkIndex.markDirty(event.getLevel());
-        }
-
-        FiberNetworkIndex.onBlockBroken(event.getLevel(), event.getPos());
-        if (HolographicStorageMultiblock.isRelevantChange(event.getLevel(), event.getPos(), event.getState())) {
-            if (event.getLevel() instanceof Level level) {
-                HolographicStorageMultiblock.scheduleRefresh(level, event.getPos().immutable(), "block broken");
-            }
-        }
-        if (event.getLevel() instanceof net.minecraft.server.level.ServerLevel serverLevel) {
-            if (!(event.getState().getBlock() instanceof CompactMachinePartBlock)
-                    && CompactMachineNetworkData.isRelevantRemoval(serverLevel, event.getPos(), event.getState())) {
-                CompactMachineNetworkData.scheduleRefresh(serverLevel, event.getPos().immutable(), "block broken");
-            }
-        }
-    }
-
-    private static boolean isFiberRelayOnly(BlockState state) {
-        return state.getBlock() instanceof FiberRelayBlock;
-    }
-
-    @SubscribeEvent
-    public void onNeighborNotified(BlockEvent.NeighborNotifyEvent event) {
-        boolean opticalDataChanged = OpticalTraceCache.markChanged(event.getLevel(), event.getPos(), OpticalDirtyKind.PARAMETER);
-        opticalDataChanged |= RubyBlockEntity.refreshNear(event.getLevel(), event.getPos());
-
-        if (opticalDataChanged) {
-            OpticalTraceCache.requestIntrinsicSourcesNear(event.getLevel(), event.getPos());
-        }
-    }
-
-    @SubscribeEvent
-    public void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
-        if (event.getHand() == net.minecraft.world.InteractionHand.MAIN_HAND
-                && event.getItemStack().is(Items.SHEARS)
-                && FiberShearsInteraction.isFiberNodeTarget(event.getLevel(), event.getPos())) {
-            net.minecraft.world.InteractionResult result = event.getLevel() instanceof net.minecraft.server.level.ServerLevel level
-                    ? FiberShearsInteraction.useOn(level, event.getEntity(), event.getItemStack(), event.getPos().immutable())
-                    : net.minecraft.world.InteractionResult.SUCCESS;
-            event.setCancellationResult(result);
-            event.setCanceled(true);
-            return;
-        }
-
-        if (event.getHand() != net.minecraft.world.InteractionHand.MAIN_HAND
-                || !event.getItemStack().is(Items.BRUSH)
-                || !(event.getEntity().getOffhandItem().getItem() instanceof PaintBucketItem)) {
-            return;
-        }
-
-        SurfaceKey key = new SurfaceKey(event.getPos(), event.getFace());
-        var result = SurfaceCoatingInteraction.applyPaint(
-                event.getLevel(),
-                event.getEntity(),
-                key,
-                event.getEntity().getOffhandItem()
-        );
-        event.setCancellationResult(result.consumesAction() ? result : net.minecraft.world.InteractionResult.FAIL);
-        event.setCanceled(true);
-    }
-
-    @SubscribeEvent
-    public void onServerTickPost(ServerTickEvent.Post event) {
-        OpticalTraceCache.processQueues(event.getServer());
-        HolographicStorageMultiblock.processPendingRefreshes(event.getServer());
-        CompactMachineNetworkData.processPendingRefreshes(event.getServer());
-        FiberOverlayPublisher.publishToInterestedPlayers(event.getServer());
-        CompactMachineOverlayPublisher.publishToPlayers(event.getServer());
-    }
-
-    private static void resetOpticalRuntimeCaches() {
-        OpticalTraceCache.clearAll();
-        OpticalWorldIndex.clearAll();
-        OpticalNetworkIndex.clearAll();
-        FiberNetworkIndex.clearAll();
-        OpticalFieldSources.clearAll();
-        OpticalSpotTracker.clearAll();
-        HolographicStorageMultiblock.clearAll();
-    }
-
-    private static void resetOpticalRuntimeCaches(net.minecraft.world.level.LevelAccessor level) {
-        OpticalTraceCache.clear(level);
-        OpticalWorldIndex.clear(level);
-        OpticalNetworkIndex.clear(level);
-        FiberNetworkIndex.clear(level);
-        OpticalFieldSources.invalidate(level);
-        OpticalSpotTracker.clear(level);
-        HolographicStorageMultiblock.clear(level);
-    }
-
-    @EventBusSubscriber(modid = Spectralization.MODID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
-    static class ClientModEvents {
-        @SubscribeEvent
-        static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
-            event.registerBlockEntityRenderer(SpectralBlockEntities.LENS_HOLDER.get(), LensHolderRenderer::new);
-        }
-
-        @SubscribeEvent
-        static void registerAdditionalModels(ModelEvent.RegisterAdditional event) {
-            CompactedMachineDynamicModel.registerAdditionalModels(event);
-        }
-
-        @SubscribeEvent
-        static void modifyBakingResult(ModelEvent.ModifyBakingResult event) {
-            CompactedMachineDynamicModel.modifyBakingResult(event);
-        }
-
-        @SubscribeEvent
-        static void registerScreens(RegisterMenuScreensEvent event) {
-            event.register(SpectralMenus.CREATIVE_LIGHT_SOURCE.get(), CreativeLightSourceScreen::new);
-            event.register(SpectralMenus.COATING_BRUSH.get(), CoatingBrushScreen::new);
-            event.register(SpectralMenus.SPECTROMETER.get(), SpectrometerScreen::new);
-            event.register(SpectralMenus.PHOTOTHERMAL_GENERATOR.get(), PhotothermalGeneratorScreen::new);
-            event.register(SpectralMenus.THERMAL_SMELTER.get(), ThermalSmelterScreen::new);
-            event.register(SpectralMenus.LENS_GRINDING_BENCH.get(), LensGrindingBenchScreen::new);
-            event.register(SpectralMenus.METAMATERIAL_DESIGN_TABLE.get(), MetamaterialDesignTableScreen::new);
-            event.register(SpectralMenus.HOLOGRAPHIC_STORAGE.get(), HolographicStorageScreen::new);
-            event.register(SpectralMenus.HOLOGRAPHIC_STORAGE_CORE.get(), HolographicStorageCoreScreen::new);
-            event.register(SpectralMenus.COMPACT_MACHINE_CORE.get(), CompactMachineCoreScreen::new);
-            event.register(SpectralMenus.COMPACTED_MACHINE.get(), CompactedMachineScreen::new);
-        }
     }
 }

@@ -21,16 +21,27 @@ public class MetamaterialDesignTableMenu extends AbstractContainerMenu {
     public static final int BUTTON_STANDARD_NEXT = 2;
     public static final int BUTTON_DESIGN = 3;
 
-    public static final int X_SLOT_X = 34;
-    public static final int X_SLOT_Y = 38;
-    public static final int Y_SLOT_X = 34;
-    public static final int Y_SLOT_Y = 64;
-    public static final int Z_SLOT_X = 34;
-    public static final int Z_SLOT_Y = 90;
-    public static final int OUTPUT_SLOT_X = 88;
-    public static final int OUTPUT_SLOT_Y = 64;
-    public static final int INVENTORY_X = 48;
-    public static final int INVENTORY_Y = 140;
+    public static final int LEFT_SLOT_X = 44;
+    public static final int RIGHT_SLOT_X = 194;
+    public static final int TOP_SLOT_Y = 42;
+    public static final int MIDDLE_SLOT_Y = 68;
+    public static final int BOTTOM_SLOT_Y = 94;
+    public static final int X_SLOT_X = LEFT_SLOT_X;
+    public static final int X_SLOT_Y = TOP_SLOT_Y;
+    public static final int Y_SLOT_X = LEFT_SLOT_X;
+    public static final int Y_SLOT_Y = MIDDLE_SLOT_Y;
+    public static final int Z_SLOT_X = LEFT_SLOT_X;
+    public static final int Z_SLOT_Y = BOTTOM_SLOT_Y;
+    public static final int RIGHT_TOP_SLOT_X = RIGHT_SLOT_X;
+    public static final int RIGHT_TOP_SLOT_Y = TOP_SLOT_Y;
+    public static final int RIGHT_MIDDLE_SLOT_X = RIGHT_SLOT_X;
+    public static final int RIGHT_MIDDLE_SLOT_Y = MIDDLE_SLOT_Y;
+    public static final int RIGHT_BOTTOM_SLOT_X = RIGHT_SLOT_X;
+    public static final int RIGHT_BOTTOM_SLOT_Y = BOTTOM_SLOT_Y;
+    public static final int OUTPUT_SLOT_X = 119;
+    public static final int OUTPUT_SLOT_Y = 65;
+    public static final int INVENTORY_X = 47;
+    public static final int INVENTORY_Y = 160;
 
     private static final int MACHINE_SLOT_COUNT = MetamaterialDesignTableBlockEntity.SLOT_COUNT;
     private static final int PLAYER_INVENTORY_START = MACHINE_SLOT_COUNT;
@@ -69,6 +80,9 @@ public class MetamaterialDesignTableMenu extends AbstractContainerMenu {
         addSlot(new SlotItemHandler(items, MetamaterialDesignTableBlockEntity.SLOT_X_BUDGET, X_SLOT_X, X_SLOT_Y));
         addSlot(new SlotItemHandler(items, MetamaterialDesignTableBlockEntity.SLOT_Y_BUDGET, Y_SLOT_X, Y_SLOT_Y));
         addSlot(new SlotItemHandler(items, MetamaterialDesignTableBlockEntity.SLOT_Z_BUDGET, Z_SLOT_X, Z_SLOT_Y));
+        addSlot(new SlotItemHandler(items, MetamaterialDesignTableBlockEntity.SLOT_RIGHT_TOP, RIGHT_TOP_SLOT_X, RIGHT_TOP_SLOT_Y));
+        addSlot(new SlotItemHandler(items, MetamaterialDesignTableBlockEntity.SLOT_RIGHT_MIDDLE, RIGHT_MIDDLE_SLOT_X, RIGHT_MIDDLE_SLOT_Y));
+        addSlot(new SlotItemHandler(items, MetamaterialDesignTableBlockEntity.SLOT_RIGHT_BOTTOM, RIGHT_BOTTOM_SLOT_X, RIGHT_BOTTOM_SLOT_Y));
         addSlot(new SlotItemHandler(items, MetamaterialDesignTableBlockEntity.SLOT_OUTPUT, OUTPUT_SLOT_X, OUTPUT_SLOT_Y) {
             @Override
             public boolean mayPlace(ItemStack stack) {
@@ -137,7 +151,7 @@ public class MetamaterialDesignTableMenu extends AbstractContainerMenu {
             }
         } else if (MetamaterialDesignTableBlockEntity.isDesignMaterial(stack)) {
             if (!moveItemStackTo(stack, MetamaterialDesignTableBlockEntity.SLOT_X_BUDGET,
-                    MetamaterialDesignTableBlockEntity.SLOT_Z_BUDGET + 1, false)) {
+                    MetamaterialDesignTableBlockEntity.SLOT_RIGHT_BOTTOM + 1, false)) {
                 return ItemStack.EMPTY;
             }
         } else if (index >= PLAYER_INVENTORY_START && index < PLAYER_INVENTORY_END) {

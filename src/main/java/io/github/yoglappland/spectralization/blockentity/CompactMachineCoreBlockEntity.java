@@ -138,7 +138,7 @@ public class CompactMachineCoreBlockEntity extends BlockEntity {
                 pendingWorkMax,
                 info.payloadBlockCount()
         );
-        SpectralDiagnostics.event(level, "compact_machine", "compression_started")
+        SpectralDiagnostics.event(level, SpectralDiagnostics.Subsystem.COMPACT_MACHINE, "compression_started")
                 .pos("core", worldPosition)
                 .pos("work_min", pendingWorkMin)
                 .pos("work_max", pendingWorkMax)
@@ -203,7 +203,7 @@ public class CompactMachineCoreBlockEntity extends BlockEntity {
                     "Compact machine output at {} was occupied when animation finished; dropping result",
                     pos
             );
-            SpectralDiagnostics.anomaly(level, "compact_machine", "compression_output_occupied")
+            SpectralDiagnostics.anomaly(level, SpectralDiagnostics.Subsystem.COMPACT_MACHINE, "compression_output_occupied")
                     .pos("core", pos)
                     .field("result_dropped", true)
                     .write();
@@ -214,7 +214,7 @@ public class CompactMachineCoreBlockEntity extends BlockEntity {
                 level.dimension().location(),
                 pos
         );
-        SpectralDiagnostics.event(level, "compact_machine", "compression_finished")
+        SpectralDiagnostics.event(level, SpectralDiagnostics.Subsystem.COMPACT_MACHINE, "compression_finished")
                 .pos("core", pos)
                 .field("output_slot_empty", outputItems.getStackInSlot(SLOT_OUTPUT).isEmpty())
                 .write();
@@ -253,7 +253,7 @@ public class CompactMachineCoreBlockEntity extends BlockEntity {
                 level.dimension().location(),
                 worldPosition
         );
-        SpectralDiagnostics.event(level, "compact_machine", "work_area_cleared")
+        SpectralDiagnostics.event(level, SpectralDiagnostics.Subsystem.COMPACT_MACHINE, "work_area_cleared")
                 .pos("core", worldPosition)
                 .pos("work_min", min)
                 .pos("work_max", max)

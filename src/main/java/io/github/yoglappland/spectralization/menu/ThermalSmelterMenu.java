@@ -44,10 +44,10 @@ public class ThermalSmelterMenu extends AbstractContainerMenu {
         this.smelter = smelter;
         this.data = data;
 
-        addSlot(new SlotItemHandler(items, ThermalSmelterBlockEntity.SLOT_INPUT, 67, 44));
-        addSlot(new SlotItemHandler(items, ThermalSmelterBlockEntity.SLOT_ADDITIVE, 67, 71));
-        addSlot(new SlotItemHandler(items, ThermalSmelterBlockEntity.SLOT_OUTPUT, 192, 57));
-        addPlayerInventory(inventory, 48, 124);
+        addSlot(new SlotItemHandler(items, ThermalSmelterBlockEntity.SLOT_INPUT, 16, 23));
+        addSlot(new SlotItemHandler(items, ThermalSmelterBlockEntity.SLOT_ADDITIVE, 16, 45));
+        addSlot(new SlotItemHandler(items, ThermalSmelterBlockEntity.SLOT_OUTPUT, 213, 34));
+        addPlayerInventory(inventory, 49, 125);
         addDataSlots(data);
     }
 

@@ -120,6 +120,10 @@ public class ThermalSmelterBlockEntity extends BlockEntity implements Phototherm
         return data;
     }
 
+    public int dataValue(int index) {
+        return getData(index);
+    }
+
     @Override
     public PhotothermalAbsorberProfile photothermalAbsorberProfile() {
         return PhotothermalAbsorberProfile.EARLY_ABSORBING_COATING;

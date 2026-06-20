@@ -350,6 +350,10 @@ public final class OpticalCompilerDebugLogger {
             int readoutBindingCount,
             int receiverOutputCount,
             boolean usableForGameplay,
+            boolean structurallyFresh,
+            boolean parametricallyFresh,
+            boolean gameplayCandidate,
+            boolean solutionReliable,
             String solverKind,
             CompiledPortGraph baseCoherentGraph,
             CompiledPortGraph coherentGraph
@@ -376,6 +380,10 @@ public final class OpticalCompilerDebugLogger {
                 .append(" readout_bindings=").append(readoutBindingCount)
                 .append(" receiver_outputs=").append(receiverOutputCount)
                 .append(" usable_for_gameplay=").append(usableForGameplay)
+                .append(" structurally_fresh=").append(structurallyFresh)
+                .append(" parametrically_fresh=").append(parametricallyFresh)
+                .append(" gameplay_candidate=").append(gameplayCandidate)
+                .append(" solution_reliable=").append(solutionReliable)
                 .append(" solver=").append(solverKind)
                 .append('\n');
         appendSystemGraphFingerprint(builder, "base_coherent", baseCoherentGraph);

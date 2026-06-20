@@ -71,7 +71,7 @@ public final class FiberOverloadMonitor {
                 overloadedSegments.size(),
                 String.join(", ", overloadLogParts)
         );
-        SpectralDiagnostics.anomaly(level, "fiber", "overload")
+        SpectralDiagnostics.anomaly(level, SpectralDiagnostics.Subsystem.FIBER, "overload")
                 .field("segments", overloadedSegments.size())
                 .field("graph_nodes", graph.nodes().size())
                 .field("graph_edges", graph.edges().size())

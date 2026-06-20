@@ -142,7 +142,7 @@ public final class CompactMachineNetworkData extends SavedData {
                     validation.invalidFrames(),
                     validation.changedErrorStates()
             );
-            SpectralDiagnostics.event(level, "compact_machine", "network_refresh")
+            SpectralDiagnostics.event(level, SpectralDiagnostics.Subsystem.COMPACT_MACHINE, "network_refresh")
                     .pos("changed_pos", immutableChangedPos)
                     .field("reason", reason)
                     .field("connections_before", before)
@@ -265,7 +265,7 @@ public final class CompactMachineNetworkData extends SavedData {
                 formatPos(to),
                 direction.getAxis()
         );
-        SpectralDiagnostics.event(level, "compact_machine", "anchor_connection_added")
+        SpectralDiagnostics.event(level, SpectralDiagnostics.Subsystem.COMPACT_MACHINE, "anchor_connection_added")
                 .pos("from", from)
                 .pos("to", to)
                 .field("axis", direction.getAxis())
@@ -298,7 +298,7 @@ public final class CompactMachineNetworkData extends SavedData {
                         formatPos(connection.from()),
                         formatPos(connection.to())
                 );
-                SpectralDiagnostics.event(level, "compact_machine", "anchor_connection_removed")
+                SpectralDiagnostics.event(level, SpectralDiagnostics.Subsystem.COMPACT_MACHINE, "anchor_connection_removed")
                         .field("reason", reason)
                         .pos("from", connection.from())
                         .pos("to", connection.to())

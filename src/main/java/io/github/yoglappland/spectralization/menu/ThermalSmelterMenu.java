@@ -4,6 +4,7 @@ import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.blockentity.ThermalSmelterBlockEntity;
 import io.github.yoglappland.spectralization.machine.ThermalSmelterRecipe;
 import io.github.yoglappland.spectralization.registry.SpectralMenus;
+import java.util.Optional;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -44,15 +45,59 @@ public class ThermalSmelterMenu extends AbstractContainerMenu {
         this.smelter = smelter;
         this.data = data;
 
-        addSlot(new SlotItemHandler(items, ThermalSmelterBlockEntity.SLOT_INPUT, 16, 23));
-        addSlot(new SlotItemHandler(items, ThermalSmelterBlockEntity.SLOT_ADDITIVE, 16, 45));
-        addSlot(new SlotItemHandler(items, ThermalSmelterBlockEntity.SLOT_OUTPUT, 213, 34));
-        addPlayerInventory(inventory, 49, 125);
+        addSlot(new SlotItemHandler(items, ThermalSmelterBlockEntity.SLOT_INPUT,
+                ThermalSmelterLayout.ITEM_INPUT_X, ThermalSmelterLayout.ITEM_INPUT_Y));
+        addSlot(new SlotItemHandler(items, ThermalSmelterBlockEntity.SLOT_ADDITIVE,
+                ThermalSmelterLayout.ITEM_ADDITIVE_X, ThermalSmelterLayout.ITEM_ADDITIVE_Y));
+        addSlot(new SlotItemHandler(items, ThermalSmelterBlockEntity.SLOT_OUTPUT,
+                ThermalSmelterLayout.ITEM_OUTPUT_X, ThermalSmelterLayout.ITEM_OUTPUT_Y));
+        addSlot(new SlotItemHandler(items, ThermalSmelterBlockEntity.SLOT_OUTPUT_SECOND,
+                ThermalSmelterLayout.ITEM_OUTPUT_SECOND_X, ThermalSmelterLayout.ITEM_OUTPUT_SECOND_Y));
+        addPlayerInventory(inventory, ThermalSmelterLayout.PLAYER_INVENTORY_ITEM_X, ThermalSmelterLayout.PLAYER_INVENTORY_ITEM_Y);
         addDataSlots(data);
     }
 
     public int getData(int index) {
         return data.get(index);
+    }
+
+    public ItemStack inputStack() {
+        return getSlot(ThermalSmelterBlockEntity.SLOT_INPUT).getItem();
+    }
+
+    public ItemStack additiveStack() {
+        return getSlot(ThermalSmelterBlockEntity.SLOT_ADDITIVE).getItem();
+    }
+
+    public ItemStack outputStack() {
+        return getSlot(ThermalSmelterBlockEntity.SLOT_OUTPUT).getItem();
+    }
+
+    public ItemStack outputStackSecond() {
+        return getSlot(ThermalSmelterBlockEntity.SLOT_OUTPUT_SECOND).getItem();
+    }
+
+    public Optional<ThermalSmelterRecipe> activeRecipe() {
+        return ThermalSmelterRecipe.find(inputStack(), additiveStack());
+    }
+
+    public boolean outputBlocked() {
+        return activeRecipe()
+                .map(recipe -> !canAcceptResult(recipe.resultStack()))
+                .orElse(false);
+    }
+
+    public boolean canAcceptResult(ItemStack result) {
+        return canAcceptResult(outputStack(), result) || canAcceptResult(outputStackSecond(), result);
+    }
+
+    private boolean canAcceptResult(ItemStack output, ItemStack result) {
+        if (output.isEmpty()) {
+            return true;
+        }
+
+        return ItemStack.isSameItemSameComponents(output, result)
+                && output.getCount() + result.getCount() <= output.getMaxStackSize();
     }
 
     @Override

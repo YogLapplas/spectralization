@@ -1,0 +1,10 @@
+{
+  "replace": false,
+  "values": [
+    "spectralization:grinding_knife",
+    "spectralization:diamond_grinding_knife",
+    "spectralization:obsidian_grinding_knife",
+    "spectralization:ceramic_grinding_knife",
+    "spectralization:clear_grinding_knife"
+  ]
+}

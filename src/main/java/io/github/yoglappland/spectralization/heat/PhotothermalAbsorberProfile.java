@@ -25,8 +25,8 @@ public record PhotothermalAbsorberProfile(
             ),
             0.70,
             0.45,
-            0.27,
-            0.56,
+            0.45,
+            0.45,
             1.35,
             120.0,
             0.75
@@ -36,18 +36,18 @@ public record PhotothermalAbsorberProfile(
             PhotothermalAbsorptionCurve.byRegion(
                     0.40,
                     Map.of(
-                            SpectralRegion.INFRARED, 0.92,
-                            SpectralRegion.VISIBLE, 0.82,
-                            SpectralRegion.ULTRAVIOLET, 0.55
+                            SpectralRegion.INFRARED, 0.78,
+                            SpectralRegion.VISIBLE, 0.62,
+                            SpectralRegion.ULTRAVIOLET, 0.38
                     )
             ),
-            0.88,
-            0.45,
-            0.27,
-            0.56,
-            1.35,
-            140.0,
-            0.65
+            0.72,
+            0.42,
+            0.42,
+            0.42,
+            1.25,
+            55.0,
+            1.20
     );
 
     public PhotothermalAbsorberProfile {
@@ -61,6 +61,10 @@ public record PhotothermalAbsorberProfile(
 
         if (minFullEfficiencyRadius > maxFullEfficiencyRadius) {
             throw new IllegalArgumentException("Minimum full-efficiency radius must not exceed maximum radius");
+        }
+
+        if (absorptionRadius < minFullEfficiencyRadius || absorptionRadius > maxFullEfficiencyRadius) {
+            throw new IllegalArgumentException("Absorption radius must sit inside the full-efficiency radius range");
         }
 
         if (maxFullEfficiencyRadius >= cutoffRadius) {

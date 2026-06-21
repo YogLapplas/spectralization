@@ -7,6 +7,7 @@ import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
 import io.github.yoglappland.spectralization.block.RubyBlock;
 import io.github.yoglappland.spectralization.block.SpectrometerBlock;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
+import io.github.yoglappland.spectralization.heat.PhotothermalReceiverBlock;
 import io.github.yoglappland.spectralization.network.BeamPathOverlayPayload;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalTrace;
 import io.github.yoglappland.spectralization.optics.CoherenceKind;
@@ -1480,6 +1481,24 @@ public final class OpticalTraceCache {
 
             if (step.incomingDirection() == receivingSide) {
                 receiverOutputs.add(ReceiverOutput.spectrometer(step.pos(), step.interactingBeam().powerByFrequency()));
+            }
+
+            return;
+        }
+
+        if (state.getBlock() instanceof PhotothermalReceiverBlock photothermalReceiver) {
+            if (photothermalReceiver.photothermalReceivingSides(state).contains(step.incomingDirection())) {
+                BeamPacket beam = step.interactingBeam();
+                double coherentPower = coherentPower(beam);
+                double totalPower = beam.totalPower();
+                receiverOutputs.add(ReceiverOutput.photothermalGenerator(
+                        step.pos(),
+                        totalPower,
+                        coherentPower,
+                        Math.max(0.0, totalPower - coherentPower),
+                        beam.envelope(),
+                        beam.powerByFrequency()
+                ));
             }
 
             return;

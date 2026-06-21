@@ -18,6 +18,12 @@ public final class SpectralCreativeTabItems {
         output.accept(Spectralization.SILVER_PAINT_BUCKET.get());
         output.accept(Spectralization.GOLD_PAINT_BUCKET.get());
         output.accept(Spectralization.SANDPAPER.get());
+        output.accept(Spectralization.GRINDING_KNIFE.get());
+        output.accept(Spectralization.DIAMOND_GRINDING_KNIFE.get());
+        output.accept(Spectralization.OBSIDIAN_GRINDING_KNIFE.get());
+        output.accept(Spectralization.CERAMIC_GRINDING_KNIFE.get());
+        output.accept(Spectralization.CLEAR_GRINDING_KNIFE.get());
+        output.accept(Spectralization.GRINDING_TOOL.get());
         output.accept(Spectralization.ADVANCED_BRUSH.get());
         output.accept(Spectralization.CREATIVE_BRUSH.get());
         output.accept(Spectralization.VERITY_HELM_OF_ALL_SEEING_INSIGHT.get());

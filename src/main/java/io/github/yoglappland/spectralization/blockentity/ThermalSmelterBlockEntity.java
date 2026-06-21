@@ -7,8 +7,10 @@ import io.github.yoglappland.spectralization.heat.PhotothermalCouplingResult;
 import io.github.yoglappland.spectralization.heat.PhotothermalReadoutSample;
 import io.github.yoglappland.spectralization.heat.PhotothermalReceiver;
 import io.github.yoglappland.spectralization.heat.SimpleSpectralHeatStorage;
+import io.github.yoglappland.spectralization.machine.ThermalSmelterBalance;
 import io.github.yoglappland.spectralization.machine.ThermalSmelterRecipe;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
+import java.util.Optional;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -26,7 +28,8 @@ public class ThermalSmelterBlockEntity extends BlockEntity implements Phototherm
     public static final int SLOT_INPUT = 0;
     public static final int SLOT_ADDITIVE = 1;
     public static final int SLOT_OUTPUT = 2;
-    public static final int SLOT_COUNT = 3;
+    public static final int SLOT_OUTPUT_SECOND = 3;
+    public static final int SLOT_COUNT = 4;
 
     public static final int DATA_TEMPERATURE = 0;
     public static final int DATA_HEAT = 1;
@@ -34,22 +37,21 @@ public class ThermalSmelterBlockEntity extends BlockEntity implements Phototherm
     public static final int DATA_PROGRESS = 3;
     public static final int DATA_PROGRESS_REQUIRED = 4;
     public static final int DATA_HEAT_POWER_X100 = 5;
-    public static final int DATA_COUNT = 6;
+    public static final int DATA_PARALLEL_COUNT = 6;
+    public static final int DATA_COUNT = 7;
 
     private static final long SAMPLE_HOLD_TICKS = 1L;
-    private static final double HEAT_CAPACITY = 1.0;
-    private static final double AMBIENT_TEMPERATURE = 300.0;
-    private static final double MAX_TEMPERATURE = 2600.0;
-    private static final double PASSIVE_COOLING = 0.0025;
     private static final String ITEMS_TAG = "items";
     private static final String HEAT_TAG = "heat";
     private static final String PROGRESS_TAG = "progress";
     private static final String OPTICAL_POWER_TAG = "optical_power";
+    private static final String PARALLEL_COUNT_TAG = "parallel_count";
+    public static final int FULL_SP_HEAT_POWER_X100 = ThermalSmelterBalance.FULL_SP_HEAT_POWER_X100;
 
     private final SimpleSpectralHeatStorage heat = new SimpleSpectralHeatStorage(
-            HEAT_CAPACITY,
-            AMBIENT_TEMPERATURE,
-            MAX_TEMPERATURE,
+            ThermalSmelterBalance.HEAT_CAPACITY,
+            ThermalSmelterBalance.AMBIENT_TEMPERATURE,
+            ThermalSmelterBalance.MAX_TEMPERATURE,
             this::setChanged
     );
     private final ItemStackHandler items = new ItemStackHandler(SLOT_COUNT) {
@@ -91,6 +93,7 @@ public class ThermalSmelterBlockEntity extends BlockEntity implements Phototherm
     private PhotothermalCouplingResult committedCoupling = PhotothermalCouplingResult.zero();
     private int progress = 0;
     private int progressRequired = 0;
+    private int parallelCount = 1;
 
     public ThermalSmelterBlockEntity(BlockPos pos, BlockState blockState) {
         super(SpectralBlockEntities.THERMAL_SMELTER.get(), pos, blockState);
@@ -104,7 +107,7 @@ public class ThermalSmelterBlockEntity extends BlockEntity implements Phototherm
         smelter.tickOpticalSample(level);
         smelter.applyOpticalHeat();
         smelter.tickRecipe();
-        smelter.heat.coolTowardAmbient(PASSIVE_COOLING);
+        smelter.applyPassiveCooling();
     }
 
     public ItemStackHandler items() {
@@ -122,6 +125,35 @@ public class ThermalSmelterBlockEntity extends BlockEntity implements Phototherm
 
     public int dataValue(int index) {
         return getData(index);
+    }
+
+    public Optional<ThermalSmelterRecipe> activeRecipe() {
+        return ThermalSmelterRecipe.find(items.getStackInSlot(SLOT_INPUT), items.getStackInSlot(SLOT_ADDITIVE));
+    }
+
+    public boolean outputBlocked() {
+        return activeRecipe()
+                .map(recipe -> !canAccept(recipe.resultStack()))
+                .orElse(false);
+    }
+
+    public int parallelCount() {
+        return parallelCount;
+    }
+
+    public boolean upgradeParallelCount() {
+        if (parallelCount >= ThermalSmelterBalance.MAX_PARALLEL_COUNT) {
+            return false;
+        }
+
+        parallelCount++;
+        setChanged();
+
+        if (level != null) {
+            level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), Block.UPDATE_CLIENTS);
+        }
+
+        return true;
     }
 
     @Override
@@ -190,10 +222,22 @@ public class ThermalSmelterBlockEntity extends BlockEntity implements Phototherm
     }
 
     private void applyOpticalHeat() {
-        double heatPower = committedCoupling.heatPower();
+        double heatPower = acceptedCompatibleHeatPower(committedCoupling.heatPower());
 
         if (heatPower > 0.0) {
             heat.insertHeat(heatPower, false);
+        }
+    }
+
+    private void applyPassiveCooling() {
+        double cooling = ThermalSmelterBalance.passiveCooling(
+                heat.temperature(),
+                heat.ambientTemperature(),
+                heat.heatStored()
+        );
+
+        if (cooling > 0.0) {
+            heat.extractHeat(cooling, false);
         }
     }
 
@@ -210,13 +254,15 @@ public class ThermalSmelterBlockEntity extends BlockEntity implements Phototherm
         ThermalSmelterRecipe active = recipe.get();
         progressRequired = active.processTicks();
 
-        if (!canAccept(active.resultStack())) {
+        int batchSize = processBatchSize(active, input, additive);
+
+        if (batchSize <= 0) {
             progress = Math.max(0, progress - 1);
             setChanged();
             return;
         }
 
-        double heatPerTick = active.heatCost() / active.processTicks();
+        double heatPerTick = active.heatCost() * batchSize / active.processTicks();
 
         if (heat.temperature() < active.minimumTemperature()
                 || heat.extractHeat(heatPerTick, true) + 1.0E-9 < heatPerTick) {
@@ -229,42 +275,90 @@ public class ThermalSmelterBlockEntity extends BlockEntity implements Phototherm
         progress++;
 
         if (progress >= active.processTicks()) {
-            completeRecipe(active, input, additive);
+            completeRecipe(active, input, additive, batchSize);
             progress = 0;
         }
 
         setChanged();
     }
 
-    private void completeRecipe(ThermalSmelterRecipe recipe, ItemStack input, ItemStack additive) {
+    private void completeRecipe(ThermalSmelterRecipe recipe, ItemStack input, ItemStack additive, int batchSize) {
         ItemStack result = recipe.resultStack();
-        ItemStack output = items.getStackInSlot(SLOT_OUTPUT);
 
-        input.shrink(1);
+        input.shrink(batchSize);
         items.setStackInSlot(SLOT_INPUT, input);
 
         if (recipe.consumesAdditive()) {
-            additive.shrink(recipe.additiveCost());
+            additive.shrink(recipe.additiveCost() * batchSize);
             items.setStackInSlot(SLOT_ADDITIVE, additive);
         }
 
-        if (output.isEmpty()) {
-            items.setStackInSlot(SLOT_OUTPUT, result);
-        } else {
-            output.grow(result.getCount());
-            items.setStackInSlot(SLOT_OUTPUT, output);
+        result.setCount(result.getCount() * batchSize);
+        insertResult(result);
+    }
+
+    private int processBatchSize(ThermalSmelterRecipe recipe, ItemStack input, ItemStack additive) {
+        int byInput = Math.min(parallelCount, input.getCount());
+        int byAdditive = byInput;
+
+        if (recipe.consumesAdditive()) {
+            byAdditive = additive.getCount() / recipe.additiveCost();
         }
+
+        return Math.max(0, Math.min(Math.min(byInput, byAdditive), acceptedBatchSize(recipe.resultStack())));
+    }
+
+    private int acceptedBatchSize(ItemStack result) {
+        int accepted = 0;
+
+        for (int slot = SLOT_OUTPUT; slot <= SLOT_OUTPUT_SECOND; slot++) {
+            accepted += outputCapacityFor(items.getStackInSlot(slot), result, slot);
+        }
+
+        return Math.min(parallelCount, accepted);
+    }
+
+    private int outputCapacityFor(ItemStack output, ItemStack result, int slot) {
+        int resultCount = Math.max(1, result.getCount());
+        int slotLimit = Math.min(result.getMaxStackSize(), items.getSlotLimit(slot));
+
+        if (output.isEmpty()) {
+            return slotLimit / resultCount;
+        }
+
+        if (!ItemStack.isSameItemSameComponents(output, result)) {
+            return 0;
+        }
+
+        return Math.max(0, slotLimit - output.getCount()) / resultCount;
     }
 
     private boolean canAccept(ItemStack result) {
-        ItemStack output = items.getStackInSlot(SLOT_OUTPUT);
+        return acceptedBatchSize(result) > 0;
+    }
 
-        if (output.isEmpty()) {
-            return true;
+    private void insertResult(ItemStack result) {
+        int remaining = result.getCount();
+
+        for (int slot = SLOT_OUTPUT; slot <= SLOT_OUTPUT_SECOND && remaining > 0; slot++) {
+            ItemStack output = items.getStackInSlot(slot);
+            int slotLimit = Math.min(result.getMaxStackSize(), items.getSlotLimit(slot));
+
+            if (output.isEmpty()) {
+                ItemStack inserted = result.copy();
+                inserted.setCount(Math.min(remaining, slotLimit));
+                items.setStackInSlot(slot, inserted);
+                remaining -= inserted.getCount();
+            } else if (ItemStack.isSameItemSameComponents(output, result)) {
+                int moved = Math.min(remaining, slotLimit - output.getCount());
+
+                if (moved > 0) {
+                    output.grow(moved);
+                    items.setStackInSlot(slot, output);
+                    remaining -= moved;
+                }
+            }
         }
-
-        return ItemStack.isSameItemSameComponents(output, result)
-                && output.getCount() + result.getCount() <= Math.min(output.getMaxStackSize(), items.getSlotLimit(SLOT_OUTPUT));
     }
 
     private void resetProgress() {
@@ -282,7 +376,8 @@ public class ThermalSmelterBlockEntity extends BlockEntity implements Phototherm
             case DATA_MAX_HEAT -> (int) Math.round(heat.maxHeatStored());
             case DATA_PROGRESS -> progress;
             case DATA_PROGRESS_REQUIRED -> progressRequired;
-            case DATA_HEAT_POWER_X100 -> (int) Math.round(committedCoupling.heatPower() * 100.0);
+            case DATA_HEAT_POWER_X100 -> (int) Math.round(acceptedCompatibleHeatPower(committedCoupling.heatPower()) * 100.0);
+            case DATA_PARALLEL_COUNT -> parallelCount;
             default -> 0;
         };
     }
@@ -292,12 +387,32 @@ public class ThermalSmelterBlockEntity extends BlockEntity implements Phototherm
         super.loadAdditional(tag, registries);
         heat.setHeatStored(tag.getDouble(HEAT_TAG));
         progress = tag.getInt(PROGRESS_TAG);
+        parallelCount = clampParallelCount(tag.contains(PARALLEL_COUNT_TAG) ? tag.getInt(PARALLEL_COUNT_TAG) : 1);
         committedCoupling = restoredCoupling(tag.getDouble(OPTICAL_POWER_TAG));
 
         if (tag.contains(ITEMS_TAG)) {
             items.deserializeNBT(registries, tag.getCompound(ITEMS_TAG));
+            normalizeItemSlots();
         }
 
+    }
+
+    private void normalizeItemSlots() {
+        if (items.getSlots() == SLOT_COUNT) {
+            return;
+        }
+
+        ItemStack[] savedStacks = new ItemStack[Math.min(items.getSlots(), SLOT_COUNT)];
+
+        for (int slot = 0; slot < savedStacks.length; slot++) {
+            savedStacks[slot] = items.getStackInSlot(slot).copy();
+        }
+
+        items.setSize(SLOT_COUNT);
+
+        for (int slot = 0; slot < savedStacks.length; slot++) {
+            items.setStackInSlot(slot, savedStacks[slot]);
+        }
     }
 
     @Override
@@ -306,7 +421,16 @@ public class ThermalSmelterBlockEntity extends BlockEntity implements Phototherm
         tag.put(ITEMS_TAG, items.serializeNBT(registries));
         tag.putDouble(HEAT_TAG, heat.heatStored());
         tag.putInt(PROGRESS_TAG, progress);
+        tag.putInt(PARALLEL_COUNT_TAG, parallelCount);
         tag.putDouble(OPTICAL_POWER_TAG, committedCoupling.heatPower());
+    }
+
+    private static int clampParallelCount(int value) {
+        return Math.max(1, Math.min(ThermalSmelterBalance.MAX_PARALLEL_COUNT, value));
+    }
+
+    public static double acceptedCompatibleHeatPower(double opticalHeatPower) {
+        return ThermalSmelterBalance.acceptedCompatibleHeatPower(opticalHeatPower);
     }
 
     private static PhotothermalCouplingResult combine(

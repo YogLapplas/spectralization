@@ -18,6 +18,8 @@ import com.lowdragmc.lowdraglib2.gui.ui.data.FillDirection;
 import com.lowdragmc.lowdraglib2.gui.ui.style.StylesheetManager;
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.blockentity.ThermalSmelterBlockEntity;
+import io.github.yoglappland.spectralization.machine.ThermalSmelterRecipe;
+import io.github.yoglappland.spectralization.menu.ThermalSmelterLayout;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -28,6 +30,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.ItemStack;
 import org.appliedenergistics.yoga.YogaPositionType;
 
 public final class ThermalSmelterLdLibUi {
@@ -69,6 +72,10 @@ public final class ThermalSmelterLdLibUi {
     private static final int OPTICAL = 0xFF42C7C7;
     private static final int PROGRESS = 0xFFF2B84B;
     private static final int BAR_BG = 0xFFBDB9AF;
+    private static final int STATUS_EMPTY = 0xFF697168;
+    private static final int STATUS_READY = 0xFF55B96B;
+    private static final int STATUS_PENDING = 0xFFF2B84B;
+    private static final int STATUS_INVALID = 0xFFE35D52;
 
     private ThermalSmelterLdLibUi() {
     }
@@ -147,36 +154,86 @@ public final class ThermalSmelterLdLibUi {
         UIElement root = rect("thermal_smelter_root", 0, 0, WIDTH, HEIGHT, GUI_BG);
         root.addChildren(
                 rect("machine_band", 0, 0, WIDTH, 108, MACHINE_BG),
-                rect("left_panel", 6, 10, 44, 86, PANEL),
-                rect("right_panel", 206, 10, 44, 86, PANEL),
-                rect("chamber", 54, 8, 132, 88, CHAMBER_BG),
+                rect("left_panel", ThermalSmelterLayout.PROCESS_LEFT_PANEL_X, ThermalSmelterLayout.PROCESS_SIDE_PANEL_Y, ThermalSmelterLayout.PROCESS_SIDE_PANEL_WIDTH, ThermalSmelterLayout.PROCESS_SIDE_PANEL_HEIGHT, PANEL),
+                rect("right_panel", ThermalSmelterLayout.PROCESS_RIGHT_PANEL_X, ThermalSmelterLayout.PROCESS_SIDE_PANEL_Y, ThermalSmelterLayout.PROCESS_SIDE_PANEL_WIDTH, ThermalSmelterLayout.PROCESS_SIDE_PANEL_HEIGHT, PANEL),
+                rect("chamber", ThermalSmelterLayout.PROCESS_CHAMBER_X, ThermalSmelterLayout.PROCESS_CHAMBER_Y, ThermalSmelterLayout.PROCESS_CHAMBER_WIDTH, ThermalSmelterLayout.PROCESS_CHAMBER_HEIGHT, CHAMBER_BG),
+                rect("slot_input_well", ThermalSmelterLayout.PROCESS_INPUT_X, ThermalSmelterLayout.PROCESS_INPUT_Y, 18, 18, 0xFFC6C3BA),
+                rect("slot_additive_well", ThermalSmelterLayout.PROCESS_ADDITIVE_X, ThermalSmelterLayout.PROCESS_ADDITIVE_Y, 18, 18, 0xFFC6C3BA),
+                rect("slot_output_well", ThermalSmelterLayout.PROCESS_OUTPUT_X, ThermalSmelterLayout.PROCESS_OUTPUT_Y, 18, 18, 0xFFC6C3BA),
+                rect("slot_output_second_well", ThermalSmelterLayout.PROCESS_OUTPUT_SECOND_X, ThermalSmelterLayout.PROCESS_OUTPUT_SECOND_Y, 18, 18, 0xFFC6C3BA),
                 rect("chamber_core", 102, 38, 36, 28, CHAMBER_CORE),
                 rect("heat_icon", 24, 76, 8, 8, HEAT),
                 rect("optical_icon", 64, 18, 8, 8, OPTICAL),
                 rect("progress_icon", 142, 60, 8, 8, PROGRESS),
-                progressBar("heat_bar", 38, 18, 8, 68, FillDirection.DOWN_TO_UP, BAR_BG, HEAT),
-                progressBar("optical_bar", 78, 20, 48, 6, FillDirection.LEFT_TO_RIGHT, BAR_BG, OPTICAL),
-                progressBar("progress_bar", 104, 48, 48, 8, FillDirection.LEFT_TO_RIGHT, BAR_BG, PROGRESS),
-                label("title_label", "THERMAL SMELTER", 78, 101, 100, 9, TEXT_SUB)
+                rect("status_lamp", 126, 32, 14, 14, STATUS_EMPTY),
+                progressBar(
+                        "heat_bar",
+                        38,
+                        18,
+                        8,
+                        68,
+                        FillDirection.DOWN_TO_UP,
+                        BAR_BG,
+                        HEAT,
+                        tt("tooltip.heat_static")
+                ),
+                progressBar(
+                        "optical_bar",
+                        78,
+                        20,
+                        48,
+                        6,
+                        FillDirection.LEFT_TO_RIGHT,
+                        BAR_BG,
+                        OPTICAL,
+                        tt("tooltip.optical_static")
+                ),
+                progressBar(
+                        "progress_bar",
+                        104,
+                        48,
+                        48,
+                        8,
+                        FillDirection.LEFT_TO_RIGHT,
+                        BAR_BG,
+                        PROGRESS,
+                        tt("tooltip.progress_static")
+                ),
+                label("status_label", Component.literal("."), 129, 34, 8, 9, TEXT_SUB)
         );
 
         return UITemplate.of(root, StylesheetManager.GDP);
     }
 
     private static void bindOrAddFunctionalElements(UI ui, ThermalSmelterBlockEntity smelter) {
-        bindSlotOrAdd(ui, "slot_input", smelter, ThermalSmelterBlockEntity.SLOT_INPUT, 16, 23);
-        bindSlotOrAdd(ui, "slot_additive", smelter, ThermalSmelterBlockEntity.SLOT_ADDITIVE, 16, 45);
-        bindSlotOrAdd(ui, "slot_output", smelter, ThermalSmelterBlockEntity.SLOT_OUTPUT, 213, 34);
+        hideDefaultText(ui);
+        ensureRuntimeChrome(ui);
+        bindSlotOrAdd(ui, "slot_input", smelter, ThermalSmelterBlockEntity.SLOT_INPUT, ThermalSmelterLayout.PROCESS_INPUT_X + 1, ThermalSmelterLayout.PROCESS_INPUT_Y + 1);
+        bindSlotOrAdd(ui, "slot_additive", smelter, ThermalSmelterBlockEntity.SLOT_ADDITIVE, ThermalSmelterLayout.PROCESS_ADDITIVE_X + 1, ThermalSmelterLayout.PROCESS_ADDITIVE_Y + 1);
+        bindSlotOrAdd(ui, "slot_output", smelter, ThermalSmelterBlockEntity.SLOT_OUTPUT, ThermalSmelterLayout.PROCESS_OUTPUT_X + 1, ThermalSmelterLayout.PROCESS_OUTPUT_Y + 1);
+        bindSlotOrAdd(ui, "slot_output_second", smelter, ThermalSmelterBlockEntity.SLOT_OUTPUT_SECOND, ThermalSmelterLayout.PROCESS_OUTPUT_SECOND_X + 1, ThermalSmelterLayout.PROCESS_OUTPUT_SECOND_Y + 1);
         bindInventoryOrAdd(ui);
-        bindLabels(ui, smelter);
         bindProgressBarsOrAdd(ui, smelter);
+        bindStatusOrAdd(ui, smelter);
+    }
+
+    private static void ensureRuntimeChrome(UI ui) {
+        addRectIfMissing(ui, "status_lamp", 126, 32, 14, 14, STATUS_EMPTY);
+    }
+
+    private static void addRectIfMissing(UI ui, String id, int x, int y, int width, int height, int color) {
+        if (ui.selectId(id, UIElement.class).findFirst().isPresent()) {
+            return;
+        }
+
+        ui.rootElement.addChild(rect(id, x, y, width, height, color));
     }
 
     private static void bindSlotOrAdd(UI ui, String id, ThermalSmelterBlockEntity smelter, int slot, int x, int y) {
         Optional<ItemSlot> existing = ui.selectId(id, ItemSlot.class).findFirst();
 
         if (existing.isPresent()) {
-            existing.get().bind(smelter.items(), slot);
+            applySlotTooltip(existing.get().bind(smelter.items(), slot), slot);
             return;
         }
 
@@ -187,7 +244,12 @@ public final class ThermalSmelterLdLibUi {
         ItemSlot itemSlot = new ItemSlot().bind(smelter.items(), slot);
         itemSlot.setId(id);
         applyRect(itemSlot, x, y, 18, 18);
+        applySlotTooltip(itemSlot, slot);
         return itemSlot;
+    }
+
+    private static void applySlotTooltip(ItemSlot itemSlot, int slot) {
+        itemSlot.style(style -> style.tooltips(slotTooltip(slot)));
     }
 
     private static void bindInventoryOrAdd(UI ui) {
@@ -201,22 +263,55 @@ public final class ThermalSmelterLdLibUi {
         ui.rootElement.addChild(inventorySlots);
     }
 
-    private static void bindLabels(UI ui, ThermalSmelterBlockEntity smelter) {
-        bindLabel(ui, "temperature_label", () -> Component.literal(data(smelter, ThermalSmelterBlockEntity.DATA_TEMPERATURE) + " K"));
-        bindLabel(ui, "heat_label", () -> Component.literal("Heat " + heatPercent(smelter) + "%"));
-        bindLabel(ui, "optical_label", () -> Component.literal("OPT " + opticalPercent(smelter) + "%"));
-        bindLabel(ui, "progress_label", () -> Component.literal("Progress " + progressPercent(smelter) + "%"));
+    private static void hideDefaultText(UI ui) {
+        hideLabel(ui, "title_label");
+        hideLabel(ui, "temperature_label");
+        hideLabel(ui, "heat_label");
+        hideLabel(ui, "optical_label");
+        hideLabel(ui, "progress_label");
     }
 
-    private static void bindLabel(UI ui, String id, java.util.function.Supplier<Component> value) {
-        ui.selectId(id, Label.class)
-                .forEach(label -> label.bind(DataBindingBuilder.componentS2C(value).build()));
+    private static void hideLabel(UI ui, String id) {
+        ui.selectId(id, Label.class).forEach(label -> label.setVisible(false));
     }
 
     private static void bindProgressBarsOrAdd(UI ui, ThermalSmelterBlockEntity smelter) {
-        bindProgressBar(ui, "heat_bar", () -> (float) heatRatio(smelter), 38, 18, 8, 68, FillDirection.DOWN_TO_UP, HEAT);
-        bindProgressBar(ui, "optical_bar", () -> (float) opticalRatio(smelter), 78, 20, 48, 6, FillDirection.LEFT_TO_RIGHT, OPTICAL);
-        bindProgressBar(ui, "progress_bar", () -> (float) progressRatio(smelter), 104, 48, 48, 8, FillDirection.LEFT_TO_RIGHT, PROGRESS);
+        bindProgressBar(
+                ui,
+                "heat_bar",
+                () -> (float) heatRatio(smelter),
+                38,
+                18,
+                8,
+                68,
+                FillDirection.DOWN_TO_UP,
+                HEAT,
+                tt("tooltip.heat_static")
+        );
+        bindProgressBar(
+                ui,
+                "optical_bar",
+                () -> (float) opticalRatio(smelter),
+                78,
+                20,
+                48,
+                6,
+                FillDirection.LEFT_TO_RIGHT,
+                OPTICAL,
+                tt("tooltip.optical_static")
+        );
+        bindProgressBar(
+                ui,
+                "progress_bar",
+                () -> (float) progressRatio(smelter),
+                104,
+                48,
+                48,
+                8,
+                FillDirection.LEFT_TO_RIGHT,
+                PROGRESS,
+                tt("tooltip.progress_static")
+        );
     }
 
     private static void bindProgressBar(
@@ -228,16 +323,30 @@ public final class ThermalSmelterLdLibUi {
             int width,
             int height,
             FillDirection fillDirection,
-            int color
+            int color,
+            Component... tooltips
     ) {
         Optional<ProgressBar> existing = ui.selectId(id, ProgressBar.class).findFirst();
         ProgressBar progressBar = existing.orElseGet(() -> {
-            ProgressBar added = progressBar(id, x, y, width, height, fillDirection, BAR_BG, color);
+            ProgressBar added = progressBar(id, x, y, width, height, fillDirection, BAR_BG, color, tooltips);
             ui.rootElement.addChild(added);
             return added;
         });
         progressBar.setRange(0.0F, 1.0F);
+        progressBar.label(label -> label.setVisible(false));
+        progressBar.style(style -> style.tooltips(tooltips));
         progressBar.bind(DataBindingBuilder.floatValS2C(value).build());
+    }
+
+    private static void bindStatusOrAdd(UI ui, ThermalSmelterBlockEntity smelter) {
+        Label status = ui.selectId("status_label", Label.class).findFirst().orElseGet(() -> {
+            Label added = label("status_label", Component.literal("."), 129, 34, 8, 9, TEXT_SUB);
+            ui.rootElement.addChild(added);
+            return added;
+        });
+        status.setVisible(true);
+        status.style(style -> style.tooltips(tt("tooltip.status_static")));
+        status.bind(DataBindingBuilder.componentS2C(() -> Component.literal(statusSymbol(smelter))).build());
     }
 
     private static ProgressBar progressBar(
@@ -248,12 +357,14 @@ public final class ThermalSmelterLdLibUi {
             int height,
             FillDirection fillDirection,
             int background,
-            int fill
+            int fill,
+            Component... tooltips
     ) {
         ProgressBar progressBar = new ProgressBar();
         progressBar.setId(id);
         applyRect(progressBar, x, y, width, height);
         progressBar.setRange(0.0F, 1.0F);
+        progressBar.style(style -> style.tooltips(tooltips));
         progressBar.progressBarStyle(style -> style.fillDirection(fillDirection).interpolate(true));
         progressBar.label(label -> label.setVisible(false));
         progressBar.barBackground.style(style -> style.background(new ColorRectTexture(background)));
@@ -268,7 +379,7 @@ public final class ThermalSmelterLdLibUi {
         return element;
     }
 
-    private static Label label(String id, String text, int x, int y, int width, int height, int color) {
+    private static Label label(String id, Component text, int x, int y, int width, int height, int color) {
         Label label = new Label();
         label.setText(text);
         label.setId(id);
@@ -276,6 +387,54 @@ public final class ThermalSmelterLdLibUi {
         label.style(style -> style.color(color));
         label.textStyle(style -> style.textColor(color).textShadow(false).fontSize(0.75F));
         return label;
+    }
+
+    private static Component[] slotTooltip(int slot) {
+        return switch (slot) {
+            case ThermalSmelterBlockEntity.SLOT_INPUT -> new Component[] {tt("tooltip.input")};
+            case ThermalSmelterBlockEntity.SLOT_ADDITIVE -> new Component[] {tt("tooltip.additive")};
+            case ThermalSmelterBlockEntity.SLOT_OUTPUT, ThermalSmelterBlockEntity.SLOT_OUTPUT_SECOND -> new Component[] {tt("tooltip.output")};
+            default -> new Component[0];
+        };
+    }
+
+    private static String statusSymbol(ThermalSmelterBlockEntity smelter) {
+        return switch (state(smelter)) {
+            case EMPTY -> ".";
+            case READY -> ">";
+            case PENDING -> "~";
+            case INVALID -> "!";
+            case OUTPUT_BLOCKED -> "X";
+        };
+    }
+
+    private static SmelterUiState state(ThermalSmelterBlockEntity smelter) {
+        ItemStack input = smelter.items().getStackInSlot(ThermalSmelterBlockEntity.SLOT_INPUT);
+
+        if (input.isEmpty()) {
+            return SmelterUiState.EMPTY;
+        }
+
+        Optional<ThermalSmelterRecipe> recipe = smelter.activeRecipe();
+
+        if (recipe.isEmpty()) {
+            return SmelterUiState.INVALID;
+        }
+
+        if (smelter.outputBlocked()) {
+            return SmelterUiState.OUTPUT_BLOCKED;
+        }
+
+        if (data(smelter, ThermalSmelterBlockEntity.DATA_PROGRESS) > 0
+                || data(smelter, ThermalSmelterBlockEntity.DATA_TEMPERATURE) < recipe.get().minimumTemperature()) {
+            return SmelterUiState.PENDING;
+        }
+
+        return SmelterUiState.READY;
+    }
+
+    private static Component tt(String path, Object... args) {
+        return Component.translatable("screen.spectralization.thermal_smelter." + path, args);
     }
 
     private static void applyRect(UIElement element, int x, int y, int width, int height) {
@@ -289,18 +448,6 @@ public final class ThermalSmelterLdLibUi {
 
     private static int data(ThermalSmelterBlockEntity smelter, int index) {
         return smelter.dataValue(index);
-    }
-
-    private static int heatPercent(ThermalSmelterBlockEntity smelter) {
-        return (int) Math.round(heatRatio(smelter) * 100.0);
-    }
-
-    private static int opticalPercent(ThermalSmelterBlockEntity smelter) {
-        return (int) Math.round(opticalRatio(smelter) * 100.0);
-    }
-
-    private static int progressPercent(ThermalSmelterBlockEntity smelter) {
-        return (int) Math.round(progressRatio(smelter) * 100.0);
     }
 
     private static double progressRatio(ThermalSmelterBlockEntity smelter) {
@@ -318,7 +465,10 @@ public final class ThermalSmelterLdLibUi {
     }
 
     private static double opticalRatio(ThermalSmelterBlockEntity smelter) {
-        return ratio(data(smelter, ThermalSmelterBlockEntity.DATA_HEAT_POWER_X100), 1000.0);
+        return ratio(
+                data(smelter, ThermalSmelterBlockEntity.DATA_HEAT_POWER_X100),
+                ThermalSmelterBlockEntity.FULL_SP_HEAT_POWER_X100
+        );
     }
 
     private static File templateFile() {
@@ -366,6 +516,14 @@ public final class ThermalSmelterLdLibUi {
         }
 
         return Math.max(0.0, Math.min(1.0, value / max));
+    }
+
+    private enum SmelterUiState {
+        EMPTY,
+        READY,
+        PENDING,
+        INVALID,
+        OUTPUT_BLOCKED
     }
 
     private record AssetCopy(String sourcePath, String targetPath) {

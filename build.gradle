@@ -38,6 +38,9 @@ repositories {
     maven {
         url = "https://maven.firstdark.dev/snapshots"
     }
+    maven {
+        url = "https://maven.blamejared.com"
+    }
 }
 
 base {
@@ -131,6 +134,9 @@ dependencies {
     compileOnly "maven.modrinth:jade:${jade_version}"
     localRuntime "maven.modrinth:jade:${jade_version}"
     implementation "com.lowdragmc.ldlib2:ldlib2-neoforge-${minecraft_version}:${ldlib2_version}:all"
+    compileOnly "mezz.jei:jei-${minecraft_version}-common-api:${jei_version}"
+    compileOnly "mezz.jei:jei-${minecraft_version}-neoforge-api:${jei_version}"
+    localRuntime "mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}"
 
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
@@ -196,6 +202,686 @@ publishing {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
+}
+
+def thermalSmelterLayoutSourceFile = file('src/main/java/io/github/yoglappland/spectralization/menu/ThermalSmelterLayout.java')
+def lensGrindingBenchLayoutSourceFile = file('src/main/java/io/github/yoglappland/spectralization/menu/LensGrindingBenchLayout.java')
+def lensGrindingBenchScreenSourceFile = file('src/main/java/io/github/yoglappland/spectralization/client/screen/LensGrindingBenchScreen.java')
+def lensGuiTextureDir = file('src/main/resources/assets/spectralization/textures/gui/lens')
+def metamaterialDesignTableLayoutSourceFile = file('src/main/java/io/github/yoglappland/spectralization/menu/MetamaterialDesignTableLayout.java')
+tasks.register('verifyThermalSmelterUiLayout') {
+    inputs.file(thermalSmelterLayoutSourceFile)
+
+    doLast {
+        def source = thermalSmelterLayoutSourceFile.text
+        def constants = [:]
+        def constantsPattern = ~/public static final int\s+([A-Z0-9_]+)\s*=\s*([^;]+);/
+
+        10.times {
+            (source =~ constantsPattern).each { match ->
+                def name = match[1]
+                def expression = match[2]
+                if (!constants.containsKey(name)) {
+                    def resolvedExpression = expression.replaceAll(/\b[A-Z][A-Z0-9_]*\b/) { token ->
+                        def key = token.toString()
+                        constants.containsKey(key) ? constants[key].toString() : key
+                    }
+
+                    if (resolvedExpression ==~ '[0-9+\\-*/ ()]+') {
+                        constants[name] = groovy.util.Eval.me(resolvedExpression) as int
+                    }
+                }
+            }
+        }
+
+        def intValue = { String name ->
+            if (!constants.containsKey(name)) {
+                throw new GradleException("Could not resolve ThermalSmelterLayout constant '${name}' for UI layout verification.")
+            }
+            constants[name] as int
+        }
+        def rect = { String name, int x, int y, int width, int height ->
+            [name: name, x: x, y: y, width: width, height: height]
+        }
+        def overlaps = { a, b ->
+            a.x < b.x + b.width
+                    && a.x + a.width > b.x
+                    && a.y < b.y + b.height
+                    && a.y + a.height > b.y
+        }
+
+        def recipeClickArea = rect(
+                'jei_recipe_click_area',
+                intValue('PROCESS_X') + intValue('PROCESS_RECIPE_CLICK_X'),
+                intValue('PROCESS_Y') + intValue('PROCESS_RECIPE_CLICK_Y'),
+                intValue('PROCESS_RECIPE_CLICK_WIDTH'),
+                intValue('PROCESS_RECIPE_CLICK_HEIGHT')
+        )
+        def slotHoverSize = intValue('SLOT_SIZE') + 4
+        def tooltipAreas = [
+                rect('input_slot_tooltip', intValue('SLOT_INPUT_X') - 2, intValue('SLOT_INPUT_Y') - 2, slotHoverSize, slotHoverSize),
+                rect('additive_slot_tooltip', intValue('SLOT_ADDITIVE_X') - 2, intValue('SLOT_ADDITIVE_Y') - 2, slotHoverSize, slotHoverSize),
+                rect('output_slot_tooltip', intValue('SLOT_OUTPUT_X') - 2, intValue('SLOT_OUTPUT_Y') - 2, slotHoverSize, slotHoverSize),
+                rect('output_second_slot_tooltip', intValue('SLOT_OUTPUT_SECOND_X') - 2, intValue('SLOT_OUTPUT_SECOND_Y') - 2, slotHoverSize, slotHoverSize),
+                rect('chamber_tooltip', intValue('PROCESS_X') + intValue('PROCESS_CHAMBER_X'), intValue('PROCESS_Y') + intValue('PROCESS_CHAMBER_Y'), intValue('PROCESS_CHAMBER_WIDTH'), intValue('PROCESS_CHAMBER_HEIGHT'))
+        ]
+
+        def blocked = tooltipAreas.findAll { it.name != 'chamber_tooltip' && overlaps(recipeClickArea, it) }
+        if (!blocked.isEmpty()) {
+            throw new GradleException("Thermal smelter JEI recipe click area overlaps screen tooltip areas: ${blocked*.name.join(', ')}")
+        }
+
+        def tooltipCollisions = []
+        for (int leftIndex = 0; leftIndex < tooltipAreas.size(); leftIndex++) {
+            for (int rightIndex = leftIndex + 1; rightIndex < tooltipAreas.size(); rightIndex++) {
+                if (overlaps(tooltipAreas[leftIndex], tooltipAreas[rightIndex])) {
+                    tooltipCollisions.add("${tooltipAreas[leftIndex].name}<->${tooltipAreas[rightIndex].name}")
+                }
+            }
+        }
+        if (!tooltipCollisions.isEmpty()) {
+            throw new GradleException("Thermal smelter tooltip areas overlap: ${tooltipCollisions.join(', ')}")
+        }
+
+        if (recipeClickArea.x < 0
+                || recipeClickArea.y < 0
+                || recipeClickArea.x + recipeClickArea.width > intValue('IMAGE_WIDTH')
+                || recipeClickArea.y + recipeClickArea.height > intValue('MACHINE_HEIGHT')) {
+            throw new GradleException('Thermal smelter JEI recipe click area is outside the machine panel.')
+        }
+
+        if (intValue('PROCESS_SIDE_PANEL_HEIGHT') != intValue('PROCESS_CHAMBER_HEIGHT')) {
+            throw new GradleException('Thermal smelter left, center, and right boxes must share the same height.')
+        }
+
+        if (intValue('PROCESS_RIGHT_PANEL_X') != intValue('IMAGE_WIDTH') - intValue('PROCESS_LEFT_PANEL_X') - intValue('PROCESS_SIDE_PANEL_WIDTH')) {
+            throw new GradleException('Thermal smelter left and right boxes must mirror across the screen center.')
+        }
+
+        if (intValue('PROCESS_CHAMBER_X') * 2 + intValue('PROCESS_CHAMBER_WIDTH') != intValue('IMAGE_WIDTH')) {
+            throw new GradleException('Thermal smelter center box must be horizontally centered.')
+        }
+
+        def leftOuterGap = intValue('PROCESS_LEFT_PANEL_X')
+        def leftInnerGap = intValue('PROCESS_CHAMBER_X') - (intValue('PROCESS_LEFT_PANEL_X') + intValue('PROCESS_SIDE_PANEL_WIDTH'))
+        def rightInnerGap = intValue('PROCESS_RIGHT_PANEL_X') - (intValue('PROCESS_CHAMBER_X') + intValue('PROCESS_CHAMBER_WIDTH'))
+        def rightOuterGap = intValue('IMAGE_WIDTH') - (intValue('PROCESS_RIGHT_PANEL_X') + intValue('PROCESS_SIDE_PANEL_WIDTH'))
+        if ([leftOuterGap, leftInnerGap, rightInnerGap, rightOuterGap].unique().size() != 1) {
+            throw new GradleException("Thermal smelter box padding must be even left-to-right: ${[leftOuterGap, leftInnerGap, rightInnerGap, rightOuterGap].join(', ')}")
+        }
+
+        if (intValue('PROCESS_DIVIDER_LEFT_X') + intValue('PROCESS_DIVIDER_RIGHT_X') != intValue('IMAGE_WIDTH')) {
+            throw new GradleException('Thermal smelter chamber dividers must mirror across the screen center.')
+        }
+
+        if (intValue('PROCESS_INPUT_X') != intValue('PROCESS_ADDITIVE_X')) {
+            throw new GradleException('Thermal smelter input and additive slots must stay on the same vertical axis.')
+        }
+
+        if (intValue('PROCESS_OUTPUT_X') != intValue('IMAGE_WIDTH') - intValue('PROCESS_INPUT_X') - intValue('SLOT_SIZE')
+                || intValue('PROCESS_OUTPUT_Y') != intValue('PROCESS_INPUT_Y')
+                || intValue('PROCESS_OUTPUT_SECOND_Y') != intValue('PROCESS_ADDITIVE_Y')) {
+            throw new GradleException('Thermal smelter output slots must mirror the input slots.')
+        }
+
+        if (intValue('PROCESS_OUTPUT_X') != intValue('PROCESS_OUTPUT_SECOND_X')
+                || intValue('PROCESS_OUTPUT_SECOND_Y') - intValue('PROCESS_OUTPUT_Y') < intValue('SLOT_SIZE')) {
+            throw new GradleException('Thermal smelter output slots must stay as a vertical pair.')
+        }
+
+        if (intValue('ITEM_INPUT_X') != intValue('SLOT_INPUT_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_INPUT_Y') != intValue('SLOT_INPUT_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_ADDITIVE_X') != intValue('SLOT_ADDITIVE_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_ADDITIVE_Y') != intValue('SLOT_ADDITIVE_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_OUTPUT_X') != intValue('SLOT_OUTPUT_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_OUTPUT_Y') != intValue('SLOT_OUTPUT_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_OUTPUT_SECOND_X') != intValue('SLOT_OUTPUT_SECOND_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_OUTPUT_SECOND_Y') != intValue('SLOT_OUTPUT_SECOND_Y') + intValue('ITEM_SLOT_INSET')) {
+            throw new GradleException('Thermal smelter item render slots must stay inset from their visible 18px slot frames.')
+        }
+
+        if (intValue('PLAYER_INVENTORY_ITEM_X') != intValue('PLAYER_INVENTORY_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('PLAYER_INVENTORY_ITEM_Y') != intValue('PLAYER_INVENTORY_Y') + intValue('ITEM_SLOT_INSET')) {
+            throw new GradleException('Thermal smelter player inventory item slots must stay inset from visible slot frames.')
+        }
+
+        def assertNear = { name, actualValue, expectedValue, toleranceValue ->
+            double actual = actualValue as double
+            double expected = expectedValue as double
+            double tolerance = toleranceValue as double
+            if (Math.abs(actual - expected) > tolerance) {
+                throw new GradleException("${name} should sit near ${expected.round(2)}, but was ${actual.round(2)}.")
+            }
+        }
+        def workHeight = intValue('PROCESS_WORK_Y2') - intValue('PROCESS_WORK_Y1')
+        def upperThird = intValue('PROCESS_WORK_Y1') + workHeight / 3.0
+        def lowerThird = intValue('PROCESS_WORK_Y1') + workHeight * 2.0 / 3.0
+        def parallelGridCenterY = intValue('PROCESS_PARALLEL_GRID_Y') + (2 * intValue('PROCESS_PARALLEL_GRID_SIZE') + intValue('PROCESS_PARALLEL_GRID_GAP')) / 2.0
+        def statusCenterY = intValue('PROCESS_STATUS_INDICATOR_Y') + intValue('PROCESS_STATUS_INDICATOR_HEIGHT') / 2.0
+        def recipeClickCenterX = intValue('PROCESS_RECIPE_CLICK_X') + intValue('PROCESS_RECIPE_CLICK_WIDTH') / 2.0
+        def parallelGridCenterX = intValue('PROCESS_PARALLEL_GRID_X') + (2 * intValue('PROCESS_PARALLEL_GRID_SIZE') + intValue('PROCESS_PARALLEL_GRID_GAP')) / 2.0
+        def statusCenterX = intValue('PROCESS_STATUS_INDICATOR_X') + intValue('PROCESS_STATUS_INDICATOR_WIDTH') / 2.0
+        def spCenterX = intValue('PROCESS_SP_BAR_X') + intValue('PROCESS_SP_BAR_WIDTH') / 2.0
+        def tempBoxCenterX = intValue('PROCESS_TEMP_BOX_X') + intValue('PROCESS_TEMP_BOX_WIDTH') / 2.0
+        def stageMiddleCenterX = intValue('PROCESS_STAGE_X2') + intValue('PROCESS_STAGE_SIZE') / 2.0
+        def inputSlotCenterX = intValue('PROCESS_INPUT_X') + intValue('SLOT_SIZE') / 2.0
+        def outputSlotCenterX = intValue('PROCESS_OUTPUT_X') + intValue('SLOT_SIZE') / 2.0
+        def leftPanelCenterX = intValue('PROCESS_LEFT_PANEL_X') + intValue('PROCESS_SIDE_PANEL_WIDTH') / 2.0
+        def rightPanelCenterX = intValue('PROCESS_RIGHT_PANEL_X') + intValue('PROCESS_SIDE_PANEL_WIDTH') / 2.0
+        assertNear('Thermal smelter parallel grid', parallelGridCenterY, upperThird, 2.0)
+        assertNear('Thermal smelter status indicator', statusCenterY, lowerThird, 2.0)
+        assertNear('Thermal smelter recipe arrow horizontal center', recipeClickCenterX, intValue('PROCESS_MAIN_CENTER_X'), 0.0)
+        assertNear('Thermal smelter parallel grid horizontal center', parallelGridCenterX, intValue('PROCESS_PARALLEL_CENTER_X'), 0.0)
+        assertNear('Thermal smelter status indicator horizontal center', statusCenterX, intValue('PROCESS_PARALLEL_CENTER_X'), 0.0)
+        assertNear('Thermal smelter SP area mirror', spCenterX + intValue('PROCESS_PARALLEL_CENTER_X'), intValue('IMAGE_WIDTH'), 0.0)
+        assertNear('Thermal smelter temperature box center', tempBoxCenterX, intValue('PROCESS_MAIN_CENTER_X'), 0.0)
+        assertNear('Thermal smelter stage center', stageMiddleCenterX, intValue('PROCESS_MAIN_CENTER_X') + 0.5, 0.0)
+        assertNear('Thermal smelter input slot panel center', inputSlotCenterX, leftPanelCenterX, 0.0)
+        assertNear('Thermal smelter output slot panel center', outputSlotCenterX, rightPanelCenterX, 0.0)
+
+        def progressSegmentsWidth = intValue('PROCESS_PROGRESS_SEGMENTS') * intValue('PROCESS_PROGRESS_SEGMENT_WIDTH') +
+                (intValue('PROCESS_PROGRESS_SEGMENTS') - 1) * intValue('PROCESS_PROGRESS_SEGMENT_GAP')
+        def tempBox = rect('temperature_box', intValue('PROCESS_TEMP_BOX_X'), intValue('PROCESS_TEMP_BOX_Y'), intValue('PROCESS_TEMP_BOX_WIDTH'), intValue('PROCESS_TEMP_BOX_HEIGHT'))
+        def bottomProgress = rect('bottom_progress_segments', intValue('PROCESS_PROGRESS_X'), intValue('PROCESS_PROGRESS_Y'), progressSegmentsWidth, intValue('PROCESS_PROGRESS_SEGMENT_HEIGHT'))
+        if (overlaps(recipeClickArea, tempBox) || overlaps(recipeClickArea, bottomProgress)) {
+            throw new GradleException('Thermal smelter recipe arrow must not overlap the temperature box or bottom progress segments.')
+        }
+
+        def criticalAreas = [
+                recipeClickArea,
+                rect('input_slot', intValue('PROCESS_INPUT_X'), intValue('PROCESS_INPUT_Y'), intValue('SLOT_SIZE'), intValue('SLOT_SIZE')),
+                rect('additive_slot', intValue('PROCESS_ADDITIVE_X'), intValue('PROCESS_ADDITIVE_Y'), intValue('SLOT_SIZE'), intValue('SLOT_SIZE')),
+                rect('output_slot', intValue('PROCESS_OUTPUT_X'), intValue('PROCESS_OUTPUT_Y'), intValue('SLOT_SIZE'), intValue('SLOT_SIZE')),
+                rect('output_second_slot', intValue('PROCESS_OUTPUT_SECOND_X'), intValue('PROCESS_OUTPUT_SECOND_Y'), intValue('SLOT_SIZE'), intValue('SLOT_SIZE'))
+        ]
+        def decorativeTextAreas = [
+                rect('temp_value_text', intValue('PROCESS_MAIN_CENTER_X') - 32, intValue('PROCESS_TEMP_VALUE_Y'), 64, 8),
+                rect('parallel_label_text', intValue('PROCESS_PARALLEL_CENTER_X') - 10, intValue('PROCESS_PARALLEL_LABEL_Y'), 20, 6),
+                rect('status_code_text', intValue('PROCESS_PARALLEL_CENTER_X') - 10, intValue('PROCESS_STATUS_LABEL_Y'), 20, 12)
+        ]
+        def textCollisions = decorativeTextAreas.collectMany { textArea ->
+            criticalAreas.findAll { overlaps(textArea, it) }.collect { "${textArea.name}->${it.name}" }
+        }
+        if (!textCollisions.isEmpty()) {
+            throw new GradleException("Thermal smelter decorative text overlaps critical UI areas: ${textCollisions.join(', ')}")
+        }
+    }
+}
+
+tasks.register('verifyLensGrindingBenchUiLayout') {
+    inputs.file(lensGrindingBenchLayoutSourceFile)
+    inputs.file(lensGrindingBenchScreenSourceFile)
+    inputs.dir(lensGuiTextureDir)
+
+    doLast {
+        def source = lensGrindingBenchLayoutSourceFile.text
+        def screenSource = lensGrindingBenchScreenSourceFile.text
+        def constants = [:]
+        def constantsPattern = ~/public static final int\s+([A-Z0-9_]+)\s*=\s*([^;]+);/
+
+        10.times {
+            (source =~ constantsPattern).each { match ->
+                def name = match[1]
+                def expression = match[2]
+                if (!constants.containsKey(name)) {
+                    def resolvedExpression = expression.replaceAll(/\b[A-Z][A-Z0-9_]*\b/) { token ->
+                        def key = token.toString()
+                        constants.containsKey(key) ? constants[key].toString() : key
+                    }
+
+                    if (resolvedExpression ==~ '[0-9+\\-*/ ()]+') {
+                        constants[name] = groovy.util.Eval.me(resolvedExpression) as int
+                    }
+                }
+            }
+        }
+
+        def intValue = { String name ->
+            if (!constants.containsKey(name)) {
+                throw new GradleException("Could not resolve LensGrindingBenchLayout constant '${name}' for UI layout verification.")
+            }
+            constants[name] as int
+        }
+        def rect = { String name, int x, int y, int width, int height ->
+            [name: name, x: x, y: y, width: width, height: height]
+        }
+        def overlaps = { a, b ->
+            a.x < b.x + b.width
+                    && a.x + a.width > b.x
+                    && a.y < b.y + b.height
+                    && a.y + a.height > b.y
+        }
+        def contains = { outer, inner ->
+            inner.x >= outer.x
+                    && inner.y >= outer.y
+                    && inner.x + inner.width <= outer.x + outer.width
+                    && inner.y + inner.height <= outer.y + outer.height
+        }
+        def assertInside = { outer, inner ->
+            if (!contains(outer, inner)) {
+                throw new GradleException("Lens grinding bench layout '${inner.name}' must stay inside '${outer.name}'.")
+            }
+        }
+        def assertNoOverlap = { String label, List areas ->
+            def collisions = []
+            for (int leftIndex = 0; leftIndex < areas.size(); leftIndex++) {
+                for (int rightIndex = leftIndex + 1; rightIndex < areas.size(); rightIndex++) {
+                    if (overlaps(areas[leftIndex], areas[rightIndex])) {
+                        collisions.add("${areas[leftIndex].name}<->${areas[rightIndex].name}")
+                    }
+                }
+            }
+            if (!collisions.isEmpty()) {
+                throw new GradleException("Lens grinding bench ${label} overlap: ${collisions.join(', ')}")
+            }
+        }
+        def assertNear = { name, actualValue, expectedValue, toleranceValue ->
+            double actual = actualValue as double
+            double expected = expectedValue as double
+            double tolerance = toleranceValue as double
+            if (Math.abs(actual - expected) > tolerance) {
+                throw new GradleException("${name} should sit near ${expected.round(2)}, but was ${actual.round(2)}.")
+            }
+        }
+
+        def screen = rect('screen', 0, 0, intValue('IMAGE_WIDTH'), intValue('IMAGE_HEIGHT'))
+        def machine = rect('machine_panel', 0, 0, intValue('IMAGE_WIDTH'), intValue('MACHINE_HEIGHT'))
+        def leftPanel = rect('left_input_panel', intValue('LEFT_PANEL_X'), intValue('SIDE_PANEL_Y'), intValue('SIDE_PANEL_WIDTH'), intValue('SIDE_PANEL_HEIGHT'))
+        def rightPanel = rect('right_output_panel', intValue('RIGHT_PANEL_X'), intValue('SIDE_PANEL_Y'), intValue('SIDE_PANEL_WIDTH'), intValue('SIDE_PANEL_HEIGHT'))
+        def chamber = rect('center_chamber', intValue('CHAMBER_X'), intValue('CHAMBER_Y'), intValue('CHAMBER_WIDTH'), intValue('CHAMBER_HEIGHT'))
+        def chamberInner = rect('center_chamber_inner', intValue('CHAMBER_INNER_X'), intValue('CHAMBER_INNER_Y'), intValue('CHAMBER_INNER_WIDTH'), intValue('CHAMBER_INNER_HEIGHT'))
+
+        [leftPanel, rightPanel, chamber].each { assertInside(machine, it) }
+        assertInside(chamber, chamberInner)
+
+        if (intValue('SIDE_PANEL_HEIGHT') != intValue('CHAMBER_HEIGHT')) {
+            throw new GradleException('Lens grinding bench left, center, and right boxes must share the same height.')
+        }
+        if (intValue('RIGHT_PANEL_X') != intValue('IMAGE_WIDTH') - intValue('LEFT_PANEL_X') - intValue('SIDE_PANEL_WIDTH')) {
+            throw new GradleException('Lens grinding bench left and right boxes must mirror across the screen center.')
+        }
+        if (intValue('CHAMBER_X') * 2 + intValue('CHAMBER_WIDTH') != intValue('IMAGE_WIDTH')) {
+            throw new GradleException('Lens grinding bench center chamber must be horizontally centered.')
+        }
+
+        def boxGaps = [
+                intValue('LEFT_PANEL_X'),
+                intValue('CHAMBER_X') - (intValue('LEFT_PANEL_X') + intValue('SIDE_PANEL_WIDTH')),
+                intValue('RIGHT_PANEL_X') - (intValue('CHAMBER_X') + intValue('CHAMBER_WIDTH')),
+                intValue('IMAGE_WIDTH') - (intValue('RIGHT_PANEL_X') + intValue('SIDE_PANEL_WIDTH'))
+        ]
+        if (boxGaps.unique().size() != 1) {
+            throw new GradleException("Lens grinding bench box padding must be even left-to-right: ${boxGaps.join(', ')}")
+        }
+
+        def slotSize = intValue('SLOT_SIZE')
+        def slotRects = [
+                rect('blank_slot', intValue('SLOT_BLANK_X'), intValue('SLOT_BLANK_Y'), slotSize, slotSize),
+                rect('tool_slot', intValue('SLOT_TOOL_X'), intValue('SLOT_TOOL_Y'), slotSize, slotSize),
+                rect('reference_slot', intValue('SLOT_REFERENCE_X'), intValue('SLOT_REFERENCE_Y'), slotSize, slotSize)
+        ]
+        slotRects.each { assertInside(leftPanel, it) }
+        def outputSlot = rect('output_slot', intValue('SLOT_OUTPUT_X'), intValue('SLOT_OUTPUT_Y'), slotSize, slotSize)
+        assertInside(rightPanel, outputSlot)
+        assertNoOverlap('input slot', slotRects)
+        assertNear('Lens grinding bench input slot center', intValue('SLOT_BLANK_X') + slotSize / 2.0, intValue('LEFT_PANEL_CENTER_X'), 0.0)
+        assertNear('Lens grinding bench tool slot center', intValue('SLOT_TOOL_X') + slotSize / 2.0, intValue('LEFT_PANEL_CENTER_X'), 0.0)
+        assertNear('Lens grinding bench reference slot center', intValue('SLOT_REFERENCE_X') + slotSize / 2.0, intValue('LEFT_PANEL_CENTER_X'), 0.0)
+        assertNear('Lens grinding bench output slot center', intValue('SLOT_OUTPUT_X') + slotSize / 2.0, intValue('RIGHT_PANEL_CENTER_X'), 0.0)
+
+        def mainPanel = rect('main_panel', intValue('MAIN_PANEL_X'), intValue('MAIN_PANEL_Y'), intValue('MAIN_PANEL_WIDTH'), intValue('MAIN_PANEL_HEIGHT'))
+        def kindZone = rect('kind_zone', intValue('KIND_ZONE_X'), intValue('KIND_ZONE_Y'), intValue('KIND_ZONE_WIDTH'), intValue('KIND_ZONE_HEIGHT'))
+        def targetZone = rect('target_zone', intValue('TARGET_ZONE_X'), intValue('TARGET_ZONE_Y'), intValue('TARGET_ZONE_WIDTH'), intValue('TARGET_ZONE_HEIGHT'))
+        def rightZone = rect('right_meter_zone', intValue('RIGHT_ZONE_X'), intValue('RIGHT_ZONE_Y'), intValue('RIGHT_ZONE_WIDTH'), intValue('RIGHT_ZONE_HEIGHT'))
+        assertInside(chamberInner, mainPanel)
+        [kindZone, targetZone, rightZone].each { assertInside(mainPanel, it) }
+        assertNoOverlap('major information region', [kindZone, targetZone, rightZone])
+        if (intValue('KIND_ZONE_X') != intValue('LEFT_TOP_ZONE_X')
+                || intValue('KIND_ZONE_Y') != intValue('LEFT_TOP_ZONE_Y')
+                || intValue('KIND_ZONE_WIDTH') != intValue('LEFT_TOP_ZONE_WIDTH')
+                || intValue('KIND_ZONE_HEIGHT') != intValue('LEFT_TOP_ZONE_HEIGHT')) {
+            throw new GradleException('Lens grinding bench type controls must occupy the upper-left main panel region.')
+        }
+        if (intValue('TARGET_ZONE_X') != intValue('LEFT_BOTTOM_ZONE_X')
+                || intValue('TARGET_ZONE_Y') != intValue('LEFT_BOTTOM_ZONE_Y')
+                || intValue('TARGET_ZONE_WIDTH') != intValue('LEFT_BOTTOM_ZONE_WIDTH')
+                || intValue('TARGET_ZONE_HEIGHT') != intValue('LEFT_BOTTOM_ZONE_HEIGHT')) {
+            throw new GradleException('Lens grinding bench focal controls must occupy the lower-left main panel region.')
+        }
+        if (intValue('RIGHT_ZONE_Y') != intValue('MAIN_PANEL_Y')
+                || intValue('RIGHT_ZONE_HEIGHT') != intValue('MAIN_PANEL_HEIGHT')) {
+            throw new GradleException('Lens grinding bench meter region must occupy the full main panel height.')
+        }
+        assertNear('Lens grinding bench right meter width ratio', intValue('RIGHT_ZONE_WIDTH') / (double) intValue('MAIN_PANEL_WIDTH'), 0.45, 0.02)
+        assertNear('Lens grinding bench kind control center', intValue('KIND_CENTER_X'), intValue('KIND_ZONE_X') + intValue('KIND_ZONE_WIDTH') / 2.0, 0.0)
+        assertNear('Lens grinding bench kind vertical center', intValue('KIND_CENTER_Y'), intValue('KIND_ZONE_Y') + intValue('KIND_ZONE_HEIGHT') / 2.0, 0.0)
+        assertNear('Lens grinding bench target value box center', intValue('TARGET_BOX_X') + intValue('TARGET_BOX_WIDTH') / 2.0, intValue('TARGET_ZONE_X') + intValue('TARGET_ZONE_WIDTH') / 2.0, 0.0)
+        assertNear('Lens grinding bench kind button vertical center', intValue('KIND_BUTTON_Y') + intValue('KIND_BUTTON_SIZE') / 2.0, intValue('KIND_CENTER_Y'), 0.0)
+        assertNear('Lens grinding bench focal button vertical center', intValue('TARGET_BUTTON_Y') + intValue('TARGET_BUTTON_SIZE') / 2.0, intValue('TARGET_CENTER_Y'), 0.0)
+        assertNear('Lens grinding bench focal value vertical center', intValue('TARGET_BOX_Y') + intValue('TARGET_BOX_HEIGHT') / 2.0, intValue('TARGET_CENTER_Y'), 0.0)
+        assertNear(
+                'Lens grinding bench kind arrows mirror',
+                intValue('KIND_PREV_X') + intValue('KIND_BUTTON_SIZE') / 2.0 + intValue('KIND_NEXT_X') + intValue('KIND_BUTTON_SIZE') / 2.0,
+                2.0 * intValue('KIND_CENTER_X'),
+                0.0
+        )
+        assertNear(
+                'Lens grinding bench focal arrows mirror',
+                intValue('TARGET_PREV_X') + intValue('TARGET_BUTTON_SIZE') / 2.0 + intValue('TARGET_NEXT_X') + intValue('TARGET_BUTTON_SIZE') / 2.0,
+                2.0 * intValue('TARGET_CENTER_X'),
+                0.0
+        )
+        def arrowVisualOffset = intValue('BUTTON_ARROW_INSET') + intValue('BUTTON_ARROW_SIZE') / 2.0
+        assertNear(
+                'Lens grinding bench kind arrow glyphs mirror',
+                intValue('KIND_PREV_X') + arrowVisualOffset + intValue('KIND_NEXT_X') + arrowVisualOffset,
+                2.0 * intValue('KIND_CENTER_X'),
+                0.0
+        )
+        assertNear(
+                'Lens grinding bench focal arrow glyphs mirror',
+                intValue('TARGET_PREV_X') + arrowVisualOffset + intValue('TARGET_NEXT_X') + arrowVisualOffset,
+                2.0 * intValue('TARGET_CENTER_X'),
+                0.0
+        )
+
+        def kindChildren = [
+                rect('kind_prev_button', intValue('KIND_PREV_X'), intValue('KIND_BUTTON_Y'), intValue('KIND_BUTTON_SIZE'), intValue('KIND_BUTTON_SIZE')),
+                rect('kind_next_button', intValue('KIND_NEXT_X'), intValue('KIND_BUTTON_Y'), intValue('KIND_BUTTON_SIZE'), intValue('KIND_BUTTON_SIZE')),
+                rect('kind_glyph', intValue('KIND_CENTER_X') - 8, intValue('KIND_CENTER_Y') - 8, 16, 16),
+                rect('kind_code_text', intValue('KIND_CENTER_X') - 10, intValue('KIND_CODE_Y'), 20, 5)
+        ]
+        kindChildren.each { assertInside(kindZone, it) }
+        assertNoOverlap('kind control', kindChildren)
+
+        def targetChildren = [
+                rect('target_prev_button', intValue('TARGET_PREV_X'), intValue('TARGET_BUTTON_Y'), intValue('TARGET_BUTTON_SIZE'), intValue('TARGET_BUTTON_SIZE')),
+                rect('target_next_button', intValue('TARGET_NEXT_X'), intValue('TARGET_BUTTON_Y'), intValue('TARGET_BUTTON_SIZE'), intValue('TARGET_BUTTON_SIZE')),
+                rect('target_value_box', intValue('TARGET_BOX_X'), intValue('TARGET_BOX_Y'), intValue('TARGET_BOX_WIDTH'), intValue('TARGET_BOX_HEIGHT'))
+        ]
+        targetChildren.each { assertInside(targetZone, it) }
+        assertNoOverlap('target control', targetChildren)
+
+        def meterChildren = [
+                rect('quality_bar_frame', intValue('QUALITY_BAR_X') - 1, intValue('QUALITY_BAR_Y') - 1, intValue('QUALITY_BAR_WIDTH') + 2, intValue('QUALITY_BAR_HEIGHT') + 2),
+                rect('quality_scale_labels', intValue('QUALITY_SCALE_LABEL_X'), intValue('SCALE_TOP_LABEL_Y'), intValue('METER_SCALE_LABEL_WIDTH'), intValue('SCALE_BOTTOM_LABEL_Y') - intValue('SCALE_TOP_LABEL_Y') + intValue('METER_SCALE_LABEL_HEIGHT')),
+                rect('range_preview_frame', intValue('RANGE_X') - 1, intValue('RANGE_Y') - 1, intValue('RANGE_WIDTH') + 2, intValue('RANGE_HEIGHT') + 2),
+                rect('range_scale_labels', intValue('RANGE_SCALE_LABEL_X'), intValue('SCALE_TOP_LABEL_Y'), intValue('METER_SCALE_LABEL_WIDTH'), intValue('SCALE_BOTTOM_LABEL_Y') - intValue('SCALE_TOP_LABEL_Y') + intValue('METER_SCALE_LABEL_HEIGHT'))
+        ]
+        meterChildren.each { assertInside(rightZone, it) }
+        assertNoOverlap('meter child', meterChildren)
+        assertNear(
+                'Lens grinding bench meter bars mirror',
+                intValue('QUALITY_BAR_X') + intValue('QUALITY_BAR_WIDTH') / 2.0 + intValue('RANGE_X') + intValue('RANGE_WIDTH') / 2.0,
+                2.0 * (intValue('RIGHT_ZONE_X') + intValue('RIGHT_ZONE_WIDTH') / 2.0),
+                0.0
+        )
+        assertNear(
+                'Lens grinding bench meter scale labels mirror',
+                intValue('QUALITY_SCALE_LABEL_X') + intValue('METER_SCALE_LABEL_WIDTH') / 2.0 + intValue('RANGE_SCALE_LABEL_X') + intValue('METER_SCALE_LABEL_WIDTH') / 2.0,
+                2.0 * (intValue('RIGHT_ZONE_X') + intValue('RIGHT_ZONE_WIDTH') / 2.0),
+                0.0
+        )
+        if (intValue('QUALITY_BAR_WIDTH') > 12 || intValue('RANGE_WIDTH') > 12) {
+            throw new GradleException('Lens grinding bench meter bars should stay narrow enough for outside scale labels.')
+        }
+        if (intValue('QUALITY_SCALE_LABEL_X') + intValue('METER_SCALE_LABEL_WIDTH') >= intValue('QUALITY_BAR_X') - 1
+                || intValue('RANGE_SCALE_LABEL_X') <= intValue('RANGE_X') + intValue('RANGE_WIDTH') + 1) {
+            throw new GradleException('Lens grinding bench meter scale labels must stay outside their bars.')
+        }
+        if (intValue('METER_SCALE_LABEL_GAP') <= intValue('METER_SCALE_TICK_LONG')) {
+            throw new GradleException('Lens grinding bench meter scale labels must not overlap long tick marks.')
+        }
+        assertNear(
+                'Lens grinding bench top scale labels align to top ticks',
+                intValue('SCALE_TOP_LABEL_Y') + intValue('METER_SCALE_LABEL_HEIGHT') / 2.0,
+                intValue('QUALITY_BAR_Y'),
+                0.5
+        )
+        assertNear(
+                'Lens grinding bench bottom scale labels align to bottom ticks',
+                intValue('SCALE_BOTTOM_LABEL_Y') + intValue('METER_SCALE_LABEL_HEIGHT') / 2.0,
+                intValue('QUALITY_BAR_Y') + intValue('QUALITY_BAR_HEIGHT') - 1,
+                0.5
+        )
+        if (!screenSource.contains('private static void pixelArrow(GuiGraphics graphics, int x, int y, int width, int height, int color, boolean right)')) {
+            throw new GradleException('Lens grinding bench arrows must use the shared mirrored pixelArrow renderer.')
+        }
+        if (screenSource.contains('renderGhostItems(graphics)') || screenSource.contains('renderGhostItem(')) {
+            throw new GradleException('Lens grinding bench input slots should not render example ghost items.')
+        }
+        ['convex', 'concave', 'ender_lens', 'magmatic_lens', 'echo_lens'].each { texture ->
+            if (!screenSource.contains("\"${texture}\"")) {
+                throw new GradleException("Lens grinding bench must map lens icon texture '${texture}.png'.")
+            }
+            if (!new File(lensGuiTextureDir, "${texture}.png").isFile()) {
+                throw new GradleException("Lens grinding bench icon texture '${texture}.png' is missing from ${lensGuiTextureDir}.")
+            }
+        }
+
+        def hoverSize = slotSize + 4
+        def hoverAreas = [
+                rect('blank_slot_hover', intValue('SLOT_BLANK_X') - 2, intValue('SLOT_BLANK_Y') - 2, hoverSize, hoverSize),
+                rect('tool_slot_hover', intValue('SLOT_TOOL_X') - 2, intValue('SLOT_TOOL_Y') - 2, hoverSize, hoverSize),
+                rect('reference_slot_hover', intValue('SLOT_REFERENCE_X') - 2, intValue('SLOT_REFERENCE_Y') - 2, hoverSize, hoverSize),
+                rect('output_slot_hover', intValue('SLOT_OUTPUT_X') - 2, intValue('SLOT_OUTPUT_Y') - 2, hoverSize, hoverSize),
+                rect('kind_prev_hover', intValue('KIND_PREV_X'), intValue('KIND_BUTTON_Y'), intValue('KIND_BUTTON_SIZE'), intValue('KIND_BUTTON_SIZE')),
+                rect('kind_next_hover', intValue('KIND_NEXT_X'), intValue('KIND_BUTTON_Y'), intValue('KIND_BUTTON_SIZE'), intValue('KIND_BUTTON_SIZE')),
+                rect('target_prev_hover', intValue('TARGET_PREV_X'), intValue('TARGET_BUTTON_Y'), intValue('TARGET_BUTTON_SIZE'), intValue('TARGET_BUTTON_SIZE')),
+                rect('target_next_hover', intValue('TARGET_NEXT_X'), intValue('TARGET_BUTTON_Y'), intValue('TARGET_BUTTON_SIZE'), intValue('TARGET_BUTTON_SIZE')),
+                rect('quality_bar_hover', intValue('QUALITY_BAR_X') - 2, intValue('QUALITY_BAR_Y') - 2, intValue('QUALITY_BAR_WIDTH') + 4, intValue('QUALITY_BAR_HEIGHT') + 4),
+                rect('range_bar_hover', intValue('RANGE_X') - 2, intValue('RANGE_Y') - 3, intValue('RANGE_WIDTH') + 4, intValue('RANGE_HEIGHT') + 6)
+        ]
+        hoverAreas.each { assertInside(screen, it) }
+        assertNoOverlap('primary hover area', hoverAreas)
+
+        if (intValue('ITEM_BLANK_X') != intValue('SLOT_BLANK_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_BLANK_Y') != intValue('SLOT_BLANK_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_TOOL_X') != intValue('SLOT_TOOL_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_TOOL_Y') != intValue('SLOT_TOOL_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_REFERENCE_X') != intValue('SLOT_REFERENCE_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_REFERENCE_Y') != intValue('SLOT_REFERENCE_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_OUTPUT_X') != intValue('SLOT_OUTPUT_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_OUTPUT_Y') != intValue('SLOT_OUTPUT_Y') + intValue('ITEM_SLOT_INSET')) {
+            throw new GradleException('Lens grinding bench item render slots must stay inset from their visible 18px slot frames.')
+        }
+
+        if (intValue('PLAYER_INVENTORY_ITEM_X') != intValue('PLAYER_INVENTORY_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('PLAYER_INVENTORY_ITEM_Y') != intValue('PLAYER_INVENTORY_Y') + intValue('ITEM_SLOT_INSET')) {
+            throw new GradleException('Lens grinding bench player inventory item slots must stay inset from visible slot frames.')
+        }
+    }
+}
+
+tasks.register('verifyMetamaterialDesignTableUiLayout') {
+    inputs.file(metamaterialDesignTableLayoutSourceFile)
+
+    doLast {
+        def source = metamaterialDesignTableLayoutSourceFile.text
+        def constants = [:]
+        def constantsPattern = ~/public static final int\s+([A-Z0-9_]+)\s*=\s*([^;]+);/
+
+        10.times {
+            (source =~ constantsPattern).each { match ->
+                def name = match[1]
+                def expression = match[2]
+                if (!constants.containsKey(name)) {
+                    def resolvedExpression = expression.replaceAll(/\b[A-Z][A-Z0-9_]*\b/) { token ->
+                        def key = token.toString()
+                        constants.containsKey(key) ? constants[key].toString() : key
+                    }
+
+                    if (resolvedExpression ==~ '[0-9+\\-*/ ()]+') {
+                        constants[name] = groovy.util.Eval.me(resolvedExpression) as int
+                    }
+                }
+            }
+        }
+
+        def intValue = { String name ->
+            if (!constants.containsKey(name)) {
+                throw new GradleException("Could not resolve MetamaterialDesignTableLayout constant '${name}' for UI layout verification.")
+            }
+            constants[name] as int
+        }
+        def rect = { String name, int x, int y, int width, int height ->
+            [name: name, x: x, y: y, width: width, height: height]
+        }
+        def overlaps = { a, b ->
+            a.x < b.x + b.width
+                    && a.x + a.width > b.x
+                    && a.y < b.y + b.height
+                    && a.y + a.height > b.y
+        }
+        def contains = { outer, inner ->
+            inner.x >= outer.x
+                    && inner.y >= outer.y
+                    && inner.x + inner.width <= outer.x + outer.width
+                    && inner.y + inner.height <= outer.y + outer.height
+        }
+        def assertInside = { outer, inner ->
+            if (!contains(outer, inner)) {
+                throw new GradleException("Metamaterial design table layout '${inner.name}' must stay inside '${outer.name}'.")
+            }
+        }
+        def assertNoOverlap = { String label, List areas ->
+            def collisions = []
+            for (int leftIndex = 0; leftIndex < areas.size(); leftIndex++) {
+                for (int rightIndex = leftIndex + 1; rightIndex < areas.size(); rightIndex++) {
+                    if (overlaps(areas[leftIndex], areas[rightIndex])) {
+                        collisions.add("${areas[leftIndex].name}<->${areas[rightIndex].name}")
+                    }
+                }
+            }
+            if (!collisions.isEmpty()) {
+                throw new GradleException("Metamaterial design table ${label} overlap: ${collisions.join(', ')}")
+            }
+        }
+        def assertNear = { name, actualValue, expectedValue, toleranceValue ->
+            double actual = actualValue as double
+            double expected = expectedValue as double
+            double tolerance = toleranceValue as double
+            if (Math.abs(actual - expected) > tolerance) {
+                throw new GradleException("${name} should sit near ${expected.round(2)}, but was ${actual.round(2)}.")
+            }
+        }
+
+        def screen = rect('screen', 0, 0, intValue('IMAGE_WIDTH'), intValue('IMAGE_HEIGHT'))
+        def machine = rect('machine_panel', 0, 0, intValue('IMAGE_WIDTH'), intValue('MACHINE_HEIGHT'))
+        def leftPanel = rect('left_input_panel', intValue('LEFT_PANEL_X'), intValue('SIDE_PANEL_Y'), intValue('SIDE_PANEL_WIDTH'), intValue('SIDE_PANEL_HEIGHT'))
+        def rightPanel = rect('right_input_panel', intValue('RIGHT_PANEL_X'), intValue('SIDE_PANEL_Y'), intValue('SIDE_PANEL_WIDTH'), intValue('SIDE_PANEL_HEIGHT'))
+        def chamber = rect('main_chamber', intValue('CHAMBER_X'), intValue('CHAMBER_Y'), intValue('CHAMBER_WIDTH'), intValue('CHAMBER_HEIGHT'))
+        def chamberInner = rect('main_chamber_inner', intValue('CHAMBER_INNER_X'), intValue('CHAMBER_INNER_Y'), intValue('CHAMBER_INNER_WIDTH'), intValue('CHAMBER_INNER_HEIGHT'))
+        def mainPanel = rect('main_panel', intValue('MAIN_PANEL_X'), intValue('MAIN_PANEL_Y'), intValue('MAIN_PANEL_WIDTH'), intValue('MAIN_PANEL_HEIGHT'))
+        def outputZone = rect('output_zone', intValue('OUTPUT_ZONE_X'), intValue('OUTPUT_ZONE_Y'), intValue('OUTPUT_ZONE_WIDTH'), intValue('OUTPUT_ZONE_HEIGHT'))
+        def barZone = rect('xyz_bar_zone', intValue('BAR_ZONE_X'), intValue('BAR_ZONE_Y'), intValue('BAR_ZONE_WIDTH'), intValue('BAR_ZONE_HEIGHT'))
+
+        [leftPanel, rightPanel, chamber].each { assertInside(machine, it) }
+        [chamberInner, mainPanel].each { assertInside(chamber, it) }
+        [outputZone, barZone].each { assertInside(mainPanel, it) }
+        assertNoOverlap('major main panel region', [outputZone, barZone])
+
+        if (intValue('SIDE_PANEL_HEIGHT') != intValue('CHAMBER_HEIGHT')) {
+            throw new GradleException('Metamaterial design table left, center, and right boxes must share the same height.')
+        }
+        if (intValue('RIGHT_PANEL_X') != intValue('IMAGE_WIDTH') - intValue('LEFT_PANEL_X') - intValue('SIDE_PANEL_WIDTH')) {
+            throw new GradleException('Metamaterial design table left and right input boxes must mirror across the screen center.')
+        }
+        if (intValue('CHAMBER_X') * 2 + intValue('CHAMBER_WIDTH') != intValue('IMAGE_WIDTH')) {
+            throw new GradleException('Metamaterial design table main chamber must be horizontally centered.')
+        }
+
+        def boxGaps = [
+                intValue('LEFT_PANEL_X'),
+                intValue('CHAMBER_X') - (intValue('LEFT_PANEL_X') + intValue('SIDE_PANEL_WIDTH')),
+                intValue('RIGHT_PANEL_X') - (intValue('CHAMBER_X') + intValue('CHAMBER_WIDTH')),
+                intValue('IMAGE_WIDTH') - (intValue('RIGHT_PANEL_X') + intValue('SIDE_PANEL_WIDTH'))
+        ]
+        if (boxGaps.unique().size() != 1) {
+            throw new GradleException("Metamaterial design table horizontal box gaps must match: ${boxGaps.join(', ')}")
+        }
+
+        def slotSize = intValue('SLOT_SIZE')
+        def leftSlots = [
+                rect('x_budget_slot', intValue('SLOT_X_BUDGET_X'), intValue('SLOT_X_BUDGET_Y'), slotSize, slotSize),
+                rect('y_budget_slot', intValue('SLOT_Y_BUDGET_X'), intValue('SLOT_Y_BUDGET_Y'), slotSize, slotSize),
+                rect('z_budget_slot', intValue('SLOT_Z_BUDGET_X'), intValue('SLOT_Z_BUDGET_Y'), slotSize, slotSize)
+        ]
+        def rightSlots = [
+                rect('right_top_slot', intValue('SLOT_RIGHT_TOP_X'), intValue('SLOT_RIGHT_TOP_Y'), slotSize, slotSize),
+                rect('right_middle_slot', intValue('SLOT_RIGHT_MIDDLE_X'), intValue('SLOT_RIGHT_MIDDLE_Y'), slotSize, slotSize),
+                rect('right_bottom_slot', intValue('SLOT_RIGHT_BOTTOM_X'), intValue('SLOT_RIGHT_BOTTOM_Y'), slotSize, slotSize)
+        ]
+        def outputSlot = rect('output_slot', intValue('SLOT_OUTPUT_X'), intValue('SLOT_OUTPUT_Y'), slotSize, slotSize)
+        leftSlots.each { assertInside(leftPanel, it) }
+        rightSlots.each { assertInside(rightPanel, it) }
+        assertInside(outputZone, outputSlot)
+        assertNoOverlap('left input slot', leftSlots)
+        assertNoOverlap('right input slot', rightSlots)
+        assertNear('Metamaterial design table output slot center', intValue('SLOT_OUTPUT_X') + slotSize / 2.0, intValue('IMAGE_WIDTH') / 2.0, 0.0)
+
+        for (int index = 0; index < leftSlots.size(); index++) {
+            def leftSlot = leftSlots[index]
+            def rightSlot = rightSlots[index]
+            assertNear("${leftSlot.name} center", leftSlot.x + slotSize / 2.0, intValue('LEFT_PANEL_CENTER_X'), 0.0)
+            assertNear("${rightSlot.name} center", rightSlot.x + slotSize / 2.0, intValue('RIGHT_PANEL_CENTER_X'), 0.0)
+            assertNear("${leftSlot.name} and ${rightSlot.name} mirror y", leftSlot.y, rightSlot.y, 0.0)
+        }
+
+        def modeButton = rect('mode_button', intValue('MODE_BUTTON_X'), intValue('MODE_BUTTON_Y'), intValue('BUTTON_SIZE'), intValue('BUTTON_SIZE'))
+        def prevButton = rect('standard_prev_button', intValue('STANDARD_PREV_X'), intValue('STANDARD_BUTTON_Y'), intValue('BUTTON_SIZE'), intValue('BUTTON_SIZE'))
+        def nextButton = rect('standard_next_button', intValue('STANDARD_NEXT_X'), intValue('STANDARD_BUTTON_Y'), intValue('BUTTON_SIZE'), intValue('BUTTON_SIZE'))
+        def designButton = rect('design_button', intValue('DESIGN_BUTTON_X'), intValue('DESIGN_BUTTON_Y'), intValue('DESIGN_BUTTON_WIDTH'), intValue('DESIGN_BUTTON_HEIGHT'))
+        [modeButton, prevButton, nextButton, designButton].each { assertInside(outputZone, it) }
+        assertNoOverlap('output control', [modeButton, prevButton, outputSlot, nextButton, designButton])
+        assertNear(
+                'Metamaterial design table standard arrows mirror output',
+                intValue('STANDARD_PREV_X') + intValue('BUTTON_SIZE') / 2.0 + intValue('STANDARD_NEXT_X') + intValue('BUTTON_SIZE') / 2.0,
+                2.0 * (intValue('SLOT_OUTPUT_X') + slotSize / 2.0),
+                0.0
+        )
+        assertNear('Metamaterial design table design button center', intValue('DESIGN_BUTTON_X') + intValue('DESIGN_BUTTON_WIDTH') / 2.0, intValue('IMAGE_WIDTH') / 2.0, 0.0)
+
+        def barRows = [
+                rect('x_axis_bar', intValue('AXIS_BAR_X'), intValue('AXIS_ROW_X_Y'), intValue('AXIS_BAR_WIDTH'), intValue('AXIS_BAR_HEIGHT')),
+                rect('y_axis_bar', intValue('AXIS_BAR_X'), intValue('AXIS_ROW_Y_Y'), intValue('AXIS_BAR_WIDTH'), intValue('AXIS_BAR_HEIGHT')),
+                rect('z_axis_bar', intValue('AXIS_BAR_X'), intValue('AXIS_ROW_Z_Y'), intValue('AXIS_BAR_WIDTH'), intValue('AXIS_BAR_HEIGHT'))
+        ]
+        barRows.each { assertInside(barZone, it) }
+        assertNoOverlap('axis bar', barRows)
+        assertNear('Metamaterial design table x bar left', intValue('AXIS_BAR_X'), intValue('BAR_ZONE_X') + 20, 0.0)
+        assertNear('Metamaterial design table bar width', intValue('AXIS_BAR_WIDTH'), 82, 0.0)
+
+        if (intValue('ITEM_X_BUDGET_X') != intValue('SLOT_X_BUDGET_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_X_BUDGET_Y') != intValue('SLOT_X_BUDGET_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_Y_BUDGET_X') != intValue('SLOT_Y_BUDGET_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_Y_BUDGET_Y') != intValue('SLOT_Y_BUDGET_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_Z_BUDGET_X') != intValue('SLOT_Z_BUDGET_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_Z_BUDGET_Y') != intValue('SLOT_Z_BUDGET_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_RIGHT_TOP_X') != intValue('SLOT_RIGHT_TOP_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_RIGHT_TOP_Y') != intValue('SLOT_RIGHT_TOP_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_RIGHT_MIDDLE_X') != intValue('SLOT_RIGHT_MIDDLE_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_RIGHT_MIDDLE_Y') != intValue('SLOT_RIGHT_MIDDLE_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_RIGHT_BOTTOM_X') != intValue('SLOT_RIGHT_BOTTOM_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_RIGHT_BOTTOM_Y') != intValue('SLOT_RIGHT_BOTTOM_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_OUTPUT_X') != intValue('SLOT_OUTPUT_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_OUTPUT_Y') != intValue('SLOT_OUTPUT_Y') + intValue('ITEM_SLOT_INSET')) {
+            throw new GradleException('Metamaterial design table item render slots must stay inset from visible 18px slot frames.')
+        }
+
+        if (intValue('PLAYER_INVENTORY_ITEM_X') != intValue('PLAYER_INVENTORY_X')
+                || intValue('PLAYER_INVENTORY_ITEM_Y') != intValue('PLAYER_INVENTORY_Y')) {
+            throw new GradleException('Metamaterial design table player inventory item slots must match the menu slot origin.')
+        }
+
+        [machine, leftPanel, rightPanel, chamber, chamberInner, mainPanel, outputZone, barZone, outputSlot].each { assertInside(screen, it) }
+    }
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('verifyThermalSmelterUiLayout')
+    dependsOn tasks.named('verifyLensGrindingBenchUiLayout')
+    dependsOn tasks.named('verifyMetamaterialDesignTableUiLayout')
 }
 
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.

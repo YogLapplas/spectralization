@@ -21,6 +21,7 @@ public final class SpectralItemTags {
     public static final TagKey<Item> METASURFACE_TEMPLATE = item("metasurface_template");
     public static final TagKey<Item> STANDARD_METAMATERIAL_TEMPLATE = item("standard_metamaterial_template");
     public static final TagKey<Item> CUSTOM_METAMATERIAL_TEMPLATE = item("custom_metamaterial_template");
+    public static final TagKey<Item> GRINDING_KNIVES = item("grinding_knives");
     public static final TagKey<Item> SINGULAR_MATERIAL = item("singular_material");
     public static final TagKey<Item> COLOR_OUT_OF_SPACE_MATERIAL = item("color_out_of_space_material");
     public static final TagKey<Item> UNSTABLE_MACHINE = item("unstable_machine");

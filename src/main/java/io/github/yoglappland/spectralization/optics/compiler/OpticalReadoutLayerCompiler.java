@@ -104,9 +104,8 @@ public final class OpticalReadoutLayerCompiler {
 
             if (state.getBlock() instanceof PhotothermalReceiverBlock photothermalReceiverBlock) {
                 photothermalReceiverPositions.add(node.pos());
-                Direction receivingSide = photothermalReceiverBlock.photothermalReceivingSide(state);
 
-                if (node.side() == receivingSide) {
+                if (photothermalReceiverBlock.photothermalReceivingSides(state).contains(node.side())) {
                     boundPhotothermalReceiverPositions.add(node.pos());
                     bindings.add(new OpticalReadoutBinding(
                             node.pos(),

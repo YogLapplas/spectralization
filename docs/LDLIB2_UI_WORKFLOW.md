@@ -2,6 +2,8 @@
 
 This document records how Spectralization uses LDLib2 UI templates during development.
 
+AI agents must read [AI_UI_DESIGN_SPEC.md](AI_UI_DESIGN_SPEC.md) before designing or rewriting a machine UI. This workflow explains the LDLib2 template mechanics; the AI UI spec defines the state contract, low-text rules, pending behavior, and audit checklist.
+
 ## Thermal Smelter
 
 The thermal smelter can load a visual LDLib2 UI template before falling back to the code-built layout.

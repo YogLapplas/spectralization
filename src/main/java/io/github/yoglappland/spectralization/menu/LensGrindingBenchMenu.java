@@ -21,16 +21,16 @@ public class LensGrindingBenchMenu extends AbstractContainerMenu {
     public static final int BUTTON_TARGET_UP = 3;
     public static final int BUTTON_GRIND = 4;
 
-    public static final int BLANK_SLOT_X = 34;
-    public static final int BLANK_SLOT_Y = 38;
-    public static final int TOOL_SLOT_X = 34;
-    public static final int TOOL_SLOT_Y = 64;
-    public static final int REFERENCE_SLOT_X = 34;
-    public static final int REFERENCE_SLOT_Y = 90;
-    public static final int OUTPUT_SLOT_X = 84;
-    public static final int OUTPUT_SLOT_Y = 64;
-    public static final int INVENTORY_X = 48;
-    public static final int INVENTORY_Y = 140;
+    public static final int BLANK_SLOT_X = LensGrindingBenchLayout.SLOT_BLANK_X;
+    public static final int BLANK_SLOT_Y = LensGrindingBenchLayout.SLOT_BLANK_Y;
+    public static final int TOOL_SLOT_X = LensGrindingBenchLayout.SLOT_TOOL_X;
+    public static final int TOOL_SLOT_Y = LensGrindingBenchLayout.SLOT_TOOL_Y;
+    public static final int REFERENCE_SLOT_X = LensGrindingBenchLayout.SLOT_REFERENCE_X;
+    public static final int REFERENCE_SLOT_Y = LensGrindingBenchLayout.SLOT_REFERENCE_Y;
+    public static final int OUTPUT_SLOT_X = LensGrindingBenchLayout.SLOT_OUTPUT_X;
+    public static final int OUTPUT_SLOT_Y = LensGrindingBenchLayout.SLOT_OUTPUT_Y;
+    public static final int INVENTORY_X = LensGrindingBenchLayout.PLAYER_INVENTORY_X;
+    public static final int INVENTORY_Y = LensGrindingBenchLayout.PLAYER_INVENTORY_Y;
 
     private static final int MACHINE_SLOT_COUNT = LensGrindingBenchBlockEntity.SLOT_COUNT;
     private static final int PLAYER_INVENTORY_START = MACHINE_SLOT_COUNT;
@@ -66,16 +66,20 @@ public class LensGrindingBenchMenu extends AbstractContainerMenu {
         this.bench = bench;
         this.data = data;
 
-        addSlot(new SlotItemHandler(items, LensGrindingBenchBlockEntity.SLOT_BLANK, BLANK_SLOT_X, BLANK_SLOT_Y));
-        addSlot(new SlotItemHandler(items, LensGrindingBenchBlockEntity.SLOT_TOOL, TOOL_SLOT_X, TOOL_SLOT_Y));
-        addSlot(new SlotItemHandler(items, LensGrindingBenchBlockEntity.SLOT_REFERENCE, REFERENCE_SLOT_X, REFERENCE_SLOT_Y));
-        addSlot(new SlotItemHandler(items, LensGrindingBenchBlockEntity.SLOT_OUTPUT, OUTPUT_SLOT_X, OUTPUT_SLOT_Y) {
+        addSlot(new SlotItemHandler(items, LensGrindingBenchBlockEntity.SLOT_BLANK,
+                LensGrindingBenchLayout.ITEM_BLANK_X, LensGrindingBenchLayout.ITEM_BLANK_Y));
+        addSlot(new SlotItemHandler(items, LensGrindingBenchBlockEntity.SLOT_TOOL,
+                LensGrindingBenchLayout.ITEM_TOOL_X, LensGrindingBenchLayout.ITEM_TOOL_Y));
+        addSlot(new SlotItemHandler(items, LensGrindingBenchBlockEntity.SLOT_REFERENCE,
+                LensGrindingBenchLayout.ITEM_REFERENCE_X, LensGrindingBenchLayout.ITEM_REFERENCE_Y));
+        addSlot(new SlotItemHandler(items, LensGrindingBenchBlockEntity.SLOT_OUTPUT,
+                LensGrindingBenchLayout.ITEM_OUTPUT_X, LensGrindingBenchLayout.ITEM_OUTPUT_Y) {
             @Override
             public boolean mayPlace(ItemStack stack) {
                 return false;
             }
         });
-        addPlayerInventory(inventory, INVENTORY_X, INVENTORY_Y);
+        addPlayerInventory(inventory, LensGrindingBenchLayout.PLAYER_INVENTORY_ITEM_X, LensGrindingBenchLayout.PLAYER_INVENTORY_ITEM_Y);
         addDataSlots(data);
     }
 

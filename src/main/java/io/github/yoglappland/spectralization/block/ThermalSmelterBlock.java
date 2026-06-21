@@ -5,18 +5,24 @@ import com.lowdragmc.lowdraglib2.gui.ui.ModularUI;
 import io.github.yoglappland.spectralization.blockentity.ThermalSmelterBlockEntity;
 import io.github.yoglappland.spectralization.compat.ldlib2.ThermalSmelterLdLibUi;
 import io.github.yoglappland.spectralization.heat.PhotothermalReceiverBlock;
+import io.github.yoglappland.spectralization.menu.ThermalSmelterMenu;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalNetwork;
 import io.github.yoglappland.spectralization.optics.OpticalReceiver;
 import io.github.yoglappland.spectralization.optics.OpticalResult;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
+import java.util.Set;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
-import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.ItemInteractionResult;
+import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -31,7 +37,8 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
 public class ThermalSmelterBlock extends Block implements EntityBlock, OpticalReceiver, PhotothermalReceiverBlock, BlockUIMenuType.BlockUI {
-    public static final Direction PHOTOTHERMAL_INPUT_SIDE = Direction.NORTH;
+    public static final Direction PHOTOTHERMAL_INPUT_SIDE = Direction.WEST;
+    public static final Direction SECONDARY_PHOTOTHERMAL_INPUT_SIDE = Direction.EAST;
     public static final Direction ITEM_PORT_SIDE = Direction.SOUTH;
     public static final Direction RESERVED_FIBER_SIDE = Direction.DOWN;
 
@@ -43,11 +50,46 @@ public class ThermalSmelterBlock extends Block implements EntityBlock, OpticalRe
 
     @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
-        if (!level.isClientSide && player instanceof ServerPlayer serverPlayer) {
-            BlockUIMenuType.openUI(serverPlayer, pos);
+        openMenu(level, pos, player);
+        return InteractionResult.sidedSuccess(level.isClientSide);
+    }
+
+    @Override
+    protected ItemInteractionResult useItemOn(
+            ItemStack stack,
+            BlockState state,
+            Level level,
+            BlockPos pos,
+            Player player,
+            InteractionHand hand,
+            BlockHitResult hitResult
+    ) {
+        if (stack.is(Items.DIAMOND) && level.getBlockEntity(pos) instanceof ThermalSmelterBlockEntity smelter) {
+            if (!level.isClientSide) {
+                if (smelter.upgradeParallelCount()) {
+                    if (!player.getAbilities().instabuild) {
+                        stack.shrink(1);
+                    }
+                    player.displayClientMessage(Component.literal("PAR " + smelter.parallelCount() + "/4"), true);
+                } else {
+                    player.displayClientMessage(Component.literal("PAR MAX"), true);
+                }
+            }
+
+            return ItemInteractionResult.sidedSuccess(level.isClientSide);
         }
 
-        return InteractionResult.sidedSuccess(level.isClientSide);
+        openMenu(level, pos, player);
+        return ItemInteractionResult.sidedSuccess(level.isClientSide);
+    }
+
+    private static void openMenu(Level level, BlockPos pos, Player player) {
+        if (!level.isClientSide && level.getBlockEntity(pos) instanceof ThermalSmelterBlockEntity smelter) {
+            player.openMenu(new SimpleMenuProvider(
+                    (containerId, inventory, menuPlayer) -> new ThermalSmelterMenu(containerId, inventory, smelter),
+                    Component.translatable("container.spectralization.thermal_smelter")
+            ));
+        }
     }
 
     @Override
@@ -111,6 +153,11 @@ public class ThermalSmelterBlock extends Block implements EntityBlock, OpticalRe
     @Override
     public Direction photothermalReceivingSide(BlockState state) {
         return PHOTOTHERMAL_INPUT_SIDE;
+    }
+
+    @Override
+    public Set<Direction> photothermalReceivingSides(BlockState state) {
+        return Set.of(PHOTOTHERMAL_INPUT_SIDE, SECONDARY_PHOTOTHERMAL_INPUT_SIDE);
     }
 
     @Override

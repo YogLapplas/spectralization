@@ -74,8 +74,11 @@ public final class PhotothermalCouplingModel {
             return 0.0;
         }
 
-        if (radius < profile.minFullEfficiencyRadius()) {
-            return clamp01(radius / profile.minFullEfficiencyRadius());
+        double matchedRadius = profile.absorptionRadius();
+
+        if (radius < matchedRadius) {
+            double spotRatio = radius / matchedRadius;
+            return clamp01(spotRatio * spotRatio);
         }
 
         if (radius <= profile.maxFullEfficiencyRadius()) {
@@ -86,8 +89,10 @@ public final class PhotothermalCouplingModel {
             return 0.0;
         }
 
-        return clamp01((profile.cutoffRadius() - radius)
-                / (profile.cutoffRadius() - profile.maxFullEfficiencyRadius()));
+        double capturedAreaRatio = matchedRadius * matchedRadius / (radius * radius);
+        double edgeFade = (profile.cutoffRadius() - radius)
+                / (profile.cutoffRadius() - profile.maxFullEfficiencyRadius());
+        return clamp01(capturedAreaRatio * edgeFade);
     }
 
     private static double uniformityEfficiency(

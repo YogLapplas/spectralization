@@ -134,6 +134,18 @@ public class Spectralization {
             "sandpaper",
             () -> new SandpaperItem(new Item.Properties().durability(64))
     );
+    public static final DeferredItem<Item> GRINDING_KNIFE =
+            ITEMS.registerSimpleItem("grinding_knife", new Item.Properties().stacksTo(1));
+    public static final DeferredItem<Item> DIAMOND_GRINDING_KNIFE =
+            ITEMS.registerSimpleItem("diamond_grinding_knife", new Item.Properties().stacksTo(1));
+    public static final DeferredItem<Item> OBSIDIAN_GRINDING_KNIFE =
+            ITEMS.registerSimpleItem("obsidian_grinding_knife", new Item.Properties().stacksTo(1));
+    public static final DeferredItem<Item> CERAMIC_GRINDING_KNIFE =
+            ITEMS.registerSimpleItem("ceramic_grinding_knife", new Item.Properties().stacksTo(1));
+    public static final DeferredItem<Item> CLEAR_GRINDING_KNIFE =
+            ITEMS.registerSimpleItem("clear_grinding_knife", new Item.Properties().stacksTo(1));
+    public static final DeferredItem<Item> GRINDING_TOOL =
+            ITEMS.registerSimpleItem("grinding_tool", new Item.Properties().stacksTo(1));
     public static final DeferredItem<CoatingBrushItem> ADVANCED_BRUSH = ITEMS.register(
             "advanced_brush",
             () -> new CoatingBrushItem(new Item.Properties().stacksTo(1))

@@ -1,0 +1,1574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Singular Material Solver Lab V3</title>
+<style>
+  :root {
+    --bg: #06080b;
+    --panel: #10161b;
+    --panel-2: #151e24;
+    --line: #293b45;
+    --hot: #74e0c4;
+    --text: #effaf8;
+    --muted: #97adb4;
+    --amber: #ffc857;
+    --rose: #ee5f9e;
+    --blue: #6fa8ff;
+    --green: #77dd77;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100%;
+    overflow-x: hidden;
+    background:
+      linear-gradient(135deg, rgba(12, 17, 20, 0.98), rgba(5, 7, 10, 1) 62%),
+      var(--bg);
+    color: var(--text);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  button,
+  input {
+    font: inherit;
+  }
+
+  .app {
+    width: min(1280px, 100%);
+    min-height: 100vh;
+    margin: 0 auto;
+    padding: 24px;
+    display: grid;
+    grid-template-columns: minmax(330px, 1fr) 420px;
+    gap: 18px;
+  }
+
+  .stage {
+    min-width: 0;
+    display: grid;
+    grid-template-rows: auto minmax(390px, 1fr) auto;
+    gap: 16px;
+  }
+
+  .topbar {
+    min-width: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(116, 224, 196, 0.2);
+  }
+
+  .topbar > * {
+    min-width: 0;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(22px, 3vw, 34px);
+    line-height: 1.04;
+    letter-spacing: 0;
+    overflow-wrap: break-word;
+  }
+
+  .subtitle {
+    max-width: 100%;
+    margin-top: 5px;
+    color: #b7d7d7;
+    font-size: 13px;
+    line-height: 1.45;
+    overflow-wrap: break-word;
+  }
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+
+  .chip {
+    border: 1px solid rgba(151, 173, 180, 0.28);
+    border-radius: 6px;
+    padding: 5px 8px;
+    color: var(--muted);
+    background: rgba(16, 22, 27, 0.78);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .preview {
+    min-width: 0;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(116, 224, 196, 0.17);
+    border-radius: 8px;
+    overflow: hidden;
+    background:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px),
+      #080d11;
+    background-size: 24px 24px;
+    box-shadow: 0 26px 90px rgba(0, 0, 0, 0.44), inset 0 0 0 1px rgba(255,255,255,0.02);
+  }
+
+  .texture-frame {
+    position: relative;
+    width: min(64vw, 540px);
+    max-width: min(540px, calc(100vh - 190px), 100%);
+    min-width: 288px;
+    aspect-ratio: 1;
+    display: grid;
+    place-items: center;
+  }
+
+  .texture-frame::before {
+    content: "";
+    position: absolute;
+    inset: 4%;
+    border: 1px solid rgba(116, 224, 196, 0.16);
+    box-shadow:
+      0 0 76px rgba(116, 224, 196, 0.08),
+      inset 0 0 46px rgba(238, 95, 158, 0.045);
+    pointer-events: none;
+  }
+
+  canvas {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+
+  #texture {
+    width: 100%;
+    height: 100%;
+    border: 1px solid rgba(239, 250, 248, 0.14);
+    background:
+      linear-gradient(45deg, #111820 25%, transparent 25%),
+      linear-gradient(-45deg, #111820 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #111820 75%),
+      linear-gradient(-45deg, transparent 75%, #111820 75%),
+      #0a0e12;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+    background-size: 16px 16px;
+  }
+
+  .strip {
+    display: grid;
+    grid-template-columns: 78px 1fr;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .native {
+    width: 78px;
+    height: 78px;
+    border: 1px solid rgba(239, 250, 248, 0.16);
+    background: #080d11;
+  }
+
+  .history {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: repeat(8, minmax(30px, 1fr));
+    gap: 8px;
+  }
+
+  .history canvas {
+    width: 100%;
+    aspect-ratio: 1;
+    border: 1px solid rgba(151, 173, 180, 0.18);
+    background: #080d11;
+  }
+
+  .panel {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid rgba(116, 224, 196, 0.2);
+    border-radius: 8px;
+    background: rgba(16, 22, 27, 0.9);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.025);
+  }
+
+  .panel h2,
+  .panel h3 {
+    margin: 0;
+    letter-spacing: 0;
+  }
+
+  .panel h2 {
+    font-size: 16px;
+  }
+
+  .panel h3 {
+    color: #d6eeee;
+    font-size: 13px;
+  }
+
+  .field {
+    display: grid;
+    gap: 7px;
+  }
+
+  .field label {
+    color: var(--muted);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .seed-row {
+    display: grid;
+    grid-template-columns: 1fr 42px;
+    gap: 8px;
+  }
+
+  input[type="text"] {
+    min-width: 0;
+    height: 38px;
+    border: 1px solid rgba(151, 173, 180, 0.28);
+    border-radius: 6px;
+    padding: 0 10px;
+    outline: none;
+    color: var(--text);
+    background: #080d11;
+  }
+
+  input[type="text"]:focus {
+    border-color: rgba(116, 224, 196, 0.78);
+    box-shadow: 0 0 0 3px rgba(116, 224, 196, 0.12);
+  }
+
+  .button-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  button {
+    min-height: 38px;
+    border: 1px solid rgba(151, 173, 180, 0.28);
+    border-radius: 6px;
+    color: var(--text);
+    background: #111920;
+    cursor: pointer;
+    transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+  }
+
+  button:hover {
+    transform: translateY(-1px);
+    border-color: rgba(116, 224, 196, 0.72);
+    background: #17242a;
+  }
+
+  button:active {
+    transform: translateY(0);
+  }
+
+  .primary {
+    color: #071014;
+    border-color: rgba(255, 200, 87, 0.85);
+    background: var(--amber);
+    font-weight: 700;
+  }
+
+  .primary:hover {
+    border-color: rgba(255, 231, 163, 0.94);
+    background: #ffe18a;
+  }
+
+  .active {
+    color: #071014;
+    border-color: rgba(116, 224, 196, 0.85);
+    background: var(--hot);
+    font-weight: 700;
+  }
+
+  .meter-grid,
+  .param-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .tile {
+    min-width: 0;
+    padding: 9px;
+    border: 1px solid rgba(151, 173, 180, 0.18);
+    border-radius: 6px;
+    background: rgba(8, 13, 17, 0.74);
+  }
+
+  .tile span {
+    display: block;
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .tile strong {
+    display: block;
+    min-height: 20px;
+    margin-top: 5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text);
+    font-size: 15px;
+  }
+
+  .mix {
+    display: grid;
+    gap: 8px;
+  }
+
+  .control-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .slider-row {
+    display: grid;
+    grid-template-columns: 92px 1fr 50px;
+    gap: 8px;
+    align-items: center;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .slider-row label,
+  .slider-row output {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  input[type="range"] {
+    width: 100%;
+    min-width: 0;
+    accent-color: var(--hot);
+  }
+
+  .mix-bar {
+    height: 34px;
+    display: grid;
+    grid-template-columns: var(--nucleus, 1fr) var(--dendrite, 1fr) var(--fracture, 1fr) var(--chaos, 1fr);
+    overflow: hidden;
+    border: 1px solid rgba(151, 173, 180, 0.18);
+    border-radius: 6px;
+  }
+
+  .mix-bar div:nth-child(1) { background: #20d267; }
+  .mix-bar div:nth-child(2) { background: #4e5bff; }
+  .mix-bar div:nth-child(3) { background: #ee2a9f; }
+  .mix-bar div:nth-child(4) { background: #c8ef22; }
+
+  .legend {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+
+  .legend span {
+    min-width: 0;
+    color: var(--muted);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .phase-strip {
+    width: 100%;
+    height: 54px;
+    border: 1px solid rgba(151, 173, 180, 0.18);
+    border-radius: 6px;
+    background: #080d11;
+  }
+
+  .map {
+    display: grid;
+    gap: 6px;
+    padding-bottom: 4px;
+  }
+
+  .map-row {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 8px;
+    align-items: baseline;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .map-row strong {
+    color: #d6eeee;
+    font-weight: 650;
+  }
+
+  .note {
+    border-top: 1px solid rgba(151, 173, 180, 0.18);
+    padding-top: 12px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  @media (max-width: 960px) {
+    .app {
+      grid-template-columns: 1fr;
+      padding: 14px;
+    }
+
+    .stage {
+      grid-template-rows: auto auto auto;
+    }
+
+    .topbar,
+    .strip {
+      display: grid;
+      grid-template-columns: 1fr;
+      justify-items: stretch;
+    }
+
+    .chips {
+      justify-content: flex-start;
+    }
+
+    .preview {
+      min-height: 340px;
+    }
+
+    .texture-frame {
+      width: min(86vw, 500px);
+      min-width: 260px;
+    }
+  }
+
+  @media (max-width: 520px) {
+    .app {
+      padding: 10px;
+    }
+
+    .subtitle {
+      max-width: 32ch;
+    }
+
+    .texture-frame {
+      width: 100%;
+      min-width: 0;
+    }
+
+    .button-grid,
+    .meter-grid,
+    .param-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .history {
+      grid-template-columns: repeat(4, 1fr);
+    }
+
+    .legend {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .slider-row {
+      grid-template-columns: 84px 1fr 44px;
+    }
+
+    .map-row {
+      grid-template-columns: 1fr;
+      gap: 2px;
+    }
+  }
+</style>
+</head>
+<body>
+<main class="app">
+  <section class="stage" aria-label="Texture preview">
+    <header class="topbar">
+      <div>
+        <h1>Singular Material Solver Lab V3</h1>
+        <div class="subtitle">Seed-driven solver mix with measured morphology features.</div>
+      </div>
+      <div class="chips" aria-label="generator properties">
+        <span class="chip">Solver Mix</span>
+        <span class="chip">Feature Metrics</span>
+        <span class="chip">Param Map</span>
+      </div>
+    </header>
+
+    <section class="preview" aria-label="generated material">
+      <div class="texture-frame">
+        <canvas id="texture" width="32" height="32"></canvas>
+      </div>
+    </section>
+
+    <footer class="strip">
+      <canvas class="native" id="nativeTile" width="32" height="32" aria-label="native 32 by 32 preview"></canvas>
+      <div class="history" id="history" aria-label="recent generated textures"></div>
+    </footer>
+  </section>
+
+  <aside class="panel" aria-label="solver controls and metrics">
+    <h2>Solver Console</h2>
+
+    <div class="field">
+      <label for="seedInput">World seed</label>
+      <div class="seed-row">
+        <input id="seedInput" type="text" autocomplete="off" spellcheck="false">
+        <button id="rerollSeed" type="button" title="Random seed" aria-label="Random seed">+</button>
+      </div>
+    </div>
+
+    <div class="button-grid">
+      <button class="primary" id="generateButton" type="button">Generate</button>
+      <button id="applyButton" type="button">Apply Sliders</button>
+      <button id="animateButton" type="button">Animate</button>
+      <button id="downloadButton" type="button">Download PNG</button>
+      <button id="stripButton" type="button">Download Strip</button>
+    </div>
+
+    <section class="mix" aria-label="solver mix">
+      <h3>Solver Mix</h3>
+      <div class="mix-bar" id="mixBar">
+        <div></div><div></div><div></div><div></div>
+      </div>
+      <div class="legend">
+        <span>Nucleation</span>
+        <span>Dendrite</span>
+        <span>Fracture</span>
+        <span>Chaos</span>
+      </div>
+    </section>
+
+    <section aria-label="manual solver controls">
+      <h3>Solver Controls</h3>
+      <div class="control-list" id="solverControls"></div>
+    </section>
+
+    <section aria-label="manual genome controls">
+      <h3>Genome Controls</h3>
+      <div class="control-list" id="genomeControls"></div>
+    </section>
+
+    <section aria-label="control genome">
+      <h3>Control Genome</h3>
+      <div class="param-grid" id="paramGrid"></div>
+    </section>
+
+    <section aria-label="measured features">
+      <h3>Measured Features</h3>
+      <div class="meter-grid" id="featureGrid"></div>
+    </section>
+
+    <section class="map" aria-label="parameter feature map">
+      <h3>Parameter Map</h3>
+      <div class="map-row"><strong>areaTarget</strong><span>sets quantile threshold, so it directly controls filled pixel count.</span></div>
+      <div class="map-row"><strong>branchGoal</strong><span>caps retained components and adds satellites when too few branches survive.</span></div>
+      <div class="map-row"><strong>edgeSharpness</strong><span>reduces smoothing and increases high-frequency boundary noise.</span></div>
+      <div class="map-row"><strong>curvatureBias</strong><span>adds cellular smoothing; higher values round off corners and cavities.</span></div>
+      <div class="map-row"><strong>branchLength</strong><span>extends dendrite walks and raises measured graph diameter.</span></div>
+      <div class="map-row"><strong>solver weights</strong><span>choose whether the same parameters express as blobs, trees, cracks, or attractors.</span></div>
+    </section>
+
+    <canvas class="phase-strip" id="phaseStrip" width="256" height="32" aria-label="animation strip"></canvas>
+
+    <div class="note">This version is meant as a control surface: seed creates a genome, solvers build the shape, metrics report what actually happened.</div>
+  </aside>
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  const SIZE = 32;
+  const PIXELS = SIZE * SIZE;
+  const canvas = document.getElementById("texture");
+  const nativeTile = document.getElementById("nativeTile");
+  const phaseStrip = document.getElementById("phaseStrip");
+  const ctx = canvas.getContext("2d", { willReadFrequently: false });
+  const nativeCtx = nativeTile.getContext("2d", { willReadFrequently: false });
+  const stripCtx = phaseStrip.getContext("2d", { willReadFrequently: false });
+  const seedInput = document.getElementById("seedInput");
+  const generateButton = document.getElementById("generateButton");
+  const rerollSeed = document.getElementById("rerollSeed");
+  const applyButton = document.getElementById("applyButton");
+  const animateButton = document.getElementById("animateButton");
+  const downloadButton = document.getElementById("downloadButton");
+  const stripButton = document.getElementById("stripButton");
+  const mixBar = document.getElementById("mixBar");
+  const solverControls = document.getElementById("solverControls");
+  const genomeControls = document.getElementById("genomeControls");
+  const paramGrid = document.getElementById("paramGrid");
+  const featureGrid = document.getElementById("featureGrid");
+  const history = document.getElementById("history");
+  const historyTiles = [];
+  const solverControlDefs = [
+    ["nucleus", "Nucleation", 0.01, 1, 0.01],
+    ["dendrite", "Dendrite", 0.01, 1, 0.01],
+    ["fracture", "Fracture", 0.01, 1, 0.01],
+    ["chaos", "Chaos", 0.01, 1, 0.01]
+  ];
+  const genomeControlDefs = [
+    ["areaTarget", "Area", 0.16, 0.62, 0.01],
+    ["branchGoal", "Branches", 1, 7, 1],
+    ["edgeSharpness", "Sharp Edge", 0, 1, 0.01],
+    ["curvatureBias", "Curvature", 0, 1, 0.01],
+    ["branchLength", "Branch Len", 0, 1, 0.01],
+    ["patternScale", "Pattern", 0.1, 1, 0.01]
+  ];
+  const sliders = new Map();
+  let currentState = null;
+  let currentGenome = null;
+  let currentHash = 0;
+  let animating = false;
+  let rafId = 0;
+  let framePhase = 0;
+  const staticMode = new URLSearchParams(window.location.search).get("static") === "1";
+
+  for (let i = 0; i < 8; i += 1) {
+    const tile = document.createElement("canvas");
+    tile.width = SIZE;
+    tile.height = SIZE;
+    history.appendChild(tile);
+    historyTiles.push(tile);
+  }
+
+  function makeSlider(container, key, label, min, max, step) {
+    const row = document.createElement("div");
+    row.className = "slider-row";
+    const labelNode = document.createElement("label");
+    const input = document.createElement("input");
+    const output = document.createElement("output");
+    const id = `control-${key}`;
+    labelNode.htmlFor = id;
+    labelNode.textContent = label;
+    input.id = id;
+    input.type = "range";
+    input.min = String(min);
+    input.max = String(max);
+    input.step = String(step);
+    input.value = String(min);
+    output.value = "";
+    row.append(labelNode, input, output);
+    container.appendChild(row);
+    sliders.set(key, { input, output, min, max, step });
+    input.addEventListener("input", () => updateSliderOutput(key));
+    input.addEventListener("change", () => rebuildFromSliders(true));
+  }
+
+  solverControlDefs.forEach((def) => makeSlider(solverControls, ...def));
+  genomeControlDefs.forEach((def) => makeSlider(genomeControls, ...def));
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  function smooth(t) {
+    return t * t * (3 - 2 * t);
+  }
+
+  function smoothstep(edge0, edge1, x) {
+    const t = clamp((x - edge0) / (edge1 - edge0), 0, 1);
+    return t * t * (3 - 2 * t);
+  }
+
+  function fnv1a(text) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < text.length; i += 1) {
+      h ^= text.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    h += h << 13;
+    h ^= h >>> 7;
+    h += h << 3;
+    h ^= h >>> 17;
+    h += h << 5;
+    return h >>> 0;
+  }
+
+  function mulberry32(seed) {
+    let t = seed >>> 0;
+    return () => {
+      t += 0x6d2b79f5;
+      let r = Math.imul(t ^ (t >>> 15), 1 | t);
+      r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function hash2(x, y, seed) {
+    let h = seed ^ Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1);
+    h ^= h >>> 15;
+    h = Math.imul(h, 0x85ebca6b);
+    h ^= h >>> 13;
+    h = Math.imul(h, 0xc2b2ae35);
+    h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+  }
+
+  function valueNoise(x, y, seed) {
+    const xi = Math.floor(x);
+    const yi = Math.floor(y);
+    const xf = x - xi;
+    const yf = y - yi;
+    const sx = smooth(xf);
+    const sy = smooth(yf);
+    const n00 = hash2(xi, yi, seed);
+    const n10 = hash2(xi + 1, yi, seed);
+    const n01 = hash2(xi, yi + 1, seed);
+    const n11 = hash2(xi + 1, yi + 1, seed);
+    return lerp(lerp(n00, n10, sx), lerp(n01, n11, sx), sy);
+  }
+
+  function fbm(x, y, seed, octaves) {
+    let amp = 0.5;
+    let freq = 1;
+    let sum = 0;
+    let norm = 0;
+    for (let i = 0; i < octaves; i += 1) {
+      sum += valueNoise(x * freq, y * freq, seed + i * 1009) * amp;
+      norm += amp;
+      amp *= 0.52;
+      freq *= 2.03;
+    }
+    return sum / norm;
+  }
+
+  function hslToRgb(h, s, l) {
+    const hue = ((h % 360) + 360) % 360 / 360;
+    const sat = clamp(s, 0, 100) / 100;
+    const lum = clamp(l, 0, 100) / 100;
+    const q = lum < 0.5 ? lum * (1 + sat) : lum + sat - lum * sat;
+    const p = 2 * lum - q;
+    const channel = (t) => {
+      let k = t;
+      if (k < 0) k += 1;
+      if (k > 1) k -= 1;
+      if (k < 1 / 6) return p + (q - p) * 6 * k;
+      if (k < 1 / 2) return q;
+      if (k < 2 / 3) return p + (q - p) * (2 / 3 - k) * 6;
+      return p;
+    };
+    return [
+      Math.round(channel(hue + 1 / 3) * 255),
+      Math.round(channel(hue) * 255),
+      Math.round(channel(hue - 1 / 3) * 255)
+    ];
+  }
+
+  function mixColor(a, b, t) {
+    const k = clamp(t, 0, 1);
+    return [
+      Math.round(lerp(a[0], b[0], k)),
+      Math.round(lerp(a[1], b[1], k)),
+      Math.round(lerp(a[2], b[2], k))
+    ];
+  }
+
+  function shadeColor(rgb, light) {
+    return [
+      clamp(Math.round(rgb[0] * light), 0, 255),
+      clamp(Math.round(rgb[1] * light), 0, 255),
+      clamp(Math.round(rgb[2] * light), 0, 255)
+    ];
+  }
+
+  function countNeighbors(mask, x, y) {
+    let count = 0;
+    for (let oy = -1; oy <= 1; oy += 1) {
+      for (let ox = -1; ox <= 1; ox += 1) {
+        if (ox === 0 && oy === 0) continue;
+        const nx = x + ox;
+        const ny = y + oy;
+        if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) continue;
+        if (mask[ny * SIZE + nx]) count += 1;
+      }
+    }
+    return count;
+  }
+
+  function visiblePixels(mask) {
+    let total = 0;
+    for (let i = 0; i < PIXELS; i += 1) total += mask[i];
+    return total;
+  }
+
+  function edgeDistance(mask, x, y, radius) {
+    for (let r = 1; r <= radius; r += 1) {
+      for (let oy = -r; oy <= r; oy += 1) {
+        for (let ox = -r; ox <= r; ox += 1) {
+          if (Math.abs(ox) !== r && Math.abs(oy) !== r) continue;
+          const nx = x + ox;
+          const ny = y + oy;
+          if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) continue;
+          if (mask[ny * SIZE + nx]) return r;
+        }
+      }
+    }
+    return 0;
+  }
+
+  function deriveGenome(hash) {
+    const rng = mulberry32(hash);
+    const raw = [
+      0.18 + rng() * rng() * 1.4,
+      0.18 + rng() * rng() * 1.4,
+      0.18 + rng() * rng() * 1.4,
+      0.18 + rng() * rng() * 1.4
+    ];
+    const sum = raw.reduce((a, b) => a + b, 0);
+    const weights = {
+      nucleus: raw[0] / sum,
+      dendrite: raw[1] / sum,
+      fracture: raw[2] / sum,
+      chaos: raw[3] / sum
+    };
+    const branchGoal = 1 + Math.floor(rng() * 6);
+    return {
+      hash,
+      weights,
+      areaTarget: lerp(0.24, 0.54, rng()),
+      branchGoal,
+      edgeSharpness: rng(),
+      curvatureBias: rng(),
+      branchLength: rng(),
+      islandSpacing: rng(),
+      patternScale: lerp(0.22, 0.82, rng()),
+      paletteHue: rng() * 360
+    };
+  }
+
+  function stampEllipse(field, cx, cy, rx, ry, angle, strength) {
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const reach = Math.ceil(Math.max(rx, ry) + 2);
+    const minX = clamp(Math.floor(cx - reach), 0, SIZE - 1);
+    const maxX = clamp(Math.ceil(cx + reach), 0, SIZE - 1);
+    const minY = clamp(Math.floor(cy - reach), 0, SIZE - 1);
+    const maxY = clamp(Math.ceil(cy + reach), 0, SIZE - 1);
+
+    for (let y = minY; y <= maxY; y += 1) {
+      for (let x = minX; x <= maxX; x += 1) {
+        const dx = x + 0.5 - cx;
+        const dy = y + 0.5 - cy;
+        const lx = dx * cos + dy * sin;
+        const ly = -dx * sin + dy * cos;
+        const d = (lx * lx) / (rx * rx) + (ly * ly) / (ry * ry);
+        if (d > 1.42) continue;
+        field[y * SIZE + x] += (1 - smoothstep(0.15, 1.42, d)) * strength;
+      }
+    }
+  }
+
+  function addNucleationSolver(field, genome, rng) {
+    const w = genome.weights.nucleus;
+    const count = 2 + Math.floor(genome.branchGoal * 0.7 + w * 7);
+    const baseAngle = rng() * Math.PI * 2;
+    for (let i = 0; i < count; i += 1) {
+      const angle = baseAngle + Math.PI * 2 * i / count + lerp(-0.55, 0.55, rng());
+      const radial = lerp(0.8, 10.0, rng()) * (0.55 + genome.islandSpacing * 0.75);
+      const cx = clamp(16 + Math.cos(angle) * radial, 3.5, 28.5);
+      const cy = clamp(16 + Math.sin(angle) * radial, 3.5, 28.5);
+      const rx = lerp(2.1, 5.4, rng()) * (0.85 + w);
+      const ry = lerp(1.6, 4.2, rng()) * (0.85 + genome.curvatureBias * 0.55);
+      stampEllipse(field, cx, cy, rx, ry, rng() * Math.PI * 2, lerp(0.7, 1.25, rng()) * (0.75 + w));
+    }
+  }
+
+  function addDendriteSolver(field, genome, rng) {
+    const w = genome.weights.dendrite;
+    const paths = Math.max(1, Math.round(genome.branchGoal * (0.6 + w * 1.4)));
+    const baseSteps = 4 + Math.floor(genome.branchLength * 10 + w * 6);
+    for (let p = 0; p < paths; p += 1) {
+      let x = lerp(9, 23, rng());
+      let y = lerp(9, 23, rng());
+      let heading = rng() * Math.PI * 2;
+      const curl = lerp(-0.36, 0.36, rng()) * (0.5 + genome.curvatureBias);
+      for (let s = 0; s < baseSteps; s += 1) {
+        const t = s / Math.max(1, baseSteps - 1);
+        heading += lerp(-0.55, 0.55, rng()) * (0.35 + genome.edgeSharpness) + Math.sin(t * Math.PI * 2 + p) * curl;
+        x = clamp(x + Math.cos(heading) * lerp(1.0, 2.2, rng()), 2.5, 29.5);
+        y = clamp(y + Math.sin(heading) * lerp(1.0, 2.2, rng()), 2.5, 29.5);
+        const radius = lerp(2.4, 0.75, t) * (0.85 + w * 0.5);
+        stampEllipse(field, x, y, radius * 1.35, radius * 0.72, heading, 0.85 + w);
+        if (rng() < 0.18 + genome.branchLength * 0.22) {
+          const side = heading + (rng() < 0.5 ? -1 : 1) * lerp(0.75, 1.35, rng());
+          const bx = clamp(x + Math.cos(side) * lerp(1.7, 3.8, rng()), 2.5, 29.5);
+          const by = clamp(y + Math.sin(side) * lerp(1.7, 3.8, rng()), 2.5, 29.5);
+          stampEllipse(field, bx, by, radius * 0.82, radius * 0.48, side, 0.58 + w * 0.45);
+        }
+      }
+    }
+  }
+
+  function addFractureSolver(field, genome, rng) {
+    const w = genome.weights.fracture;
+    const lines = 2 + Math.floor(w * 9 + genome.edgeSharpness * 4);
+    for (let i = 0; i < lines; i += 1) {
+      let x = lerp(2, 30, rng());
+      let y = lerp(2, 30, rng());
+      let heading = rng() * Math.PI * 2;
+      const steps = 5 + Math.floor(rng() * 9 + genome.branchLength * 7);
+      for (let s = 0; s < steps; s += 1) {
+        heading += lerp(-0.42, 0.42, rng()) * (0.5 + genome.edgeSharpness);
+        x = clamp(x + Math.cos(heading) * lerp(1.2, 2.6, rng()), 1.5, 30.5);
+        y = clamp(y + Math.sin(heading) * lerp(1.2, 2.6, rng()), 1.5, 30.5);
+        stampEllipse(field, x, y, lerp(1.4, 2.7, rng()), lerp(0.35, 0.85, rng()), heading, 0.48 + w * 0.95);
+      }
+    }
+  }
+
+  function addChaosSolver(field, genome, rng, seed) {
+    const w = genome.weights.chaos;
+    const a = lerp(-2.4, 2.4, rng());
+    const b = lerp(-2.4, 2.4, rng());
+    const c = lerp(-2.4, 2.4, rng());
+    const d = lerp(-2.4, 2.4, rng());
+    const rot = rng() * Math.PI * 2;
+    const sin = Math.sin(rot);
+    const cos = Math.cos(rot);
+    let x = rng() * 0.3 - 0.15;
+    let y = rng() * 0.3 - 0.15;
+    const density = new Float32Array(PIXELS);
+
+    for (let i = 0; i < 4600 + w * 4200; i += 1) {
+      const nx = Math.sin(a * y) - Math.cos(b * x);
+      const ny = Math.sin(c * x) - Math.cos(d * y);
+      x = nx;
+      y = ny;
+      if (i < 80) continue;
+      const rx = Math.tanh((x * cos - y * sin) * 0.56);
+      const ry = Math.tanh((x * sin + y * cos) * 0.56);
+      const px = Math.floor((rx * 0.49 + 0.5) * SIZE);
+      const py = Math.floor((ry * 0.49 + 0.5) * SIZE);
+      if (px < 0 || py < 0 || px >= SIZE || py >= SIZE) continue;
+      density[py * SIZE + px] += 1;
+    }
+
+    let max = 0;
+    for (let i = 0; i < PIXELS; i += 1) {
+      max = Math.max(max, density[i]);
+    }
+    const norm = Math.max(1, Math.log1p(max));
+    for (let i = 0; i < PIXELS; i += 1) {
+      field[i] += Math.log1p(density[i]) / norm * (0.95 + w);
+      field[i] += valueNoise(i % SIZE, Math.floor(i / SIZE), seed ^ 0xbadc0de) * 0.05;
+    }
+  }
+
+  function fieldToMask(field, genome, seed) {
+    const adjusted = Array.from(field, (value, index) => {
+      const x = index % SIZE;
+      const y = Math.floor(index / SIZE);
+      const nx = (x + 0.5 - 16) / 16;
+      const ny = (y + 0.5 - 16) / 16;
+      const radial = Math.sqrt(nx * nx + ny * ny);
+      const high = fbm((x + 0.3) * 0.55, (y - 2.1) * 0.55, seed ^ 0x5eed, 3);
+      const low = fbm((x + 2.7) * 0.17, (y + 1.8) * 0.17, seed ^ 0x51a7, 4);
+      return value + (low - 0.5) * 0.45 + (high - 0.5) * genome.edgeSharpness * 0.42 - smoothstep(0.83, 1.22, radial) * 0.38;
+    });
+    const sorted = adjusted.slice().sort((a, b) => b - a);
+    const target = clamp(Math.round(PIXELS * genome.areaTarget), 110, 720);
+    const threshold = sorted[Math.min(sorted.length - 1, target)];
+    const mask = new Uint8Array(PIXELS);
+    for (let i = 0; i < PIXELS; i += 1) {
+      mask[i] = adjusted[i] >= threshold ? 1 : 0;
+    }
+    return mask;
+  }
+
+  function smoothMask(mask, passes, edgeSharpness) {
+    const next = new Uint8Array(PIXELS);
+    for (let pass = 0; pass < passes; pass += 1) {
+      for (let y = 0; y < SIZE; y += 1) {
+        for (let x = 0; x < SIZE; x += 1) {
+          const index = y * SIZE + x;
+          const n = countNeighbors(mask, x, y);
+          const survive = edgeSharpness > 0.65 ? 2 : 3;
+          const birth = edgeSharpness > 0.65 ? 6 : 5;
+          next[index] = mask[index] ? (n >= survive ? 1 : 0) : (n >= birth ? 1 : 0);
+        }
+      }
+      mask.set(next);
+    }
+  }
+
+  function componentsOf(mask) {
+    const seen = new Uint8Array(PIXELS);
+    const stack = [];
+    const components = [];
+
+    for (let start = 0; start < PIXELS; start += 1) {
+      if (!mask[start] || seen[start]) continue;
+      const component = [];
+      stack.length = 0;
+      stack.push(start);
+      seen[start] = 1;
+
+      while (stack.length > 0) {
+        const index = stack.pop();
+        component.push(index);
+        const x = index % SIZE;
+        const y = Math.floor(index / SIZE);
+        const next = [index - 1, index + 1, index - SIZE, index + SIZE];
+        if (x === 0) next[0] = -1;
+        if (x === SIZE - 1) next[1] = -1;
+        if (y === 0) next[2] = -1;
+        if (y === SIZE - 1) next[3] = -1;
+        for (let i = 0; i < next.length; i += 1) {
+          const n = next[i];
+          if (n >= 0 && mask[n] && !seen[n]) {
+            seen[n] = 1;
+            stack.push(n);
+          }
+        }
+      }
+      components.push(component);
+    }
+    components.sort((a, b) => b.length - a.length);
+    return components;
+  }
+
+  function keepComponents(mask, maxCount, minArea) {
+    const components = componentsOf(mask).filter((component) => component.length >= minArea).slice(0, maxCount);
+    mask.fill(0);
+    components.forEach((component) => {
+      component.forEach((index) => {
+        mask[index] = 1;
+      });
+    });
+    return components;
+  }
+
+  function forceSatellite(mask, rng) {
+    let bestX = 16;
+    let bestY = 16;
+    let bestScore = -1;
+    for (let y = 4; y < SIZE - 4; y += 1) {
+      for (let x = 4; x < SIZE - 4; x += 1) {
+        if (mask[y * SIZE + x]) continue;
+        let nearest = 999;
+        for (let py = 0; py < SIZE; py += 1) {
+          for (let px = 0; px < SIZE; px += 1) {
+            if (!mask[py * SIZE + px]) continue;
+            const dx = px - x;
+            const dy = py - y;
+            nearest = Math.min(nearest, dx * dx + dy * dy);
+          }
+        }
+        const score = nearest - (Math.abs(x - 16) + Math.abs(y - 16)) * 0.1 + rng() * 0.001;
+        if (score > bestScore) {
+          bestScore = score;
+          bestX = x + 0.5;
+          bestY = y + 0.5;
+        }
+      }
+    }
+    const field = new Float32Array(PIXELS);
+    stampEllipse(field, bestX, bestY, lerp(1.5, 3.0, rng()), lerp(1.1, 2.4, rng()), rng() * Math.PI * 2, 1);
+    for (let i = 0; i < PIXELS; i += 1) {
+      if (field[i] > 0.24) mask[i] = 1;
+    }
+  }
+
+  function matchComponentGoal(mask, genome, rng) {
+    let components = keepComponents(mask, Math.max(2, genome.branchGoal + 2), 8);
+    let attempts = 0;
+    while (components.length < genome.branchGoal && attempts < 5 && visiblePixels(mask) < 700) {
+      forceSatellite(mask, rng);
+      components = keepComponents(mask, Math.max(2, genome.branchGoal + 2), 8);
+      attempts += 1;
+    }
+    components = keepComponents(mask, Math.max(1, genome.branchGoal + 2), 8);
+    return components;
+  }
+
+  function createShape(genome) {
+    const rng = mulberry32(genome.hash ^ 0xa53a9);
+    const field = new Float32Array(PIXELS);
+    addNucleationSolver(field, genome, rng);
+    addDendriteSolver(field, genome, rng);
+    addFractureSolver(field, genome, rng);
+    addChaosSolver(field, genome, rng, genome.hash);
+    const mask = fieldToMask(field, genome, genome.hash);
+    const passes = Math.round(1 + genome.curvatureBias * 3 - genome.edgeSharpness * 1.2);
+    smoothMask(mask, clamp(passes, 0, 4), genome.edgeSharpness);
+    const components = matchComponentGoal(mask, genome, rng);
+    return { field, mask, components };
+  }
+
+  function buildPattern(genome, mask) {
+    const pattern = new Float32Array(PIXELS);
+    const rng = mulberry32(genome.hash ^ 0x9f34);
+    const centers = [];
+    const count = 2 + Math.floor(genome.weights.nucleus * 5 + genome.weights.chaos * 3);
+    for (let i = 0; i < count; i += 1) {
+      centers.push({ x: lerp(5, 27, rng()), y: lerp(5, 27, rng()), p: rng() * Math.PI * 2 });
+    }
+    const angle = rng() * Math.PI * 2;
+    const dx = Math.cos(angle);
+    const dy = Math.sin(angle);
+    const scale = lerp(5.0, 13.0, genome.patternScale);
+
+    for (let y = 0; y < SIZE; y += 1) {
+      for (let x = 0; x < SIZE; x += 1) {
+        const index = y * SIZE + x;
+        if (!mask[index]) continue;
+        const nx = (x + 0.5 - 16) / 16;
+        const ny = (y + 0.5 - 16) / 16;
+        let rings = 0;
+        centers.forEach((center) => {
+          const dist = Math.hypot(x + 0.5 - center.x, y + 0.5 - center.y);
+          rings += 0.5 + 0.5 * Math.sin(dist * lerp(1.2, 2.5, genome.patternScale) + center.p);
+        });
+        rings /= centers.length;
+        const bands = 0.5 + 0.5 * Math.sin((nx * dx + ny * dy) * scale + fbm(x * 0.34, y * 0.34, genome.hash ^ 0xc011, 3) * 3.8);
+        const cells = fbm((x + 1.2) * lerp(0.16, 0.54, genome.patternScale), (y - 0.9) * lerp(0.16, 0.54, genome.patternScale), genome.hash ^ 0x7a11, 5);
+        const crack = 1 - Math.abs(0.5 - bands) * 2;
+        pattern[index] =
+          rings * genome.weights.nucleus +
+          cells * genome.weights.chaos +
+          bands * genome.weights.dendrite +
+          crack * genome.weights.fracture;
+      }
+    }
+
+    let min = 1;
+    let max = 0;
+    for (let i = 0; i < PIXELS; i += 1) {
+      if (!mask[i]) continue;
+      min = Math.min(min, pattern[i]);
+      max = Math.max(max, pattern[i]);
+    }
+    const span = Math.max(0.0001, max - min);
+    for (let i = 0; i < PIXELS; i += 1) {
+      pattern[i] = mask[i] ? clamp((pattern[i] - min) / span, 0, 1) : 0;
+    }
+    return pattern;
+  }
+
+  function createPalette(genome) {
+    const h = genome.paletteHue;
+    return {
+      shadow: hslToRgb(h + 8, 42, 14),
+      core: hslToRgb(h, 78, 42),
+      warm: hslToRgb(h + lerp(48, 120, genome.weights.nucleus), 84, 56),
+      cold: hslToRgb(h + lerp(180, 250, genome.weights.dendrite), 82, 58),
+      odd: hslToRgb(h + lerp(285, 330, genome.weights.fracture), 86, 52),
+      pearl: hslToRgb(h + 22, 36, 86)
+    };
+  }
+
+  function bfsDiameter(mask, component) {
+    if (!component.length) return 0;
+    const allowed = new Uint8Array(PIXELS);
+    component.forEach((index) => {
+      allowed[index] = 1;
+    });
+    const bfs = (start) => {
+      const dist = new Int16Array(PIXELS);
+      dist.fill(-1);
+      const queue = [start];
+      dist[start] = 0;
+      let head = 0;
+      let far = start;
+      while (head < queue.length) {
+        const index = queue[head++];
+        if (dist[index] > dist[far]) far = index;
+        const x = index % SIZE;
+        const y = Math.floor(index / SIZE);
+        const next = [index - 1, index + 1, index - SIZE, index + SIZE];
+        if (x === 0) next[0] = -1;
+        if (x === SIZE - 1) next[1] = -1;
+        if (y === 0) next[2] = -1;
+        if (y === SIZE - 1) next[3] = -1;
+        for (let i = 0; i < next.length; i += 1) {
+          const n = next[i];
+          if (n >= 0 && allowed[n] && dist[n] < 0) {
+            dist[n] = dist[index] + 1;
+            queue.push(n);
+          }
+        }
+      }
+      return { far, dist: dist[far] };
+    };
+    return bfs(bfs(component[0]).far).dist;
+  }
+
+  function measureFeatures(mask, components, pattern) {
+    const area = visiblePixels(mask);
+    let boundary = 0;
+    let corners = 0;
+    let halo = 0;
+    let sx = 0;
+    let sy = 0;
+    let sumPattern = 0;
+    let sumPattern2 = 0;
+
+    for (let y = 0; y < SIZE; y += 1) {
+      for (let x = 0; x < SIZE; x += 1) {
+        const index = y * SIZE + x;
+        if (!mask[index]) {
+          halo += edgeDistance(mask, x, y, 1) > 0 ? 1 : 0;
+          continue;
+        }
+        sx += x;
+        sy += y;
+        sumPattern += pattern[index];
+        sumPattern2 += pattern[index] * pattern[index];
+        const n = countNeighbors(mask, x, y);
+        if (n < 8) {
+          boundary += 1;
+          const left = x > 0 && mask[index - 1];
+          const right = x < SIZE - 1 && mask[index + 1];
+          const up = y > 0 && mask[index - SIZE];
+          const down = y < SIZE - 1 && mask[index + SIZE];
+          if ((left !== right) || (up !== down) || n <= 4) corners += 1;
+        }
+      }
+    }
+
+    const cx = area > 0 ? sx / area : 0;
+    const cy = area > 0 ? sy / area : 0;
+    let spread = 0;
+    for (let i = 0; i < PIXELS; i += 1) {
+      if (!mask[i]) continue;
+      const x = i % SIZE;
+      const y = Math.floor(i / SIZE);
+      spread += Math.hypot(x - cx, y - cy);
+    }
+    spread = area > 0 ? spread / area : 0;
+
+    const longest = components.reduce((best, component) => Math.max(best, bfsDiameter(mask, component)), 0);
+    const compactness = boundary > 0 ? clamp((4 * Math.PI * area) / (boundary * boundary), 0, 1) : 0;
+    const mean = area > 0 ? sumPattern / area : 0;
+    const variance = area > 0 ? sumPattern2 / area - mean * mean : 0;
+    const contrast = Math.sqrt(Math.max(0, variance));
+
+    return {
+      area,
+      areaRatio: area / PIXELS,
+      components: components.length,
+      boundary,
+      sharpness: boundary > 0 ? corners / boundary : 0,
+      curvature: boundary > 0 ? (corners + halo * 0.25) / boundary : 0,
+      branchLength: longest,
+      compactness,
+      spread,
+      contrast
+    };
+  }
+
+  function renderTexture(state, phase = 0) {
+    const image = ctx.createImageData(SIZE, SIZE);
+    const data = image.data;
+    const { mask, pattern, genome, palette } = state;
+    for (let y = 0; y < SIZE; y += 1) {
+      for (let x = 0; x < SIZE; x += 1) {
+        const index = y * SIZE + x;
+        const out = index * 4;
+        const nx = (x + 0.5 - 16) / 16;
+        const ny = (y + 0.5 - 16) / 16;
+        if (!mask[index]) {
+          const halo = edgeDistance(mask, x, y, 2);
+          if (halo > 0) {
+            const haloColor = halo === 1 ? palette.cold : palette.odd;
+            data[out] = haloColor[0];
+            data[out + 1] = haloColor[1];
+            data[out + 2] = haloColor[2];
+            data[out + 3] = halo === 1 ? 42 : 16;
+          } else {
+            data[out + 3] = 0;
+          }
+          continue;
+        }
+
+        const n = countNeighbors(mask, x, y);
+        const edge = n < 8;
+        const p = pattern[index];
+        const pulse = 0.5 + 0.5 * Math.sin(phase + p * 7.2 + (x - y) * 0.08);
+        const cell = smoothstep(0.34, 0.78, p + (pulse - 0.5) * 0.16);
+        const ridge = 0.5 + 0.5 * Math.sin(p * Math.PI * lerp(5.5, 10.5, genome.patternScale) + phase * 1.2);
+        const micro = fbm((x + 1.7) * 0.62, (y - 2.4) * 0.62, genome.hash ^ 0x1119, 3);
+        let color = mixColor(palette.shadow, palette.core, clamp(0.3 + p * 0.5 + micro * 0.18, 0, 1));
+        color = mixColor(color, palette.warm, clamp(cell * 0.5 + pulse * 0.12 + genome.weights.nucleus * 0.14, 0, 0.82));
+        color = mixColor(color, palette.cold, clamp((1 - ridge) * 0.42 + (1 - pulse) * 0.12 + genome.weights.dendrite * 0.16, 0, 0.74));
+        color = mixColor(color, palette.odd, clamp(ridge * genome.weights.fracture * 0.68 + pulse * genome.weights.chaos * 0.22 + genome.weights.chaos * Math.abs(p - 0.5) * 0.45, 0, 0.64));
+        if (hash2(x, y, genome.hash ^ 0xf173) > 0.975 && !edge) {
+          color = mixColor(color, palette.pearl, 0.68);
+        }
+        const light = 0.72 + (1 - Math.hypot(nx, ny)) * 0.18 + (-nx * 0.18 - ny * 0.3) + (micro - 0.5) * 0.2 + pulse * 0.08;
+        color = shadeColor(color, clamp(light, 0.42, 1.42));
+        if (edge) {
+          color = nx < -0.2 || ny < -0.34 ? mixColor(color, palette.pearl, 0.22) : mixColor(color, palette.shadow, 0.56);
+        }
+        data[out] = color[0];
+        data[out + 1] = color[1];
+        data[out + 2] = color[2];
+        data[out + 3] = edge ? 238 : 255;
+      }
+    }
+    ctx.clearRect(0, 0, SIZE, SIZE);
+    ctx.putImageData(image, 0, 0);
+    nativeCtx.clearRect(0, 0, SIZE, SIZE);
+    nativeCtx.drawImage(canvas, 0, 0);
+  }
+
+  function tile(label, value) {
+    const node = document.createElement("div");
+    node.className = "tile";
+    const labelNode = document.createElement("span");
+    labelNode.textContent = label;
+    const valueNode = document.createElement("strong");
+    valueNode.textContent = value;
+    node.append(labelNode, valueNode);
+    return node;
+  }
+
+  function percent(value) {
+    return `${Math.round(clamp(value, 0, 1) * 100)}%`;
+  }
+
+  function sliderNumber(key) {
+    const control = sliders.get(key);
+    return control ? Number(control.input.value) : 0;
+  }
+
+  function updateSliderOutput(key) {
+    const control = sliders.get(key);
+    if (!control) return;
+    const value = sliderNumber(key);
+    control.output.value = control.step >= 1 ? String(Math.round(value)) : percent(value);
+  }
+
+  function normalizeWeights(weights) {
+    const n = Math.max(0.001, weights.nucleus);
+    const d = Math.max(0.001, weights.dendrite);
+    const f = Math.max(0.001, weights.fracture);
+    const c = Math.max(0.001, weights.chaos);
+    const sum = n + d + f + c;
+    return {
+      nucleus: n / sum,
+      dendrite: d / sum,
+      fracture: f / sum,
+      chaos: c / sum
+    };
+  }
+
+  function cloneGenome(genome) {
+    return {
+      hash: genome.hash,
+      weights: { ...genome.weights },
+      areaTarget: genome.areaTarget,
+      branchGoal: genome.branchGoal,
+      edgeSharpness: genome.edgeSharpness,
+      curvatureBias: genome.curvatureBias,
+      branchLength: genome.branchLength,
+      islandSpacing: genome.islandSpacing,
+      patternScale: genome.patternScale,
+      paletteHue: genome.paletteHue
+    };
+  }
+
+  function setSlidersFromGenome(genome) {
+    sliders.get("nucleus").input.value = String(genome.weights.nucleus);
+    sliders.get("dendrite").input.value = String(genome.weights.dendrite);
+    sliders.get("fracture").input.value = String(genome.weights.fracture);
+    sliders.get("chaos").input.value = String(genome.weights.chaos);
+    sliders.get("areaTarget").input.value = String(genome.areaTarget);
+    sliders.get("branchGoal").input.value = String(genome.branchGoal);
+    sliders.get("edgeSharpness").input.value = String(genome.edgeSharpness);
+    sliders.get("curvatureBias").input.value = String(genome.curvatureBias);
+    sliders.get("branchLength").input.value = String(genome.branchLength);
+    sliders.get("patternScale").input.value = String(genome.patternScale);
+    sliders.forEach((_, key) => updateSliderOutput(key));
+  }
+
+  function genomeFromSliders() {
+    const base = currentGenome ? cloneGenome(currentGenome) : deriveGenome(currentHash || fnv1a(seedInput.value || "solver-lab"));
+    base.weights = normalizeWeights({
+      nucleus: sliderNumber("nucleus"),
+      dendrite: sliderNumber("dendrite"),
+      fracture: sliderNumber("fracture"),
+      chaos: sliderNumber("chaos")
+    });
+    base.areaTarget = sliderNumber("areaTarget");
+    base.branchGoal = Math.round(sliderNumber("branchGoal"));
+    base.edgeSharpness = sliderNumber("edgeSharpness");
+    base.curvatureBias = sliderNumber("curvatureBias");
+    base.branchLength = sliderNumber("branchLength");
+    base.patternScale = sliderNumber("patternScale");
+    return base;
+  }
+
+  function updatePanels(state) {
+    const w = state.genome.weights;
+    mixBar.style.setProperty("--nucleus", `${Math.max(0.04, w.nucleus)}fr`);
+    mixBar.style.setProperty("--dendrite", `${Math.max(0.04, w.dendrite)}fr`);
+    mixBar.style.setProperty("--fracture", `${Math.max(0.04, w.fracture)}fr`);
+    mixBar.style.setProperty("--chaos", `${Math.max(0.04, w.chaos)}fr`);
+
+    paramGrid.replaceChildren(
+      tile("areaTarget", percent(state.genome.areaTarget)),
+      tile("branchGoal", String(state.genome.branchGoal)),
+      tile("edgeSharpness", percent(state.genome.edgeSharpness)),
+      tile("curvatureBias", percent(state.genome.curvatureBias)),
+      tile("branchLength", percent(state.genome.branchLength)),
+      tile("patternScale", percent(state.genome.patternScale))
+    );
+
+    featureGrid.replaceChildren(
+      tile("build", `${state.buildMs.toFixed(2)} ms`),
+      tile("area", `${state.features.area} / ${PIXELS}`),
+      tile("components", String(state.features.components)),
+      tile("edge sharp", percent(state.features.sharpness)),
+      tile("curvature", percent(state.features.curvature)),
+      tile("branch length", `${state.features.branchLength} px`),
+      tile("compactness", percent(state.features.compactness)),
+      tile("pattern contrast", percent(state.features.contrast))
+    );
+  }
+
+  function updateHistory() {
+    for (let i = historyTiles.length - 1; i > 0; i -= 1) {
+      const previous = historyTiles[i - 1].getContext("2d");
+      historyTiles[i].getContext("2d").drawImage(previous.canvas, 0, 0);
+    }
+    historyTiles[0].getContext("2d").drawImage(canvas, 0, 0);
+  }
+
+  function buildState(seedText, genome) {
+    const started = performance.now();
+    const shape = createShape(genome);
+    const pattern = buildPattern(genome, shape.mask);
+    const palette = createPalette(genome);
+    const features = measureFeatures(shape.mask, shape.components, pattern);
+    return {
+      hash: genome.hash,
+      seedText,
+      genome,
+      mask: shape.mask,
+      components: shape.components,
+      pattern,
+      palette,
+      features,
+      buildMs: performance.now() - started
+    };
+  }
+
+  function commitState(state, pushHistory) {
+    currentState = state;
+    currentGenome = cloneGenome(state.genome);
+    currentHash = state.hash;
+    renderTexture(currentState, framePhase);
+    renderPhaseStrip();
+    updatePanels(currentState);
+    if (pushHistory) updateHistory();
+  }
+
+  function generate(seedText) {
+    const hash = fnv1a(seedText || "solver-lab");
+    const genome = deriveGenome(hash);
+    currentHash = hash;
+    framePhase = 0;
+    setSlidersFromGenome(genome);
+    commitState(buildState(seedText, genome), true);
+  }
+
+  function rebuildFromSliders(pushHistory) {
+    const genome = genomeFromSliders();
+    genome.hash = currentHash || fnv1a(seedInput.value || "solver-lab");
+    setSlidersFromGenome(genome);
+    commitState(buildState(seedInput.value.trim() || "manual", genome), pushHistory);
+  }
+
+  function renderPhaseStrip() {
+    if (!currentState) return;
+    stripCtx.clearRect(0, 0, phaseStrip.width, phaseStrip.height);
+    for (let i = 0; i < 8; i += 1) {
+      renderTexture(currentState, i / 8 * Math.PI * 2);
+      stripCtx.drawImage(canvas, i * SIZE, 0);
+    }
+    renderTexture(currentState, framePhase);
+  }
+
+  function setAnimating(enabled) {
+    animating = enabled;
+    animateButton.classList.toggle("active", animating);
+    animateButton.textContent = animating ? "Pause" : "Animate";
+    cancelAnimationFrame(rafId);
+    if (animating) rafId = requestAnimationFrame(animationLoop);
+  }
+
+  function animationLoop(time) {
+    if (!animating || !currentState) return;
+    framePhase = time * 0.003;
+    renderTexture(currentState, framePhase);
+    rafId = requestAnimationFrame(animationLoop);
+  }
+
+  function randomSeed() {
+    const now = Date.now().toString(36);
+    const random = Math.floor(Math.random() * 0xffffffff).toString(36).padStart(7, "0");
+    return `world-${now}-${random}`;
+  }
+
+  function generateRandom() {
+    seedInput.value = randomSeed();
+    generate(seedInput.value);
+  }
+
+  function safeSeedName() {
+    return (seedInput.value.trim().replace(/[^a-z0-9_-]+/gi, "_").slice(0, 48) || "seed");
+  }
+
+  generateButton.addEventListener("click", generateRandom);
+  rerollSeed.addEventListener("click", generateRandom);
+  applyButton.addEventListener("click", () => rebuildFromSliders(true));
+  animateButton.addEventListener("click", () => setAnimating(!animating));
+  seedInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") generate(seedInput.value.trim() || randomSeed());
+  });
+  seedInput.addEventListener("change", () => generate(seedInput.value.trim() || randomSeed()));
+  downloadButton.addEventListener("click", () => {
+    const link = document.createElement("a");
+    link.download = `singular_material_v3_${safeSeedName()}.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  });
+  stripButton.addEventListener("click", () => {
+    renderPhaseStrip();
+    const link = document.createElement("a");
+    link.download = `singular_material_v3_strip_${safeSeedName()}.png`;
+    link.href = phaseStrip.toDataURL("image/png");
+    link.click();
+  });
+
+  seedInput.value = randomSeed();
+  generate(seedInput.value);
+  setAnimating(!staticMode);
+})();
+</script>
+</body>
+</html>

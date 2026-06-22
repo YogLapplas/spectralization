@@ -1,6 +1,9 @@
 {
   "parent": "minecraft:item/generated",
   "textures": {
-    "layer0": "spectralization:item/yag_crystal"
+    "layer0": "spectralization:item/metamaterial/substrate/substrate_0",
+    "layer1": "spectralization:item/metamaterial/corner/corner_0",
+    "layer2": "spectralization:item/metamaterial/lattice_filter/substrate_0_lattice_0_filter_0",
+    "layer3": "spectralization:item/metamaterial/corner/corner_0"
   }
 }

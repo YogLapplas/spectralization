@@ -230,7 +230,10 @@ public class MetamaterialDesignTableBlockEntity extends BlockEntity {
         return MetamaterialDesignRules.envelope(
                 items.getStackInSlot(SLOT_X_BUDGET),
                 items.getStackInSlot(SLOT_Y_BUDGET),
-                items.getStackInSlot(SLOT_Z_BUDGET)
+                items.getStackInSlot(SLOT_Z_BUDGET),
+                items.getStackInSlot(SLOT_RIGHT_TOP),
+                items.getStackInSlot(SLOT_RIGHT_MIDDLE),
+                items.getStackInSlot(SLOT_RIGHT_BOTTOM)
         );
     }
 
@@ -238,6 +241,9 @@ public class MetamaterialDesignTableBlockEntity extends BlockEntity {
         items.extractItem(SLOT_X_BUDGET, 1, false);
         items.extractItem(SLOT_Y_BUDGET, 1, false);
         items.extractItem(SLOT_Z_BUDGET, 1, false);
+        items.extractItem(SLOT_RIGHT_TOP, 1, false);
+        items.extractItem(SLOT_RIGHT_MIDDLE, 1, false);
+        items.extractItem(SLOT_RIGHT_BOTTOM, 1, false);
     }
 
     @Override

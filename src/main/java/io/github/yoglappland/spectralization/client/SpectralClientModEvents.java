@@ -2,8 +2,12 @@ package io.github.yoglappland.spectralization.client;
 
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.client.model.CompactedMachineDynamicModel;
+import io.github.yoglappland.spectralization.client.model.MetamaterialTemplateDynamicModel;
+import io.github.yoglappland.spectralization.client.model.SingularMaterialDynamicModel;
 import io.github.yoglappland.spectralization.client.renderer.LensHolderRenderer;
 import io.github.yoglappland.spectralization.client.renderer.MetamaterialDesignTableRenderer;
+import io.github.yoglappland.spectralization.client.renderer.MetamaterialTemplateItemRenderer;
+import io.github.yoglappland.spectralization.client.renderer.SingularMaterialItemRenderer;
 import io.github.yoglappland.spectralization.client.screen.CoatingBrushScreen;
 import io.github.yoglappland.spectralization.client.screen.CompactMachineCoreScreen;
 import io.github.yoglappland.spectralization.client.screen.CompactedMachineScreen;
@@ -17,9 +21,12 @@ import io.github.yoglappland.spectralization.client.screen.SpectrometerScreen;
 import io.github.yoglappland.spectralization.client.screen.ThermalSmelterScreen;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
 import io.github.yoglappland.spectralization.registry.SpectralMenus;
+import net.minecraft.client.renderer.BlockEntityWithoutLevelRenderer;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.extensions.common.IClientItemExtensions;
+import net.neoforged.neoforge.client.extensions.common.RegisterClientExtensionsEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
@@ -46,6 +53,31 @@ public final class SpectralClientModEvents {
     @SubscribeEvent
     static void modifyBakingResult(ModelEvent.ModifyBakingResult event) {
         CompactedMachineDynamicModel.modifyBakingResult(event);
+        MetamaterialTemplateDynamicModel.modifyBakingResult(event);
+        SingularMaterialDynamicModel.modifyBakingResult(event);
+    }
+
+    @SubscribeEvent
+    static void registerClientExtensions(RegisterClientExtensionsEvent event) {
+        event.registerItem(
+                new IClientItemExtensions() {
+                    @Override
+                    public BlockEntityWithoutLevelRenderer getCustomRenderer() {
+                        return MetamaterialTemplateItemRenderer.instance();
+                    }
+                },
+                Spectralization.STANDARD_METAMATERIAL_TEMPLATE.get(),
+                Spectralization.CUSTOM_METAMATERIAL_TEMPLATE.get()
+        );
+        event.registerItem(
+                new IClientItemExtensions() {
+                    @Override
+                    public BlockEntityWithoutLevelRenderer getCustomRenderer() {
+                        return SingularMaterialItemRenderer.instance();
+                    }
+                },
+                Spectralization.SINGULAR_MATERIAL.get()
+        );
     }
 
     @SubscribeEvent

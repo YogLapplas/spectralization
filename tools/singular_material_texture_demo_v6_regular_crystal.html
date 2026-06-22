@@ -1,0 +1,1342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Singular Material Regular Crystal Lab V6</title>
+<style>
+  :root {
+    --bg: #06080b;
+    --panel: #10161b;
+    --line: #293943;
+    --hot: #73dec7;
+    --text: #effaf8;
+    --muted: #9bb0b7;
+    --amber: #ffc857;
+  }
+
+  * { box-sizing: border-box; }
+
+  html,
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100%;
+    overflow-x: hidden;
+    background:
+      linear-gradient(135deg, rgba(12, 17, 20, 0.98), rgba(5, 7, 10, 1) 62%),
+      var(--bg);
+    color: var(--text);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  button,
+  input {
+    font: inherit;
+  }
+
+  .app {
+    width: min(1220px, 100%);
+    min-height: 100vh;
+    margin: 0 auto;
+    padding: 24px;
+    display: grid;
+    grid-template-columns: minmax(330px, 1fr) 370px;
+    gap: 18px;
+  }
+
+  .stage {
+    min-width: 0;
+    display: grid;
+    grid-template-rows: auto minmax(390px, 1fr) auto;
+    gap: 16px;
+  }
+
+  .topbar {
+    min-width: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(115, 222, 199, 0.2);
+  }
+
+  .topbar > * { min-width: 0; }
+
+  h1 {
+    margin: 0;
+    font-size: 34px;
+    line-height: 1.04;
+    letter-spacing: 0;
+    overflow-wrap: break-word;
+  }
+
+  .subtitle {
+    max-width: 100%;
+    margin-top: 5px;
+    color: #b9d8d8;
+    font-size: 13px;
+    line-height: 1.45;
+    overflow-wrap: break-word;
+  }
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+
+  .chip {
+    border: 1px solid rgba(155, 176, 183, 0.28);
+    border-radius: 6px;
+    padding: 5px 8px;
+    color: var(--muted);
+    background: rgba(16, 22, 27, 0.78);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .preview {
+    min-width: 0;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(115, 222, 199, 0.17);
+    border-radius: 8px;
+    overflow: hidden;
+    background:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px),
+      #080d11;
+    background-size: 24px 24px;
+    box-shadow: 0 26px 90px rgba(0, 0, 0, 0.44), inset 0 0 0 1px rgba(255,255,255,0.02);
+  }
+
+  .texture-frame {
+    position: relative;
+    width: min(540px, 100%, calc(100vh - 190px));
+    max-width: 100%;
+    min-width: 288px;
+    aspect-ratio: 1;
+    display: grid;
+    place-items: center;
+  }
+
+  .texture-frame::before {
+    content: "";
+    position: absolute;
+    inset: 4%;
+    border: 1px solid rgba(115, 222, 199, 0.16);
+    box-shadow:
+      0 0 76px rgba(115, 222, 199, 0.08),
+      inset 0 0 46px rgba(238, 95, 158, 0.045);
+    pointer-events: none;
+  }
+
+  canvas {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+
+  #texture {
+    width: 100%;
+    height: 100%;
+    border: 1px solid rgba(239, 250, 248, 0.14);
+    background:
+      linear-gradient(45deg, #111820 25%, transparent 25%),
+      linear-gradient(-45deg, #111820 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #111820 75%),
+      linear-gradient(-45deg, transparent 75%, #111820 75%),
+      #0a0e12;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+    background-size: 16px 16px;
+  }
+
+  .strip {
+    display: grid;
+    grid-template-columns: 78px 1fr;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .native {
+    width: 78px;
+    height: 78px;
+    border: 1px solid rgba(239, 250, 248, 0.16);
+    background: #080d11;
+  }
+
+  .history {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: repeat(8, minmax(30px, 1fr));
+    gap: 8px;
+  }
+
+  .history canvas {
+    width: 100%;
+    aspect-ratio: 1;
+    border: 1px solid rgba(155, 176, 183, 0.18);
+    background: #080d11;
+  }
+
+  .panel {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid rgba(115, 222, 199, 0.2);
+    border-radius: 8px;
+    background: rgba(16, 22, 27, 0.9);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.025);
+  }
+
+  .panel h2,
+  .panel h3 {
+    margin: 0;
+    letter-spacing: 0;
+  }
+
+  .panel h2 { font-size: 16px; }
+  .panel h3 { color: #d6eeee; font-size: 13px; }
+
+  .field {
+    display: grid;
+    gap: 7px;
+  }
+
+  .field label {
+    color: var(--muted);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .seed-row {
+    display: grid;
+    grid-template-columns: 1fr 42px;
+    gap: 8px;
+  }
+
+  input[type="text"] {
+    min-width: 0;
+    height: 38px;
+    border: 1px solid rgba(155, 176, 183, 0.28);
+    border-radius: 6px;
+    padding: 0 10px;
+    outline: none;
+    color: var(--text);
+    background: #080d11;
+  }
+
+  select {
+    width: 100%;
+    min-height: 38px;
+    border: 1px solid rgba(155, 176, 183, 0.28);
+    border-radius: 6px;
+    padding: 0 10px;
+    color: var(--text);
+    background: #080d11;
+    outline: none;
+  }
+
+  input[type="text"]:focus {
+    border-color: rgba(115, 222, 199, 0.78);
+    box-shadow: 0 0 0 3px rgba(115, 222, 199, 0.12);
+  }
+
+  .button-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  button {
+    min-height: 38px;
+    border: 1px solid rgba(155, 176, 183, 0.28);
+    border-radius: 6px;
+    color: var(--text);
+    background: #111920;
+    cursor: pointer;
+    transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+  }
+
+  button:hover {
+    transform: translateY(-1px);
+    border-color: rgba(115, 222, 199, 0.72);
+    background: #17242a;
+  }
+
+  button:active { transform: translateY(0); }
+
+  .primary {
+    color: #071014;
+    border-color: rgba(255, 200, 87, 0.85);
+    background: var(--amber);
+    font-weight: 700;
+  }
+
+  .active {
+    color: #071014;
+    border-color: rgba(115, 222, 199, 0.85);
+    background: var(--hot);
+    font-weight: 700;
+  }
+
+  .mode-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+
+  .mode-button {
+    min-height: 34px;
+    font-size: 12px;
+  }
+
+  .mode-button.selected {
+    color: #071014;
+    border-color: rgba(115, 222, 199, 0.85);
+    background: var(--hot);
+    font-weight: 700;
+  }
+
+  .meter-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .tile {
+    min-width: 0;
+    padding: 9px;
+    border: 1px solid rgba(155, 176, 183, 0.18);
+    border-radius: 6px;
+    background: rgba(8, 13, 17, 0.74);
+  }
+
+  .tile span {
+    display: block;
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .tile strong {
+    display: block;
+    min-height: 20px;
+    margin-top: 5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text);
+    font-size: 15px;
+  }
+
+  .palette {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    height: 34px;
+    overflow: hidden;
+    border: 1px solid rgba(155, 176, 183, 0.18);
+    border-radius: 6px;
+  }
+
+  .phase-strip {
+    width: 100%;
+    height: 54px;
+    border: 1px solid rgba(155, 176, 183, 0.18);
+    border-radius: 6px;
+    background: #080d11;
+  }
+
+  .notes {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+    border-top: 1px solid rgba(155, 176, 183, 0.18);
+    padding-top: 12px;
+  }
+
+  @media (max-width: 920px) {
+    .app {
+      grid-template-columns: 1fr;
+      padding: 14px;
+    }
+
+    .stage { grid-template-rows: auto auto auto; }
+    h1 { font-size: 30px; }
+
+    .topbar,
+    .strip {
+      display: grid;
+      grid-template-columns: 1fr;
+      justify-items: stretch;
+    }
+
+    .chips { justify-content: flex-start; }
+    .preview { min-height: 340px; }
+    .texture-frame { width: min(500px, 100%); min-width: 260px; }
+  }
+
+  @media (max-width: 600px) {
+    .app { padding: 10px; }
+    h1 { font-size: 24px; }
+    .subtitle { max-width: 100%; }
+    .preview {
+      min-height: 0;
+      padding: 8px;
+    }
+    .texture-frame { width: 100%; min-width: 0; }
+    .panel { padding: 12px; }
+    .history { grid-template-columns: repeat(4, 1fr); }
+  }
+
+  @media (max-width: 520px) {
+    .app { justify-items: start; }
+    .stage,
+    .panel {
+      width: min(100%, 360px);
+    }
+    .texture-frame { width: min(340px, 100%); }
+  }
+
+  @media (max-width: 480px) {
+    .button-grid,
+    .meter-grid,
+    .mode-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<main class="app">
+  <section class="stage" aria-label="Texture preview">
+    <header class="topbar">
+      <div>
+        <h1>Singular Material Regular Crystal Lab V6</h1>
+        <div class="subtitle">Highly regular crystal shards with selectable palette families.</div>
+      </div>
+      <div class="chips" aria-label="generator properties">
+        <span class="chip">Low-Edge Crystal</span>
+        <span class="chip">Palette Families</span>
+        <span class="chip">Living Pattern</span>
+      </div>
+    </header>
+
+    <section class="preview" aria-label="generated material">
+      <div class="texture-frame">
+        <canvas id="texture" width="32" height="32"></canvas>
+      </div>
+    </section>
+
+    <footer class="strip">
+      <canvas class="native" id="nativeTile" width="32" height="32" aria-label="native 32 by 32 preview"></canvas>
+      <div class="history" id="history" aria-label="recent generated textures"></div>
+    </footer>
+  </section>
+
+  <aside class="panel" aria-label="regular crystal generator controls">
+    <h2>Regular Crystal Console</h2>
+
+    <div class="field">
+      <label for="seedInput">World seed</label>
+      <div class="seed-row">
+        <input id="seedInput" type="text" autocomplete="off" spellcheck="false">
+        <button id="rerollSeed" type="button" title="Random seed" aria-label="Random seed">+</button>
+      </div>
+    </div>
+
+    <div class="button-grid">
+      <button class="primary" id="generateButton" type="button">Generate</button>
+      <button id="animateButton" type="button">Animate</button>
+      <button id="downloadButton" type="button">Download PNG</button>
+      <button id="stripButton" type="button">Download Strip</button>
+    </div>
+
+    <section aria-label="animation modes">
+      <h3>Animation Mode</h3>
+      <div class="mode-grid">
+        <button class="mode-button" data-mode="drift" type="button">Drift</button>
+        <button class="mode-button" data-mode="pulse" type="button">Pulse</button>
+        <button class="mode-button" data-mode="hybrid" type="button">Hybrid</button>
+        <button class="mode-button" data-mode="shimmer" type="button">Shimmer</button>
+      </div>
+    </section>
+
+    <section aria-label="color scheme">
+      <h3>Color Scheme</h3>
+      <select id="paletteSelect">
+        <option value="seed">Seed Pick</option>
+        <option value="mono">Monochrome</option>
+        <option value="analogous">Analogous</option>
+        <option value="complement">Complement</option>
+        <option value="triad">Triad</option>
+        <option value="aurora">Aurora</option>
+        <option value="voidIce">Void Ice</option>
+      </select>
+    </section>
+
+    <div class="meter-grid" id="metricGrid" aria-label="generation metrics"></div>
+    <div class="palette" id="palette" aria-label="generated palette"></div>
+    <canvas class="phase-strip" id="phaseStrip" width="256" height="32" aria-label="animation strip"></canvas>
+
+    <div class="notes">The outline is constrained to a small set of planar crystal faces. Palette families can be seed-picked or manually selected.</div>
+  </aside>
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  const SIZE = 32;
+  const PIXELS = SIZE * SIZE;
+  const STRIP_FRAMES = 8;
+  const canvas = document.getElementById("texture");
+  const nativeTile = document.getElementById("nativeTile");
+  const phaseStrip = document.getElementById("phaseStrip");
+  const ctx = canvas.getContext("2d", { willReadFrequently: false });
+  const nativeCtx = nativeTile.getContext("2d", { willReadFrequently: false });
+  const stripCtx = phaseStrip.getContext("2d", { willReadFrequently: false });
+  const seedInput = document.getElementById("seedInput");
+  const generateButton = document.getElementById("generateButton");
+  const rerollSeed = document.getElementById("rerollSeed");
+  const animateButton = document.getElementById("animateButton");
+  const downloadButton = document.getElementById("downloadButton");
+  const stripButton = document.getElementById("stripButton");
+  const metricGrid = document.getElementById("metricGrid");
+  const paletteNode = document.getElementById("palette");
+  const paletteSelect = document.getElementById("paletteSelect");
+  const history = document.getElementById("history");
+  const modeButtons = Array.from(document.querySelectorAll(".mode-button"));
+  const historyTiles = [];
+  const urlParams = new URLSearchParams(window.location.search);
+  const staticMode = urlParams.get("static") === "1";
+  const paletteParam = urlParams.get("palette");
+  if (paletteParam && Array.from(paletteSelect.options).some((option) => option.value === paletteParam)) {
+    paletteSelect.value = paletteParam;
+  }
+  let state = null;
+  let animationMode = "hybrid";
+  let animating = false;
+  let rafId = 0;
+  let phase = 0;
+
+  for (let i = 0; i < 8; i += 1) {
+    const tile = document.createElement("canvas");
+    tile.width = SIZE;
+    tile.height = SIZE;
+    history.appendChild(tile);
+    historyTiles.push(tile);
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  function smooth(t) {
+    return t * t * (3 - 2 * t);
+  }
+
+  function smoothstep(edge0, edge1, x) {
+    const t = clamp((x - edge0) / (edge1 - edge0), 0, 1);
+    return t * t * (3 - 2 * t);
+  }
+
+  function fnv1a(text) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < text.length; i += 1) {
+      h ^= text.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    h += h << 13;
+    h ^= h >>> 7;
+    h += h << 3;
+    h ^= h >>> 17;
+    h += h << 5;
+    return h >>> 0;
+  }
+
+  function mulberry32(seed) {
+    let t = seed >>> 0;
+    return () => {
+      t += 0x6d2b79f5;
+      let r = Math.imul(t ^ (t >>> 15), 1 | t);
+      r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function hash2(x, y, seed) {
+    let h = seed ^ Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1);
+    h ^= h >>> 15;
+    h = Math.imul(h, 0x85ebca6b);
+    h ^= h >>> 13;
+    h = Math.imul(h, 0xc2b2ae35);
+    h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+  }
+
+  function valueNoise(x, y, seed) {
+    const xi = Math.floor(x);
+    const yi = Math.floor(y);
+    const xf = x - xi;
+    const yf = y - yi;
+    const sx = smooth(xf);
+    const sy = smooth(yf);
+    const n00 = hash2(xi, yi, seed);
+    const n10 = hash2(xi + 1, yi, seed);
+    const n01 = hash2(xi, yi + 1, seed);
+    const n11 = hash2(xi + 1, yi + 1, seed);
+    return lerp(lerp(n00, n10, sx), lerp(n01, n11, sx), sy);
+  }
+
+  function fbm(x, y, seed, octaves) {
+    let amp = 0.5;
+    let freq = 1;
+    let sum = 0;
+    let norm = 0;
+    for (let i = 0; i < octaves; i += 1) {
+      sum += valueNoise(x * freq, y * freq, seed + i * 1009) * amp;
+      norm += amp;
+      amp *= 0.52;
+      freq *= 2.03;
+    }
+    return sum / norm;
+  }
+
+  function hslToRgb(h, s, l) {
+    const hue = ((h % 360) + 360) % 360 / 360;
+    const sat = clamp(s, 0, 100) / 100;
+    const lum = clamp(l, 0, 100) / 100;
+    const q = lum < 0.5 ? lum * (1 + sat) : lum + sat - lum * sat;
+    const p = 2 * lum - q;
+    const channel = (t) => {
+      let k = t;
+      if (k < 0) k += 1;
+      if (k > 1) k -= 1;
+      if (k < 1 / 6) return p + (q - p) * 6 * k;
+      if (k < 1 / 2) return q;
+      if (k < 2 / 3) return p + (q - p) * (2 / 3 - k) * 6;
+      return p;
+    };
+    return [
+      Math.round(channel(hue + 1 / 3) * 255),
+      Math.round(channel(hue) * 255),
+      Math.round(channel(hue - 1 / 3) * 255)
+    ];
+  }
+
+  function mixColor(a, b, t) {
+    const k = clamp(t, 0, 1);
+    return [
+      Math.round(lerp(a[0], b[0], k)),
+      Math.round(lerp(a[1], b[1], k)),
+      Math.round(lerp(a[2], b[2], k))
+    ];
+  }
+
+  function shadeColor(rgb, light) {
+    return [
+      clamp(Math.round(rgb[0] * light), 0, 255),
+      clamp(Math.round(rgb[1] * light), 0, 255),
+      clamp(Math.round(rgb[2] * light), 0, 255)
+    ];
+  }
+
+  function countNeighbors(mask, x, y) {
+    let count = 0;
+    for (let oy = -1; oy <= 1; oy += 1) {
+      for (let ox = -1; ox <= 1; ox += 1) {
+        if (ox === 0 && oy === 0) continue;
+        const nx = x + ox;
+        const ny = y + oy;
+        if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) continue;
+        if (mask[ny * SIZE + nx]) count += 1;
+      }
+    }
+    return count;
+  }
+
+  function visiblePixels(mask) {
+    let total = 0;
+    for (let i = 0; i < PIXELS; i += 1) total += mask[i];
+    return total;
+  }
+
+  function edgeDistance(mask, x, y, radius) {
+    for (let r = 1; r <= radius; r += 1) {
+      for (let oy = -r; oy <= r; oy += 1) {
+        for (let ox = -r; ox <= r; ox += 1) {
+          if (Math.abs(ox) !== r && Math.abs(oy) !== r) continue;
+          const nx = x + ox;
+          const ny = y + oy;
+          if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) continue;
+          if (mask[ny * SIZE + nx]) return r;
+        }
+      }
+    }
+    return 0;
+  }
+
+  function isOuterBorder(x, y) {
+    return x === 0 || y === 0 || x === SIZE - 1 || y === SIZE - 1;
+  }
+
+  function clearOuterBorder(mask) {
+    for (let i = 0; i < SIZE; i += 1) {
+      mask[i] = 0;
+      mask[(SIZE - 1) * SIZE + i] = 0;
+      mask[i * SIZE] = 0;
+      mask[i * SIZE + SIZE - 1] = 0;
+    }
+  }
+
+  function stampEllipse(field, cx, cy, rx, ry, angle, strength) {
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const reach = Math.ceil(Math.max(rx, ry) + 2);
+    const minX = clamp(Math.floor(cx - reach), 0, SIZE - 1);
+    const maxX = clamp(Math.ceil(cx + reach), 0, SIZE - 1);
+    const minY = clamp(Math.floor(cy - reach), 0, SIZE - 1);
+    const maxY = clamp(Math.ceil(cy + reach), 0, SIZE - 1);
+    for (let y = minY; y <= maxY; y += 1) {
+      for (let x = minX; x <= maxX; x += 1) {
+        const dx = x + 0.5 - cx;
+        const dy = y + 0.5 - cy;
+        const lx = dx * cos + dy * sin;
+        const ly = -dx * sin + dy * cos;
+        const d = (lx * lx) / (rx * rx) + (ly * ly) / (ry * ry);
+        if (d > 1.35) continue;
+        field[y * SIZE + x] += (1 - smoothstep(0.12, 1.35, d)) * strength;
+      }
+    }
+  }
+
+  function componentsOf(mask) {
+    const seen = new Uint8Array(PIXELS);
+    const stack = [];
+    const components = [];
+    for (let start = 0; start < PIXELS; start += 1) {
+      if (!mask[start] || seen[start]) continue;
+      const component = [];
+      stack.length = 0;
+      stack.push(start);
+      seen[start] = 1;
+      while (stack.length > 0) {
+        const index = stack.pop();
+        component.push(index);
+        const x = index % SIZE;
+        const y = Math.floor(index / SIZE);
+        const next = [index - 1, index + 1, index - SIZE, index + SIZE];
+        if (x === 0) next[0] = -1;
+        if (x === SIZE - 1) next[1] = -1;
+        if (y === 0) next[2] = -1;
+        if (y === SIZE - 1) next[3] = -1;
+        for (let i = 0; i < next.length; i += 1) {
+          const n = next[i];
+          if (n >= 0 && mask[n] && !seen[n]) {
+            seen[n] = 1;
+            stack.push(n);
+          }
+        }
+      }
+      components.push(component);
+    }
+    components.sort((a, b) => b.length - a.length);
+    return components;
+  }
+
+  function keepHybridComponents(mask) {
+    const components = componentsOf(mask);
+    if (!components.length) return components;
+    const keep = [];
+    const main = components[0];
+    keep.push(main);
+    const mainSet = new Uint8Array(PIXELS);
+    main.forEach((index) => { mainSet[index] = 1; });
+
+    for (let i = 1; i < components.length && keep.length < 3; i += 1) {
+      const component = components[i];
+      if (component.length < 10 || component.length > main.length * 0.22) continue;
+      let close = false;
+      for (let j = 0; j < component.length && !close; j += 1) {
+        const index = component[j];
+        const x = index % SIZE;
+        const y = Math.floor(index / SIZE);
+        close = edgeDistance(mainSet, x, y, 5) > 0;
+      }
+      if (close) keep.push(component);
+    }
+
+    mask.fill(0);
+    keep.forEach((component) => {
+      component.forEach((index) => { mask[index] = 1; });
+    });
+    return keep;
+  }
+
+  function makeCrystalPlanes(sides, rotation, rng, irregularity) {
+    const planes = [];
+    for (let i = 0; i < sides; i += 1) {
+      const angle = rotation + i * Math.PI * 2 / sides + lerp(-0.09, 0.09, rng()) * irregularity;
+      planes.push({
+        x: Math.cos(angle),
+        y: Math.sin(angle),
+        limit: lerp(0.66, 0.9, rng()) + lerp(-0.08, 0.08, rng()) * irregularity
+      });
+    }
+    return planes;
+  }
+
+  function makeRegularCrystalPlanes(family, rotation, rng) {
+    const planes = [];
+    const addPlane = (angle, limit) => {
+      planes.push({ x: Math.cos(angle), y: Math.sin(angle), limit });
+    };
+
+    if (family === "diamond") {
+      const wide = lerp(0.74, 0.82, rng());
+      const tall = lerp(0.72, 0.8, rng());
+      addPlane(rotation + Math.PI * 0.25, wide);
+      addPlane(rotation + Math.PI * 0.75, tall);
+      addPlane(rotation + Math.PI * 1.25, wide);
+      addPlane(rotation + Math.PI * 1.75, tall);
+    } else if (family === "hex") {
+      for (let i = 0; i < 6; i += 1) {
+        addPlane(rotation + i * Math.PI / 3, i % 2 === 0 ? lerp(0.78, 0.84, rng()) : lerp(0.72, 0.8, rng()));
+      }
+    } else {
+      addPlane(rotation, lerp(0.76, 0.86, rng()));
+      addPlane(rotation + Math.PI, lerp(0.76, 0.86, rng()));
+      addPlane(rotation + Math.PI * 0.5, lerp(0.5, 0.58, rng()));
+      addPlane(rotation + Math.PI * 1.5, lerp(0.5, 0.58, rng()));
+    }
+
+    if (rng() < 0.16) {
+      const chipAngle = rotation + Math.floor(rng() * planes.length) * Math.PI * 2 / Math.max(4, planes.length) + Math.PI / Math.max(4, planes.length);
+      addPlane(chipAngle, lerp(0.68, 0.76, rng()));
+    }
+
+    return planes;
+  }
+
+  function crystalSignedDistance(x, y, cx, cy, rx, ry, rotation, planes) {
+    const cos = Math.cos(rotation);
+    const sin = Math.sin(rotation);
+    const dx = x + 0.5 - cx;
+    const dy = y + 0.5 - cy;
+    const lx = (dx * cos + dy * sin) / rx;
+    const ly = (-dx * sin + dy * cos) / ry;
+    let minDistance = 999;
+    for (let i = 0; i < planes.length; i += 1) {
+      const plane = planes[i];
+      minDistance = Math.min(minDistance, plane.limit - (lx * plane.x + ly * plane.y));
+    }
+    return minDistance;
+  }
+
+  function addCrystalField(field, cx, cy, rx, ry, rotation, planes, strength) {
+    const reach = Math.ceil(Math.max(rx, ry) * 1.25 + 2);
+    const minX = clamp(Math.floor(cx - reach), 0, SIZE - 1);
+    const maxX = clamp(Math.ceil(cx + reach), 0, SIZE - 1);
+    const minY = clamp(Math.floor(cy - reach), 0, SIZE - 1);
+    const maxY = clamp(Math.ceil(cy + reach), 0, SIZE - 1);
+    for (let y = minY; y <= maxY; y += 1) {
+      for (let x = minX; x <= maxX; x += 1) {
+        const d = crystalSignedDistance(x, y, cx, cy, rx, ry, rotation, planes);
+        if (d < -0.18) continue;
+        const body = smoothstep(-0.12, 0.14, d);
+        const core = clamp(d * 1.8, 0, 1);
+        field[y * SIZE + x] += (body * 0.78 + core * 0.35) * strength;
+      }
+    }
+  }
+
+  function addCrystalMask(mask, cx, cy, rx, ry, rotation, planes) {
+    const reach = Math.ceil(Math.max(rx, ry) * 1.18 + 2);
+    const minX = clamp(Math.floor(cx - reach), 0, SIZE - 1);
+    const maxX = clamp(Math.ceil(cx + reach), 0, SIZE - 1);
+    const minY = clamp(Math.floor(cy - reach), 0, SIZE - 1);
+    const maxY = clamp(Math.ceil(cy + reach), 0, SIZE - 1);
+    for (let y = minY; y <= maxY; y += 1) {
+      for (let x = minX; x <= maxX; x += 1) {
+        const d = crystalSignedDistance(x, y, cx, cy, rx, ry, rotation, planes);
+        if (d >= -0.015) mask[y * SIZE + x] = 1;
+      }
+    }
+  }
+
+  function buildShape(seed, rng) {
+    const mask = new Uint8Array(PIXELS);
+    const families = ["diamond", "diamond", "blade", "hex"];
+    const family = families[Math.floor(rng() * families.length)];
+    const rotationStep = Math.PI / 12;
+    const rotation = Math.round((rng() * Math.PI * 2) / rotationStep) * rotationStep;
+    const elongation = family === "blade" ? lerp(1.55, 2.05, rng()) : lerp(1.0, 1.34, rng());
+    const planes = makeRegularCrystalPlanes(family, rotation, rng);
+    addCrystalMask(mask, 16, 16, lerp(9.8, 12.1, rng()) * elongation, lerp(8.8, 11.1, rng()) / Math.sqrt(elongation), rotation, planes);
+
+    if (rng() < 0.18) {
+      const angle = rotation + (rng() < 0.5 ? Math.PI * 0.42 : -Math.PI * 0.42);
+      const sr = lerp(12.0, 14.0, rng());
+      const shardFamily = rng() < 0.5 ? "diamond" : "blade";
+      const shardRot = rotation + lerp(-0.35, 0.35, rng());
+      const shardPlanes = makeRegularCrystalPlanes(shardFamily, shardRot, rng);
+      const shardMask = new Uint8Array(PIXELS);
+      addCrystalMask(
+        shardMask,
+        16 + Math.cos(angle) * sr,
+        16 + Math.sin(angle) * sr,
+        lerp(1.7, 2.5, rng()),
+        lerp(1.4, 2.1, rng()),
+        shardRot,
+        shardPlanes
+      );
+      let shardPixels = 0;
+      let touchesMain = false;
+      for (let y = 0; y < SIZE; y += 1) {
+        for (let x = 0; x < SIZE; x += 1) {
+          const index = y * SIZE + x;
+          if (!shardMask[index]) continue;
+          shardPixels += 1;
+          if (edgeDistance(mask, x, y, 2) > 0) touchesMain = true;
+        }
+      }
+      if (!touchesMain && shardPixels >= 8) {
+        for (let i = 0; i < PIXELS; i += 1) if (shardMask[i]) mask[i] = 1;
+      }
+    }
+
+    const next = new Uint8Array(PIXELS);
+    next.set(mask);
+    for (let y = 0; y < SIZE; y += 1) {
+      for (let x = 0; x < SIZE; x += 1) {
+        const index = y * SIZE + x;
+        if (mask[index] && countNeighbors(mask, x, y) === 0) next[index] = 0;
+      }
+    }
+    mask.set(next);
+
+    clearOuterBorder(mask);
+    let components = componentsOf(mask).filter((component) => component.length >= 8).slice(0, 2);
+    mask.fill(0);
+    components.forEach((component) => component.forEach((index) => { mask[index] = 1; }));
+    if (!components.length || visiblePixels(mask) < 250) {
+      mask.fill(0);
+      addCrystalMask(mask, 16, 16, 12.4, 9.6, rotation, makeRegularCrystalPlanes("diamond", rotation, rng));
+      clearOuterBorder(mask);
+      components = componentsOf(mask).filter((component) => component.length >= 8).slice(0, 1);
+    }
+
+    return { mask, components, cohesion: 0.92, branchiness: components.length > 1 ? 0.16 : 0.04, family };
+  }
+
+  function buildTuring(seed, rng, mask) {
+    let a = new Float32Array(PIXELS);
+    let b = new Float32Array(PIXELS);
+    let nextA = new Float32Array(PIXELS);
+    let nextB = new Float32Array(PIXELS);
+    const feed = lerp(0.032, 0.048, rng());
+    const kill = lerp(0.057, 0.064, rng());
+    const iterations = 52 + Math.floor(rng() * 34);
+    const angle = rng() * Math.PI * 2;
+    const dx = Math.cos(angle);
+    const dy = Math.sin(angle);
+    const freq = lerp(5.5, 9.5, rng());
+    const startPhase = rng() * Math.PI * 2;
+
+    for (let y = 0; y < SIZE; y += 1) {
+      for (let x = 0; x < SIZE; x += 1) {
+        const index = y * SIZE + x;
+        a[index] = 1;
+        b[index] = 0;
+        if (!mask[index]) continue;
+        const nx = (x + 0.5 - 16) / 16;
+        const ny = (y + 0.5 - 16) / 16;
+        const wave = 0.5 + 0.5 * Math.sin((nx * dx + ny * dy) * freq + startPhase);
+        const spot = fbm((x + 1.7) * 0.24, (y - 2.4) * 0.24, seed ^ 0xb17e, 4);
+        const starter = clamp(wave * 0.24 + spot * 0.58 - 0.35, 0, 1);
+        b[index] = starter;
+        a[index] = 1 - starter * 0.42;
+      }
+    }
+
+    const sample = (arr, x, y, fallback) => {
+      if (x < 0 || y < 0 || x >= SIZE || y >= SIZE) return fallback;
+      const index = y * SIZE + x;
+      return mask[index] ? arr[index] : fallback;
+    };
+
+    for (let iter = 0; iter < iterations; iter += 1) {
+      for (let y = 0; y < SIZE; y += 1) {
+        for (let x = 0; x < SIZE; x += 1) {
+          const index = y * SIZE + x;
+          if (!mask[index]) {
+            nextA[index] = 1;
+            nextB[index] = 0;
+            continue;
+          }
+          const av = a[index];
+          const bv = b[index];
+          const lapA = -av +
+            (sample(a, x - 1, y, 1) + sample(a, x + 1, y, 1) + sample(a, x, y - 1, 1) + sample(a, x, y + 1, 1)) * 0.2 +
+            (sample(a, x - 1, y - 1, 1) + sample(a, x + 1, y - 1, 1) + sample(a, x - 1, y + 1, 1) + sample(a, x + 1, y + 1, 1)) * 0.05;
+          const lapB = -bv +
+            (sample(b, x - 1, y, 0) + sample(b, x + 1, y, 0) + sample(b, x, y - 1, 0) + sample(b, x, y + 1, 0)) * 0.2 +
+            (sample(b, x - 1, y - 1, 0) + sample(b, x + 1, y - 1, 0) + sample(b, x - 1, y + 1, 0) + sample(b, x + 1, y + 1, 0)) * 0.05;
+          const reaction = av * bv * bv;
+          nextA[index] = clamp(av + (1.0 * lapA - reaction + feed * (1 - av)), 0, 1);
+          nextB[index] = clamp(bv + (0.48 * lapB + reaction - (kill + feed) * bv), 0, 1);
+        }
+      }
+      [a, nextA] = [nextA, a];
+      [b, nextB] = [nextB, b];
+    }
+
+    let min = 1;
+    let max = 0;
+    for (let i = 0; i < PIXELS; i += 1) {
+      if (!mask[i]) continue;
+      min = Math.min(min, b[i]);
+      max = Math.max(max, b[i]);
+    }
+    const span = Math.max(0.0001, max - min);
+    for (let i = 0; i < PIXELS; i += 1) b[i] = mask[i] ? clamp((b[i] - min) / span, 0, 1) : 0;
+    return b;
+  }
+
+  function createPalette(rng, requestedMode) {
+    const seedModes = ["mono", "analogous", "complement", "triad", "aurora", "voidIce"];
+    const mode = requestedMode === "seed" ? seedModes[Math.floor(rng() * seedModes.length)] : requestedMode;
+    const base = rng() * 360;
+    const make = (h, s, l) => hslToRgb(h, s, l);
+
+    if (mode === "mono") {
+      return {
+        name: "Monochrome",
+        shadow: make(base + 4, 44, 13),
+        core: make(base, 74, 34),
+        warm: make(base + 8, 78, 46),
+        cold: make(base - 8, 62, 58),
+        odd: make(base + 16, 72, 42),
+        pearl: make(base + 6, 28, 84)
+      };
+    }
+
+    if (mode === "analogous") {
+      return {
+        name: "Analogous",
+        shadow: make(base - 18, 42, 13),
+        core: make(base, 78, 38),
+        warm: make(base + 28, 84, 54),
+        cold: make(base - 34, 76, 54),
+        odd: make(base + 52, 82, 46),
+        pearl: make(base + 18, 34, 84)
+      };
+    }
+
+    if (mode === "complement") {
+      return {
+        name: "Complement",
+        shadow: make(base + 8, 44, 13),
+        core: make(base, 78, 39),
+        warm: make(base + 24, 84, 54),
+        cold: make(base + 180, 76, 56),
+        odd: make(base + 204, 82, 48),
+        pearl: make(base + 180, 30, 86)
+      };
+    }
+
+    if (mode === "triad") {
+      return {
+        name: "Triad",
+        shadow: make(base + 6, 42, 13),
+        core: make(base, 76, 38),
+        warm: make(base + 120, 84, 54),
+        cold: make(base + 240, 78, 56),
+        odd: make(base + 145, 82, 46),
+        pearl: make(base + 30, 34, 86)
+      };
+    }
+
+    if (mode === "aurora") {
+      return {
+        name: "Aurora",
+        shadow: make(258 + rng() * 12, 44, 13),
+        core: make(278 + rng() * 18, 78, 40),
+        warm: make(145 + rng() * 22, 84, 55),
+        cold: make(194 + rng() * 18, 82, 58),
+        odd: make(320 + rng() * 18, 84, 52),
+        pearl: make(166, 36, 86)
+      };
+    }
+
+    return {
+      name: "Void Ice",
+      shadow: make(232 + rng() * 12, 42, 12),
+      core: make(210 + rng() * 18, 64, 38),
+      warm: make(280 + rng() * 16, 64, 54),
+      cold: make(188 + rng() * 18, 78, 62),
+      odd: make(320 + rng() * 10, 48, 60),
+      pearl: make(200, 26, 88)
+    };
+  }
+
+  function createState(seedText) {
+    const started = performance.now();
+    const hash = fnv1a(seedText || "regular-crystal");
+    const rng = mulberry32(hash);
+    const shape = buildShape(hash, rng);
+    const turing = buildTuring(hash, rng, shape.mask);
+    const palette = createPalette(rng, paletteSelect.value);
+    const driftAngle = rng() * Math.PI * 2;
+    const drift = { x: Math.cos(driftAngle), y: Math.sin(driftAngle), speed: lerp(1.1, 2.4, rng()), freq: lerp(4.8, 9.6, rng()) };
+    const organicWeight = lerp(0.32, 0.58, rng());
+    const facetAngle = ((hash >>> 8) / 16777215) * Math.PI * 2;
+    const fields = {
+      band: new Float32Array(PIXELS),
+      mineral: new Float32Array(PIXELS),
+      micro: new Float32Array(PIXELS),
+      facet: new Float32Array(PIXELS),
+      halo: new Uint8Array(PIXELS),
+      neighbors: new Uint8Array(PIXELS)
+    };
+
+    for (let y = 0; y < SIZE; y += 1) {
+      for (let x = 0; x < SIZE; x += 1) {
+        const index = y * SIZE + x;
+        const nx = (x + 0.5 - 16) / 16;
+        const ny = (y + 0.5 - 16) / 16;
+        fields.band[index] = nx * drift.x + ny * drift.y + fbm((x + 0.2) * 0.18, (y - 1.4) * 0.18, hash ^ 0x4455, 3) * 0.42;
+        fields.mineral[index] = fbm((x + 2.2) * 0.23, (y - 4.0) * 0.23, hash ^ 0x7788, 5);
+        fields.micro[index] = fbm((x - 1.3) * 0.62, (y + 1.8) * 0.62, hash ^ 0x9911, 3);
+        fields.facet[index] = 0.5 + 0.5 * Math.sin((nx * Math.cos(facetAngle) + ny * Math.sin(facetAngle)) * 9.0 + Math.floor((nx - ny) * 3.0));
+        fields.neighbors[index] = countNeighbors(shape.mask, x, y);
+        fields.halo[index] = isOuterBorder(x, y) || shape.mask[index] ? 0 : edgeDistance(shape.mask, x, y, 2);
+      }
+    }
+
+    const modes = ["drift", "pulse", "hybrid", "shimmer"];
+    return {
+      hash,
+      seedText,
+      mask: shape.mask,
+      components: shape.components,
+      turing,
+      palette,
+      drift,
+      organicWeight,
+      fields,
+      defaultMode: modes[hash % modes.length],
+      buildMs: performance.now() - started
+    };
+  }
+
+  function render(imageState, timePhase) {
+    if (!imageState) return;
+    const image = ctx.createImageData(SIZE, SIZE);
+    const data = image.data;
+    const { mask, turing, palette, fields, drift, organicWeight } = imageState;
+    const mode = animationMode;
+
+    for (let y = 0; y < SIZE; y += 1) {
+      for (let x = 0; x < SIZE; x += 1) {
+        const index = y * SIZE + x;
+        const out = index * 4;
+        if (isOuterBorder(x, y)) {
+          data[out + 3] = 0;
+          continue;
+        }
+        if (!mask[index]) {
+          const halo = fields.halo[index];
+          if (halo > 0) {
+            const haloColor = halo === 1 ? palette.cold : palette.odd;
+            data[out] = haloColor[0];
+            data[out + 1] = haloColor[1];
+            data[out + 2] = haloColor[2];
+            data[out + 3] = halo === 1 ? 28 : 9;
+          } else {
+            data[out + 3] = 0;
+          }
+          continue;
+        }
+
+        const nx = (x + 0.5 - 16) / 16;
+        const ny = (y + 0.5 - 16) / 16;
+        const bandPhase = fields.band[index] * drift.freq + timePhase * drift.speed;
+        const driftWave = 0.5 + 0.5 * Math.sin(bandPhase);
+        const pulse = 0.5 + 0.5 * Math.sin(timePhase + turing[index] * 7.2 + fields.mineral[index] * 3.1);
+        const shimmer = 0.5 + 0.5 * Math.sin(timePhase * 2.1 + fields.micro[index] * 9.0 + hash2(x, y, imageState.hash) * 3.0);
+        let pattern = fields.mineral[index] * (1 - organicWeight) + turing[index] * organicWeight;
+
+        if (mode === "drift") pattern = pattern * 0.46 + driftWave * 0.54;
+        else if (mode === "pulse") pattern = pattern * 0.58 + pulse * 0.42;
+        else if (mode === "shimmer") pattern = pattern * 0.52 + shimmer * 0.32 + driftWave * 0.16;
+        else pattern = pattern * 0.42 + driftWave * 0.30 + pulse * 0.28;
+
+        const edge = fields.neighbors[index] < 8;
+        const ridge = 0.5 + 0.5 * Math.sin(pattern * Math.PI * 8.0 + (mode === "drift" ? timePhase * 1.2 : timePhase * 0.45));
+        const cell = smoothstep(0.35, 0.78, pattern);
+        let color = mixColor(palette.shadow, palette.core, clamp(0.34 + fields.mineral[index] * 0.22 + pattern * 0.44, 0, 1));
+        color = mixColor(color, palette.warm, clamp(cell * 0.48 + driftWave * 0.16, 0, 0.84));
+        color = mixColor(color, palette.cold, clamp((1 - ridge) * 0.34 + pulse * 0.18, 0, 0.72));
+        color = mixColor(color, palette.odd, clamp(ridge * 0.26 + shimmer * 0.18 + Math.abs(turing[index] - 0.5) * 0.22, 0, 0.62));
+        color = fields.facet[index] > 0.58 ? mixColor(color, palette.pearl, (fields.facet[index] - 0.58) * 0.22) : mixColor(color, palette.shadow, (0.58 - fields.facet[index]) * 0.18);
+        if (hash2(x, y, imageState.hash ^ 0xf173) > 0.976 && !edge) color = mixColor(color, palette.pearl, 0.68);
+        const light = 0.70 + (1 - Math.hypot(nx, ny)) * 0.17 + (-nx * 0.18 - ny * 0.30) + (fields.micro[index] - 0.5) * 0.18 + pulse * 0.07 + (fields.facet[index] - 0.5) * 0.18;
+        color = shadeColor(color, clamp(light, 0.42, 1.44));
+        if (edge) color = nx < -0.2 || ny < -0.34 ? mixColor(color, palette.pearl, 0.22) : mixColor(color, palette.shadow, 0.56);
+
+        data[out] = color[0];
+        data[out + 1] = color[1];
+        data[out + 2] = color[2];
+        data[out + 3] = edge ? 238 : 255;
+      }
+    }
+
+    ctx.clearRect(0, 0, SIZE, SIZE);
+    ctx.putImageData(image, 0, 0);
+    nativeCtx.clearRect(0, 0, SIZE, SIZE);
+    nativeCtx.drawImage(canvas, 0, 0);
+  }
+
+  function renderStrip() {
+    if (!state) return;
+    stripCtx.clearRect(0, 0, phaseStrip.width, phaseStrip.height);
+    for (let i = 0; i < STRIP_FRAMES; i += 1) {
+      render(state, i / STRIP_FRAMES * Math.PI * 2);
+      stripCtx.drawImage(canvas, i * SIZE, 0);
+    }
+    render(state, phase);
+  }
+
+  function updateModeButtons() {
+    modeButtons.forEach((button) => {
+      button.classList.toggle("selected", button.dataset.mode === animationMode);
+    });
+  }
+
+  function metricTile(label, value) {
+    const node = document.createElement("div");
+    node.className = "tile";
+    const labelNode = document.createElement("span");
+    labelNode.textContent = label;
+    const valueNode = document.createElement("strong");
+    valueNode.textContent = value;
+    node.append(labelNode, valueNode);
+    return node;
+  }
+
+  function updatePanel() {
+    if (!state) return;
+    metricGrid.replaceChildren(
+      metricTile("build", `${state.buildMs.toFixed(2)} ms`),
+      metricTile("area", `${visiblePixels(state.mask)} / ${PIXELS}`),
+      metricTile("components", String(state.components.length)),
+      metricTile("mode", animationMode),
+      metricTile("palette", state.palette.name),
+      metricTile("reaction", `${Math.round(state.organicWeight * 100)}%`),
+      metricTile("drift", `${state.drift.speed.toFixed(2)}x`)
+    );
+    paletteNode.replaceChildren();
+    [state.palette.shadow, state.palette.core, state.palette.warm, state.palette.cold, state.palette.odd, state.palette.pearl].forEach((rgb) => {
+      const swatch = document.createElement("div");
+      swatch.style.background = `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+      paletteNode.appendChild(swatch);
+    });
+    updateModeButtons();
+    renderStrip();
+  }
+
+  function updateHistory() {
+    for (let i = historyTiles.length - 1; i > 0; i -= 1) {
+      const previous = historyTiles[i - 1].getContext("2d");
+      historyTiles[i].getContext("2d").drawImage(previous.canvas, 0, 0);
+    }
+    historyTiles[0].getContext("2d").drawImage(canvas, 0, 0);
+  }
+
+  function generate(seedText) {
+    state = createState(seedText);
+    animationMode = state.defaultMode;
+    phase = 0;
+    render(state, phase);
+    updatePanel();
+    updateHistory();
+  }
+
+  function randomSeed() {
+    const now = Date.now().toString(36);
+    const random = Math.floor(Math.random() * 0xffffffff).toString(36).padStart(7, "0");
+    return `world-${now}-${random}`;
+  }
+
+  function setAnimating(enabled) {
+    animating = enabled;
+    animateButton.classList.toggle("active", animating);
+    animateButton.textContent = animating ? "Pause" : "Animate";
+    cancelAnimationFrame(rafId);
+    if (animating) rafId = requestAnimationFrame(animationLoop);
+  }
+
+  function animationLoop(time) {
+    if (!animating) return;
+    phase = time * 0.003;
+    render(state, phase);
+    rafId = requestAnimationFrame(animationLoop);
+  }
+
+  function safeSeedName() {
+    return (seedInput.value.trim().replace(/[^a-z0-9_-]+/gi, "_").slice(0, 48) || "seed");
+  }
+
+  modeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      animationMode = button.dataset.mode;
+      updatePanel();
+      render(state, phase);
+    });
+  });
+
+  generateButton.addEventListener("click", () => {
+    seedInput.value = randomSeed();
+    generate(seedInput.value);
+  });
+  rerollSeed.addEventListener("click", () => {
+    seedInput.value = randomSeed();
+    generate(seedInput.value);
+  });
+  animateButton.addEventListener("click", () => setAnimating(!animating));
+  seedInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") generate(seedInput.value.trim() || randomSeed());
+  });
+  seedInput.addEventListener("change", () => generate(seedInput.value.trim() || randomSeed()));
+  paletteSelect.addEventListener("change", () => generate(seedInput.value.trim() || randomSeed()));
+  downloadButton.addEventListener("click", () => {
+    const link = document.createElement("a");
+    link.download = `singular_material_v6_regular_crystal_${safeSeedName()}_${paletteSelect.value}.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  });
+  stripButton.addEventListener("click", () => {
+    renderStrip();
+    const link = document.createElement("a");
+    link.download = `singular_material_v6_regular_crystal_strip_${safeSeedName()}_${paletteSelect.value}_${animationMode}.png`;
+    link.href = phaseStrip.toDataURL("image/png");
+    link.click();
+  });
+
+  seedInput.value = randomSeed();
+  generate(seedInput.value);
+  setAnimating(!staticMode);
+})();
+</script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization.registry;
 
 import io.github.yoglappland.spectralization.Spectralization;
+import io.github.yoglappland.spectralization.optics.singular.SingularMaterialData;
 import net.minecraft.world.item.CreativeModeTab;
 
 public final class SpectralCreativeTabItems {
@@ -11,6 +12,7 @@ public final class SpectralCreativeTabItems {
         output.accept(Spectralization.LENS.get());
         output.accept(Spectralization.STANDARD_METAMATERIAL_TEMPLATE.get());
         output.accept(Spectralization.CUSTOM_METAMATERIAL_TEMPLATE.get());
+        output.accept(SingularMaterialData.PRIMORDIAL.createStack());
         output.accept(Spectralization.OPTICAL_FIBER_COIL.get());
         output.accept(Spectralization.PHOSPHOR_DUST.get());
         output.accept(Spectralization.PHOSPHOR_TUBE.get());

@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Metamaterial Filtered Lattice Preview</title>
+<style>
+  :root {
+    --bg: #08090c;
+    --panel: #11161a;
+    --text: #edf5f4;
+    --muted: #a7b6b8;
+    --gold: #d1a544;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #12171b, #08090c 62%);
+    color: var(--text);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  button,
+  select,
+  label {
+    font: inherit;
+  }
+
+  .app {
+    width: min(1180px, 100%);
+    margin: 0 auto;
+    padding: 24px;
+    display: grid;
+    grid-template-columns: minmax(360px, 1fr) 330px;
+    gap: 18px;
+  }
+
+  h1 {
+    margin: 0 0 4px;
+    font-size: 30px;
+    line-height: 1.08;
+    letter-spacing: 0;
+  }
+
+  .subtitle {
+    margin: 0;
+    color: #bdd1d1;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .stage,
+  .panel {
+    border: 1px solid rgba(209, 165, 68, 0.22);
+    border-radius: 8px;
+    background: rgba(17, 22, 26, 0.92);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.025);
+  }
+
+  .stage {
+    min-width: 0;
+    padding: 18px;
+    display: grid;
+    gap: 16px;
+  }
+
+  .preview-row {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(260px, 420px) 1fr;
+    gap: 18px;
+    align-items: center;
+  }
+
+  .tile-frame {
+    width: min(420px, 100%);
+    aspect-ratio: 1;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(237, 245, 244, 0.13);
+    background:
+      linear-gradient(45deg, #10151a 25%, transparent 25%),
+      linear-gradient(-45deg, #10151a 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #10151a 75%),
+      linear-gradient(-45deg, transparent 75%, #10151a 75%),
+      #090d10;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+    background-size: 20px 20px;
+  }
+
+  canvas {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+
+  #main {
+    width: 88%;
+    height: 88%;
+  }
+
+  .note {
+    min-width: 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.55;
+  }
+
+  .note strong {
+    color: #f4d68a;
+    font-weight: 700;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(8, minmax(40px, 1fr));
+    gap: 7px;
+  }
+
+  .grid canvas {
+    width: 100%;
+    aspect-ratio: 1;
+    border: 1px solid rgba(237, 245, 244, 0.12);
+    background: #090d10;
+  }
+
+  .panel {
+    padding: 16px;
+    display: grid;
+    align-content: start;
+    gap: 13px;
+  }
+
+  .field {
+    display: grid;
+    gap: 6px;
+  }
+
+  label {
+    color: #d9e4e1;
+    font-size: 13px;
+  }
+
+  select,
+  button {
+    min-width: 0;
+    border: 1px solid rgba(156, 174, 180, 0.28);
+    border-radius: 6px;
+    padding: 8px 10px;
+    color: var(--text);
+    background: #0d1115;
+  }
+
+  button {
+    cursor: pointer;
+    color: #f5d990;
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .swatches {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 5px;
+  }
+
+  .swatches canvas {
+    width: 100%;
+    aspect-ratio: 1;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: #090d10;
+  }
+
+  @media (max-width: 840px) {
+    .app,
+    .preview-row {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+</head>
+<body>
+<main class="app">
+  <section class="stage">
+    <div>
+      <h1>Metamaterial Filtered Lattice Preview</h1>
+      <p class="subtitle">Asset-backed preview for the simpler stack grammar.</p>
+    </div>
+
+    <div class="preview-row">
+      <div class="tile-frame">
+        <canvas id="main" width="32" height="32"></canvas>
+      </div>
+      <div class="note">
+        <p><strong>Structural stack:</strong> substrate, corner, filtered lattice, corner.</p>
+        <p><strong>Fourth trait:</strong> no extra pattern layer. The last dimension is a substrate-derived harmony filter applied to the hand-drawn lattice.</p>
+      </div>
+    </div>
+
+    <div class="grid" id="matrix"></div>
+  </section>
+
+  <aside class="panel">
+    <div class="field">
+      <label for="substrate">Substrate</label>
+      <select id="substrate"></select>
+    </div>
+    <div class="field">
+      <label for="corner">Corner</label>
+      <select id="corner"></select>
+    </div>
+    <div class="field">
+      <label for="lattice">Lattice</label>
+      <select id="lattice"></select>
+    </div>
+    <div class="field">
+      <label for="filter">Lattice Filter</label>
+      <select id="filter"></select>
+    </div>
+    <div class="row">
+      <button id="randomize" type="button">Random</button>
+      <button id="download" type="button">Download PNG</button>
+    </div>
+    <div class="swatches" id="swatches"></div>
+  </aside>
+</main>
+
+<script>
+  const SIZE = 32;
+  const ASSET_BASE = "../src/main/resources/assets/spectralization/textures/metamaterial";
+  const main = document.getElementById("main");
+  const matrix = document.getElementById("matrix");
+  const swatches = document.getElementById("swatches");
+  const selects = {
+    substrate: document.getElementById("substrate"),
+    corner: document.getElementById("corner"),
+    lattice: document.getElementById("lattice"),
+    filter: document.getElementById("filter")
+  };
+
+  const substrateNames = ["graphite", "deep aqua", "ceramic", "ruby", "fluorite", "deep YAG", "muted rose", "void opal"];
+  const cornerNames = ["amber", "aqua", "ceramic gold", "ruby", "fluorite", "dark olive", "rose", "void blue"];
+  const latticeNames = ["node array", "lamellae", "maze", "concentric cell", "micro maze", "orthogonal grid", "open ring", "comb grating"];
+  const filterNames = ["substrate metal", "cool analog", "warm analog", "wide cool", "wide warm", "subtle split A", "subtle split B", "low-chroma complement"];
+  const imageCache = new Map();
+  let redrawToken = 0;
+
+  function addOptions(select, names) {
+    names.forEach((name, index) => {
+      const option = document.createElement("option");
+      option.value = String(index);
+      option.textContent = `${index}: ${name}`;
+      select.append(option);
+    });
+  }
+
+  function layerPath(type, index) {
+    return `${ASSET_BASE}/${type}/${type}_${index}.png`;
+  }
+
+  function latticeFilterPath(substrate, lattice, filter) {
+    return `${ASSET_BASE}/lattice_filter/substrate_${substrate}_lattice_${lattice}_filter_${filter}.png`;
+  }
+
+  function loadImage(path) {
+    if (imageCache.has(path)) return imageCache.get(path);
+    const promise = new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error(`Could not load ${path}`));
+      image.src = path;
+    });
+    imageCache.set(path, promise);
+    return promise;
+  }
+
+  async function drawLayer(ctx, path) {
+    const image = await loadImage(path);
+    ctx.drawImage(image, 0, 0, SIZE, SIZE);
+  }
+
+  async function drawTile(canvas, trait) {
+    const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, SIZE, SIZE);
+    await drawLayer(ctx, layerPath("substrate", trait.substrate));
+    await drawLayer(ctx, layerPath("corner", trait.corner));
+    await drawLayer(ctx, latticeFilterPath(trait.substrate, trait.lattice, trait.filter));
+    await drawLayer(ctx, layerPath("corner", trait.corner));
+  }
+
+  function currentTrait() {
+    return {
+      substrate: Number(selects.substrate.value),
+      corner: Number(selects.corner.value),
+      lattice: Number(selects.lattice.value),
+      filter: Number(selects.filter.value)
+    };
+  }
+
+  async function redraw() {
+    const token = ++redrawToken;
+    const trait = currentTrait();
+    await drawTile(main, trait);
+    if (token !== redrawToken) return;
+
+    matrix.replaceChildren();
+    for (let s = 0; s < 8; s++) {
+      for (let l = 0; l < 8; l++) {
+        const tile = document.createElement("canvas");
+        tile.width = SIZE;
+        tile.height = SIZE;
+        matrix.append(tile);
+        await drawTile(tile, {
+          substrate: s,
+          corner: trait.corner,
+          lattice: l,
+          filter: trait.filter
+        });
+        if (token !== redrawToken) return;
+      }
+    }
+  }
+
+  async function renderSwatches() {
+    swatches.replaceChildren();
+    for (let id = 0; id < 8; id++) {
+      const canvas = document.createElement("canvas");
+      canvas.width = SIZE;
+      canvas.height = SIZE;
+      swatches.append(canvas);
+      await drawTile(canvas, {
+        substrate: id,
+        corner: id,
+        lattice: id,
+        filter: id
+      });
+    }
+  }
+
+  addOptions(selects.substrate, substrateNames);
+  addOptions(selects.corner, cornerNames);
+  addOptions(selects.lattice, latticeNames);
+  addOptions(selects.filter, filterNames);
+
+  Object.values(selects).forEach((select) => select.addEventListener("change", redraw));
+
+  document.getElementById("randomize").addEventListener("click", () => {
+    Object.values(selects).forEach((select) => {
+      select.value = String(Math.floor(Math.random() * 8));
+    });
+    redraw();
+  });
+
+  document.getElementById("download").addEventListener("click", () => {
+    const trait = currentTrait();
+    const link = document.createElement("a");
+    link.download = `metamaterial_s${trait.substrate}_c${trait.corner}_l${trait.lattice}_f${trait.filter}.png`;
+    link.href = main.toDataURL("image/png");
+    link.click();
+  });
+
+  selects.substrate.value = "0";
+  selects.corner.value = "0";
+  selects.lattice.value = "0";
+  selects.filter.value = "0";
+  renderSwatches();
+  redraw();
+</script>
+</body>
+</html>

@@ -39,10 +39,12 @@ import io.github.yoglappland.spectralization.item.OpticalFiberCoilItem;
 import io.github.yoglappland.spectralization.item.PaintBucketItem;
 import io.github.yoglappland.spectralization.item.PhosphorTubeItem;
 import io.github.yoglappland.spectralization.item.SandpaperItem;
+import io.github.yoglappland.spectralization.item.SingularMaterialItem;
 import io.github.yoglappland.spectralization.network.SpectralNetwork;
 import io.github.yoglappland.spectralization.optics.EnvironmentLightSpectra;
 import io.github.yoglappland.spectralization.optics.surface.SurfaceTreatmentKind;
 import io.github.yoglappland.spectralization.recipe.AdvancedBrushLoadingRecipe;
+import io.github.yoglappland.spectralization.recipe.SingularMaterialInfusionRecipe;
 import io.github.yoglappland.spectralization.registry.SpectralCapabilities;
 import io.github.yoglappland.spectralization.registry.SpectralCreativeTabItems;
 import io.github.yoglappland.spectralization.registry.SpectralRegistryBootstrap;
@@ -89,6 +91,11 @@ public class Spectralization {
                     "advanced_brush_loading",
                     () -> new SimpleCraftingRecipeSerializer<>(AdvancedBrushLoadingRecipe::new)
             );
+    public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<SingularMaterialInfusionRecipe>>
+            SINGULAR_MATERIAL_INFUSION_SERIALIZER = RECIPE_SERIALIZERS.register(
+                    "singular_material_infusion",
+                    () -> new SimpleCraftingRecipeSerializer<>(SingularMaterialInfusionRecipe::new)
+            );
 
     public static final DeferredItem<LensItem> LENS = ITEMS.register(
             "lens",
@@ -101,6 +108,10 @@ public class Spectralization {
     public static final DeferredItem<MetamaterialTemplateItem> CUSTOM_METAMATERIAL_TEMPLATE = ITEMS.register(
             "custom_metamaterial_template",
             () -> new MetamaterialTemplateItem(new Item.Properties())
+    );
+    public static final DeferredItem<SingularMaterialItem> SINGULAR_MATERIAL = ITEMS.register(
+            "singular_material",
+            () -> new SingularMaterialItem(new Item.Properties())
     );
     public static final DeferredItem<OpticalFiberCoilItem> OPTICAL_FIBER_COIL = ITEMS.register(
             "optical_fiber_coil",

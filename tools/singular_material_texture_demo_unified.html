@@ -1,0 +1,2123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Singular Material Unified Solver Demo</title>
+<style>
+  :root {
+    --bg: #06080b;
+    --panel: #10161b;
+    --line: #293943;
+    --hot: #73dec7;
+    --text: #effaf8;
+    --muted: #9bb0b7;
+    --amber: #ffc857;
+  }
+
+  * { box-sizing: border-box; }
+
+  html,
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100%;
+    overflow-x: hidden;
+    background:
+      linear-gradient(135deg, rgba(12, 17, 20, 0.98), rgba(5, 7, 10, 1) 62%),
+      var(--bg);
+    color: var(--text);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  button,
+  input {
+    font: inherit;
+  }
+
+  .app {
+    width: min(1220px, 100%);
+    min-height: 100vh;
+    margin: 0 auto;
+    padding: 24px;
+    display: grid;
+    grid-template-columns: minmax(330px, 1fr) 370px;
+    gap: 18px;
+  }
+
+  .stage {
+    min-width: 0;
+    display: grid;
+    grid-template-rows: auto minmax(390px, 1fr) auto;
+    gap: 16px;
+  }
+
+  .topbar {
+    min-width: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(115, 222, 199, 0.2);
+  }
+
+  .topbar > * { min-width: 0; }
+
+  h1 {
+    margin: 0;
+    font-size: 34px;
+    line-height: 1.04;
+    letter-spacing: 0;
+    overflow-wrap: break-word;
+  }
+
+  .subtitle {
+    max-width: 100%;
+    margin-top: 5px;
+    color: #b9d8d8;
+    font-size: 13px;
+    line-height: 1.45;
+    overflow-wrap: break-word;
+  }
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+
+  .chip {
+    border: 1px solid rgba(155, 176, 183, 0.28);
+    border-radius: 6px;
+    padding: 5px 8px;
+    color: var(--muted);
+    background: rgba(16, 22, 27, 0.78);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .preview {
+    min-width: 0;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(115, 222, 199, 0.17);
+    border-radius: 8px;
+    overflow: hidden;
+    background:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px),
+      #080d11;
+    background-size: 24px 24px;
+    box-shadow: 0 26px 90px rgba(0, 0, 0, 0.44), inset 0 0 0 1px rgba(255,255,255,0.02);
+  }
+
+  .texture-frame {
+    position: relative;
+    width: min(540px, 100%, calc(100vh - 190px));
+    max-width: 100%;
+    min-width: 288px;
+    aspect-ratio: 1;
+    display: grid;
+    place-items: center;
+  }
+
+  .texture-frame::before {
+    content: "";
+    position: absolute;
+    inset: 4%;
+    border: 1px solid rgba(115, 222, 199, 0.16);
+    box-shadow:
+      0 0 76px rgba(115, 222, 199, 0.08),
+      inset 0 0 46px rgba(238, 95, 158, 0.045);
+    pointer-events: none;
+  }
+
+  canvas {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+
+  #texture {
+    width: 100%;
+    height: 100%;
+    border: 1px solid rgba(239, 250, 248, 0.14);
+    background:
+      linear-gradient(45deg, #111820 25%, transparent 25%),
+      linear-gradient(-45deg, #111820 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #111820 75%),
+      linear-gradient(-45deg, transparent 75%, #111820 75%),
+      #0a0e12;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+    background-size: 16px 16px;
+  }
+
+  .strip {
+    display: grid;
+    grid-template-columns: 78px 1fr;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .native {
+    width: 78px;
+    height: 78px;
+    border: 1px solid rgba(239, 250, 248, 0.16);
+    background: #080d11;
+  }
+
+  .history {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: repeat(8, minmax(30px, 1fr));
+    gap: 8px;
+  }
+
+  .history canvas {
+    width: 100%;
+    aspect-ratio: 1;
+    border: 1px solid rgba(155, 176, 183, 0.18);
+    background: #080d11;
+  }
+
+  .panel {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid rgba(115, 222, 199, 0.2);
+    border-radius: 8px;
+    background: rgba(16, 22, 27, 0.9);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.025);
+  }
+
+  .panel h2,
+  .panel h3 {
+    margin: 0;
+    letter-spacing: 0;
+  }
+
+  .panel h2 { font-size: 16px; }
+  .panel h3 { color: #d6eeee; font-size: 13px; }
+
+  .field {
+    display: grid;
+    gap: 7px;
+  }
+
+  .weight-list {
+    display: grid;
+    gap: 8px;
+  }
+
+  .weight-row {
+    display: grid;
+    grid-template-columns: minmax(112px, 1fr) 1.35fr 56px;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .weight-row span {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.2;
+  }
+
+  input[type="range"] {
+    width: 100%;
+    accent-color: var(--hot);
+  }
+
+  input[type="number"] {
+    min-width: 0;
+    height: 34px;
+    border: 1px solid rgba(155, 176, 183, 0.28);
+    border-radius: 6px;
+    padding: 0 8px;
+    outline: none;
+    color: var(--text);
+    background: #080d11;
+  }
+
+  .field label {
+    color: var(--muted);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .seed-row {
+    display: grid;
+    grid-template-columns: 1fr 42px;
+    gap: 8px;
+  }
+
+  input[type="text"] {
+    min-width: 0;
+    height: 38px;
+    border: 1px solid rgba(155, 176, 183, 0.28);
+    border-radius: 6px;
+    padding: 0 10px;
+    outline: none;
+    color: var(--text);
+    background: #080d11;
+  }
+
+  select {
+    width: 100%;
+    min-height: 38px;
+    border: 1px solid rgba(155, 176, 183, 0.28);
+    border-radius: 6px;
+    padding: 0 10px;
+    color: var(--text);
+    background: #080d11;
+    outline: none;
+  }
+
+  input[type="text"]:focus {
+    border-color: rgba(115, 222, 199, 0.78);
+    box-shadow: 0 0 0 3px rgba(115, 222, 199, 0.12);
+  }
+
+  .button-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  button {
+    min-height: 38px;
+    border: 1px solid rgba(155, 176, 183, 0.28);
+    border-radius: 6px;
+    color: var(--text);
+    background: #111920;
+    cursor: pointer;
+    transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+  }
+
+  button:hover {
+    transform: translateY(-1px);
+    border-color: rgba(115, 222, 199, 0.72);
+    background: #17242a;
+  }
+
+  button:active { transform: translateY(0); }
+
+  .primary {
+    color: #071014;
+    border-color: rgba(255, 200, 87, 0.85);
+    background: var(--amber);
+    font-weight: 700;
+  }
+
+  .active {
+    color: #071014;
+    border-color: rgba(115, 222, 199, 0.85);
+    background: var(--hot);
+    font-weight: 700;
+  }
+
+  .mode-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+  }
+
+  .mode-button {
+    min-height: 34px;
+    font-size: 12px;
+  }
+
+  .mode-button.selected {
+    color: #071014;
+    border-color: rgba(115, 222, 199, 0.85);
+    background: var(--hot);
+    font-weight: 700;
+  }
+
+  .meter-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .tile {
+    min-width: 0;
+    padding: 9px;
+    border: 1px solid rgba(155, 176, 183, 0.18);
+    border-radius: 6px;
+    background: rgba(8, 13, 17, 0.74);
+  }
+
+  .tile span {
+    display: block;
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .tile strong {
+    display: block;
+    min-height: 20px;
+    margin-top: 5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text);
+    font-size: 15px;
+  }
+
+  .palette {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    height: 34px;
+    overflow: hidden;
+    border: 1px solid rgba(155, 176, 183, 0.18);
+    border-radius: 6px;
+  }
+
+  .phase-strip {
+    width: 100%;
+    height: 54px;
+    border: 1px solid rgba(155, 176, 183, 0.18);
+    border-radius: 6px;
+    background: #080d11;
+  }
+
+  .notes {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+    border-top: 1px solid rgba(155, 176, 183, 0.18);
+    padding-top: 12px;
+  }
+
+  @media (max-width: 920px) {
+    .app {
+      grid-template-columns: 1fr;
+      padding: 14px;
+    }
+
+    .stage { grid-template-rows: auto auto auto; }
+    h1 { font-size: 30px; }
+
+    .topbar,
+    .strip {
+      display: grid;
+      grid-template-columns: 1fr;
+      justify-items: stretch;
+    }
+
+    .chips { justify-content: flex-start; }
+    .preview { min-height: 340px; }
+    .texture-frame { width: min(500px, 100%); min-width: 260px; }
+  }
+
+  @media (max-width: 600px) {
+    .app { padding: 10px; }
+    h1 { font-size: 24px; }
+    .subtitle { max-width: 100%; }
+    .preview {
+      min-height: 0;
+      padding: 8px;
+    }
+    .texture-frame { width: 100%; min-width: 0; }
+    .panel { padding: 12px; }
+    .history { grid-template-columns: repeat(4, 1fr); }
+  }
+
+  @media (max-width: 520px) {
+    .app { justify-items: start; }
+    .stage,
+    .panel {
+      width: min(100%, 360px);
+    }
+    .texture-frame { width: min(340px, 100%); }
+  }
+
+  @media (max-width: 480px) {
+    .button-grid,
+    .meter-grid,
+    .mode-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<main class="app">
+  <section class="stage" aria-label="Texture preview">
+    <header class="topbar">
+      <div>
+        <h1>Singular Material Unified Solver Demo</h1>
+        <div class="subtitle">Weighted procedural material families for future in-game generation interfaces.</div>
+      </div>
+      <div class="chips" aria-label="generator properties">
+        <span class="chip">Weighted Families</span>
+        <span class="chip">Stable Type IDs</span>
+        <span class="chip">30x30 Safe Field</span>
+      </div>
+    </header>
+
+    <section class="preview" aria-label="generated material">
+      <div class="texture-frame">
+        <canvas id="texture" width="32" height="32"></canvas>
+      </div>
+    </section>
+
+    <footer class="strip">
+      <canvas class="native" id="nativeTile" width="32" height="32" aria-label="native 32 by 32 preview"></canvas>
+      <div class="history" id="history" aria-label="recent generated textures"></div>
+    </footer>
+  </section>
+
+  <aside class="panel" aria-label="unified material generator controls">
+    <h2>Unified Solver Console</h2>
+
+    <div class="field">
+      <label for="seedInput">World seed</label>
+      <div class="seed-row">
+        <input id="seedInput" type="text" autocomplete="off" spellcheck="false">
+        <button id="rerollSeed" type="button" title="Random seed" aria-label="Random seed">+</button>
+      </div>
+    </div>
+
+    <div class="button-grid">
+      <button class="primary" id="generateButton" type="button">Generate</button>
+      <button id="animateButton" type="button">Animate</button>
+      <button id="downloadButton" type="button">Download PNG</button>
+      <button id="stripButton" type="button">Download Strip</button>
+    </div>
+
+    <section aria-label="animation modes">
+      <h3>Animation Mode</h3>
+      <div class="mode-grid">
+        <button class="mode-button" data-mode="orbit" type="button">Orbit</button>
+        <button class="mode-button" data-mode="drift" type="button">Drift</button>
+        <button class="mode-button" data-mode="pulse" type="button">Pulse</button>
+        <button class="mode-button" data-mode="hybrid" type="button">Hybrid</button>
+        <button class="mode-button" data-mode="shimmer" type="button">Shimmer</button>
+      </div>
+    </section>
+
+    <section aria-label="color scheme">
+      <h3>Color Scheme</h3>
+      <select id="paletteSelect">
+        <option value="seed">Seed Pick</option>
+        <option value="mono">Monochrome</option>
+        <option value="analogous">Analogous</option>
+        <option value="complement">Complement</option>
+        <option value="triad">Triad</option>
+        <option value="aurora">Aurora</option>
+        <option value="voidIce">Void Ice</option>
+      </select>
+    </section>
+
+    <section aria-label="material type">
+      <h3>Material Type</h3>
+      <select id="solverSelect">
+        <option value="weighted">Weighted Pick</option>
+        <option value="aberrant_branch">Aberrant Branch</option>
+        <option value="living_biomass">Living Biomass</option>
+        <option value="crystal_cluster">Crystal Cluster</option>
+        <option value="celestial_body">Celestial Body</option>
+      </select>
+    </section>
+
+    <section aria-label="material type weights">
+      <h3>Type Weights</h3>
+      <div class="weight-list">
+        <label class="weight-row">
+          <span>Aberrant Branch</span>
+          <input data-weight="aberrant_branch" type="range" min="0" max="100" value="25">
+          <input data-weight-number="aberrant_branch" type="number" min="0" max="100" value="25">
+        </label>
+        <label class="weight-row">
+          <span>Living Biomass</span>
+          <input data-weight="living_biomass" type="range" min="0" max="100" value="25">
+          <input data-weight-number="living_biomass" type="number" min="0" max="100" value="25">
+        </label>
+        <label class="weight-row">
+          <span>Crystal Cluster</span>
+          <input data-weight="crystal_cluster" type="range" min="0" max="100" value="25">
+          <input data-weight-number="crystal_cluster" type="number" min="0" max="100" value="25">
+        </label>
+        <label class="weight-row">
+          <span>Celestial Body</span>
+          <input data-weight="celestial_body" type="range" min="0" max="100" value="25">
+          <input data-weight-number="celestial_body" type="number" min="0" max="100" value="25">
+        </label>
+      </div>
+    </section>
+
+    <div class="meter-grid" id="metricGrid" aria-label="generation metrics"></div>
+    <div class="palette" id="palette" aria-label="generated palette"></div>
+    <canvas class="phase-strip" id="phaseStrip" width="256" height="32" aria-label="animation strip"></canvas>
+
+    <div class="notes">Weighted pick uses stable type ids: aberrant_branch, living_biomass, crystal_cluster, celestial_body. The outer pixel border stays empty.</div>
+  </aside>
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  const SIZE = 32;
+  const PIXELS = SIZE * SIZE;
+  const STRIP_FRAMES = 8;
+  const TAU = Math.PI * 2;
+  const canvas = document.getElementById("texture");
+  const nativeTile = document.getElementById("nativeTile");
+  const phaseStrip = document.getElementById("phaseStrip");
+  const ctx = canvas.getContext("2d", { willReadFrequently: false });
+  const nativeCtx = nativeTile.getContext("2d", { willReadFrequently: false });
+  const stripCtx = phaseStrip.getContext("2d", { willReadFrequently: false });
+  const seedInput = document.getElementById("seedInput");
+  const generateButton = document.getElementById("generateButton");
+  const rerollSeed = document.getElementById("rerollSeed");
+  const animateButton = document.getElementById("animateButton");
+  const downloadButton = document.getElementById("downloadButton");
+  const stripButton = document.getElementById("stripButton");
+  const metricGrid = document.getElementById("metricGrid");
+  const paletteNode = document.getElementById("palette");
+  const paletteSelect = document.getElementById("paletteSelect");
+  const solverSelect = document.getElementById("solverSelect");
+  const weightSliders = Array.from(document.querySelectorAll("[data-weight]"));
+  const weightNumbers = Array.from(document.querySelectorAll("[data-weight-number]"));
+  const history = document.getElementById("history");
+  const modeButtons = Array.from(document.querySelectorAll(".mode-button"));
+  const historyTiles = [];
+  const MATERIAL_TYPES = [
+    { id: "aberrant_branch", name: "Aberrant Branch", shortName: "Branch" },
+    { id: "living_biomass", name: "Living Biomass", shortName: "Biomass" },
+    { id: "crystal_cluster", name: "Crystal Cluster", shortName: "Crystal" },
+    { id: "celestial_body", name: "Celestial Body", shortName: "Celestial" }
+  ];
+  const urlParams = new URLSearchParams(window.location.search);
+  const staticMode = urlParams.get("static") === "1";
+  const seedParam = urlParams.get("seed");
+  const paletteParam = urlParams.get("palette");
+  const solverParam = urlParams.get("type") || urlParams.get("solver");
+  const weightsParam = urlParams.get("weights");
+  const modeParam = urlParams.get("mode");
+  if (paletteParam && Array.from(paletteSelect.options).some((option) => option.value === paletteParam)) {
+    paletteSelect.value = paletteParam;
+  }
+  if (solverParam && Array.from(solverSelect.options).some((option) => option.value === solverParam)) {
+    solverSelect.value = solverParam;
+  }
+  if (weightsParam) {
+    const values = weightsParam.split(",").map((value) => clamp(Number(value) || 0, 0, 100));
+    MATERIAL_TYPES.forEach((type, index) => {
+      const value = values[index];
+      if (value === undefined) return;
+      const slider = weightSliders.find((input) => input.dataset.weight === type.id);
+      const number = weightNumbers.find((input) => input.dataset.weightNumber === type.id);
+      if (slider) slider.value = String(value);
+      if (number) number.value = String(value);
+    });
+  }
+  const forcedMode = modeParam && modeButtons.some((button) => button.dataset.mode === modeParam) ? modeParam : "";
+  let state = null;
+  let animationMode = "hybrid";
+  let animating = false;
+  let rafId = 0;
+  let phase = 0;
+
+  for (let i = 0; i < 8; i += 1) {
+    const tile = document.createElement("canvas");
+    tile.width = SIZE;
+    tile.height = SIZE;
+    history.appendChild(tile);
+    historyTiles.push(tile);
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  function smooth(t) {
+    return t * t * (3 - 2 * t);
+  }
+
+  function smoothstep(edge0, edge1, x) {
+    const t = clamp((x - edge0) / (edge1 - edge0), 0, 1);
+    return t * t * (3 - 2 * t);
+  }
+
+  function fnv1a(text) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < text.length; i += 1) {
+      h ^= text.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    h += h << 13;
+    h ^= h >>> 7;
+    h += h << 3;
+    h ^= h >>> 17;
+    h += h << 5;
+    return h >>> 0;
+  }
+
+  function mulberry32(seed) {
+    let t = seed >>> 0;
+    return () => {
+      t += 0x6d2b79f5;
+      let r = Math.imul(t ^ (t >>> 15), 1 | t);
+      r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function hash2(x, y, seed) {
+    let h = seed ^ Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1);
+    h ^= h >>> 15;
+    h = Math.imul(h, 0x85ebca6b);
+    h ^= h >>> 13;
+    h = Math.imul(h, 0xc2b2ae35);
+    h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+  }
+
+  function valueNoise(x, y, seed) {
+    const xi = Math.floor(x);
+    const yi = Math.floor(y);
+    const xf = x - xi;
+    const yf = y - yi;
+    const sx = smooth(xf);
+    const sy = smooth(yf);
+    const n00 = hash2(xi, yi, seed);
+    const n10 = hash2(xi + 1, yi, seed);
+    const n01 = hash2(xi, yi + 1, seed);
+    const n11 = hash2(xi + 1, yi + 1, seed);
+    return lerp(lerp(n00, n10, sx), lerp(n01, n11, sx), sy);
+  }
+
+  function fbm(x, y, seed, octaves) {
+    let amp = 0.5;
+    let freq = 1;
+    let sum = 0;
+    let norm = 0;
+    for (let i = 0; i < octaves; i += 1) {
+      sum += valueNoise(x * freq, y * freq, seed + i * 1009) * amp;
+      norm += amp;
+      amp *= 0.52;
+      freq *= 2.03;
+    }
+    return sum / norm;
+  }
+
+  function hslToRgb(h, s, l) {
+    const hue = ((h % 360) + 360) % 360 / 360;
+    const sat = clamp(s, 0, 100) / 100;
+    const lum = clamp(l, 0, 100) / 100;
+    const q = lum < 0.5 ? lum * (1 + sat) : lum + sat - lum * sat;
+    const p = 2 * lum - q;
+    const channel = (t) => {
+      let k = t;
+      if (k < 0) k += 1;
+      if (k > 1) k -= 1;
+      if (k < 1 / 6) return p + (q - p) * 6 * k;
+      if (k < 1 / 2) return q;
+      if (k < 2 / 3) return p + (q - p) * (2 / 3 - k) * 6;
+      return p;
+    };
+    return [
+      Math.round(channel(hue + 1 / 3) * 255),
+      Math.round(channel(hue) * 255),
+      Math.round(channel(hue - 1 / 3) * 255)
+    ];
+  }
+
+  function mixColor(a, b, t) {
+    const k = clamp(t, 0, 1);
+    return [
+      Math.round(lerp(a[0], b[0], k)),
+      Math.round(lerp(a[1], b[1], k)),
+      Math.round(lerp(a[2], b[2], k))
+    ];
+  }
+
+  function shadeColor(rgb, light) {
+    return [
+      clamp(Math.round(rgb[0] * light), 0, 255),
+      clamp(Math.round(rgb[1] * light), 0, 255),
+      clamp(Math.round(rgb[2] * light), 0, 255)
+    ];
+  }
+
+  function countNeighbors(mask, x, y) {
+    let count = 0;
+    for (let oy = -1; oy <= 1; oy += 1) {
+      for (let ox = -1; ox <= 1; ox += 1) {
+        if (ox === 0 && oy === 0) continue;
+        const nx = x + ox;
+        const ny = y + oy;
+        if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) continue;
+        if (mask[ny * SIZE + nx]) count += 1;
+      }
+    }
+    return count;
+  }
+
+  function visiblePixels(mask) {
+    let total = 0;
+    for (let i = 0; i < PIXELS; i += 1) total += mask[i];
+    return total;
+  }
+
+  function edgeDistance(mask, x, y, radius) {
+    for (let r = 1; r <= radius; r += 1) {
+      for (let oy = -r; oy <= r; oy += 1) {
+        for (let ox = -r; ox <= r; ox += 1) {
+          if (Math.abs(ox) !== r && Math.abs(oy) !== r) continue;
+          const nx = x + ox;
+          const ny = y + oy;
+          if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) continue;
+          if (mask[ny * SIZE + nx]) return r;
+        }
+      }
+    }
+    return 0;
+  }
+
+  function isOuterBorder(x, y) {
+    return x === 0 || y === 0 || x === SIZE - 1 || y === SIZE - 1;
+  }
+
+  function clearOuterBorder(mask, ownerMap) {
+    for (let i = 0; i < SIZE; i += 1) {
+      const top = i;
+      const bottom = (SIZE - 1) * SIZE + i;
+      const left = i * SIZE;
+      const right = i * SIZE + SIZE - 1;
+      mask[top] = 0;
+      mask[bottom] = 0;
+      mask[left] = 0;
+      mask[right] = 0;
+      if (ownerMap) {
+        ownerMap[top] = 0;
+        ownerMap[bottom] = 0;
+        ownerMap[left] = 0;
+        ownerMap[right] = 0;
+      }
+    }
+  }
+
+  function stampEllipse(field, cx, cy, rx, ry, angle, strength) {
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const reach = Math.ceil(Math.max(rx, ry) + 2);
+    const minX = clamp(Math.floor(cx - reach), 0, SIZE - 1);
+    const maxX = clamp(Math.ceil(cx + reach), 0, SIZE - 1);
+    const minY = clamp(Math.floor(cy - reach), 0, SIZE - 1);
+    const maxY = clamp(Math.ceil(cy + reach), 0, SIZE - 1);
+    for (let y = minY; y <= maxY; y += 1) {
+      for (let x = minX; x <= maxX; x += 1) {
+        const dx = x + 0.5 - cx;
+        const dy = y + 0.5 - cy;
+        const lx = dx * cos + dy * sin;
+        const ly = -dx * sin + dy * cos;
+        const d = (lx * lx) / (rx * rx) + (ly * ly) / (ry * ry);
+        if (d > 1.35) continue;
+        field[y * SIZE + x] += (1 - smoothstep(0.12, 1.35, d)) * strength;
+      }
+    }
+  }
+
+  function componentsOf(mask) {
+    const seen = new Uint8Array(PIXELS);
+    const stack = [];
+    const components = [];
+    for (let start = 0; start < PIXELS; start += 1) {
+      if (!mask[start] || seen[start]) continue;
+      const component = [];
+      stack.length = 0;
+      stack.push(start);
+      seen[start] = 1;
+      while (stack.length > 0) {
+        const index = stack.pop();
+        component.push(index);
+        const x = index % SIZE;
+        const y = Math.floor(index / SIZE);
+        const next = [index - 1, index + 1, index - SIZE, index + SIZE];
+        if (x === 0) next[0] = -1;
+        if (x === SIZE - 1) next[1] = -1;
+        if (y === 0) next[2] = -1;
+        if (y === SIZE - 1) next[3] = -1;
+        for (let i = 0; i < next.length; i += 1) {
+          const n = next[i];
+          if (n >= 0 && mask[n] && !seen[n]) {
+            seen[n] = 1;
+            stack.push(n);
+          }
+        }
+      }
+      components.push(component);
+    }
+    components.sort((a, b) => b.length - a.length);
+    return components;
+  }
+
+  function keepHybridComponents(mask) {
+    const components = componentsOf(mask);
+    if (!components.length) return components;
+    const keep = [];
+    const main = components[0];
+    keep.push(main);
+    const mainSet = new Uint8Array(PIXELS);
+    main.forEach((index) => { mainSet[index] = 1; });
+
+    for (let i = 1; i < components.length && keep.length < 3; i += 1) {
+      const component = components[i];
+      if (component.length < 10 || component.length > main.length * 0.22) continue;
+      let close = false;
+      for (let j = 0; j < component.length && !close; j += 1) {
+        const index = component[j];
+        const x = index % SIZE;
+        const y = Math.floor(index / SIZE);
+        close = edgeDistance(mainSet, x, y, 5) > 0;
+      }
+      if (close) keep.push(component);
+    }
+
+    mask.fill(0);
+    keep.forEach((component) => {
+      component.forEach((index) => { mask[index] = 1; });
+    });
+    return keep;
+  }
+
+  function makeFlowSpec(family, cx, cy, rx, ry, rotation, rng, role) {
+    const tangent = rotation + Math.PI * 0.5 + lerp(-0.55, 0.55, rng());
+    const arms = family === "vortex" ? 4 + Math.floor(rng() * 4) : family === "ring" ? 3 + Math.floor(rng() * 3) : 2 + Math.floor(rng() * 3);
+    return {
+      family,
+      role,
+      cx,
+      cy,
+      rx,
+      ry,
+      rotation,
+      phase: rng() * TAU,
+      driftX: Math.cos(tangent),
+      driftY: Math.sin(tangent),
+      speed: lerp(0.72, 1.9, rng()),
+      spinDir: rng() < 0.5 ? -1 : 1,
+      freq: lerp(5.4, 12.0, rng()),
+      facetAngle: rotation + lerp(-0.8, 0.8, rng()),
+      tint: rng(),
+      arms,
+      secondaryArms: arms + 2 + Math.floor(rng() * 3),
+      swirl: family === "vortex" ? lerp(6.4, 13.2, rng()) : lerp(4.8, 9.8, rng()),
+      branchPhase: rng() * TAU,
+      branchStrength: lerp(0.34, 0.62, rng()),
+      ringRadius: lerp(0.58, 0.86, rng()),
+      thickness: lerp(0.09, 0.17, rng())
+    };
+  }
+
+  function fillOwnerFromMask(mask, ownerMap, owner) {
+    for (let i = 0; i < PIXELS; i += 1) ownerMap[i] = mask[i] ? owner : 0;
+  }
+
+  function keepComponents(mask, ownerMap, maxComponents, minSize) {
+    clearOuterBorder(mask, ownerMap);
+    const components = componentsOf(mask).filter((component) => component.length >= minSize).slice(0, maxComponents);
+    const keep = new Uint8Array(PIXELS);
+    components.forEach((component) => component.forEach((index) => { keep[index] = 1; }));
+    for (let i = 0; i < PIXELS; i += 1) {
+      mask[i] = keep[i];
+      if (!mask[i]) ownerMap[i] = 0;
+    }
+    return components;
+  }
+
+  function shapeResult(typeId, typeName, mask, ownerMap, components, elements, solver, family) {
+    return {
+      typeId,
+      typeName,
+      mask,
+      ownerMap,
+      components,
+      crystals: elements,
+      solver,
+      cohesion: components.length <= 1 ? 0.86 : 0.62,
+      branchiness: components.length > 1 ? 0.42 : 0.18,
+      family
+    };
+  }
+
+  function readTypeWeights() {
+    const weights = {};
+    MATERIAL_TYPES.forEach((type) => {
+      const input = weightSliders.find((node) => node.dataset.weight === type.id);
+      weights[type.id] = clamp(Number(input ? input.value : 0) || 0, 0, 100);
+    });
+    return weights;
+  }
+
+  function chooseMaterialType(rng) {
+    const weights = readTypeWeights();
+    const total = MATERIAL_TYPES.reduce((sum, type) => sum + weights[type.id], 0);
+    if (total <= 0) return MATERIAL_TYPES[0];
+    let cursor = rng() * total;
+    for (const type of MATERIAL_TYPES) {
+      cursor -= weights[type.id];
+      if (cursor <= 0) return type;
+    }
+    return MATERIAL_TYPES[MATERIAL_TYPES.length - 1];
+  }
+
+  function resolveMaterialType(requested, rng) {
+    if (requested && requested !== "weighted") {
+      return MATERIAL_TYPES.find((type) => type.id === requested) || MATERIAL_TYPES[0];
+    }
+    return chooseMaterialType(rng);
+  }
+
+  function buildAberrantBranchShape(seed, rng) {
+    const field = new Float32Array(PIXELS);
+    const clusters = 2 + Math.floor(rng() * 4);
+    const baseAngle = rng() * TAU;
+
+    for (let c = 0; c < clusters; c += 1) {
+      const clusterAngle = baseAngle + TAU * c / clusters + lerp(-0.42, 0.42, rng());
+      const radial = lerp(3.5, 9.4, rng());
+      let cx = clamp(16 + Math.cos(clusterAngle) * radial, 5, 27);
+      let cy = clamp(16 + Math.sin(clusterAngle) * radial, 5, 27);
+      const rootAngle = rng() * TAU;
+      stampEllipse(field, cx, cy, lerp(2.5, 4.9, rng()), lerp(1.6, 3.5, rng()), rootAngle, lerp(1.05, 1.45, rng()));
+
+      const arms = 3 + Math.floor(rng() * 4);
+      for (let arm = 0; arm < arms; arm += 1) {
+        let px = cx;
+        let py = cy;
+        let heading = rootAngle + TAU * arm / arms + lerp(-0.75, 0.75, rng());
+        const steps = 4 + Math.floor(rng() * 7);
+        const curl = lerp(-0.3, 0.3, rng());
+        for (let s = 0; s < steps; s += 1) {
+          const t = s / Math.max(1, steps - 1);
+          heading += lerp(-0.42, 0.42, rng()) + Math.sin(t * TAU + c) * curl;
+          const step = lerp(1.15, 2.15, rng()) * lerp(1, 0.65, t);
+          px = clamp(px + Math.cos(heading) * step, 2.5, SIZE - 2.5);
+          py = clamp(py + Math.sin(heading) * step, 2.5, SIZE - 2.5);
+          const radius = lerp(2.2, 0.78, t) * lerp(0.78, 1.18, rng());
+          stampEllipse(field, px, py, radius * 1.12, radius * 0.78, heading, lerp(0.74, 1.16, rng()));
+          if (rng() < 0.22 && t > 0.22) {
+            const branchHeading = heading + (rng() < 0.5 ? -1 : 1) * lerp(0.75, 1.35, rng());
+            stampEllipse(
+              field,
+              clamp(px + Math.cos(branchHeading) * lerp(1.8, 3.6, rng()), 2.5, SIZE - 2.5),
+              clamp(py + Math.sin(branchHeading) * lerp(1.8, 3.6, rng()), 2.5, SIZE - 2.5),
+              radius * 0.75,
+              radius * 0.55,
+              branchHeading,
+              0.68
+            );
+          }
+        }
+      }
+    }
+
+    const mask = new Uint8Array(PIXELS);
+    const next = new Uint8Array(PIXELS);
+    const threshold = lerp(0.43, 0.66, rng());
+    for (let y = 0; y < SIZE; y += 1) {
+      for (let x = 0; x < SIZE; x += 1) {
+        const index = y * SIZE + x;
+        const nx = (x + 0.5 - 16) / 16;
+        const ny = (y + 0.5 - 16) / 16;
+        const grain = fbm((x + 0.5) * 0.18, (y + 0.5) * 0.18, seed ^ 0x9e51, 4);
+        const fracture = fbm((x + 6.0) * 0.54, (y - 3.0) * 0.54, seed ^ 0x7157, 3);
+        const rim = smoothstep(0.82, 1.18, Math.sqrt(nx * nx + ny * ny));
+        mask[index] = field[index] + (grain - 0.5) * 0.48 + (fracture - 0.5) * 0.18 - rim * 0.22 > threshold ? 1 : 0;
+      }
+    }
+    for (let pass = 0; pass < 2; pass += 1) {
+      for (let y = 0; y < SIZE; y += 1) {
+        for (let x = 0; x < SIZE; x += 1) {
+          const index = y * SIZE + x;
+          const n = countNeighbors(mask, x, y);
+          next[index] = mask[index] ? (n >= 2 ? 1 : 0) : (n >= 6 ? 1 : 0);
+        }
+      }
+      mask.set(next);
+    }
+    const ownerMap = new Uint8Array(PIXELS);
+    fillOwnerFromMask(mask, ownerMap, 1);
+    let components = keepComponents(mask, ownerMap, 7, 9);
+    if (visiblePixels(mask) < 210) {
+      stampEllipse(field, 16, 16, 7.4, 5.6, rng() * TAU, 1.1);
+      for (let i = 0; i < PIXELS; i += 1) if (field[i] > threshold) mask[i] = 1;
+      fillOwnerFromMask(mask, ownerMap, 1);
+      components = keepComponents(mask, ownerMap, 7, 9);
+    }
+    const element = makeFlowSpec("branch", 16, 16, 11.0, 10.0, baseAngle, rng, "aberrant");
+    return shapeResult("aberrant_branch", "Aberrant Branch", mask, ownerMap, components, [element], "Branch", "branch");
+  }
+
+  function buildBiomassShape(seed, rng) {
+    const field = new Float32Array(PIXELS);
+    const stretchX = lerp(0.78, 1.13, rng());
+    const stretchY = lerp(0.78, 1.13, rng());
+    const lobes = 4 + Math.floor(rng() * 4);
+    const phaseA = rng() * TAU;
+    const phaseB = rng() * TAU;
+    const cohesion = lerp(0.64, 0.82, rng());
+    const branchiness = lerp(0.18, 0.42, rng());
+
+    for (let y = 0; y < SIZE; y += 1) {
+      for (let x = 0; x < SIZE; x += 1) {
+        const nx = (x + 0.5 - 16) / 16;
+        const ny = (y + 0.5 - 16) / 16;
+        const angle = Math.atan2(ny, nx);
+        const r = Math.sqrt((nx * nx) / stretchX + (ny * ny) / stretchY);
+        const outlineNoise = fbm(Math.cos(angle) * 1.9 + 3.5, Math.sin(angle) * 1.9 - 1.5, seed ^ 0x51a7, 4);
+        const wave = Math.sin(angle * lobes + phaseA) * 0.07 + Math.sin(angle * (lobes + 3) + phaseB) * 0.035;
+        const boundary = cohesion + wave + (outlineNoise - 0.5) * 0.17;
+        const index = y * SIZE + x;
+        field[index] += (boundary - r) * 1.9;
+        field[index] += (fbm((nx + 1.8) * 1.7, (ny + 1.2) * 1.7, seed ^ 0x91fa, 4) - 0.5) * 0.34;
+      }
+    }
+
+    const branchCount = 2 + Math.floor(rng() * 4);
+    for (let i = 0; i < branchCount; i += 1) {
+      let x = 16 + Math.cos(TAU * i / branchCount + rng() * 0.8) * lerp(3, 7, rng());
+      let y = 16 + Math.sin(TAU * i / branchCount + rng() * 0.8) * lerp(3, 7, rng());
+      let heading = rng() * TAU;
+      const steps = 3 + Math.floor(rng() * 5);
+      for (let s = 0; s < steps; s += 1) {
+        const t = s / Math.max(1, steps - 1);
+        heading += lerp(-0.44, 0.44, rng());
+        x = clamp(x + Math.cos(heading) * lerp(1.1, 2.0, rng()), 3, 29);
+        y = clamp(y + Math.sin(heading) * lerp(1.1, 2.0, rng()), 3, 29);
+        const radius = lerp(2.2, 0.95, t);
+        stampEllipse(field, x, y, radius * 1.15, radius * 0.72, heading, branchiness);
+      }
+    }
+
+    const sorted = Array.from(field).sort((a, b) => b - a);
+    const target = Math.round(lerp(340, 510, rng()));
+    const threshold = sorted[clamp(target, 0, PIXELS - 1)];
+    const mask = new Uint8Array(PIXELS);
+    const next = new Uint8Array(PIXELS);
+    for (let i = 0; i < PIXELS; i += 1) mask[i] = field[i] >= threshold ? 1 : 0;
+    for (let pass = 0; pass < 2; pass += 1) {
+      for (let y = 0; y < SIZE; y += 1) {
+        for (let x = 0; x < SIZE; x += 1) {
+          const index = y * SIZE + x;
+          const n = countNeighbors(mask, x, y);
+          next[index] = mask[index] ? (n >= 3 ? 1 : 0) : (n >= 6 ? 1 : 0);
+        }
+      }
+      mask.set(next);
+    }
+    clearOuterBorder(mask);
+    let components = keepHybridComponents(mask);
+    if (!components.length || visiblePixels(mask) < 240) {
+      for (let y = 0; y < SIZE; y += 1) {
+        for (let x = 0; x < SIZE; x += 1) {
+          const nx = (x + 0.5 - 16) / 16;
+          const ny = (y + 0.5 - 16) / 16;
+          if (nx * nx + ny * ny < 0.48) mask[y * SIZE + x] = 1;
+        }
+      }
+      clearOuterBorder(mask);
+      components = keepHybridComponents(mask);
+    }
+    const ownerMap = new Uint8Array(PIXELS);
+    fillOwnerFromMask(mask, ownerMap, 1);
+    const element = makeFlowSpec("biomass", 16, 16, 10.5, 10.5, rng() * TAU, rng, "living");
+    return shapeResult("living_biomass", "Living Biomass", mask, ownerMap, components, [element], "Biomass", "biomass");
+  }
+
+  function makeCrystalClusterSpec(family, cx, cy, rx, ry, rotation, rng, role) {
+    const spec = makeFlowSpec(family, cx, cy, rx, ry, rotation, rng, role);
+    spec.planes = makeRegularCrystalPlanes(family, rotation, rng);
+    spec.arms = family === "blade" ? 2 : family === "hex" ? 6 : 4;
+    spec.secondaryArms = spec.arms + 2;
+    spec.swirl = lerp(3.4, 6.0, rng());
+    return spec;
+  }
+
+  function addCrystalClusterBody(mask, ownerMap, depthMap, crystal, id) {
+    const reach = Math.ceil(Math.max(crystal.rx, crystal.ry) * 1.18 + 2);
+    const minX = clamp(Math.floor(crystal.cx - reach), 1, SIZE - 2);
+    const maxX = clamp(Math.ceil(crystal.cx + reach), 1, SIZE - 2);
+    const minY = clamp(Math.floor(crystal.cy - reach), 1, SIZE - 2);
+    const maxY = clamp(Math.ceil(crystal.cy + reach), 1, SIZE - 2);
+    for (let y = minY; y <= maxY; y += 1) {
+      for (let x = minX; x <= maxX; x += 1) {
+        const index = y * SIZE + x;
+        const d = crystalSignedDistance(x, y, crystal.cx, crystal.cy, crystal.rx, crystal.ry, crystal.rotation, crystal.planes);
+        if (d < -0.015) continue;
+        mask[index] = 1;
+        if (d > depthMap[index]) {
+          depthMap[index] = d;
+          ownerMap[index] = id + 1;
+        }
+      }
+    }
+  }
+
+  function carveCrystalClusterNotches(mask, ownerMap, rng) {
+    if (rng() > 0.35) return;
+    const notches = 1 + Math.floor(rng() * 2);
+    for (let n = 0; n < notches; n += 1) {
+      const angle = rng() * TAU;
+      const cx = 16 + Math.cos(angle) * lerp(2.0, 5.5, rng());
+      const cy = 16 + Math.sin(angle) * lerp(2.0, 5.5, rng());
+      const cutRot = angle + lerp(-0.7, 0.7, rng());
+      const cutRx = lerp(1.5, 2.7, rng());
+      const cutRy = lerp(0.8, 1.3, rng());
+      const cos = Math.cos(cutRot);
+      const sin = Math.sin(cutRot);
+      for (let y = 1; y < SIZE - 1; y += 1) {
+        for (let x = 1; x < SIZE - 1; x += 1) {
+          const index = y * SIZE + x;
+          if (!mask[index]) continue;
+          const dx = x + 0.5 - cx;
+          const dy = y + 0.5 - cy;
+          const lx = (dx * cos + dy * sin) / cutRx;
+          const ly = (-dx * sin + dy * cos) / cutRy;
+          if (Math.abs(lx) + Math.abs(ly) < 0.95 && edgeDistance(mask, x, y, 3) > 0) {
+            mask[index] = 0;
+            ownerMap[index] = 0;
+          }
+        }
+      }
+    }
+  }
+
+  function buildCrystalClusterShape(seed, rng) {
+    const mask = new Uint8Array(PIXELS);
+    const ownerMap = new Uint8Array(PIXELS);
+    const depthMap = new Float32Array(PIXELS);
+    depthMap.fill(-999);
+    const crystals = [];
+    const rotationStep = Math.PI / 12;
+    const rotation = Math.round((rng() * TAU) / rotationStep) * rotationStep;
+    const baseAngle = rotation + lerp(-0.45, 0.45, rng());
+    const anchor = { x: lerp(14.8, 17.2, rng()), y: lerp(14.8, 17.2, rng()) };
+    const mainFamily = rng() < 0.45 ? "hex" : "diamond";
+    crystals.push(makeCrystalClusterSpec(
+      mainFamily,
+      anchor.x,
+      anchor.y,
+      lerp(6.6, 8.7, rng()) * lerp(1.0, 1.22, rng()),
+      lerp(4.9, 6.9, rng()),
+      baseAngle,
+      rng,
+      "core"
+    ));
+
+    const count = 4 + Math.floor(rng() * 2);
+    for (let i = 1; i < count; i += 1) {
+      const side = i % 2 === 0 ? 1 : -1;
+      const spread = (i / Math.max(1, count - 1) - 0.5) * lerp(1.1, 2.2, rng());
+      const angle = baseAngle + side * lerp(0.35, 1.25, rng()) + spread;
+      const distance = lerp(3.1, 6.1, rng()) + i * 0.12;
+      const family = rng() < 0.55 ? "diamond" : "hex";
+      const elongation = lerp(0.96, 1.26, rng());
+      crystals.push(makeCrystalClusterSpec(
+        family,
+        anchor.x + Math.cos(angle) * distance + lerp(-1.1, 1.1, rng()),
+        anchor.y + Math.sin(angle) * distance + lerp(-1.1, 1.1, rng()),
+        lerp(4.6, 7.8, rng()) * elongation,
+        lerp(3.5, 6.0, rng()) / Math.sqrt(elongation),
+        baseAngle + lerp(-0.9, 0.9, rng()),
+        rng,
+        "cluster"
+      ));
+    }
+
+    if (rng() < 0.35) {
+      crystals.push(makeCrystalClusterSpec(
+        "blade",
+        anchor.x + Math.cos(baseAngle + Math.PI) * lerp(3.0, 4.8, rng()),
+        anchor.y + Math.sin(baseAngle + Math.PI) * lerp(2.4, 3.8, rng()),
+        lerp(2.7, 4.0, rng()),
+        lerp(2.0, 3.2, rng()),
+        baseAngle + lerp(-0.5, 0.5, rng()),
+        rng,
+        "shard"
+      ));
+    }
+
+    crystals.forEach((crystal, id) => addCrystalClusterBody(mask, ownerMap, depthMap, crystal, id));
+    carveCrystalClusterNotches(mask, ownerMap, rng);
+    removeIsolatedPixels(mask, ownerMap);
+    let components = keepComponents(mask, ownerMap, 1, 8);
+    if (!components.length || visiblePixels(mask) < 150) {
+      mask.fill(0);
+      ownerMap.fill(0);
+      depthMap.fill(-999);
+      crystals.length = 0;
+      crystals.push(makeCrystalClusterSpec("diamond", 16, 16, 12.2, 9.4, rotation, rng, "fallback"));
+      crystals.push(makeCrystalClusterSpec("hex", 13.2, 18.0, 4.8, 3.4, rotation - 0.65, rng, "fallback"));
+      crystals.forEach((crystal, id) => addCrystalClusterBody(mask, ownerMap, depthMap, crystal, id));
+      components = keepComponents(mask, ownerMap, 1, 8);
+    }
+
+    return shapeResult("crystal_cluster", "Crystal Cluster", mask, ownerMap, components, crystals, "Crystal", crystals.map((crystal) => crystal.family).join("+"));
+  }
+
+  function makeCrystalPlanes(sides, rotation, rng, irregularity) {
+    const planes = [];
+    for (let i = 0; i < sides; i += 1) {
+      const angle = rotation + i * Math.PI * 2 / sides + lerp(-0.09, 0.09, rng()) * irregularity;
+      planes.push({
+        x: Math.cos(angle),
+        y: Math.sin(angle),
+        limit: lerp(0.66, 0.9, rng()) + lerp(-0.08, 0.08, rng()) * irregularity
+      });
+    }
+    return planes;
+  }
+
+  function makeRegularCrystalPlanes(family, rotation, rng) {
+    const planes = [];
+    const addPlane = (angle, limit) => {
+      planes.push({ x: Math.cos(angle), y: Math.sin(angle), limit });
+    };
+
+    if (family === "diamond") {
+      const wide = lerp(0.74, 0.82, rng());
+      const tall = lerp(0.72, 0.8, rng());
+      addPlane(rotation + Math.PI * 0.25, wide);
+      addPlane(rotation + Math.PI * 0.75, tall);
+      addPlane(rotation + Math.PI * 1.25, wide);
+      addPlane(rotation + Math.PI * 1.75, tall);
+    } else if (family === "hex") {
+      for (let i = 0; i < 6; i += 1) {
+        addPlane(rotation + i * Math.PI / 3, i % 2 === 0 ? lerp(0.78, 0.84, rng()) : lerp(0.72, 0.8, rng()));
+      }
+    } else {
+      addPlane(rotation, lerp(0.76, 0.86, rng()));
+      addPlane(rotation + Math.PI, lerp(0.76, 0.86, rng()));
+      addPlane(rotation + Math.PI * 0.5, lerp(0.5, 0.58, rng()));
+      addPlane(rotation + Math.PI * 1.5, lerp(0.5, 0.58, rng()));
+    }
+
+    if (rng() < 0.16) {
+      const chipAngle = rotation + Math.floor(rng() * planes.length) * Math.PI * 2 / Math.max(4, planes.length) + Math.PI / Math.max(4, planes.length);
+      addPlane(chipAngle, lerp(0.68, 0.76, rng()));
+    }
+
+    return planes;
+  }
+
+  function crystalSignedDistance(x, y, cx, cy, rx, ry, rotation, planes) {
+    const cos = Math.cos(rotation);
+    const sin = Math.sin(rotation);
+    const dx = x + 0.5 - cx;
+    const dy = y + 0.5 - cy;
+    const lx = (dx * cos + dy * sin) / rx;
+    const ly = (-dx * sin + dy * cos) / ry;
+    let minDistance = 999;
+    for (let i = 0; i < planes.length; i += 1) {
+      const plane = planes[i];
+      minDistance = Math.min(minDistance, plane.limit - (lx * plane.x + ly * plane.y));
+    }
+    return minDistance;
+  }
+
+  function addCrystalField(field, cx, cy, rx, ry, rotation, planes, strength) {
+    const reach = Math.ceil(Math.max(rx, ry) * 1.25 + 2);
+    const minX = clamp(Math.floor(cx - reach), 0, SIZE - 1);
+    const maxX = clamp(Math.ceil(cx + reach), 0, SIZE - 1);
+    const minY = clamp(Math.floor(cy - reach), 0, SIZE - 1);
+    const maxY = clamp(Math.ceil(cy + reach), 0, SIZE - 1);
+    for (let y = minY; y <= maxY; y += 1) {
+      for (let x = minX; x <= maxX; x += 1) {
+        const d = crystalSignedDistance(x, y, cx, cy, rx, ry, rotation, planes);
+        if (d < -0.18) continue;
+        const body = smoothstep(-0.12, 0.14, d);
+        const core = clamp(d * 1.8, 0, 1);
+        field[y * SIZE + x] += (body * 0.78 + core * 0.35) * strength;
+      }
+    }
+  }
+
+  function addCrystalMask(mask, cx, cy, rx, ry, rotation, planes) {
+    const reach = Math.ceil(Math.max(rx, ry) * 1.18 + 2);
+    const minX = clamp(Math.floor(cx - reach), 0, SIZE - 1);
+    const maxX = clamp(Math.ceil(cx + reach), 0, SIZE - 1);
+    const minY = clamp(Math.floor(cy - reach), 0, SIZE - 1);
+    const maxY = clamp(Math.ceil(cy + reach), 0, SIZE - 1);
+    for (let y = minY; y <= maxY; y += 1) {
+      for (let x = minX; x <= maxX; x += 1) {
+        const d = crystalSignedDistance(x, y, cx, cy, rx, ry, rotation, planes);
+        if (d >= -0.015) mask[y * SIZE + x] = 1;
+      }
+    }
+  }
+
+  function makeCelestialSpec(family, cx, cy, rx, ry, rotation, rng, role) {
+    const tangent = rotation + Math.PI * 0.5 + lerp(-0.55, 0.55, rng());
+    const arms = family === "vortex" ? 4 + Math.floor(rng() * 4) : family === "ring" ? 3 + Math.floor(rng() * 3) : 2 + Math.floor(rng() * 3);
+    return {
+      family,
+      role,
+      cx,
+      cy,
+      rx,
+      ry,
+      rotation,
+      phase: rng() * TAU,
+      driftX: Math.cos(tangent),
+      driftY: Math.sin(tangent),
+      speed: lerp(0.7, 1.9, rng()),
+      spinDir: rng() < 0.5 ? -1 : 1,
+      freq: lerp(5.4, 12.0, rng()),
+      facetAngle: rotation + lerp(-0.8, 0.8, rng()),
+      tint: rng(),
+      arms,
+      secondaryArms: arms + 2 + Math.floor(rng() * 3),
+      swirl: family === "vortex" ? lerp(6.4, 13.2, rng()) : lerp(4.8, 9.8, rng()),
+      branchPhase: rng() * TAU,
+      branchStrength: lerp(0.34, 0.62, rng()),
+      ringRadius: lerp(0.58, 0.86, rng()),
+      thickness: lerp(0.09, 0.17, rng())
+    };
+  }
+
+  function celestialStrength(body, x, y, seed) {
+    const cos = Math.cos(body.rotation);
+    const sin = Math.sin(body.rotation);
+    const dx = x + 0.5 - body.cx;
+    const dy = y + 0.5 - body.cy;
+    const lx = (dx * cos + dy * sin) / Math.max(0.001, body.rx);
+    const ly = (-dx * sin + dy * cos) / Math.max(0.001, body.ry);
+    const radius = Math.hypot(lx, ly);
+    const angle = Math.atan2(ly, lx);
+    const edgeNoise = (fbm(lx * 2.8 + 4.0, ly * 2.8 - 1.5, seed ^ 0x4488, 3) - 0.5) * 0.09;
+
+    if (body.family === "sphere") {
+      const dimple = Math.sin(angle * 3 + body.phase) * 0.04;
+      return 1.03 - radius + edgeNoise + dimple;
+    }
+
+    if (body.family === "ring") {
+      const band = 1 - Math.abs(radius - body.ringRadius) / body.thickness;
+      const brightArc = 0.62 + 0.24 * Math.sin(angle * body.arms + body.phase) + 0.14 * Math.sin(angle * body.secondaryArms - radius * 3.0 + body.branchPhase);
+      return band * brightArc + edgeNoise * 0.6;
+    }
+
+    if (body.family === "vortex") {
+      const spiral = 0.5 + 0.5 * Math.sin(angle * body.arms + radius * body.swirl + body.phase);
+      const secondary = 0.5 + 0.5 * Math.sin(angle * body.secondaryArms - radius * body.swirl * 1.28 + body.branchPhase);
+      const brokenArc = 0.76 + 0.24 * Math.sin(angle * Math.max(2, body.arms - 1) + radius * 5.2 + body.branchPhase);
+      const arm = smoothstep(0.48, 0.82, spiral) * (1.08 - radius) * brokenArc;
+      const fineArm = smoothstep(0.62, 0.92, secondary) * smoothstep(1.08, 0.28, radius) * body.branchStrength;
+      const core = smoothstep(0.38, 0.0, radius) * 0.62;
+      return Math.max(arm, fineArm, core) + edgeNoise;
+    }
+
+    const outer = smoothstep(1.08, 0.62, radius);
+    const inner = smoothstep(0.24, 0.48, radius);
+    const broken = 0.72 + 0.18 * Math.sin(angle * body.secondaryArms + body.phase) + 0.1 * Math.sin(angle * body.arms - radius * 4.0 + body.branchPhase);
+    return outer * inner * broken + edgeNoise;
+  }
+
+  function addCelestialBody(mask, ownerMap, depthMap, body, id, seed) {
+    const reach = Math.ceil(Math.max(body.rx, body.ry) * 1.25 + 2);
+    const minX = clamp(Math.floor(body.cx - reach), 1, SIZE - 2);
+    const maxX = clamp(Math.ceil(body.cx + reach), 1, SIZE - 2);
+    const minY = clamp(Math.floor(body.cy - reach), 1, SIZE - 2);
+    const maxY = clamp(Math.ceil(body.cy + reach), 1, SIZE - 2);
+    for (let y = minY; y <= maxY; y += 1) {
+      for (let x = minX; x <= maxX; x += 1) {
+        const index = y * SIZE + x;
+        const strength = celestialStrength(body, x, y, seed);
+        if (strength <= 0.03) continue;
+        mask[index] = 1;
+        if (strength > depthMap[index]) {
+          depthMap[index] = strength;
+          ownerMap[index] = id + 1;
+        }
+      }
+    }
+  }
+
+  function carveCelestialHole(mask, ownerMap, hole) {
+    const cos = Math.cos(hole.rotation);
+    const sin = Math.sin(hole.rotation);
+    const minX = clamp(Math.floor(hole.cx - hole.rx - 1), 1, SIZE - 2);
+    const maxX = clamp(Math.ceil(hole.cx + hole.rx + 1), 1, SIZE - 2);
+    const minY = clamp(Math.floor(hole.cy - hole.ry - 1), 1, SIZE - 2);
+    const maxY = clamp(Math.ceil(hole.cy + hole.ry + 1), 1, SIZE - 2);
+    for (let y = minY; y <= maxY; y += 1) {
+      for (let x = minX; x <= maxX; x += 1) {
+        const index = y * SIZE + x;
+        if (!mask[index]) continue;
+        const dx = x + 0.5 - hole.cx;
+        const dy = y + 0.5 - hole.cy;
+        const lx = (dx * cos + dy * sin) / hole.rx;
+        const ly = (-dx * sin + dy * cos) / hole.ry;
+        if (lx * lx + ly * ly < 1) {
+          mask[index] = 0;
+          ownerMap[index] = 0;
+        }
+      }
+    }
+  }
+
+  function removeIsolatedPixels(mask, ownerMap) {
+    const next = new Uint8Array(PIXELS);
+    next.set(mask);
+    for (let y = 1; y < SIZE - 1; y += 1) {
+      for (let x = 1; x < SIZE - 1; x += 1) {
+        const index = y * SIZE + x;
+        if (mask[index] && countNeighbors(mask, x, y) <= 1) next[index] = 0;
+      }
+    }
+    mask.set(next);
+    for (let i = 0; i < PIXELS; i += 1) if (!mask[i]) ownerMap[i] = 0;
+  }
+
+  function keepCelestialComponents(mask, ownerMap, maxComponents, minSize) {
+    const components = componentsOf(mask).filter((component) => component.length >= minSize).slice(0, maxComponents);
+    const keep = new Uint8Array(PIXELS);
+    components.forEach((component) => component.forEach((index) => { keep[index] = 1; }));
+    for (let i = 0; i < PIXELS; i += 1) {
+      mask[i] = keep[i];
+      if (!keep[i]) ownerMap[i] = 0;
+    }
+    return components;
+  }
+
+  function buildCelestialShape(seed, rng, requestedSolver) {
+    const mask = new Uint8Array(PIXELS);
+    const ownerMap = new Uint8Array(PIXELS);
+    const depthMap = new Float32Array(PIXELS);
+    depthMap.fill(-999);
+    const bodies = [];
+    const holes = [];
+    const seedModes = ["orbital", "rings", "vortex", "void"];
+    const mode = requestedSolver === "seed" ? seedModes[Math.floor(rng() * seedModes.length)] : requestedSolver;
+    const names = { orbital: "Orbital", rings: "Rings", vortex: "Vortex", void: "Void" };
+    const solver = names[mode] || "Orbital";
+    const rotation = rng() * TAU;
+    const cx = lerp(14.6, 17.4, rng());
+    const cy = lerp(14.6, 17.4, rng());
+
+    if (mode === "rings") {
+      bodies.push(makeCelestialSpec("ring", cx, cy, lerp(10.0, 13.2, rng()), lerp(5.0, 7.0, rng()), rotation, rng, "main-ring"));
+      bodies.push(makeCelestialSpec("sphere", cx + lerp(-0.8, 0.8, rng()), cy + lerp(-0.8, 0.8, rng()), lerp(4.1, 5.8, rng()), lerp(3.8, 5.4, rng()), rotation + 0.2, rng, "planet"));
+      if (rng() < 0.75) holes.push({ cx, cy, rx: lerp(2.1, 3.1, rng()), ry: lerp(1.8, 2.7, rng()), rotation });
+    } else if (mode === "vortex") {
+      bodies.push(makeCelestialSpec("vortex", cx, cy, lerp(9.0, 12.0, rng()), lerp(8.0, 11.2, rng()), rotation, rng, "spiral"));
+      bodies.push(makeCelestialSpec("sphere", cx + Math.cos(rotation) * lerp(1.0, 2.2, rng()), cy + Math.sin(rotation) * lerp(1.0, 2.2, rng()), lerp(2.4, 3.5, rng()), lerp(2.2, 3.3, rng()), rotation, rng, "core"));
+      if (rng() < 0.55) holes.push({ cx: cx + lerp(-1.1, 1.1, rng()), cy: cy + lerp(-1.1, 1.1, rng()), rx: lerp(1.2, 2.0, rng()), ry: lerp(1.2, 2.0, rng()), rotation: rng() * TAU });
+    } else if (mode === "void") {
+      bodies.push(makeCelestialSpec("void", cx, cy, lerp(8.0, 10.8, rng()), lerp(7.2, 10.2, rng()), rotation, rng, "event-halo"));
+      bodies.push(makeCelestialSpec("ring", cx + lerp(-0.8, 0.8, rng()), cy + lerp(-0.8, 0.8, rng()), lerp(7.8, 10.0, rng()), lerp(4.5, 6.0, rng()), rotation + lerp(-0.45, 0.45, rng()), rng, "accretion"));
+      holes.push({ cx, cy, rx: lerp(2.6, 4.2, rng()), ry: lerp(2.4, 3.8, rng()), rotation: rng() * TAU });
+    } else {
+      bodies.push(makeCelestialSpec("sphere", cx, cy, lerp(7.6, 10.4, rng()), lerp(7.0, 10.0, rng()), rotation, rng, "planet"));
+      if (rng() < 0.7) bodies.push(makeCelestialSpec("ring", cx, cy, lerp(9.4, 12.6, rng()), lerp(4.8, 6.4, rng()), rotation + lerp(-0.5, 0.5, rng()), rng, "orbit"));
+      if (rng() < 0.5) holes.push({ cx: cx + lerp(-3.2, 3.2, rng()), cy: cy + lerp(-3.2, 3.2, rng()), rx: lerp(1.0, 1.8, rng()), ry: lerp(1.0, 1.8, rng()), rotation: rng() * TAU });
+    }
+
+    if (rng() < 0.42) {
+      const moonAngle = rotation + lerp(1.6, 4.7, rng());
+      bodies.push(makeCelestialSpec("sphere", cx + Math.cos(moonAngle) * lerp(6.2, 8.6, rng()), cy + Math.sin(moonAngle) * lerp(4.4, 6.8, rng()), lerp(1.5, 2.4, rng()), lerp(1.4, 2.2, rng()), rotation + rng(), rng, "moon"));
+    }
+
+    bodies.forEach((body, id) => addCelestialBody(mask, ownerMap, depthMap, body, id, seed));
+    holes.forEach((hole) => carveCelestialHole(mask, ownerMap, hole));
+    removeIsolatedPixels(mask, ownerMap);
+    clearOuterBorder(mask, ownerMap);
+    let components = keepCelestialComponents(mask, ownerMap, mode === "orbital" ? 2 : 1, 8);
+    if (!components.length || visiblePixels(mask) < 120) {
+      mask.fill(0);
+      ownerMap.fill(0);
+      depthMap.fill(-999);
+      bodies.length = 0;
+      holes.length = 0;
+      bodies.push(makeCelestialSpec("sphere", 16, 16, 8.6, 8.2, rotation, rng, "fallback"));
+      bodies.push(makeCelestialSpec("ring", 16, 16, 11.0, 5.4, rotation + 0.25, rng, "fallback-ring"));
+      bodies.forEach((body, id) => addCelestialBody(mask, ownerMap, depthMap, body, id, seed));
+      clearOuterBorder(mask, ownerMap);
+      components = keepCelestialComponents(mask, ownerMap, 1, 8);
+    }
+
+    return shapeResult("celestial_body", "Celestial Body", mask, ownerMap, components, bodies, solver, bodies.map((body) => body.family).join("+"));
+  }
+
+  function buildShape(seed, rng, requestedType) {
+    const type = resolveMaterialType(requestedType, rng);
+    if (type.id === "aberrant_branch") return buildAberrantBranchShape(seed, rng);
+    if (type.id === "living_biomass") return buildBiomassShape(seed, rng);
+    if (type.id === "crystal_cluster") return buildCrystalClusterShape(seed, rng);
+    return buildCelestialShape(seed, rng, "seed");
+  }
+
+  function buildTuring(seed, rng, mask) {
+    let a = new Float32Array(PIXELS);
+    let b = new Float32Array(PIXELS);
+    let nextA = new Float32Array(PIXELS);
+    let nextB = new Float32Array(PIXELS);
+    const feed = lerp(0.032, 0.048, rng());
+    const kill = lerp(0.057, 0.064, rng());
+    const iterations = 52 + Math.floor(rng() * 34);
+    const angle = rng() * Math.PI * 2;
+    const dx = Math.cos(angle);
+    const dy = Math.sin(angle);
+    const freq = lerp(5.5, 9.5, rng());
+    const startPhase = rng() * Math.PI * 2;
+
+    for (let y = 0; y < SIZE; y += 1) {
+      for (let x = 0; x < SIZE; x += 1) {
+        const index = y * SIZE + x;
+        a[index] = 1;
+        b[index] = 0;
+        if (!mask[index]) continue;
+        const nx = (x + 0.5 - 16) / 16;
+        const ny = (y + 0.5 - 16) / 16;
+        const wave = 0.5 + 0.5 * Math.sin((nx * dx + ny * dy) * freq + startPhase);
+        const spot = fbm((x + 1.7) * 0.24, (y - 2.4) * 0.24, seed ^ 0xb17e, 4);
+        const starter = clamp(wave * 0.24 + spot * 0.58 - 0.35, 0, 1);
+        b[index] = starter;
+        a[index] = 1 - starter * 0.42;
+      }
+    }
+
+    const sample = (arr, x, y, fallback) => {
+      if (x < 0 || y < 0 || x >= SIZE || y >= SIZE) return fallback;
+      const index = y * SIZE + x;
+      return mask[index] ? arr[index] : fallback;
+    };
+
+    for (let iter = 0; iter < iterations; iter += 1) {
+      for (let y = 0; y < SIZE; y += 1) {
+        for (let x = 0; x < SIZE; x += 1) {
+          const index = y * SIZE + x;
+          if (!mask[index]) {
+            nextA[index] = 1;
+            nextB[index] = 0;
+            continue;
+          }
+          const av = a[index];
+          const bv = b[index];
+          const lapA = -av +
+            (sample(a, x - 1, y, 1) + sample(a, x + 1, y, 1) + sample(a, x, y - 1, 1) + sample(a, x, y + 1, 1)) * 0.2 +
+            (sample(a, x - 1, y - 1, 1) + sample(a, x + 1, y - 1, 1) + sample(a, x - 1, y + 1, 1) + sample(a, x + 1, y + 1, 1)) * 0.05;
+          const lapB = -bv +
+            (sample(b, x - 1, y, 0) + sample(b, x + 1, y, 0) + sample(b, x, y - 1, 0) + sample(b, x, y + 1, 0)) * 0.2 +
+            (sample(b, x - 1, y - 1, 0) + sample(b, x + 1, y - 1, 0) + sample(b, x - 1, y + 1, 0) + sample(b, x + 1, y + 1, 0)) * 0.05;
+          const reaction = av * bv * bv;
+          nextA[index] = clamp(av + (1.0 * lapA - reaction + feed * (1 - av)), 0, 1);
+          nextB[index] = clamp(bv + (0.48 * lapB + reaction - (kill + feed) * bv), 0, 1);
+        }
+      }
+      [a, nextA] = [nextA, a];
+      [b, nextB] = [nextB, b];
+    }
+
+    let min = 1;
+    let max = 0;
+    for (let i = 0; i < PIXELS; i += 1) {
+      if (!mask[i]) continue;
+      min = Math.min(min, b[i]);
+      max = Math.max(max, b[i]);
+    }
+    const span = Math.max(0.0001, max - min);
+    for (let i = 0; i < PIXELS; i += 1) b[i] = mask[i] ? clamp((b[i] - min) / span, 0, 1) : 0;
+    return b;
+  }
+
+  function createPalette(rng, requestedMode) {
+    const seedModes = ["mono", "analogous", "complement", "triad", "aurora", "voidIce"];
+    const mode = requestedMode === "seed" ? seedModes[Math.floor(rng() * seedModes.length)] : requestedMode;
+    const base = rng() * 360;
+    const make = (h, s, l) => hslToRgb(h, s, l);
+
+    if (mode === "mono") {
+      return {
+        name: "Monochrome",
+        shadow: make(base + 4, 44, 13),
+        core: make(base, 74, 34),
+        warm: make(base + 8, 78, 46),
+        cold: make(base - 8, 62, 58),
+        odd: make(base + 16, 72, 42),
+        pearl: make(base + 6, 28, 84)
+      };
+    }
+
+    if (mode === "analogous") {
+      return {
+        name: "Analogous",
+        shadow: make(base - 18, 42, 13),
+        core: make(base, 78, 38),
+        warm: make(base + 28, 84, 54),
+        cold: make(base - 34, 76, 54),
+        odd: make(base + 52, 82, 46),
+        pearl: make(base + 18, 34, 84)
+      };
+    }
+
+    if (mode === "complement") {
+      return {
+        name: "Complement",
+        shadow: make(base + 8, 44, 13),
+        core: make(base, 78, 39),
+        warm: make(base + 24, 84, 54),
+        cold: make(base + 180, 76, 56),
+        odd: make(base + 204, 82, 48),
+        pearl: make(base + 180, 30, 86)
+      };
+    }
+
+    if (mode === "triad") {
+      return {
+        name: "Triad",
+        shadow: make(base + 6, 42, 13),
+        core: make(base, 76, 38),
+        warm: make(base + 120, 84, 54),
+        cold: make(base + 240, 78, 56),
+        odd: make(base + 145, 82, 46),
+        pearl: make(base + 30, 34, 86)
+      };
+    }
+
+    if (mode === "aurora") {
+      return {
+        name: "Aurora",
+        shadow: make(258 + rng() * 12, 44, 13),
+        core: make(278 + rng() * 18, 78, 40),
+        warm: make(145 + rng() * 22, 84, 55),
+        cold: make(194 + rng() * 18, 82, 58),
+        odd: make(320 + rng() * 18, 84, 52),
+        pearl: make(166, 36, 86)
+      };
+    }
+
+    return {
+      name: "Void Ice",
+      shadow: make(232 + rng() * 12, 42, 12),
+      core: make(210 + rng() * 18, 64, 38),
+      warm: make(280 + rng() * 16, 64, 54),
+      cold: make(188 + rng() * 18, 78, 62),
+      odd: make(320 + rng() * 10, 48, 60),
+      pearl: make(200, 26, 88)
+    };
+  }
+
+  function createState(seedText) {
+    const started = performance.now();
+    const hash = fnv1a(seedText || "unified-material");
+    const rng = mulberry32(hash);
+    const shape = buildShape(hash, rng, solverSelect.value);
+    const turing = buildTuring(hash, rng, shape.mask);
+    const palette = createPalette(rng, paletteSelect.value);
+    const driftAngle = rng() * Math.PI * 2;
+    const drift = { x: Math.cos(driftAngle), y: Math.sin(driftAngle), speed: lerp(1.1, 2.4, rng()), freq: lerp(4.8, 9.6, rng()) };
+    const organicWeight = lerp(0.32, 0.58, rng());
+    const facetAngle = ((hash >>> 8) / 16777215) * Math.PI * 2;
+    const fields = {
+      band: new Float32Array(PIXELS),
+      mineral: new Float32Array(PIXELS),
+      micro: new Float32Array(PIXELS),
+      facet: new Float32Array(PIXELS),
+      orbit: new Float32Array(PIXELS),
+      radial: new Float32Array(PIXELS),
+      owner: new Uint8Array(shape.ownerMap),
+      seam: new Uint8Array(PIXELS),
+      halo: new Uint8Array(PIXELS),
+      neighbors: new Uint8Array(PIXELS)
+    };
+
+    for (let y = 0; y < SIZE; y += 1) {
+      for (let x = 0; x < SIZE; x += 1) {
+        const index = y * SIZE + x;
+        const nx = (x + 0.5 - 16) / 16;
+        const ny = (y + 0.5 - 16) / 16;
+        const owner = shape.ownerMap[index];
+        const crystal = shape.crystals[owner - 1];
+        let lx = nx;
+        let ly = ny;
+        let localHash = hash;
+        if (crystal) {
+          const cos = Math.cos(crystal.rotation);
+          const sin = Math.sin(crystal.rotation);
+          const dx = x + 0.5 - crystal.cx;
+          const dy = y + 0.5 - crystal.cy;
+          lx = (dx * cos + dy * sin) / Math.max(0.001, crystal.rx);
+          ly = (-dx * sin + dy * cos) / Math.max(0.001, crystal.ry);
+          localHash = hash ^ ((owner * 0x9e3779b9) >>> 0);
+        }
+        const radius = Math.hypot(lx, ly);
+        const angle = Math.atan2(ly, lx);
+        if (shape.typeId === "celestial_body") {
+          const orbit = angle * (crystal ? crystal.arms : 2.0) + radius * (crystal ? crystal.swirl : 6.0) + (crystal ? crystal.phase : 0);
+          const orbitalNoise = fbm(Math.cos(angle) * 2.2 + radius * 2.0, Math.sin(angle) * 2.2 - radius * 1.5, localHash ^ 0x4455, 3);
+          fields.band[index] = angle * 0.62 + radius * (crystal ? crystal.freq * 0.24 : drift.freq * 0.2) + orbitalNoise * 0.42;
+          fields.orbit[index] = orbit + orbitalNoise * 1.15;
+          fields.radial[index] = radius * (crystal ? crystal.swirl : 6.0) + angle * 0.55;
+          fields.mineral[index] = clamp(fbm((lx * 8.0 + 2.2), (ly * 8.0 - 4.0), localHash ^ 0x7788, 5) * 0.62 + (0.5 + 0.5 * Math.sin(orbit)) * 0.38, 0, 1);
+          fields.facet[index] = 0.5 + 0.5 * Math.sin(orbit + radius * 4.0 + Math.sin(angle * 2.0 + (crystal ? crystal.facetAngle : facetAngle)) * 0.8);
+        } else if (shape.typeId === "crystal_cluster") {
+          fields.band[index] = lx * (crystal ? crystal.driftX : drift.x) + ly * (crystal ? crystal.driftY : drift.y) + fbm((x + 0.2) * 0.18, (y - 1.4) * 0.18, localHash ^ 0x4455, 3) * 0.32;
+          fields.orbit[index] = angle * (crystal ? crystal.arms : 4.0) + radius * (crystal ? crystal.swirl : 4.8) + (crystal ? crystal.phase : 0);
+          fields.radial[index] = radius * (crystal ? crystal.freq : drift.freq);
+          fields.mineral[index] = fbm((lx * 10.0 + 2.2), (ly * 10.0 - 4.0), localHash ^ 0x7788, 5);
+          fields.facet[index] = 0.5 + 0.5 * Math.sin((lx * Math.cos(crystal ? crystal.facetAngle : facetAngle) + ly * Math.sin(crystal ? crystal.facetAngle : facetAngle)) * (crystal ? crystal.freq : 9.0) + (crystal ? crystal.phase : 0) + Math.floor((lx - ly) * 3.0));
+        } else {
+          fields.band[index] = nx * drift.x + ny * drift.y + fbm((x + 0.2) * 0.18, (y - 1.4) * 0.18, hash ^ 0x4455, 3) * 0.42;
+          fields.orbit[index] = angle * 2.0 + radius * 5.0;
+          fields.radial[index] = radius * 6.0;
+          fields.mineral[index] = fbm((x + 2.2) * 0.23, (y - 4.0) * 0.23, hash ^ 0x7788, 5);
+          fields.facet[index] = 0.5 + 0.5 * Math.sin((nx * Math.cos(facetAngle) + ny * Math.sin(facetAngle)) * 6.0 + Math.floor((nx - ny) * 2.0));
+        }
+        fields.micro[index] = fbm((x - 1.3) * 0.62, (y + 1.8) * 0.62, localHash ^ 0x9911, 3);
+        fields.neighbors[index] = countNeighbors(shape.mask, x, y);
+        fields.halo[index] = isOuterBorder(x, y) || shape.mask[index] ? 0 : edgeDistance(shape.mask, x, y, 2);
+        if (shape.mask[index] && owner) {
+          const left = x > 0 ? shape.ownerMap[index - 1] : owner;
+          const right = x < SIZE - 1 ? shape.ownerMap[index + 1] : owner;
+          const up = y > 0 ? shape.ownerMap[index - SIZE] : owner;
+          const down = y < SIZE - 1 ? shape.ownerMap[index + SIZE] : owner;
+          const upLeft = x > 0 && y > 0 ? shape.ownerMap[index - SIZE - 1] : owner;
+          const upRight = x < SIZE - 1 && y > 0 ? shape.ownerMap[index - SIZE + 1] : owner;
+          const downLeft = x > 0 && y < SIZE - 1 ? shape.ownerMap[index + SIZE - 1] : owner;
+          const downRight = x < SIZE - 1 && y < SIZE - 1 ? shape.ownerMap[index + SIZE + 1] : owner;
+          fields.seam[index] =
+            (left && left !== owner) || (right && right !== owner) ||
+            (up && up !== owner) || (down && down !== owner) ||
+            (upLeft && upLeft !== owner) || (upRight && upRight !== owner) ||
+            (downLeft && downLeft !== owner) || (downRight && downRight !== owner) ? 1 : 0;
+        }
+      }
+    }
+
+    const modes = shape.typeId === "celestial_body" ? ["orbit", "pulse", "hybrid", "shimmer"] : ["drift", "pulse", "hybrid", "shimmer"];
+    return {
+      hash,
+      seedText,
+      typeId: shape.typeId,
+      typeName: shape.typeName,
+      mask: shape.mask,
+      ownerMap: shape.ownerMap,
+      components: shape.components,
+      crystals: shape.crystals,
+      solver: shape.solver,
+      family: shape.family,
+      turing,
+      palette,
+      drift,
+      organicWeight,
+      fields,
+      defaultMode: modes[hash % modes.length],
+      buildMs: performance.now() - started
+    };
+  }
+
+  function render(imageState, timePhase) {
+    if (!imageState) return;
+    const image = ctx.createImageData(SIZE, SIZE);
+    const data = image.data;
+    const { mask, turing, palette, fields, drift, organicWeight, crystals } = imageState;
+    const mode = imageState.typeId === "celestial_body" || animationMode !== "orbit" ? animationMode : "drift";
+
+    for (let y = 0; y < SIZE; y += 1) {
+      for (let x = 0; x < SIZE; x += 1) {
+        const index = y * SIZE + x;
+        const out = index * 4;
+        if (isOuterBorder(x, y)) {
+          data[out + 3] = 0;
+          continue;
+        }
+        if (!mask[index]) {
+          const halo = fields.halo[index];
+          if (halo > 0) {
+            const haloColor = halo === 1 ? palette.cold : palette.odd;
+            data[out] = haloColor[0];
+            data[out + 1] = haloColor[1];
+            data[out + 2] = haloColor[2];
+            data[out + 3] = halo === 1 ? 28 : 9;
+          } else {
+            data[out + 3] = 0;
+          }
+          continue;
+        }
+
+        const nx = (x + 0.5 - 16) / 16;
+        const ny = (y + 0.5 - 16) / 16;
+        const owner = fields.owner[index];
+        const crystal = crystals[owner - 1];
+        let localPhase = timePhase * drift.speed;
+        let driftWave = 0.5 + 0.5 * Math.sin(fields.band[index] * drift.freq + localPhase);
+        let orbitWave = driftWave;
+        let radialWave = 0.5 + 0.5 * Math.sin(fields.radial[index] + localPhase * 0.4);
+        let flowWave = driftWave;
+        let movingMineral = fields.mineral[index];
+        let pulse = 0.5 + 0.5 * Math.sin(timePhase + turing[index] * 7.2 + movingMineral * 3.1);
+        let shimmer = 0.5 + 0.5 * Math.sin(timePhase * 2.1 + fields.micro[index] * 9.0 + hash2(x, y, imageState.hash) * 3.0);
+        let pattern = movingMineral * (1 - organicWeight) + turing[index] * organicWeight;
+        let ridgePhase = mode === "drift" ? timePhase * 1.2 : timePhase * 0.45;
+        let light = 0.72 + (1 - Math.hypot(nx, ny)) * 0.18 + (-nx * 0.18 - ny * 0.30) + (fields.micro[index] - 0.5) * 0.20 + pulse * 0.08;
+        let facetMotion = fields.facet[index];
+        let crystalGlint = 0;
+
+        if (imageState.typeId === "crystal_cluster") {
+          localPhase = timePhase * (crystal ? crystal.speed : drift.speed) + (crystal ? crystal.phase : 0);
+          driftWave = 0.5 + 0.5 * Math.sin(fields.band[index] * (crystal ? crystal.freq : drift.freq) + localPhase);
+          orbitWave = 0.5 + 0.5 * Math.sin(fields.orbit[index] + localPhase * 0.55);
+          radialWave = 0.5 + 0.5 * Math.sin(fields.radial[index] * 0.8 - localPhase * 0.35);
+          flowWave = driftWave;
+          movingMineral = fields.mineral[index];
+          if (crystal) {
+            const cos = Math.cos(crystal.rotation);
+            const sin = Math.sin(crystal.rotation);
+            const dx = x + 0.5 - crystal.cx;
+            const dy = y + 0.5 - crystal.cy;
+            const lx = (dx * cos + dy * sin) / Math.max(0.001, crystal.rx);
+            const ly = (-dx * sin + dy * cos) / Math.max(0.001, crystal.ry);
+            const slide = localPhase * 0.18;
+            const localHash = imageState.hash ^ ((owner * 0x9e3779b9) >>> 0);
+            const mineralSlide = fbm((lx + crystal.driftX * slide) * 10.0 + 2.2, (ly + crystal.driftY * slide) * 10.0 - 4.0, localHash ^ 0x7788, 5);
+            facetMotion = 0.5 + 0.5 * Math.sin((lx * Math.cos(crystal.facetAngle) + ly * Math.sin(crystal.facetAngle)) * crystal.freq + crystal.phase + Math.floor((lx - ly) * 3.0) + localPhase * 1.15);
+            crystalGlint = 0.5 + 0.5 * Math.sin(fields.band[index] * crystal.freq * 1.35 + fields.facet[index] * TAU * 1.8 - localPhase * 1.7 + hash2(x, y, localHash) * 1.2);
+            movingMineral = clamp(fields.mineral[index] * 0.50 + mineralSlide * 0.36 + facetMotion * 0.14, 0, 1);
+            flowWave = driftWave * 0.62 + facetMotion * 0.18 + crystalGlint * 0.14 + orbitWave * 0.06;
+          } else {
+            facetMotion = 0.5 + 0.5 * Math.sin(fields.facet[index] * TAU + localPhase);
+            crystalGlint = facetMotion;
+          }
+          pulse = 0.5 + 0.5 * Math.sin(localPhase * 0.92 + turing[index] * 7.2 + movingMineral * 3.1);
+          shimmer = 0.5 + 0.5 * Math.sin(timePhase * (1.75 + (crystal ? crystal.tint * 0.8 : 0.35)) + fields.micro[index] * 9.0 + hash2(x, y, imageState.hash) * 3.0);
+          pattern = movingMineral * (1 - organicWeight) + turing[index] * organicWeight;
+          ridgePhase = mode === "drift" ? localPhase * 1.2 : localPhase * 0.45;
+          light = 0.70 + (1 - Math.hypot(nx, ny)) * 0.17 + (-nx * 0.18 - ny * 0.30) + (fields.micro[index] - 0.5) * 0.18 + pulse * 0.07 + (facetMotion - 0.5) * 0.20 + (crystalGlint - 0.5) * 0.22;
+        } else if (imageState.typeId === "celestial_body") {
+          const spinDir = crystal ? crystal.spinDir : 1;
+          localPhase = timePhase * (crystal ? crystal.speed : drift.speed) * spinDir + (crystal ? crystal.phase : 0);
+          const orbitalPhase = fields.orbit[index] + localPhase * 1.65;
+          const bandPhase = fields.band[index] * (crystal ? crystal.freq : drift.freq) + localPhase;
+          const radialPhase = fields.radial[index] * 1.18 - localPhase * 0.82;
+          driftWave = 0.5 + 0.5 * Math.sin(bandPhase);
+          orbitWave = 0.5 + 0.5 * Math.sin(orbitalPhase);
+          radialWave = 0.5 + 0.5 * Math.sin(radialPhase);
+          flowWave = orbitWave * 0.68 + radialWave * 0.32;
+          movingMineral = fields.mineral[index];
+          if (crystal) {
+            const spin = localPhase * 0.28;
+            const cosSpin = Math.cos(spin);
+            const sinSpin = Math.sin(spin);
+            const dx = (x + 0.5 - crystal.cx) / Math.max(0.001, crystal.rx);
+            const dy = (y + 0.5 - crystal.cy) / Math.max(0.001, crystal.ry);
+            const ax = dx * cosSpin - dy * sinSpin;
+            const ay = dx * sinSpin + dy * cosSpin;
+            const localHash = imageState.hash ^ ((owner * 0x85ebca6b) >>> 0);
+            movingMineral = clamp(fbm(ax * 8.0 + 2.2, ay * 8.0 - 4.0, localHash, 4) * 0.52 + flowWave * 0.48, 0, 1);
+          }
+          pulse = 0.5 + 0.5 * Math.sin(localPhase * 0.92 + turing[index] * 7.2 + movingMineral * 3.1 + orbitWave * 1.2);
+          shimmer = 0.5 + 0.5 * Math.sin(timePhase * (1.75 + (crystal ? crystal.tint * 0.8 : 0.35)) + fields.micro[index] * 9.0 + hash2(x, y, imageState.hash) * 3.0);
+          pattern = movingMineral * (1 - organicWeight) + turing[index] * organicWeight;
+          ridgePhase = mode === "orbit" ? localPhase * 1.45 : localPhase * 0.55;
+          light = 0.68 + (1 - Math.hypot(nx, ny)) * 0.15 + (-nx * 0.16 - ny * 0.26) + (fields.micro[index] - 0.5) * 0.16 + pulse * 0.06 + (fields.facet[index] - 0.5) * 0.14 + (flowWave - 0.5) * 0.24;
+        }
+
+        const isCrystalCluster = imageState.typeId === "crystal_cluster";
+        if (mode === "orbit") pattern = pattern * 0.28 + flowWave * 0.58 + driftWave * 0.14;
+        else if (mode === "drift") pattern = isCrystalCluster ? pattern * 0.26 + flowWave * 0.38 + facetMotion * 0.20 + crystalGlint * 0.16 : pattern * 0.46 + driftWave * 0.54;
+        else if (mode === "pulse") pattern = isCrystalCluster ? pattern * 0.42 + pulse * 0.32 + facetMotion * 0.16 + crystalGlint * 0.10 : pattern * 0.56 + pulse * 0.36 + orbitWave * 0.08;
+        else if (mode === "shimmer") pattern = isCrystalCluster ? pattern * 0.38 + shimmer * 0.26 + flowWave * 0.18 + facetMotion * 0.10 + crystalGlint * 0.08 : pattern * 0.50 + shimmer * 0.30 + (imageState.typeId === "celestial_body" ? flowWave : driftWave) * 0.20;
+        else if (isCrystalCluster) pattern = pattern * 0.30 + flowWave * 0.28 + pulse * 0.20 + facetMotion * 0.12 + crystalGlint * 0.10;
+        else pattern = pattern * (imageState.typeId === "celestial_body" ? 0.34 : 0.42) + (imageState.typeId === "celestial_body" ? flowWave * 0.34 : driftWave * 0.30) + pulse * (imageState.typeId === "celestial_body" ? 0.22 : 0.28) + (imageState.typeId === "celestial_body" ? driftWave * 0.10 : 0);
+
+        const edge = fields.neighbors[index] < 8;
+        const seam = imageState.typeId === "crystal_cluster" && fields.seam[index] > 0;
+        const ridge = 0.5 + 0.5 * Math.sin(pattern * Math.PI * 8.0 + ridgePhase);
+        const cell = smoothstep(0.35, 0.78, pattern);
+        let color = mixColor(palette.shadow, palette.core, clamp(0.34 + movingMineral * 0.22 + pattern * 0.44, 0, 1));
+        const warmMotion = imageState.typeId === "celestial_body" || isCrystalCluster ? flowWave : driftWave;
+        color = mixColor(color, palette.warm, clamp(cell * (imageState.typeId === "celestial_body" ? 0.42 : 0.48) + warmMotion * (imageState.typeId === "celestial_body" ? 0.26 : 0.16), 0, 0.86));
+        color = mixColor(color, palette.cold, clamp((1 - ridge) * (imageState.typeId === "celestial_body" ? 0.28 : 0.34) + pulse * (imageState.typeId === "celestial_body" ? 0.14 : 0.18) + (imageState.typeId === "celestial_body" ? radialWave * 0.16 : 0) + (isCrystalCluster ? facetMotion * 0.10 : 0), 0, 0.72));
+        color = mixColor(color, palette.odd, clamp(ridge * 0.26 + shimmer * 0.18 + Math.abs(turing[index] - 0.5) * 0.22 + (isCrystalCluster ? facetMotion * 0.06 + crystalGlint * 0.08 : 0), 0, 0.62));
+        if (crystal && imageState.typeId !== "living_biomass" && imageState.typeId !== "aberrant_branch") color = mixColor(color, crystal.tint > 0.5 ? palette.warm : palette.cold, 0.08 + crystal.tint * 0.06);
+        if (imageState.typeId !== "living_biomass" && imageState.typeId !== "aberrant_branch") {
+          color = facetMotion > 0.58 ? mixColor(color, palette.pearl, (facetMotion - 0.58) * (isCrystalCluster ? 0.34 : 0.22)) : mixColor(color, palette.shadow, (0.58 - facetMotion) * (isCrystalCluster ? 0.24 : 0.18));
+        }
+        if (isCrystalCluster && crystalGlint > 0.62 && !edge) color = mixColor(color, palette.pearl, (crystalGlint - 0.62) * 0.34);
+        if (hash2(x, y, imageState.hash ^ 0xf173) > 0.976 && !edge) color = mixColor(color, palette.pearl, 0.68);
+        color = shadeColor(color, clamp(light, 0.42, 1.44));
+        if (seam) color = mixColor(mixColor(color, palette.shadow, 0.58), palette.pearl, 0.12);
+        if (edge) color = nx < -0.2 || ny < -0.34 ? mixColor(color, palette.pearl, 0.22) : mixColor(color, palette.shadow, 0.56);
+
+        data[out] = color[0];
+        data[out + 1] = color[1];
+        data[out + 2] = color[2];
+        data[out + 3] = edge ? 238 : 255;
+      }
+    }
+
+    ctx.clearRect(0, 0, SIZE, SIZE);
+    ctx.putImageData(image, 0, 0);
+    nativeCtx.clearRect(0, 0, SIZE, SIZE);
+    nativeCtx.drawImage(canvas, 0, 0);
+  }
+
+  function renderStrip() {
+    if (!state) return;
+    stripCtx.clearRect(0, 0, phaseStrip.width, phaseStrip.height);
+    for (let i = 0; i < STRIP_FRAMES; i += 1) {
+      render(state, i / STRIP_FRAMES * Math.PI * 2);
+      stripCtx.drawImage(canvas, i * SIZE, 0);
+    }
+    render(state, phase);
+  }
+
+  function updateModeButtons() {
+    modeButtons.forEach((button) => {
+      button.classList.toggle("selected", button.dataset.mode === animationMode);
+    });
+  }
+
+  function metricTile(label, value) {
+    const node = document.createElement("div");
+    node.className = "tile";
+    const labelNode = document.createElement("span");
+    labelNode.textContent = label;
+    const valueNode = document.createElement("strong");
+    valueNode.textContent = value;
+    node.append(labelNode, valueNode);
+    return node;
+  }
+
+  function updatePanel() {
+    if (!state) return;
+    metricGrid.replaceChildren(
+      metricTile("build", `${state.buildMs.toFixed(2)} ms`),
+      metricTile("area", `${visiblePixels(state.mask)} / ${PIXELS}`),
+      metricTile("type", state.typeName),
+      metricTile("type id", state.typeId),
+      metricTile("solver", state.solver),
+      metricTile("elements", String(state.crystals.length)),
+      metricTile("components", String(state.components.length)),
+      metricTile("mode", animationMode),
+      metricTile("palette", state.palette.name),
+      metricTile("reaction", `${Math.round(state.organicWeight * 100)}%`),
+      metricTile("drift", `${state.drift.speed.toFixed(2)}x`)
+    );
+    paletteNode.replaceChildren();
+    [state.palette.shadow, state.palette.core, state.palette.warm, state.palette.cold, state.palette.odd, state.palette.pearl].forEach((rgb) => {
+      const swatch = document.createElement("div");
+      swatch.style.background = `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+      paletteNode.appendChild(swatch);
+    });
+    updateModeButtons();
+    renderStrip();
+  }
+
+  function updateHistory() {
+    for (let i = historyTiles.length - 1; i > 0; i -= 1) {
+      const previous = historyTiles[i - 1].getContext("2d");
+      historyTiles[i].getContext("2d").drawImage(previous.canvas, 0, 0);
+    }
+    historyTiles[0].getContext("2d").drawImage(canvas, 0, 0);
+  }
+
+  function generate(seedText) {
+    state = createState(seedText);
+    animationMode = forcedMode || state.defaultMode;
+    phase = 0;
+    render(state, phase);
+    updatePanel();
+    updateHistory();
+  }
+
+  function randomSeed() {
+    const now = Date.now().toString(36);
+    const random = Math.floor(Math.random() * 0xffffffff).toString(36).padStart(7, "0");
+    return `world-${now}-${random}`;
+  }
+
+  function setAnimating(enabled) {
+    animating = enabled;
+    animateButton.classList.toggle("active", animating);
+    animateButton.textContent = animating ? "Pause" : "Animate";
+    cancelAnimationFrame(rafId);
+    if (animating) rafId = requestAnimationFrame(animationLoop);
+  }
+
+  function animationLoop(time) {
+    if (!animating) return;
+    phase = time * 0.0042;
+    render(state, phase);
+    rafId = requestAnimationFrame(animationLoop);
+  }
+
+  function safeSeedName() {
+    return (seedInput.value.trim().replace(/[^a-z0-9_-]+/gi, "_").slice(0, 48) || "seed");
+  }
+
+  modeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      animationMode = button.dataset.mode;
+      updatePanel();
+      render(state, phase);
+    });
+  });
+
+  generateButton.addEventListener("click", () => {
+    seedInput.value = randomSeed();
+    generate(seedInput.value);
+  });
+  rerollSeed.addEventListener("click", () => {
+    seedInput.value = randomSeed();
+    generate(seedInput.value);
+  });
+  animateButton.addEventListener("click", () => setAnimating(!animating));
+  seedInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") generate(seedInput.value.trim() || randomSeed());
+  });
+  seedInput.addEventListener("change", () => generate(seedInput.value.trim() || randomSeed()));
+  paletteSelect.addEventListener("change", () => generate(seedInput.value.trim() || randomSeed()));
+  solverSelect.addEventListener("change", () => generate(seedInput.value.trim() || randomSeed()));
+  weightSliders.forEach((slider) => {
+    slider.addEventListener("input", () => {
+      const number = weightNumbers.find((input) => input.dataset.weightNumber === slider.dataset.weight);
+      if (number) number.value = slider.value;
+    });
+    slider.addEventListener("change", () => generate(seedInput.value.trim() || randomSeed()));
+  });
+  weightNumbers.forEach((number) => {
+    number.addEventListener("input", () => {
+      const value = clamp(Number(number.value) || 0, 0, 100);
+      number.value = String(value);
+      const slider = weightSliders.find((input) => input.dataset.weight === number.dataset.weightNumber);
+      if (slider) slider.value = String(value);
+    });
+    number.addEventListener("change", () => generate(seedInput.value.trim() || randomSeed()));
+  });
+  downloadButton.addEventListener("click", () => {
+    const link = document.createElement("a");
+    link.download = `singular_material_unified_${state.typeId}_${safeSeedName()}_${paletteSelect.value}.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  });
+  stripButton.addEventListener("click", () => {
+    renderStrip();
+    const link = document.createElement("a");
+    link.download = `singular_material_unified_strip_${state.typeId}_${safeSeedName()}_${paletteSelect.value}_${animationMode}.png`;
+    link.href = phaseStrip.toDataURL("image/png");
+    link.click();
+  });
+
+  seedInput.value = seedParam || randomSeed();
+  generate(seedInput.value);
+  setAnimating(!staticMode);
+})();
+</script>
+</body>
+</html>

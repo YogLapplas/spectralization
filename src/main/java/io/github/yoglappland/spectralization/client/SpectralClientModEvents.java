@@ -8,6 +8,8 @@ import io.github.yoglappland.spectralization.client.renderer.LensHolderRenderer;
 import io.github.yoglappland.spectralization.client.renderer.MetamaterialDesignTableRenderer;
 import io.github.yoglappland.spectralization.client.renderer.MetamaterialTemplateItemRenderer;
 import io.github.yoglappland.spectralization.client.renderer.SingularMaterialItemRenderer;
+import io.github.yoglappland.spectralization.client.screen.BasicLithographyMachineScreen;
+import io.github.yoglappland.spectralization.client.renderer.BasicLithographyMachineRenderer;
 import io.github.yoglappland.spectralization.client.screen.CoatingBrushScreen;
 import io.github.yoglappland.spectralization.client.screen.CompactMachineCoreScreen;
 import io.github.yoglappland.spectralization.client.screen.CompactedMachineScreen;
@@ -42,6 +44,10 @@ public final class SpectralClientModEvents {
         event.registerBlockEntityRenderer(
                 SpectralBlockEntities.METAMATERIAL_DESIGN_TABLE.get(),
                 MetamaterialDesignTableRenderer::new
+        );
+        event.registerBlockEntityRenderer(
+                SpectralBlockEntities.BASIC_LITHOGRAPHY_MACHINE.get(),
+                BasicLithographyMachineRenderer::new
         );
     }
 
@@ -89,6 +95,7 @@ public final class SpectralClientModEvents {
         event.register(SpectralMenus.THERMAL_SMELTER.get(), ThermalSmelterScreen::new);
         event.register(SpectralMenus.LENS_GRINDING_BENCH.get(), LensGrindingBenchScreen::new);
         event.register(SpectralMenus.METAMATERIAL_DESIGN_TABLE.get(), MetamaterialDesignTableScreen::new);
+        event.register(SpectralMenus.BASIC_LITHOGRAPHY_MACHINE.get(), BasicLithographyMachineScreen::new);
         event.register(SpectralMenus.HOLOGRAPHIC_STORAGE.get(), HolographicStorageScreen::new);
         event.register(SpectralMenus.HOLOGRAPHIC_STORAGE_CORE.get(), HolographicStorageCoreScreen::new);
         event.register(SpectralMenus.COMPACT_MACHINE_CORE.get(), CompactMachineCoreScreen::new);

@@ -209,6 +209,8 @@ def lensGrindingBenchLayoutSourceFile = file('src/main/java/io/github/yoglapplan
 def lensGrindingBenchScreenSourceFile = file('src/main/java/io/github/yoglappland/spectralization/client/screen/LensGrindingBenchScreen.java')
 def lensGuiTextureDir = file('src/main/resources/assets/spectralization/textures/gui/lens')
 def metamaterialDesignTableLayoutSourceFile = file('src/main/java/io/github/yoglappland/spectralization/menu/MetamaterialDesignTableLayout.java')
+def basicLithographyMachineLayoutSourceFile = file('src/main/java/io/github/yoglappland/spectralization/menu/BasicLithographyMachineLayout.java')
+def basicLithographyMachineScreenSourceFile = file('src/main/java/io/github/yoglappland/spectralization/client/screen/BasicLithographyMachineScreen.java')
 tasks.register('verifyThermalSmelterUiLayout') {
     inputs.file(thermalSmelterLayoutSourceFile)
 
@@ -878,10 +880,288 @@ tasks.register('verifyMetamaterialDesignTableUiLayout') {
     }
 }
 
+tasks.register('verifyBasicLithographyMachineUiLayout') {
+    inputs.files(basicLithographyMachineLayoutSourceFile, basicLithographyMachineScreenSourceFile)
+
+    doLast {
+        def source = basicLithographyMachineLayoutSourceFile.text
+        def screenSource = basicLithographyMachineScreenSourceFile.text
+        def constants = [:]
+        def constantsPattern = ~/public static final int\s+([A-Z0-9_]+)\s*=\s*([^;]+);/
+
+        10.times {
+            (source =~ constantsPattern).each { match ->
+                def name = match[1]
+                def expression = match[2]
+                if (!constants.containsKey(name)) {
+                    def resolvedExpression = expression.replaceAll(/\b[A-Z][A-Z0-9_]*\b/) { token ->
+                        def key = token.toString()
+                        constants.containsKey(key) ? constants[key].toString() : key
+                    }
+
+                    if (resolvedExpression ==~ '[0-9+\\-*/ ()]+') {
+                        constants[name] = groovy.util.Eval.me(resolvedExpression) as int
+                    }
+                }
+            }
+        }
+
+        def intValue = { String name ->
+            if (!constants.containsKey(name)) {
+                throw new GradleException("Could not resolve BasicLithographyMachineLayout constant '${name}' for UI layout verification.")
+            }
+            constants[name] as int
+        }
+        def rect = { String name, int x, int y, int width, int height ->
+            [name: name, x: x, y: y, width: width, height: height]
+        }
+        def overlaps = { a, b ->
+            a.x < b.x + b.width
+                    && a.x + a.width > b.x
+                    && a.y < b.y + b.height
+                    && a.y + a.height > b.y
+        }
+        def contains = { outer, inner ->
+            inner.x >= outer.x
+                    && inner.y >= outer.y
+                    && inner.x + inner.width <= outer.x + outer.width
+                    && inner.y + inner.height <= outer.y + outer.height
+        }
+        def assertInside = { outer, inner ->
+            if (!contains(outer, inner)) {
+                throw new GradleException("Basic lithography machine layout '${inner.name}' must stay inside '${outer.name}'.")
+            }
+        }
+        def assertNoOverlap = { String label, List areas ->
+            def collisions = []
+            for (int leftIndex = 0; leftIndex < areas.size(); leftIndex++) {
+                for (int rightIndex = leftIndex + 1; rightIndex < areas.size(); rightIndex++) {
+                    if (overlaps(areas[leftIndex], areas[rightIndex])) {
+                        collisions.add("${areas[leftIndex].name}<->${areas[rightIndex].name}")
+                    }
+                }
+            }
+            if (!collisions.isEmpty()) {
+                throw new GradleException("Basic lithography machine ${label} overlap: ${collisions.join(', ')}")
+            }
+        }
+        def assertNear = { name, actualValue, expectedValue, toleranceValue ->
+            double actual = actualValue as double
+            double expected = expectedValue as double
+            double tolerance = toleranceValue as double
+            if (Math.abs(actual - expected) > tolerance) {
+                throw new GradleException("${name} should sit near ${expected.round(2)}, but was ${actual.round(2)}.")
+            }
+        }
+
+        ['FREQUENCY_BOX', 'DATA_FREQUENCY', 'tooltip.frequency'].each { token ->
+            if (screenSource.contains(token) || source.contains(token)) {
+                throw new GradleException("Basic lithography machine UI must not reintroduce frequency channel token '${token}'.")
+            }
+        }
+
+        def slotSize = intValue('SLOT_SIZE')
+        def screen = rect('screen', 0, 0, intValue('IMAGE_WIDTH'), intValue('IMAGE_HEIGHT'))
+        def machine = rect('machine_panel', 0, 0, intValue('IMAGE_WIDTH'), intValue('MACHINE_HEIGHT'))
+        def leftPanel = rect('left_input_panel', intValue('LEFT_PANEL_X'), intValue('SIDE_PANEL_Y'), intValue('SIDE_PANEL_WIDTH'), intValue('SIDE_PANEL_HEIGHT'))
+        def rightPanel = rect('right_output_panel', intValue('RIGHT_PANEL_X'), intValue('SIDE_PANEL_Y'), intValue('SIDE_PANEL_WIDTH'), intValue('SIDE_PANEL_HEIGHT'))
+        def chamber = rect('main_chamber', intValue('CHAMBER_X'), intValue('CHAMBER_Y'), intValue('CHAMBER_WIDTH'), intValue('CHAMBER_HEIGHT'))
+        def chamberInner = rect('main_chamber_inner', intValue('CHAMBER_INNER_X'), intValue('CHAMBER_INNER_Y'), intValue('CHAMBER_INNER_WIDTH'), intValue('CHAMBER_INNER_HEIGHT'))
+        def mainPanel = rect('main_panel', intValue('MAIN_PANEL_X'), intValue('MAIN_PANEL_Y'), intValue('MAIN_PANEL_WIDTH'), intValue('MAIN_PANEL_HEIGHT'))
+
+        [leftPanel, rightPanel, chamber].each { assertInside(machine, it) }
+        [chamberInner, mainPanel].each { assertInside(chamber, it) }
+        if (intValue('SIDE_PANEL_HEIGHT') != intValue('CHAMBER_HEIGHT')) {
+            throw new GradleException('Basic lithography machine left, center, and right boxes must share the same height.')
+        }
+        if (intValue('RIGHT_PANEL_X') != intValue('IMAGE_WIDTH') - intValue('LEFT_PANEL_X') - intValue('SIDE_PANEL_WIDTH')) {
+            throw new GradleException('Basic lithography machine left and right boxes must mirror across the screen center.')
+        }
+        if (intValue('CHAMBER_X') * 2 + intValue('CHAMBER_WIDTH') != intValue('IMAGE_WIDTH')) {
+            throw new GradleException('Basic lithography machine main chamber must be horizontally centered.')
+        }
+
+        def leftOuterGap = intValue('LEFT_PANEL_X')
+        def rightOuterGap = intValue('IMAGE_WIDTH') - (intValue('RIGHT_PANEL_X') + intValue('SIDE_PANEL_WIDTH'))
+        def leftInnerGap = intValue('CHAMBER_X') - (intValue('LEFT_PANEL_X') + intValue('SIDE_PANEL_WIDTH'))
+        def rightInnerGap = intValue('RIGHT_PANEL_X') - (intValue('CHAMBER_X') + intValue('CHAMBER_WIDTH'))
+        if (leftOuterGap != rightOuterGap || leftInnerGap != rightInnerGap) {
+            throw new GradleException("Basic lithography machine horizontal gaps must mirror: ${[leftOuterGap, leftInnerGap, rightInnerGap, rightOuterGap].join(', ')}")
+        }
+
+        def leftSlots = [
+                rect('left_input_0', intValue('LEFT_ITEM_INPUT_0_X'), intValue('LEFT_ITEM_INPUT_TOP_Y'), slotSize, slotSize),
+                rect('left_input_1', intValue('LEFT_ITEM_INPUT_1_X'), intValue('LEFT_ITEM_INPUT_TOP_Y'), slotSize, slotSize),
+                rect('left_input_2', intValue('LEFT_ITEM_INPUT_0_X'), intValue('LEFT_ITEM_INPUT_BOTTOM_Y'), slotSize, slotSize),
+                rect('left_input_3', intValue('LEFT_ITEM_INPUT_1_X'), intValue('LEFT_ITEM_INPUT_BOTTOM_Y'), slotSize, slotSize)
+        ]
+        def rightSlots = [
+                rect('right_output_0', intValue('RIGHT_ITEM_OUTPUT_0_X'), intValue('RIGHT_ITEM_OUTPUT_TOP_Y'), slotSize, slotSize),
+                rect('right_output_1', intValue('RIGHT_ITEM_OUTPUT_1_X'), intValue('RIGHT_ITEM_OUTPUT_TOP_Y'), slotSize, slotSize),
+                rect('right_output_2', intValue('RIGHT_ITEM_OUTPUT_0_X'), intValue('RIGHT_ITEM_OUTPUT_BOTTOM_Y'), slotSize, slotSize),
+                rect('right_output_3', intValue('RIGHT_ITEM_OUTPUT_1_X'), intValue('RIGHT_ITEM_OUTPUT_BOTTOM_Y'), slotSize, slotSize)
+        ]
+        leftSlots.each { assertInside(leftPanel, it) }
+        rightSlots.each { assertInside(rightPanel, it) }
+        assertNoOverlap('left input slot', leftSlots)
+        assertNoOverlap('right output slot', rightSlots)
+
+        assertNear('Basic lithography input/output top-left mirror', intValue('LEFT_ITEM_INPUT_0_X') + intValue('RIGHT_ITEM_OUTPUT_1_X') + slotSize, intValue('IMAGE_WIDTH'), 0.0)
+        assertNear('Basic lithography input/output top-right mirror', intValue('LEFT_ITEM_INPUT_1_X') + intValue('RIGHT_ITEM_OUTPUT_0_X') + slotSize, intValue('IMAGE_WIDTH'), 0.0)
+        assertNear('Basic lithography input/output bottom-left mirror', intValue('LEFT_ITEM_INPUT_0_X') + intValue('RIGHT_ITEM_OUTPUT_1_X') + slotSize, intValue('IMAGE_WIDTH'), 0.0)
+        assertNear('Basic lithography input/output bottom-right mirror', intValue('LEFT_ITEM_INPUT_1_X') + intValue('RIGHT_ITEM_OUTPUT_0_X') + slotSize, intValue('IMAGE_WIDTH'), 0.0)
+        if (intValue('SIDE_GRID_X_INSET') * 2 + slotSize * 2 + intValue('SIDE_SLOT_GAP') != intValue('SIDE_PANEL_WIDTH')) {
+            throw new GradleException('Basic lithography side 2x2 slot grids must have symmetric horizontal padding.')
+        }
+
+        def templateSlots = [
+                rect('template_input_a', intValue('TEMPLATE_LEFT_X'), intValue('TEMPLATE_INPUT_Y'), slotSize, slotSize),
+                rect('template_input_b', intValue('TEMPLATE_RIGHT_X'), intValue('TEMPLATE_INPUT_Y'), slotSize, slotSize),
+                rect('template_output_a', intValue('TEMPLATE_LEFT_X'), intValue('TEMPLATE_OUTPUT_Y'), slotSize, slotSize),
+                rect('template_output_b', intValue('TEMPLATE_RIGHT_X'), intValue('TEMPLATE_OUTPUT_Y'), slotSize, slotSize)
+        ]
+        def energyBar = rect('energy_bar', intValue('ENERGY_BAR_X'), intValue('ENERGY_BAR_Y'), intValue('BAR_WIDTH'), intValue('BAR_HEIGHT'))
+        def opticalBar = rect('optical_bar', intValue('OPTICAL_BAR_X'), intValue('OPTICAL_BAR_Y'), intValue('BAR_WIDTH'), intValue('BAR_HEIGHT'))
+        def recipeArrow = rect('recipe_arrow', intValue('RECIPE_ARROW_X'), intValue('RECIPE_ARROW_Y'), intValue('RECIPE_ARROW_WIDTH'), intValue('RECIPE_ARROW_HEIGHT'))
+        def ruleButton = rect('rule_button', intValue('RULE_BUTTON_X'), intValue('RULE_BUTTON_Y'), intValue('RULE_BUTTON_WIDTH'), intValue('RULE_BUTTON_HEIGHT'))
+        def inputTemplateConnector = rect('template_input_connector', intValue('TEMPLATE_CONNECTOR_X'), intValue('TEMPLATE_INPUT_LINE_Y'),
+                intValue('TEMPLATE_CONNECTOR_WIDTH'), 1)
+        def outputTemplateConnector = rect('template_output_connector', intValue('TEMPLATE_CONNECTOR_X'), intValue('TEMPLATE_OUTPUT_LINE_Y'),
+                intValue('TEMPLATE_CONNECTOR_WIDTH'), 1)
+        def progressBar = rect('progress_bar', intValue('PROGRESS_BAR_X') - 2, intValue('PROGRESS_BAR_Y') - 2,
+                intValue('PROGRESS_BAR_WIDTH') + 4, intValue('PROGRESS_BAR_HEIGHT') + 4)
+        def leftMainRegion = rect('left_main_region', intValue('MAIN_PANEL_X'), intValue('MAIN_PANEL_Y'),
+                intValue('MAIN_SIDE_REGION_WIDTH'), intValue('MAIN_PANEL_HEIGHT'))
+        def centerMainRegion = rect('center_main_region', intValue('MAIN_LEFT_DIVIDER_X'), intValue('MAIN_PANEL_Y'),
+                intValue('MAIN_RIGHT_DIVIDER_X') - intValue('MAIN_LEFT_DIVIDER_X'), intValue('MAIN_PANEL_HEIGHT'))
+        def centerUpperRegion = rect('center_upper_region', intValue('MAIN_LEFT_DIVIDER_X'), intValue('MAIN_PANEL_Y'),
+                intValue('MAIN_RIGHT_DIVIDER_X') - intValue('MAIN_LEFT_DIVIDER_X'), intValue('CENTER_PROGRESS_AREA_Y') - intValue('MAIN_PANEL_Y'))
+        def centerProgressRegion = rect('center_progress_region', intValue('MAIN_LEFT_DIVIDER_X'), intValue('CENTER_PROGRESS_AREA_Y'),
+                intValue('MAIN_RIGHT_DIVIDER_X') - intValue('MAIN_LEFT_DIVIDER_X'),
+                intValue('MAIN_PANEL_Y') + intValue('MAIN_PANEL_HEIGHT') - intValue('CENTER_PROGRESS_AREA_Y'))
+        def rightMainRegion = rect('right_main_region', intValue('MAIN_RIGHT_DIVIDER_X'), intValue('MAIN_PANEL_Y'),
+                intValue('MAIN_SIDE_REGION_WIDTH'), intValue('MAIN_PANEL_HEIGHT'))
+
+        [leftMainRegion, centerMainRegion, centerUpperRegion, centerProgressRegion, rightMainRegion].each { assertInside(mainPanel, it) }
+        if (intValue('MAIN_SIDE_REGION_WIDTH') * 3 >= intValue('MAIN_PANEL_WIDTH')) {
+            throw new GradleException('Basic lithography machine side main-panel regions must stay visually secondary to the center region.')
+        }
+        if (intValue('MAIN_LEFT_DIVIDER_X') != intValue('MAIN_PANEL_X') + intValue('MAIN_SIDE_REGION_WIDTH')
+                || intValue('MAIN_RIGHT_DIVIDER_X') != intValue('MAIN_PANEL_X') + intValue('MAIN_PANEL_WIDTH') - intValue('MAIN_SIDE_REGION_WIDTH')) {
+            throw new GradleException('Basic lithography machine main-panel dividers must follow the configured side region width.')
+        }
+        assertNear('Basic lithography main side regions mirror',
+                intValue('MAIN_LEFT_DIVIDER_X') + intValue('MAIN_RIGHT_DIVIDER_X'),
+                2.0 * (intValue('MAIN_PANEL_X') + intValue('MAIN_PANEL_WIDTH') / 2.0),
+                0.0)
+
+        [energyBar].each { assertInside(leftMainRegion, it) }
+        [opticalBar].each { assertInside(rightMainRegion, it) }
+        (templateSlots + [recipeArrow, inputTemplateConnector, outputTemplateConnector]).each { assertInside(centerUpperRegion, it) }
+        assertInside(centerProgressRegion, progressBar)
+        assertNoOverlap('template slot', templateSlots)
+        assertNoOverlap('main control', templateSlots + [energyBar, opticalBar, recipeArrow, inputTemplateConnector, outputTemplateConnector, progressBar])
+        if (intValue('RULE_BUTTON_X') >= 0
+                || intValue('RULE_BUTTON_X') + intValue('RULE_BUTTON_WIDTH') <= 0
+                || intValue('RULE_BUTTON_X') + intValue('RULE_BUTTON_WIDTH') > 2
+                || intValue('RULE_BUTTON_Y') < 0
+                || intValue('RULE_BUTTON_Y') + intValue('RULE_BUTTON_HEIGHT') > intValue('MACHINE_HEIGHT')) {
+            throw new GradleException('Basic lithography machine template rule button must hang from the left edge of the machine window.')
+        }
+        if (intValue('TEMPLATE_LEFT_X') * 2 + intValue('TEMPLATE_PAIR_WIDTH') != intValue('IMAGE_WIDTH')) {
+            throw new GradleException('Basic lithography template slot pair must stay centered.')
+        }
+        if (intValue('RECIPE_ARROW_X') * 2 + intValue('RECIPE_ARROW_WIDTH') != intValue('IMAGE_WIDTH')) {
+            throw new GradleException('Basic lithography recipe arrow must stay centered.')
+        }
+        def inputToArrowGap = intValue('RECIPE_ARROW_Y') - (intValue('TEMPLATE_INPUT_Y') + slotSize)
+        def arrowToOutputGap = intValue('TEMPLATE_OUTPUT_Y') - (intValue('RECIPE_ARROW_Y') + intValue('RECIPE_ARROW_HEIGHT'))
+        if (inputToArrowGap != arrowToOutputGap || inputToArrowGap < 7) {
+            throw new GradleException("Basic lithography template slots must mirror vertically around the recipe arrow: ${inputToArrowGap}, ${arrowToOutputGap}")
+        }
+        if (intValue('RECIPE_ARROW_Y') - intValue('TEMPLATE_INPUT_LINE_Y') < 3
+                || intValue('TEMPLATE_OUTPUT_LINE_Y') - (intValue('RECIPE_ARROW_Y') + intValue('RECIPE_ARROW_HEIGHT')) < 2) {
+            throw new GradleException('Basic lithography mask connector lines must keep a visible gap from the recipe arrow.')
+        }
+        assertNear('Basic lithography template stack vertical mirror',
+                intValue('TEMPLATE_INPUT_Y') + slotSize / 2.0 + intValue('TEMPLATE_OUTPUT_Y') + slotSize / 2.0,
+                2.0 * (intValue('RECIPE_ARROW_Y') + intValue('RECIPE_ARROW_HEIGHT') / 2.0),
+                0.0)
+        assertNear('Basic lithography progress bar center',
+                intValue('PROGRESS_BAR_X') + intValue('PROGRESS_BAR_WIDTH') / 2.0,
+                intValue('IMAGE_WIDTH') / 2.0,
+                0.0)
+        assertNear('Basic lithography energy/optical bars mirror',
+                intValue('ENERGY_BAR_X') + intValue('BAR_WIDTH') / 2.0 + intValue('OPTICAL_BAR_X') + intValue('BAR_WIDTH') / 2.0,
+                2.0 * (intValue('MAIN_PANEL_X') + intValue('MAIN_PANEL_WIDTH') / 2.0),
+                0.0)
+
+        def hoverSize = slotSize + 4
+        def hoverAreas = [
+                rect('left_input_0_hover', intValue('LEFT_ITEM_INPUT_0_X') - 2, intValue('LEFT_ITEM_INPUT_TOP_Y') - 2, hoverSize, hoverSize),
+                rect('left_input_1_hover', intValue('LEFT_ITEM_INPUT_1_X') - 2, intValue('LEFT_ITEM_INPUT_TOP_Y') - 2, hoverSize, hoverSize),
+                rect('left_input_2_hover', intValue('LEFT_ITEM_INPUT_0_X') - 2, intValue('LEFT_ITEM_INPUT_BOTTOM_Y') - 2, hoverSize, hoverSize),
+                rect('left_input_3_hover', intValue('LEFT_ITEM_INPUT_1_X') - 2, intValue('LEFT_ITEM_INPUT_BOTTOM_Y') - 2, hoverSize, hoverSize),
+                rect('right_output_0_hover', intValue('RIGHT_ITEM_OUTPUT_0_X') - 2, intValue('RIGHT_ITEM_OUTPUT_TOP_Y') - 2, hoverSize, hoverSize),
+                rect('right_output_1_hover', intValue('RIGHT_ITEM_OUTPUT_1_X') - 2, intValue('RIGHT_ITEM_OUTPUT_TOP_Y') - 2, hoverSize, hoverSize),
+                rect('right_output_2_hover', intValue('RIGHT_ITEM_OUTPUT_0_X') - 2, intValue('RIGHT_ITEM_OUTPUT_BOTTOM_Y') - 2, hoverSize, hoverSize),
+                rect('right_output_3_hover', intValue('RIGHT_ITEM_OUTPUT_1_X') - 2, intValue('RIGHT_ITEM_OUTPUT_BOTTOM_Y') - 2, hoverSize, hoverSize),
+                rect('template_input_a_hover', intValue('TEMPLATE_LEFT_X') - 2, intValue('TEMPLATE_INPUT_Y') - 2, hoverSize, hoverSize),
+                rect('template_input_b_hover', intValue('TEMPLATE_RIGHT_X') - 2, intValue('TEMPLATE_INPUT_Y') - 2, hoverSize, hoverSize),
+                rect('template_output_a_hover', intValue('TEMPLATE_LEFT_X') - 2, intValue('TEMPLATE_OUTPUT_Y') - 2, hoverSize, hoverSize),
+                rect('template_output_b_hover', intValue('TEMPLATE_RIGHT_X') - 2, intValue('TEMPLATE_OUTPUT_Y') - 2, hoverSize, hoverSize),
+                rect('energy_bar_hover', intValue('ENERGY_BAR_X') - 2, intValue('ENERGY_BAR_Y') - 2, intValue('BAR_WIDTH') + 4, intValue('BAR_HEIGHT') + 4),
+                rect('optical_bar_hover', intValue('OPTICAL_BAR_X') - 2, intValue('OPTICAL_BAR_Y') - 2, intValue('BAR_WIDTH') + 4, intValue('BAR_HEIGHT') + 4),
+                rect('recipe_arrow_hover', intValue('RECIPE_ARROW_X'), intValue('RECIPE_ARROW_Y'), intValue('RECIPE_ARROW_WIDTH'), intValue('RECIPE_ARROW_HEIGHT'))
+        ]
+        def ruleButtonHover = rect('rule_button_hover', intValue('RULE_BUTTON_X'), intValue('RULE_BUTTON_Y'), intValue('RULE_BUTTON_WIDTH'), intValue('RULE_BUTTON_HEIGHT'))
+        def screenWithLeftTab = rect('screen_with_left_tab', intValue('RULE_BUTTON_X'), 0,
+                intValue('IMAGE_WIDTH') - intValue('RULE_BUTTON_X'), intValue('IMAGE_HEIGHT'))
+        hoverAreas.each { assertInside(screen, it) }
+        assertInside(screenWithLeftTab, ruleButtonHover)
+        assertNoOverlap('hover area', hoverAreas + [ruleButtonHover])
+
+        if (intValue('ITEM_TEMPLATE_INPUT_A_X') != intValue('TEMPLATE_LEFT_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_TEMPLATE_INPUT_A_Y') != intValue('TEMPLATE_INPUT_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_TEMPLATE_INPUT_B_X') != intValue('TEMPLATE_RIGHT_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_TEMPLATE_INPUT_B_Y') != intValue('TEMPLATE_INPUT_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_TEMPLATE_OUTPUT_A_X') != intValue('TEMPLATE_LEFT_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_TEMPLATE_OUTPUT_A_Y') != intValue('TEMPLATE_OUTPUT_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_TEMPLATE_OUTPUT_B_X') != intValue('TEMPLATE_RIGHT_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_TEMPLATE_OUTPUT_B_Y') != intValue('TEMPLATE_OUTPUT_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_INPUT_0_X') != intValue('LEFT_ITEM_INPUT_0_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_INPUT_0_Y') != intValue('LEFT_ITEM_INPUT_TOP_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_INPUT_1_X') != intValue('LEFT_ITEM_INPUT_1_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_INPUT_1_Y') != intValue('LEFT_ITEM_INPUT_TOP_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_INPUT_2_X') != intValue('LEFT_ITEM_INPUT_0_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_INPUT_2_Y') != intValue('LEFT_ITEM_INPUT_BOTTOM_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_INPUT_3_X') != intValue('LEFT_ITEM_INPUT_1_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_INPUT_3_Y') != intValue('LEFT_ITEM_INPUT_BOTTOM_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_OUTPUT_0_X') != intValue('RIGHT_ITEM_OUTPUT_0_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_OUTPUT_0_Y') != intValue('RIGHT_ITEM_OUTPUT_TOP_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_OUTPUT_1_X') != intValue('RIGHT_ITEM_OUTPUT_1_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_OUTPUT_1_Y') != intValue('RIGHT_ITEM_OUTPUT_TOP_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_OUTPUT_2_X') != intValue('RIGHT_ITEM_OUTPUT_0_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_OUTPUT_2_Y') != intValue('RIGHT_ITEM_OUTPUT_BOTTOM_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_OUTPUT_3_X') != intValue('RIGHT_ITEM_OUTPUT_1_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_OUTPUT_3_Y') != intValue('RIGHT_ITEM_OUTPUT_BOTTOM_Y') + intValue('ITEM_SLOT_INSET')) {
+            throw new GradleException('Basic lithography machine item render slots must stay inset from visible 18px slot frames.')
+        }
+
+        if (intValue('PLAYER_INVENTORY_X') * 2 + 9 * slotSize != intValue('IMAGE_WIDTH')
+                || intValue('PLAYER_INVENTORY_ITEM_X') != intValue('PLAYER_INVENTORY_X')
+                || intValue('PLAYER_INVENTORY_ITEM_Y') != intValue('PLAYER_INVENTORY_Y')) {
+            throw new GradleException('Basic lithography machine player inventory must stay centered; menu slot origins must match the 16px item origin inside visible 18px frames.')
+        }
+        [machine, leftPanel, rightPanel, chamber, chamberInner, mainPanel].each { assertInside(screen, it) }
+    }
+}
+
 tasks.named('check') {
     dependsOn tasks.named('verifyThermalSmelterUiLayout')
     dependsOn tasks.named('verifyLensGrindingBenchUiLayout')
     dependsOn tasks.named('verifyMetamaterialDesignTableUiLayout')
+    dependsOn tasks.named('verifyBasicLithographyMachineUiLayout')
 }
 
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.

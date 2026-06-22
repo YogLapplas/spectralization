@@ -19,6 +19,11 @@ public final class SpectralCapabilities {
                 (generator, side) -> generator.getEnergyStorage(side)
         );
         event.registerBlockEntity(
+                Capabilities.EnergyStorage.BLOCK,
+                SpectralBlockEntities.BASIC_LITHOGRAPHY_MACHINE.get(),
+                (machine, side) -> machine.getEnergyStorage(side)
+        );
+        event.registerBlockEntity(
                 Capabilities.ItemHandler.BLOCK,
                 SpectralBlockEntities.PHOTOTHERMAL_GENERATOR.get(),
                 (generator, side) -> generator.getFuelItems(side)
@@ -32,6 +37,11 @@ public final class SpectralCapabilities {
                 Capabilities.ItemHandler.BLOCK,
                 SpectralBlockEntities.METAMATERIAL_DESIGN_TABLE.get(),
                 (table, side) -> table.getItems(side)
+        );
+        event.registerBlockEntity(
+                Capabilities.ItemHandler.BLOCK,
+                SpectralBlockEntities.BASIC_LITHOGRAPHY_MACHINE.get(),
+                (machine, side) -> machine.getItems(side)
         );
         event.registerBlockEntity(
                 Capabilities.ItemHandler.BLOCK,

@@ -12,7 +12,11 @@ public final class SpectralCreativeTabItems {
         output.accept(Spectralization.LENS.get());
         output.accept(Spectralization.STANDARD_METAMATERIAL_TEMPLATE.get());
         output.accept(Spectralization.CUSTOM_METAMATERIAL_TEMPLATE.get());
+        output.accept(Spectralization.BASIC_MASK.get());
         output.accept(SingularMaterialData.PRIMORDIAL.createStack());
+        output.accept(Spectralization.PRIMITIVE_CIRCUIT_BOARD.get());
+        output.accept(Spectralization.ADVANCED_CIRCUIT_BOARD.get());
+        output.accept(Spectralization.PRECISION_CIRCUIT_BOARD.get());
         output.accept(Spectralization.OPTICAL_FIBER_COIL.get());
         output.accept(Spectralization.PHOSPHOR_DUST.get());
         output.accept(Spectralization.PHOSPHOR_TUBE.get());
@@ -45,6 +49,7 @@ public final class SpectralCreativeTabItems {
         output.accept(Spectralization.LENS_HOLDER_ITEM.get());
         output.accept(Spectralization.LENS_GRINDING_BENCH_ITEM.get());
         output.accept(Spectralization.METAMATERIAL_DESIGN_TABLE_ITEM.get());
+        output.accept(Spectralization.BASIC_LITHOGRAPHY_MACHINE_ITEM.get());
         output.accept(Spectralization.FIBER_OPTIC_INTERFACE_ITEM.get());
         output.accept(Spectralization.FIBER_RELAY_ITEM.get());
         output.accept(Spectralization.HOLOGRAPHIC_STORAGE_SHELL_ITEM.get());

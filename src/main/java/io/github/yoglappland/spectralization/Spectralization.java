@@ -3,6 +3,7 @@ package io.github.yoglappland.spectralization;
 import com.mojang.logging.LogUtils;
 import io.github.yoglappland.spectralization.block.BeamProfilerBlock;
 import io.github.yoglappland.spectralization.block.BeamSplitterBlock;
+import io.github.yoglappland.spectralization.block.BasicLithographyMachineBlock;
 import io.github.yoglappland.spectralization.block.CmosSensorBlock;
 import io.github.yoglappland.spectralization.block.CompactMachineAnchorBlock;
 import io.github.yoglappland.spectralization.block.CompactMachineCoreBlock;
@@ -109,10 +110,18 @@ public class Spectralization {
             "custom_metamaterial_template",
             () -> new MetamaterialTemplateItem(new Item.Properties())
     );
+    public static final DeferredItem<Item> BASIC_MASK =
+            ITEMS.registerSimpleItem("basic_mask", new Item.Properties());
     public static final DeferredItem<SingularMaterialItem> SINGULAR_MATERIAL = ITEMS.register(
             "singular_material",
             () -> new SingularMaterialItem(new Item.Properties())
     );
+    public static final DeferredItem<Item> PRIMITIVE_CIRCUIT_BOARD =
+            ITEMS.registerSimpleItem("primitive_circuit_board", new Item.Properties());
+    public static final DeferredItem<Item> ADVANCED_CIRCUIT_BOARD =
+            ITEMS.registerSimpleItem("advanced_circuit_board", new Item.Properties());
+    public static final DeferredItem<Item> PRECISION_CIRCUIT_BOARD =
+            ITEMS.registerSimpleItem("precision_circuit_board", new Item.Properties());
     public static final DeferredItem<OpticalFiberCoilItem> OPTICAL_FIBER_COIL = ITEMS.register(
             "optical_fiber_coil",
             () -> new OpticalFiberCoilItem(new Item.Properties().stacksTo(1))
@@ -252,6 +261,21 @@ public class Spectralization {
 
     public static final DeferredItem<BlockItem> METAMATERIAL_DESIGN_TABLE_ITEM =
             ITEMS.registerSimpleBlockItem("metamaterial_design_table", METAMATERIAL_DESIGN_TABLE);
+
+    public static final DeferredBlock<BasicLithographyMachineBlock> BASIC_LITHOGRAPHY_MACHINE = BLOCKS.register(
+            "basic_lithography_machine",
+            () -> new BasicLithographyMachineBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(2.0F, 6.0F)
+                    .sound(SoundType.METAL)
+                    .noOcclusion()
+                    .isRedstoneConductor((state, level, pos) -> false)
+                    .isSuffocating((state, level, pos) -> false)
+                    .isViewBlocking((state, level, pos) -> false))
+    );
+
+    public static final DeferredItem<BlockItem> BASIC_LITHOGRAPHY_MACHINE_ITEM =
+            ITEMS.registerSimpleBlockItem("basic_lithography_machine", BASIC_LITHOGRAPHY_MACHINE);
 
     public static final DeferredBlock<FiberOpticInterfaceBlock> FIBER_OPTIC_INTERFACE = BLOCKS.register(
             "fiber_optic_interface",

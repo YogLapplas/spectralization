@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization.registry;
 
 import io.github.yoglappland.spectralization.Spectralization;
+import io.github.yoglappland.spectralization.blockentity.BasicLithographyMachineBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.BeamProfilerBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.CmosSensorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.CompactMachineCoreBlockEntity;
@@ -46,6 +47,13 @@ public final class SpectralBlockEntities {
                     BlockEntityType.Builder.of(
                             MetamaterialDesignTableBlockEntity::new,
                             Spectralization.METAMATERIAL_DESIGN_TABLE.get()
+                    ).build(null));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<BasicLithographyMachineBlockEntity>> BASIC_LITHOGRAPHY_MACHINE =
+            BLOCK_ENTITY_TYPES.register("basic_lithography_machine", () ->
+                    BlockEntityType.Builder.of(
+                            BasicLithographyMachineBlockEntity::new,
+                            Spectralization.BASIC_LITHOGRAPHY_MACHINE.get()
                     ).build(null));
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<FiberOpticInterfaceBlockEntity>> FIBER_OPTIC_INTERFACE =

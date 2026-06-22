@@ -19,6 +19,7 @@ public final class SpectralItemTags {
     public static final TagKey<Item> REFLECTIVE_MATERIAL = item("reflective_material");
     public static final TagKey<Item> OPTICAL_FIBER = item("optical_fiber");
     public static final TagKey<Item> METASURFACE_TEMPLATE = item("metasurface_template");
+    public static final TagKey<Item> LITHOGRAPHY_MASK = item("lithography_mask");
     public static final TagKey<Item> STANDARD_METAMATERIAL_TEMPLATE = item("standard_metamaterial_template");
     public static final TagKey<Item> CUSTOM_METAMATERIAL_TEMPLATE = item("custom_metamaterial_template");
     public static final TagKey<Item> GRINDING_KNIVES = item("grinding_knives");

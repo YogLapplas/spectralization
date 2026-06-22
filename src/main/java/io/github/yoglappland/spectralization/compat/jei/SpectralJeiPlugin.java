@@ -1,9 +1,14 @@
 package io.github.yoglappland.spectralization.compat.jei;
 
 import io.github.yoglappland.spectralization.Spectralization;
+import io.github.yoglappland.spectralization.blockentity.BasicLithographyMachineBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.ThermalSmelterBlockEntity;
+import io.github.yoglappland.spectralization.client.screen.BasicLithographyMachineScreen;
 import io.github.yoglappland.spectralization.client.screen.ThermalSmelterScreen;
+import io.github.yoglappland.spectralization.machine.BasicLithographyRecipe;
 import io.github.yoglappland.spectralization.machine.ThermalSmelterRecipe;
+import io.github.yoglappland.spectralization.menu.BasicLithographyMachineLayout;
+import io.github.yoglappland.spectralization.menu.BasicLithographyMachineMenu;
 import io.github.yoglappland.spectralization.menu.ThermalSmelterLayout;
 import io.github.yoglappland.spectralization.menu.ThermalSmelterMenu;
 import io.github.yoglappland.spectralization.registry.SpectralMenus;
@@ -22,6 +27,8 @@ import net.minecraft.world.item.ItemStack;
 public final class SpectralJeiPlugin implements IModPlugin {
     public static final RecipeType<ThermalSmelterRecipe> THERMAL_SMELTER =
             RecipeType.create(Spectralization.MODID, "thermal_smelter", ThermalSmelterRecipe.class);
+    public static final RecipeType<BasicLithographyRecipe> BASIC_LITHOGRAPHY =
+            RecipeType.create(Spectralization.MODID, "basic_lithography", BasicLithographyRecipe.class);
 
     @Override
     public ResourceLocation getPluginUid() {
@@ -30,17 +37,22 @@ public final class SpectralJeiPlugin implements IModPlugin {
 
     @Override
     public void registerCategories(IRecipeCategoryRegistration registration) {
-        registration.addRecipeCategories(new ThermalSmelterRecipeCategory(registration.getJeiHelpers().getGuiHelper()));
+        registration.addRecipeCategories(
+                new ThermalSmelterRecipeCategory(registration.getJeiHelpers().getGuiHelper()),
+                new BasicLithographyRecipeCategory(registration.getJeiHelpers().getGuiHelper())
+        );
     }
 
     @Override
     public void registerRecipes(IRecipeRegistration registration) {
         registration.addRecipes(THERMAL_SMELTER, ThermalSmelterRecipe.recipes());
+        registration.addRecipes(BASIC_LITHOGRAPHY, BasicLithographyRecipe.recipes());
     }
 
     @Override
     public void registerRecipeCatalysts(IRecipeCatalystRegistration registration) {
         registration.addRecipeCatalyst(new ItemStack(Spectralization.THERMAL_SMELTER_ITEM.get()), THERMAL_SMELTER);
+        registration.addRecipeCatalyst(new ItemStack(Spectralization.BASIC_LITHOGRAPHY_MACHINE_ITEM.get()), BASIC_LITHOGRAPHY);
     }
 
     @Override
@@ -53,6 +65,14 @@ public final class SpectralJeiPlugin implements IModPlugin {
                 ThermalSmelterLayout.PROCESS_RECIPE_CLICK_HEIGHT,
                 THERMAL_SMELTER
         );
+        registration.addRecipeClickArea(
+                BasicLithographyMachineScreen.class,
+                BasicLithographyMachineLayout.RECIPE_ARROW_X,
+                BasicLithographyMachineLayout.RECIPE_ARROW_Y,
+                BasicLithographyMachineLayout.RECIPE_ARROW_WIDTH,
+                BasicLithographyMachineLayout.RECIPE_ARROW_HEIGHT,
+                BASIC_LITHOGRAPHY
+        );
     }
 
     @Override
@@ -64,6 +84,15 @@ public final class SpectralJeiPlugin implements IModPlugin {
                 0,
                 2,
                 ThermalSmelterBlockEntity.SLOT_COUNT,
+                36
+        );
+        registration.addRecipeTransferHandler(
+                BasicLithographyMachineMenu.class,
+                SpectralMenus.BASIC_LITHOGRAPHY_MACHINE.get(),
+                BASIC_LITHOGRAPHY,
+                0,
+                6,
+                BasicLithographyMachineBlockEntity.SLOT_COUNT,
                 36
         );
     }

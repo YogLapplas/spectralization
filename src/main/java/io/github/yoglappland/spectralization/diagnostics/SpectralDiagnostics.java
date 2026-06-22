@@ -46,6 +46,7 @@ public final class SpectralDiagnostics {
         public static final String COMPACT_MACHINE = "compact_machine";
         public static final String FIBER = "fiber";
         public static final String HOLOGRAPHIC_STORAGE = "holographic_storage";
+        public static final String LITHOGRAPHY = "lithography";
 
         private Subsystem() {
         }

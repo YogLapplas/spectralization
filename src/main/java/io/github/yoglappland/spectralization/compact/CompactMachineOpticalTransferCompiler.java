@@ -286,7 +286,7 @@ public final class CompactMachineOpticalTransferCompiler {
             BeamPacket inputBeam
     ) {
         for (FiberOpticalTransfer.OutputPort outputPort :
-                FiberOpticalTransfer.remoteOutputPorts(level, inputPos, incomingDirection, inputBeam.envelope())) {
+                FiberOpticalTransfer.remoteOutputPorts(level, inputPos, incomingDirection)) {
             if (!inside(frameMin, frameMax, outputPort.pos())) {
                 continue;
             }

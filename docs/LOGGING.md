@@ -138,10 +138,18 @@ debug_log_verbose = true
 
 | 字段 | 含义 |
 | --- | --- |
+| `authority=gameplay` | 该结果属于主运行时路径，可决定机器、HUD、读数和过载。 |
+| `authority=reference` | 该结果用于校验或过渡对照，不能单独决定 gameplay。 |
+| `authority=debug_oracle` | 调试 oracle，例如 observed trace。 |
+| `authority=legacy_compare` | 旧路径对照日志，用于发现语义漂移。 |
 | `solver=PROFILE_STATE_EXACT` | 无反馈或有限 profile 状态图的精确求解。 |
 | `solver=PROFILE_COLLAPSED_EXACT` | 反馈图使用“多等效”折叠后的精确线性求解。 |
 | `profile_mode=state_exact` | profile key 参与有限状态传播。 |
-| `profile_mode=collapsed_equivalence` | profile 敏感损耗已经写入边 gain，反馈主求解不再展开 profile。 |
+| `profile_mode=collapsed_equivalence` | profile 敏感损耗已经乘入矩阵边权，反馈主求解不再展开 profile。 |
+| `profile_mode=collapsed_due_to_overflow` | 无反馈 profile-state 图过大，降级到 collapsed 求解。 |
+| `profile_mode=collapsed_fallback` | 无反馈 exact profile solve 失败，降级到 collapsed 求解。 |
+| `profile_overflow=true` | profile state 构图超过上限。 |
+| `profile_fallback=true` | 本次结果不是首选 profile-state 求解路径。 |
 | `readout_reliable=true` | 机器、传感器和可视化可以使用该次读数。 |
 | `readout_reliable=false` | 读数处于过渡或失败状态，不应作为新结果判断。 |
 | `residual` | 线性求解残差；应接近 0。 |
@@ -156,7 +164,15 @@ readout_reliable=true
 ```
 
 如果看到 `feedback_sccs>0` 但 profile state 数量持续膨胀，优先怀疑有新的几何敏感
-过程绕过了等效边 gain，重新进入了反馈主求解。
+过程绕过了等效矩阵边权，重新进入了反馈主求解。
+
+如果看到 `profile_overflow=true` 或 `profile_fallback=true`，机器读数不一定错误，
+但该次结果已经从精确 profile-state 路径降级。调试半径、发散、透镜孔径或光纤
+耦合时，应先把结构缩小到 `profile_mode=state_exact` 或使用专门的
+`/spectralization opticaltest ...` 命令做对照。
+
+读日志时先看 `authority`。`reference`、`debug_oracle` 和 `legacy_compare` 可以
+提示 bug，但它们不应直接改变机器输出、缓存 authority、过载烧毁判断或玩家最终读数。
 
 ## 8. 功率和颜色问题
 

@@ -1,7 +1,6 @@
 package io.github.yoglappland.spectralization.optics.fiber;
 
 import io.github.yoglappland.spectralization.block.FiberOpticInterfaceBlock;
-import io.github.yoglappland.spectralization.optics.BeamEnvelope;
 import io.github.yoglappland.spectralization.optics.geometry.BeamGeometryOps;
 import io.github.yoglappland.spectralization.optics.geometry.BeamProfileKey;
 import io.github.yoglappland.spectralization.optics.geometry.BeamProfileShape;
@@ -31,19 +30,9 @@ public final class FiberOpticalTransfer {
             BlockPos inputPos,
             Direction incomingDirection
     ) {
-        return remoteOutputPorts(level, inputPos, incomingDirection, BeamEnvelope.DEFAULT_COLLIMATED);
-    }
-
-    public static List<OutputPort> remoteOutputPorts(
-            ServerLevel level,
-            BlockPos inputPos,
-            Direction incomingDirection,
-            BeamEnvelope inputEnvelope
-    ) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(inputPos, "inputPos");
         Objects.requireNonNull(incomingDirection, "incomingDirection");
-        Objects.requireNonNull(inputEnvelope, "inputEnvelope");
 
         if (!level.isLoaded(inputPos)) {
             return List.of();
@@ -84,9 +73,9 @@ public final class FiberOpticalTransfer {
                 continue;
             }
 
-            double guidedGain = routeGain(snapshot, routeOutput.route());
+            double routeGain = routeGain(snapshot, routeOutput.route());
 
-            if (guidedGain <= MIN_GUIDED_GAIN) {
+            if (routeGain <= MIN_GUIDED_GAIN) {
                 continue;
             }
 
@@ -96,7 +85,7 @@ public final class FiberOpticalTransfer {
                             routeOutput.outputPos(),
                             outputState.getValue(FiberOpticInterfaceBlock.FACING)
                     )
-            ).accept(routeOutput.route(), guidedGain);
+            ).accept(routeOutput.route(), routeGain);
         }
 
         if (outputAccumulators.isEmpty()) {
@@ -215,13 +204,6 @@ public final class FiberOpticalTransfer {
         return List.copyOf(outputs);
     }
 
-    private static double guidedGain(FiberNetworkSnapshot snapshot, FiberRoute route, BeamEnvelope inputEnvelope) {
-        RouteProfile profile = limitingRouteProfile(snapshot, route);
-        double spotGain = spotCoupling(inputEnvelope, profile.coreRadius());
-        double angularGain = angularCoupling(inputEnvelope, profile.numericalAperture());
-        return BeamGeometryOps.clamp01(spotGain * angularGain * routeGain(profile, route));
-    }
-
     private static double routeGain(FiberNetworkSnapshot snapshot, FiberRoute route) {
         return routeGain(limitingRouteProfile(snapshot, route), route);
     }
@@ -256,29 +238,6 @@ public final class FiberOpticalTransfer {
         }
 
         return new RouteProfile(coreRadius, numericalAperture, transmissionPerBlock, bendTransmissionPerRightAngle);
-    }
-
-    private static double spotCoupling(BeamEnvelope envelope, double coreRadius) {
-        double radius = Math.max(BeamEnvelope.DEFAULT_MIN_WAIST_RADIUS, envelope.radius());
-
-        if (radius <= coreRadius) {
-            return 1.0D;
-        }
-
-        double ratio = coreRadius / radius;
-        return BeamGeometryOps.clamp01(ratio * ratio);
-    }
-
-    private static double angularCoupling(BeamEnvelope envelope, double numericalAperture) {
-        double angularSpread = envelope.divergence() * Math.sqrt(Math.max(1.0D, envelope.beamQuality()))
-                + envelope.scatter() * numericalAperture * 2.0D;
-
-        if (angularSpread <= numericalAperture) {
-            return 1.0D;
-        }
-
-        double ratio = numericalAperture / angularSpread;
-        return BeamGeometryOps.clamp01(ratio * ratio);
     }
 
     public static BeamProfileTransfer profileTransferForEdge(
@@ -340,7 +299,11 @@ public final class FiberOpticalTransfer {
             return BeamProfileTransfer.of(inputProfile, 0.0D);
         }
 
-        double acceptanceGain = BeamGeometryOps.clamp01(acceptedGainSum / routeGainSum);
+        double baseRouteGain = BeamGeometryOps.clamp01(routeGainSum);
+        double acceptedRouteGain = BeamGeometryOps.clamp01(acceptedGainSum);
+        double acceptanceGain = baseRouteGain <= 0.0D
+                ? 0.0D
+                : BeamGeometryOps.clamp01(acceptedRouteGain / baseRouteGain);
         BeamProfileKey outputKey = shape
                 .guidedOutput(outputProfile.coreRadius(), outputProfile.numericalAperture())
                 .toKey();
@@ -348,7 +311,7 @@ public final class FiberOpticalTransfer {
     }
 
     private static double profileAcceptance(BeamProfileShape shape, RouteProfile profile) {
-        double radius = Math.max(BeamEnvelope.DEFAULT_MIN_WAIST_RADIUS, Math.sqrt(Math.max(0.0D, shape.r2())));
+        double radius = Math.max(BeamGeometryOps.MIN_RADIUS, Math.sqrt(Math.max(0.0D, shape.r2())));
         double spotGain = radius <= profile.coreRadius()
                 ? 1.0D
                 : BeamGeometryOps.clamp01((profile.coreRadius() / radius) * (profile.coreRadius() / radius));
@@ -439,7 +402,7 @@ public final class FiberOpticalTransfer {
         return path;
     }
 
-    public record OutputPort(BlockPos pos, Direction direction, double gain, double guidedGain, double routeLength) {
+    public record OutputPort(BlockPos pos, Direction direction, double gain, double routeGain, double routeLength) {
         public OutputPort(BlockPos pos, Direction direction) {
             this(pos, direction, 1.0D, 1.0D, 0.0D);
         }
@@ -457,8 +420,8 @@ public final class FiberOpticalTransfer {
                 throw new IllegalArgumentException("Fiber output gain must be finite and between 0 and 1");
             }
 
-            if (!Double.isFinite(guidedGain) || guidedGain <= 0.0D || guidedGain > 1.0D) {
-                throw new IllegalArgumentException("Fiber guided gain must be finite and between 0 and 1");
+            if (!Double.isFinite(routeGain) || routeGain <= 0.0D || routeGain > 1.0D) {
+                throw new IllegalArgumentException("Fiber route gain must be finite and between 0 and 1");
             }
 
             if (!Double.isFinite(routeLength) || routeLength < 0.0D) {
@@ -501,7 +464,7 @@ public final class FiberOpticalTransfer {
     private static final class OutputAccumulator {
         private final BlockPos pos;
         private final Direction direction;
-        private double guidedGainSum;
+        private double routeGainSum;
         private double longestRoute;
 
         private OutputAccumulator(BlockPos pos, Direction direction) {
@@ -513,14 +476,14 @@ public final class FiberOpticalTransfer {
             return pos;
         }
 
-        private void accept(FiberRoute route, double guidedGain) {
-            guidedGainSum += guidedGain;
+        private void accept(FiberRoute route, double routeGain) {
+            routeGainSum += routeGain;
             longestRoute = Math.max(longestRoute, route.totalLength());
         }
 
         private OutputPort toOutputPort(double splitGain) {
-            double cappedGuidedGain = BeamGeometryOps.clamp01(guidedGainSum);
-            return new OutputPort(pos, direction, splitGain * cappedGuidedGain, cappedGuidedGain, longestRoute);
+            double cappedRouteGain = BeamGeometryOps.clamp01(routeGainSum);
+            return new OutputPort(pos, direction, splitGain * cappedRouteGain, cappedRouteGain, longestRoute);
         }
     }
 

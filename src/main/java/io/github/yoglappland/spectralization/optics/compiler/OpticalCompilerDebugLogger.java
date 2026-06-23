@@ -35,6 +35,10 @@ public final class OpticalCompilerDebugLogger {
     private static final String SESSION_LOG_FILE_NAME =
             "optical_compiler_" + SESSION_LOG_TIMESTAMP.format(Instant.now()) + ".log";
     private static final String LOG_RELATIVE_PATH = "logs/spectralization/" + SESSION_LOG_FILE_NAME;
+    private static final String AUTH_GAMEPLAY = "gameplay";
+    private static final String AUTH_REFERENCE = "reference";
+    private static final String AUTH_DEBUG_ORACLE = "debug_oracle";
+    private static final String AUTH_LEGACY_COMPARE = "legacy_compare";
     private static final Comparator<PortGraphNode> NODE_COMPARATOR = Comparator
             .comparingInt((PortGraphNode node) -> node.pos().getX())
             .thenComparingInt(node -> node.pos().getY())
@@ -53,6 +57,7 @@ public final class OpticalCompilerDebugLogger {
         builder.append("stage=observed\n");
         builder.append("time=").append(Instant.now()).append('\n');
         builder.append("dimension=").append(level.dimension().location()).append('\n');
+        builder.append("authority=").append(AUTH_DEBUG_ORACLE).append('\n');
         builder.append("source=").append(formatPos(trace.sourcePos()))
                 .append(" direction=").append(trace.sourceOutput().outgoingDirection())
                 .append(" power=").append(formatPower(trace.sourceOutput().beam().totalPower()))
@@ -157,6 +162,7 @@ public final class OpticalCompilerDebugLogger {
         builder.append("stage=observed_vs_direct\n");
         builder.append("time=").append(Instant.now()).append('\n');
         builder.append("dimension=").append(level.dimension().location()).append('\n');
+        builder.append("authority=").append(AUTH_LEGACY_COMPARE).append('\n');
         builder.append("source=").append(formatPos(trace.sourcePos()))
                 .append(" direction=").append(trace.sourceOutput().outgoingDirection())
                 .append(" power=").append(formatPower(trace.sourceOutput().beam().totalPower()))
@@ -167,7 +173,7 @@ public final class OpticalCompilerDebugLogger {
         appendGraphSummary(builder, "observed", observedGraph, trace.steps().size(), trace.terminations().size());
         appendGraphSummary(builder, "direct", directGraph, -1, directGraph.terminationCount());
         appendTemplateSummary(builder, "direct", level, directGraph);
-        appendScalarSolution(builder, "direct_scalar", scalarPowerSolution);
+        appendScalarSolution(builder, "direct_scalar", scalarPowerSolution, AUTH_REFERENCE);
         builder.append("direct_geometry_cache hit=").append(directGeometryCacheHit)
                 .append(" signature_positions=").append(directGeometrySignaturePositions)
                 .append(" entries=").append(directGeometryCacheEntries)
@@ -186,7 +192,12 @@ public final class OpticalCompilerDebugLogger {
                     .append(" parametrically_fresh=").append(networkParametricallyFresh)
                     .append(" usable_for_gameplay=").append(networkUsableForGameplay)
                     .append('\n');
-            appendScalarSolution(builder, "network_scalar", networkSolution);
+            appendScalarSolution(
+                    builder,
+                    "network_scalar",
+                    networkSolution,
+                    networkUsableForGameplay ? AUTH_GAMEPLAY : AUTH_REFERENCE
+            );
         } else {
             builder.append("network_at_direct_stage available=false reason=not_installed_yet_or_rebuild_pending\n");
         }
@@ -275,6 +286,7 @@ public final class OpticalCompilerDebugLogger {
         builder.append("stage=direct_only\n");
         builder.append("time=").append(Instant.now()).append('\n');
         builder.append("dimension=").append(level.dimension().location()).append('\n');
+        builder.append("authority=").append(networkUsableForGameplay ? AUTH_REFERENCE : AUTH_GAMEPLAY).append('\n');
         builder.append("source=").append(formatPos(sourcePos))
                 .append(" direction=").append(sourceOutput.outgoingDirection())
                 .append(" power=").append(formatPower(sourceOutput.beam().totalPower()))
@@ -282,7 +294,12 @@ public final class OpticalCompilerDebugLogger {
         builder.append("legacy_observed_trace=skipped_feedback_or_disabled\n");
         appendGraphSummary(builder, "direct", directGraph, -1, directGraph.terminationCount());
         appendTemplateSummary(builder, "direct", level, directGraph);
-        appendScalarSolution(builder, "direct_scalar", scalarPowerSolution);
+        appendScalarSolution(
+                builder,
+                "direct_scalar",
+                scalarPowerSolution,
+                networkUsableForGameplay ? AUTH_REFERENCE : AUTH_GAMEPLAY
+        );
         builder.append("direct_geometry_cache hit=").append(directGeometryCacheHit)
                 .append(" signature_positions=").append(directGeometrySignaturePositions)
                 .append(" entries=").append(directGeometryCacheEntries)
@@ -301,7 +318,12 @@ public final class OpticalCompilerDebugLogger {
                     .append(" parametrically_fresh=").append(networkParametricallyFresh)
                     .append(" usable_for_gameplay=").append(networkUsableForGameplay)
                     .append('\n');
-            appendScalarSolution(builder, "network_scalar", networkSolution);
+            appendScalarSolution(
+                    builder,
+                    "network_scalar",
+                    networkSolution,
+                    networkUsableForGameplay ? AUTH_GAMEPLAY : AUTH_REFERENCE
+            );
         } else {
             builder.append("network_at_direct_stage available=false reason=not_installed_yet_or_rebuild_pending\n");
         }
@@ -360,6 +382,7 @@ public final class OpticalCompilerDebugLogger {
         builder.append("stage=example_validation\n");
         builder.append("time=").append(Instant.now()).append('\n');
         builder.append("dimension=").append(level.dimension().location()).append('\n');
+        builder.append("authority=").append(AUTH_REFERENCE).append('\n');
         builder.append("test=").append(testName)
                 .append(" passed=").append(passed)
                 .append(" message=\"").append(message.replace("\"", "\\\"")).append('"')
@@ -370,11 +393,13 @@ public final class OpticalCompilerDebugLogger {
                 .append(" expected=").append(formatPower(expectedPower))
                 .append(" delta=").append(formatPower(actualPower - expectedPower))
                 .append(" tolerance=").append(formatPower(tolerance))
-                .append(" profile_mode=").append(profileMode(solution.solverKind()))
+                .append(" profile_mode=").append(profileMode(solution))
+                .append(" profile_overflow=").append(solution.profileOverflow())
+                .append(" profile_fallback=").append(solution.profileCollapsedFallback())
                 .append('\n');
         appendGraphSummary(builder, "example", graph, -1, graph.terminationCount());
         appendTemplateSummary(builder, "example", level, graph);
-        appendScalarSolution(builder, "example_scalar", solution);
+        appendScalarSolution(builder, "example_scalar", solution, AUTH_REFERENCE);
         appendReadoutOutputList(builder, "example", receiverOutputs);
 
         if (verboseLog() || !passed) {
@@ -422,6 +447,7 @@ public final class OpticalCompilerDebugLogger {
         builder.append("stage=system_rebuild\n");
         builder.append("time=").append(Instant.now()).append('\n');
         builder.append("dimension=").append(level.dimension().location()).append('\n');
+        builder.append("authority=").append(usableForGameplay ? AUTH_GAMEPLAY : AUTH_REFERENCE).append('\n');
         builder.append("requested_network=").append(requestedNetworkId)
                 .append(" rebuilt_networks=").append(rebuiltNetworkCount)
                 .append(" pending_after=").append(pendingAfter)
@@ -533,6 +559,7 @@ public final class OpticalCompilerDebugLogger {
         builder.append("stage=readout_apply\n");
         builder.append("time=").append(Instant.now()).append('\n');
         builder.append("dimension=").append(level.dimension().location()).append('\n');
+        builder.append("authority=").append(reliable ? AUTH_GAMEPLAY : AUTH_REFERENCE).append('\n');
         builder.append("network_id=").append(networkId)
                 .append(" source=").append(formatPos(sourcePos))
                 .append(" direction=").append(sourceDirection)
@@ -584,6 +611,7 @@ public final class OpticalCompilerDebugLogger {
         builder.append("stage=readout_apply_details\n");
         builder.append("time=").append(Instant.now()).append('\n');
         builder.append("dimension=").append(level.dimension().location()).append('\n');
+        builder.append("authority=").append(reliable ? AUTH_GAMEPLAY : AUTH_REFERENCE).append('\n');
         builder.append("network_id=").append(networkId)
                 .append(" source=").append(formatPos(sourcePos))
                 .append(" direction=").append(sourceDirection)
@@ -846,6 +874,7 @@ public final class OpticalCompilerDebugLogger {
         builder.append("stage=power_channel_solve\n");
         builder.append("time=").append(Instant.now()).append('\n');
         builder.append("dimension=").append(level.dimension().location()).append('\n');
+        builder.append("authority=").append(AUTH_GAMEPLAY).append('\n');
         builder.append("source=").append(formatPos(coherentGraph.sourcePos()))
                 .append(" direction=").append(coherentGraph.sourceDirection())
                 .append('\n');
@@ -887,9 +916,9 @@ public final class OpticalCompilerDebugLogger {
                 .append(" coherent_internal_power_upper=")
                 .append(formatPower(coherentInternalPowerUpperBound(coherentSourcePower, gainSchedule.rhoAfter())))
                 .append('\n');
-        appendScalarSolution(builder, "incoherent_channel", incoherentSolution);
-        appendScalarSolution(builder, "coherent_channel", coherentSolution);
-        appendScalarSolution(builder, "combined_channels", combinedSolution);
+        appendScalarSolution(builder, "incoherent_channel", incoherentSolution, AUTH_GAMEPLAY);
+        appendScalarSolution(builder, "coherent_channel", coherentSolution, AUTH_GAMEPLAY);
+        appendScalarSolution(builder, "combined_channels", combinedSolution, AUTH_GAMEPLAY);
         if (verboseLog()) {
             appendStrongestNodes(builder, "coherent_channel", coherentSolution);
             appendStrongestNodes(builder, "combined_channels", combinedSolution);
@@ -920,6 +949,7 @@ public final class OpticalCompilerDebugLogger {
         builder.append("stage=spectral_lane_solve\n");
         builder.append("time=").append(Instant.now()).append('\n');
         builder.append("dimension=").append(level.dimension().location()).append('\n');
+        builder.append("authority=").append(AUTH_GAMEPLAY).append('\n');
         builder.append("channel=").append(channel)
                 .append(" source=").append(formatPos(graph.sourcePos()))
                 .append(" direction=").append(graph.sourceDirection())
@@ -933,15 +963,25 @@ public final class OpticalCompilerDebugLogger {
                 .append(" graph_edges=").append(graph.edges().size())
                 .append(" feedback_sccs=").append(graph.feedbackSccCount())
                 .append(" beta1=").append(graph.beta1())
-                .append(" profile_mode=").append(profileMode(solution.solverKind()))
+                .append(" profile_mode=").append(profileMode(solution))
+                .append(" profile_overflow=").append(solution.profileOverflow())
+                .append(" profile_fallback=").append(solution.profileCollapsedFallback())
                 .append('\n');
-        appendScalarSolution(builder, channel + "_lane_solution", solution);
+        appendScalarSolution(builder, channel + "_lane_solution", solution, AUTH_GAMEPLAY);
         builder.append('\n');
         write(builder.toString());
     }
 
-    private static String profileMode(ScalarSolverKind solverKind) {
-        return switch (solverKind) {
+    private static String profileMode(ScalarPowerSolution solution) {
+        if (solution.profileOverflow()) {
+            return "collapsed_due_to_overflow";
+        }
+
+        if (solution.profileCollapsedFallback()) {
+            return "collapsed_fallback";
+        }
+
+        return switch (solution.solverKind()) {
             case PROFILE_COLLAPSED_EXACT -> "collapsed_equivalence";
             case PROFILE_STATE_EXACT -> "state_exact";
             case NONE -> "none";
@@ -1261,10 +1301,15 @@ public final class OpticalCompilerDebugLogger {
     private static void appendScalarSolution(
             StringBuilder builder,
             String label,
-            ScalarPowerSolution solution
+            ScalarPowerSolution solution,
+            String authority
     ) {
         builder.append(label)
+                .append(" authority=").append(authority)
                 .append(" solver=").append(solution.solverKind())
+                .append(" profile_mode=").append(profileMode(solution))
+                .append(" profile_overflow=").append(solution.profileOverflow())
+                .append(" profile_fallback=").append(solution.profileCollapsedFallback())
                 .append(" converged=").append(solution.converged())
                 .append(" unstable=").append(solution.unstable())
                 .append(" readout_reliable=").append(solution.reliableForReadout())

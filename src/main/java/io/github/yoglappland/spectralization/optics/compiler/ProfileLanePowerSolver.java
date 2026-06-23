@@ -4,6 +4,7 @@ import io.github.yoglappland.spectralization.block.FiberOpticInterfaceBlock;
 import io.github.yoglappland.spectralization.optics.CoherenceKind;
 import io.github.yoglappland.spectralization.optics.FrequencyKey;
 import io.github.yoglappland.spectralization.optics.fiber.FiberOpticalTransfer;
+import io.github.yoglappland.spectralization.optics.geometry.BeamGeometryOps;
 import io.github.yoglappland.spectralization.optics.geometry.BeamProfileKey;
 import io.github.yoglappland.spectralization.optics.geometry.BeamProfileTransfer;
 import io.github.yoglappland.spectralization.optics.geometry.PhaseSpaceMap;
@@ -48,21 +49,21 @@ public final class ProfileLanePowerSolver {
             return ScalarPowerSolutions.empty(ScalarSolverKind.NONE, solverPlan);
         }
 
-        // In feedback, profile-sensitive effects must already be represented as equivalent edge losses.
+        // In feedback, profile-sensitive effects are folded into each edge as one equivalent loss.
         if (graph.feedbackSccCount() > 0) {
-            return solveProfileCollapsedExact(graph, sources, solverPlan);
+            return solveProfileCollapsedExact(level, graph, sources, solverPlan, false, false);
         }
 
         FiniteProfileSystem system = buildFiniteProfileSystem(level, graph, sources);
 
         if (system.overflow() || system.states().isEmpty()) {
-            return solveProfileCollapsedExact(graph, sources, solverPlan);
+            return solveProfileCollapsedExact(level, graph, sources, solverPlan, true, system.overflow());
         }
 
         ExactSolveResult solveResult = solveFiniteSystem(system);
 
         if (!solveResult.solved()) {
-            return solveProfileCollapsedExact(graph, sources, solverPlan);
+            return solveProfileCollapsedExact(level, graph, sources, solverPlan, true, false);
         }
 
         double residual = residual(system, solveResult.powers());
@@ -86,25 +87,30 @@ public final class ProfileLanePowerSolver {
                 Double.isFinite(residual) ? residual : MAX_TOTAL_POWER,
                 system.states(),
                 system.readoutProjections(),
-                solveResult.powers()
+                solveResult.powers(),
+                false,
+                false
         );
     }
 
     private static ScalarPowerSolution solveProfileCollapsedExact(
+            Level level,
             CompiledPortGraph graph,
             Map<PortGraphNode, Map<SpectralPowerLane, Double>> sources,
-            ScalarSolverPlan solverPlan
+            ScalarSolverPlan solverPlan,
+            boolean fallback,
+            boolean overflow
     ) {
-        FiniteProfileSystem system = buildProfileCollapsedSystem(graph, sources);
+        FiniteProfileSystem system = buildProfileCollapsedSystem(level, graph, sources);
 
         if (system.states().isEmpty()) {
-            return unstableSolution(solverPlan);
+            return unstableSolution(ScalarSolverKind.PROFILE_COLLAPSED_EXACT, solverPlan, fallback, overflow);
         }
 
         ExactSolveResult solveResult = solveFiniteSystem(system);
 
         if (!solveResult.solved()) {
-            return unstableSolution(solverPlan);
+            return unstableSolution(ScalarSolverKind.PROFILE_COLLAPSED_EXACT, solverPlan, fallback, overflow);
         }
 
         double residual = residual(system, solveResult.powers());
@@ -128,11 +134,14 @@ public final class ProfileLanePowerSolver {
                 Double.isFinite(residual) ? residual : MAX_TOTAL_POWER,
                 system.states(),
                 system.readoutProjections(),
-                solveResult.powers()
+                solveResult.powers(),
+                fallback,
+                overflow
         );
     }
 
     private static FiniteProfileSystem buildProfileCollapsedSystem(
+            Level level,
             CompiledPortGraph graph,
             Map<PortGraphNode, Map<SpectralPowerLane, Double>> sources
     ) {
@@ -167,7 +176,14 @@ public final class ProfileLanePowerSolver {
 
         for (SpectralPowerLane lane : lanes) {
             for (PortGraphEdge edge : graph.edges()) {
-                double gain = Math.max(0.0D, edge.sampleGainFor(lane.frequency()));
+                double baseGain = Math.max(0.0D, edge.sampleGainFor(lane.frequency()));
+
+                if (baseGain <= 0.0D) {
+                    continue;
+                }
+
+                double profileGain = collapsedEquivalentProfileGain(level, graph, edge, lane);
+                double gain = baseGain * profileGain;
 
                 if (gain <= 0.0D) {
                     continue;
@@ -189,6 +205,22 @@ public final class ProfileLanePowerSolver {
                 source,
                 false
         );
+    }
+
+    private static double collapsedEquivalentProfileGain(
+            Level level,
+            CompiledPortGraph graph,
+            PortGraphEdge edge,
+            SpectralPowerLane lane
+    ) {
+        BeamProfileTransfer transfer = profileTransfer(
+                level,
+                graph,
+                edge,
+                lane,
+                profileTransitionSignature(level, graph, edge, lane)
+        );
+        return BeamGeometryOps.clamp01(transfer.gain());
     }
 
     private static FiniteProfileSystem buildFiniteProfileSystem(
@@ -575,9 +607,14 @@ public final class ProfileLanePowerSolver {
         }
     }
 
-    private static ScalarPowerSolution unstableSolution(ScalarSolverPlan solverPlan) {
+    private static ScalarPowerSolution unstableSolution(
+            ScalarSolverKind solverKind,
+            ScalarSolverPlan solverPlan,
+            boolean fallback,
+            boolean overflow
+    ) {
         return new ScalarPowerSolution(
-                ScalarSolverKind.PROFILE_STATE_EXACT,
+                solverKind,
                 solverPlan,
                 false,
                 true,
@@ -588,7 +625,9 @@ public final class ProfileLanePowerSolver {
                 Map.of(),
                 Map.of(),
                 Map.of(),
-                List.of()
+                List.of(),
+                fallback,
+                overflow
         );
     }
 
@@ -601,7 +640,9 @@ public final class ProfileLanePowerSolver {
             double residual,
             List<ProfileStateKey> states,
             List<ProfileReadoutProjection> readoutProjections,
-            double[] powers
+            double[] powers,
+            boolean fallback,
+            boolean overflow
     ) {
         Map<PortGraphNode, Double> powerByNode = new HashMap<>();
         Map<PortGraphNode, Double> coherentPowerByNode = new HashMap<>();
@@ -665,7 +706,9 @@ public final class ProfileLanePowerSolver {
                 powerByNode,
                 coherentPowerByNode,
                 powerByLane,
-                List.of()
+                List.of(),
+                fallback,
+                overflow
         );
     }
 

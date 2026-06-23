@@ -4,6 +4,7 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.block.BeamProfilerBlock;
 import io.github.yoglappland.spectralization.block.CreativeLightSourceBlock;
+import io.github.yoglappland.spectralization.block.FiberOpticInterfaceBlock;
 import io.github.yoglappland.spectralization.block.LensHolderBlock;
 import io.github.yoglappland.spectralization.block.MirrorBlock;
 import io.github.yoglappland.spectralization.blockentity.CreativeLightSourceBlockEntity;
@@ -26,6 +27,11 @@ import io.github.yoglappland.spectralization.optics.compiler.ProfileLanePowerSol
 import io.github.yoglappland.spectralization.optics.compiler.ScalarPowerSolution;
 import io.github.yoglappland.spectralization.optics.compiler.SpectralPowerLane;
 import io.github.yoglappland.spectralization.optics.geometry.BeamProfileKey;
+import io.github.yoglappland.spectralization.optics.fiber.FiberNetworkData;
+import io.github.yoglappland.spectralization.optics.fiber.FiberNetworkIndex;
+import io.github.yoglappland.spectralization.optics.fiber.FiberNodeKind;
+import io.github.yoglappland.spectralization.optics.fiber.FiberNodeProfile;
+import io.github.yoglappland.spectralization.optics.fiber.FiberRoute;
 import io.github.yoglappland.spectralization.optics.lens.LensProfile;
 import java.util.HashMap;
 import java.util.List;
@@ -51,11 +57,23 @@ final class OpticalExampleValidator {
     private static final double LENS_REFLECTANCE = 0.02D;
     private static final double AIR_PROPAGATION_FACTOR = 0.995D;
     private static final double POWER_TOLERANCE = 1.0E-6D;
+    private static final int DEFAULT_RADIUS_MILLI = 250;
+    private static final int NARROW_FIBER_RADIUS_MILLI = 125;
+    private static final int WIDE_FIBER_RADIUS_MILLI = 250;
+    private static final int WIDE_LENS_RADIUS_MILLI = 2000;
 
     static LiteralArgumentBuilder<CommandSourceStack> command() {
         return Commands.literal("opticaltest")
                 .then(Commands.literal("splitter_lens_splitter")
-                        .executes(context -> runSplitterLensSplitter(context.getSource())));
+                        .executes(context -> runSplitterLensSplitter(context.getSource())))
+                .then(Commands.literal("lens_aperture_clip")
+                        .executes(context -> runLensApertureClip(context.getSource())))
+                .then(Commands.literal("fiber_radius_coupling")
+                        .executes(context -> runFiberRadiusCoupling(context.getSource())))
+                .then(Commands.literal("feedback_fiber_radius_loss")
+                        .executes(context -> runFeedbackFiberRadiusLoss(context.getSource())))
+                .then(Commands.literal("parallel_fiber_same_endpoint")
+                        .executes(context -> runParallelFiberSameEndpoint(context.getSource())));
     }
 
     private static int runSplitterLensSplitter(CommandSourceStack source) {
@@ -135,6 +153,185 @@ final class OpticalExampleValidator {
         return 0;
     }
 
+    private static int runLensApertureClip(CommandSourceStack source) {
+        ServerLevel level = source.getLevel();
+        Direction testDirection = horizontalTestDirection(source);
+        TestLayout layout = new TestLayout(BlockPos.containing(source.getPosition()).relative(testDirection, 3).above(), testDirection);
+        placeLensApertureClip(level, layout);
+        TestSample sample = sample(level, layout.source(), layout.profiler());
+        double apertureGain = BeamProfileKey.collimated(WIDE_LENS_RADIUS_MILLI / 1000.0D)
+                .toShape()
+                .propagate(2)
+                .thinLens(
+                        LensProfile.STANDARD.focalLength(),
+                        LensProfile.STANDARD.aperture() / 100.0D,
+                        1.15D
+                )
+                .gain();
+        double expectedPower = SOURCE_POWER
+                * Math.pow(AIR_PROPAGATION_FACTOR, 8)
+                * LENS_TRANSMITTANCE
+                * apertureGain;
+        ValidationReport report = validateSimplePower(sample, expectedPower, false);
+        logValidation(level, "lens_aperture_clip", layout, sample, report, expectedPower);
+
+        if (report.passed()) {
+            source.sendSuccess(() -> Component.literal(String.format(
+                    "Optical test lens_aperture_clip PASS at %s: profiler=%.9f expected=%.9f aperture_gain=%.6f",
+                    layout.source().toShortString(),
+                    report.actualPower(),
+                    expectedPower,
+                    apertureGain
+            )), true);
+            return 1;
+        }
+
+        source.sendFailure(Component.literal(String.format(
+                "Optical test lens_aperture_clip FAIL at %s: %s profiler=%.9f expected=%.9f solver=%s reliable=%s",
+                layout.source().toShortString(),
+                report.message(),
+                report.actualPower(),
+                expectedPower,
+                sample.solution().solverKind(),
+                sample.solution().reliableForReadout()
+        )));
+        return 0;
+    }
+
+    private static int runFiberRadiusCoupling(CommandSourceStack source) {
+        ServerLevel level = source.getLevel();
+        Direction testDirection = horizontalTestDirection(source);
+        FiberTestLayout layout = new FiberTestLayout(
+                BlockPos.containing(source.getPosition()).relative(testDirection, 3).above(),
+                testDirection
+        );
+        placeFiberLine(level, layout, 1, NARROW_FIBER_RADIUS_MILLI);
+        TestSample narrow = sample(level, layout.source(), layout.profiler());
+        configureSource(level, layout.source(), WIDE_FIBER_RADIUS_MILLI);
+        TestSample wide = sample(level, layout.source(), layout.profiler());
+        double ratio = narrow.actualPower() <= 0.0D ? 0.0D : wide.actualPower() / narrow.actualPower();
+        boolean passed = narrow.solution().reliableForReadout()
+                && wide.solution().reliableForReadout()
+                && narrow.graph().feedbackSccCount() == 0
+                && wide.graph().feedbackSccCount() == 0
+                && ratio > 0.18D
+                && ratio < 0.36D;
+        ValidationReport report = passed
+                ? ValidationReport.pass(wide.actualPower())
+                : ValidationReport.fail("fiber radius coupling ratio out of range: " + ratio, wide.actualPower());
+        logValidation(level, "fiber_radius_coupling", layout.asTestLayout(), wide, report, narrow.actualPower() * 0.25D);
+
+        if (report.passed()) {
+            source.sendSuccess(() -> Component.literal(String.format(
+                    "Optical test fiber_radius_coupling PASS at %s: narrow=%.9f wide=%.9f ratio=%.6f",
+                    layout.source().toShortString(),
+                    narrow.actualPower(),
+                    wide.actualPower(),
+                    ratio
+            )), true);
+            return 1;
+        }
+
+        source.sendFailure(Component.literal(String.format(
+                "Optical test fiber_radius_coupling FAIL at %s: %s narrow=%.9f wide=%.9f ratio=%.6f",
+                layout.source().toShortString(),
+                report.message(),
+                narrow.actualPower(),
+                wide.actualPower(),
+                ratio
+        )));
+        return 0;
+    }
+
+    private static int runFeedbackFiberRadiusLoss(CommandSourceStack source) {
+        ServerLevel level = source.getLevel();
+        Direction testDirection = horizontalTestDirection(source);
+        FiberTestLayout layout = new FiberTestLayout(
+                BlockPos.containing(source.getPosition()).relative(testDirection, 3).above(),
+                testDirection
+        );
+        placeFeedbackFiberLoop(level, layout, NARROW_FIBER_RADIUS_MILLI);
+        TestSample narrow = sample(level, layout.source(), layout.profiler());
+        configureSource(level, layout.source(), WIDE_FIBER_RADIUS_MILLI);
+        TestSample wide = sample(level, layout.source(), layout.profiler());
+        double ratio = narrow.actualPower() <= 0.0D ? 0.0D : wide.actualPower() / narrow.actualPower();
+        boolean passed = narrow.solution().reliableForReadout()
+                && wide.solution().reliableForReadout()
+                && narrow.graph().feedbackSccCount() > 0
+                && wide.graph().feedbackSccCount() > 0
+                && narrow.solution().solverKind().name().contains("COLLAPSED")
+                && wide.solution().solverKind().name().contains("COLLAPSED")
+                && wide.actualPower() < narrow.actualPower() * 0.6D;
+        ValidationReport report = passed
+                ? ValidationReport.pass(wide.actualPower())
+                : ValidationReport.fail("feedback fiber radius loss did not reduce wide beam enough: " + ratio, wide.actualPower());
+        logValidation(level, "feedback_fiber_radius_loss", layout.asTestLayout(), wide, report, narrow.actualPower() * 0.25D);
+
+        if (report.passed()) {
+            source.sendSuccess(() -> Component.literal(String.format(
+                    "Optical test feedback_fiber_radius_loss PASS at %s: narrow=%.9f wide=%.9f ratio=%.6f feedback_scc=%d",
+                    layout.source().toShortString(),
+                    narrow.actualPower(),
+                    wide.actualPower(),
+                    ratio,
+                    wide.graph().feedbackSccCount()
+            )), true);
+            return 1;
+        }
+
+        source.sendFailure(Component.literal(String.format(
+                "Optical test feedback_fiber_radius_loss FAIL at %s: %s narrow=%.9f wide=%.9f ratio=%.6f feedback_scc=%d solver=%s",
+                layout.source().toShortString(),
+                report.message(),
+                narrow.actualPower(),
+                wide.actualPower(),
+                ratio,
+                wide.graph().feedbackSccCount(),
+                wide.solution().solverKind()
+        )));
+        return 0;
+    }
+
+    private static int runParallelFiberSameEndpoint(CommandSourceStack source) {
+        ServerLevel level = source.getLevel();
+        Direction testDirection = horizontalTestDirection(source);
+        FiberTestLayout layout = new FiberTestLayout(
+                BlockPos.containing(source.getPosition()).relative(testDirection, 3).above(),
+                testDirection
+        );
+        placeFiberLine(level, layout, 1, WIDE_FIBER_RADIUS_MILLI);
+        TestSample single = sample(level, layout.source(), layout.profiler());
+        placeFiberLine(level, layout, 2, WIDE_FIBER_RADIUS_MILLI);
+        TestSample parallel = sample(level, layout.source(), layout.profiler());
+        boolean passed = single.solution().reliableForReadout()
+                && parallel.solution().reliableForReadout()
+                && parallel.actualPower() + POWER_TOLERANCE >= single.actualPower()
+                && parallel.actualPower() <= SOURCE_POWER + POWER_TOLERANCE;
+        ValidationReport report = passed
+                ? ValidationReport.pass(parallel.actualPower())
+                : ValidationReport.fail("parallel fiber output decreased or exceeded cap", parallel.actualPower());
+        logValidation(level, "parallel_fiber_same_endpoint", layout.asTestLayout(), parallel, report, single.actualPower());
+
+        if (report.passed()) {
+            source.sendSuccess(() -> Component.literal(String.format(
+                    "Optical test parallel_fiber_same_endpoint PASS at %s: single=%.9f parallel=%.9f",
+                    layout.source().toShortString(),
+                    single.actualPower(),
+                    parallel.actualPower()
+            )), true);
+            return 1;
+        }
+
+        source.sendFailure(Component.literal(String.format(
+                "Optical test parallel_fiber_same_endpoint FAIL at %s: %s single=%.9f parallel=%.9f",
+                layout.source().toShortString(),
+                report.message(),
+                single.actualPower(),
+                parallel.actualPower()
+        )));
+        return 0;
+    }
+
     private static void placeSplitterLensSplitter(ServerLevel level, TestLayout layout) {
         clearTestVolume(level, layout.origin(), layout.direction());
 
@@ -145,7 +342,7 @@ final class OpticalExampleValidator {
                         .setValue(CreativeLightSourceBlock.FACING, layout.direction()),
                 3
         );
-        configureSource(level, layout.source());
+        configureSource(level, layout.source(), DEFAULT_RADIUS_MILLI);
 
         BlockState splitter = Spectralization.BEAM_SPLITTER.get()
                 .defaultBlockState()
@@ -172,6 +369,114 @@ final class OpticalExampleValidator {
         );
     }
 
+    private static void placeLensApertureClip(ServerLevel level, TestLayout layout) {
+        clearTestVolume(level, layout.origin(), layout.direction());
+
+        level.setBlock(
+                layout.source(),
+                Spectralization.CREATIVE_LIGHT_SOURCE.get()
+                        .defaultBlockState()
+                        .setValue(CreativeLightSourceBlock.FACING, layout.direction()),
+                3
+        );
+        configureSource(level, layout.source(), WIDE_LENS_RADIUS_MILLI);
+        level.setBlock(
+                layout.firstSplitter(),
+                Spectralization.LENS_HOLDER.get()
+                        .defaultBlockState()
+                        .setValue(LensHolderBlock.FACING, layout.direction()),
+                3
+        );
+        if (level.getBlockEntity(layout.firstSplitter()) instanceof LensHolderBlockEntity lensHolder) {
+            lensHolder.setLens(LensProfile.STANDARD.createStack());
+        }
+        level.setBlock(layout.profilerSupport(), Blocks.SMOOTH_STONE.defaultBlockState(), 3);
+        level.setBlock(
+                layout.profiler(),
+                Spectralization.BEAM_PROFILER.get()
+                        .defaultBlockState()
+                        .setValue(BeamProfilerBlock.FACING, layout.direction()),
+                3
+        );
+    }
+
+    private static void placeFiberLine(ServerLevel level, FiberTestLayout layout, int parallelRoutes, int radiusMilli) {
+        clearTestVolume(level, layout.origin(), layout.direction());
+        removeFiberConnections(level, layout.inputInterface(), layout.outputInterface());
+
+        level.setBlock(
+                layout.source(),
+                Spectralization.CREATIVE_LIGHT_SOURCE.get()
+                        .defaultBlockState()
+                        .setValue(CreativeLightSourceBlock.FACING, layout.direction()),
+                3
+        );
+        configureSource(level, layout.source(), radiusMilli);
+        placeFiberInterface(level, layout.inputInterface(), layout.direction().getOpposite());
+        placeFiberInterface(level, layout.outputInterface(), layout.direction());
+        addFiberRoutes(level, layout.inputInterface(), layout.outputInterface(), parallelRoutes);
+        level.setBlock(layout.profilerSupport(), Blocks.SMOOTH_STONE.defaultBlockState(), 3);
+        level.setBlock(
+                layout.profiler(),
+                Spectralization.BEAM_PROFILER.get()
+                        .defaultBlockState()
+                        .setValue(BeamProfilerBlock.FACING, layout.direction()),
+                3
+        );
+    }
+
+    private static void placeFeedbackFiberLoop(ServerLevel level, FiberTestLayout layout, int radiusMilli) {
+        clearTestVolume(level, layout.origin(), layout.direction());
+        removeFiberConnections(level, layout.inputInterface(), layout.outputInterface());
+
+        level.setBlock(
+                layout.source(),
+                Spectralization.CREATIVE_LIGHT_SOURCE.get()
+                        .defaultBlockState()
+                        .setValue(CreativeLightSourceBlock.FACING, layout.direction()),
+                3
+        );
+        configureSource(level, layout.source(), radiusMilli);
+        BlockState splitter = Spectralization.BEAM_SPLITTER.get()
+                .defaultBlockState()
+                .setValue(MirrorBlock.ROTATION, splitterRotation(layout.direction()));
+        level.setBlock(layout.firstSplitter(), splitter, 3);
+        placeFiberInterface(level, layout.inputInterface(), layout.direction().getOpposite());
+        placeFiberInterface(level, layout.outputInterface(), layout.direction());
+        addFiberRoutes(level, layout.inputInterface(), layout.outputInterface(), 1);
+        level.setBlock(layout.secondSplitter(), splitter, 3);
+        level.setBlock(layout.profilerSupport(), Blocks.SMOOTH_STONE.defaultBlockState(), 3);
+        level.setBlock(
+                layout.profiler(),
+                Spectralization.BEAM_PROFILER.get()
+                        .defaultBlockState()
+                        .setValue(BeamProfilerBlock.FACING, layout.direction()),
+                3
+        );
+    }
+
+    private static void placeFiberInterface(ServerLevel level, BlockPos pos, Direction facing) {
+        level.setBlock(
+                pos,
+                Spectralization.FIBER_OPTIC_INTERFACE.get()
+                        .defaultBlockState()
+                        .setValue(FiberOpticInterfaceBlock.FACING, facing),
+                3
+        );
+        FiberNetworkIndex.registerNode(level, pos, FiberNodeKind.INTERFACE, FiberNodeProfile.BASIC_INTERFACE);
+    }
+
+    private static void removeFiberConnections(ServerLevel level, BlockPos input, BlockPos output) {
+        FiberNetworkData.removeConnectionsTouching(level, input);
+        FiberNetworkData.removeConnectionsTouching(level, output);
+    }
+
+    private static void addFiberRoutes(ServerLevel level, BlockPos input, BlockPos output, int count) {
+        for (int index = 0; index < Math.max(1, count); index++) {
+            FiberNetworkData.addConnection(level, FiberRoute.fromNodes(List.of(input, output)));
+        }
+    }
+
     private static void clearTestVolume(ServerLevel level, BlockPos origin, Direction direction) {
         Direction lateral = direction.getClockWise();
         for (int along = -4; along <= 12; along++) {
@@ -191,7 +496,7 @@ final class OpticalExampleValidator {
         return direction.getAxis() == Direction.Axis.X ? 2 : 0;
     }
 
-    private static void configureSource(ServerLevel level, BlockPos sourcePos) {
+    private static void configureSource(ServerLevel level, BlockPos sourcePos, int radiusMilli) {
         if (!(level.getBlockEntity(sourcePos) instanceof CreativeLightSourceBlockEntity source)) {
             return;
         }
@@ -202,7 +507,7 @@ final class OpticalExampleValidator {
         data.set(CreativeLightSourceBlockEntity.DATA_POWER, (int) SOURCE_POWER);
         data.set(CreativeLightSourceBlockEntity.DATA_COHERENCE, CoherenceKind.COHERENT.ordinal());
         data.set(CreativeLightSourceBlockEntity.DATA_BEAM_MODEL, BeamModel.COLLIMATED.ordinal());
-        data.set(CreativeLightSourceBlockEntity.DATA_RADIUS_MILLI, 250);
+        data.set(CreativeLightSourceBlockEntity.DATA_RADIUS_MILLI, radiusMilli);
         data.set(CreativeLightSourceBlockEntity.DATA_DIVERGENCE_MILLI, 0);
         data.set(CreativeLightSourceBlockEntity.DATA_FOCUS_DISTANCE_MILLI, 0);
 
@@ -225,6 +530,27 @@ final class OpticalExampleValidator {
         }
 
         throw new IllegalStateException("Optical test source did not create an output beam");
+    }
+
+    private static TestSample sample(ServerLevel level, BlockPos sourcePos, BlockPos profilerPos) {
+        OutputBeam outputBeam = sourceOutput(level, sourcePos);
+        CompiledPortGraph graph = PortGraphCompiler.compileDirect(level, sourcePos, outputBeam);
+        ScalarPowerSolution solution = ProfileLanePowerSolver.solve(
+                level,
+                graph,
+                sourcePowerByLane(graph.sourceNode(), outputBeam)
+        );
+        CompiledReadoutLayer readoutLayer = OpticalReadoutLayerCompiler.compile(
+                level,
+                graph,
+                List.of(new BeamProfileSource(sourcePos, outputBeam))
+        );
+        List<ReceiverOutput> outputs = readoutLayer.sample(solution);
+        Optional<ReceiverOutput> profilerOutput = outputs.stream()
+                .filter(output -> output.kind() == ReceiverOutputKind.BEAM_PROFILER)
+                .filter(output -> output.pos().equals(profilerPos))
+                .findFirst();
+        return new TestSample(graph, solution, outputs, profilerOutput);
     }
 
     private static Map<SpectralPowerLane, Map<PortGraphNode, Double>> sourcePowerByLane(
@@ -284,6 +610,63 @@ final class OpticalExampleValidator {
         }
 
         return ValidationReport.pass(actualPower);
+    }
+
+    private static ValidationReport validateSimplePower(
+            TestSample sample,
+            double expectedPower,
+            boolean requireFeedback
+    ) {
+        if (!sample.solution().reliableForReadout()) {
+            return ValidationReport.fail("solution is not reliable", sample.actualPower());
+        }
+
+        if (requireFeedback && sample.graph().feedbackSccCount() <= 0) {
+            return ValidationReport.fail("expected at least one feedback SCC", sample.actualPower());
+        }
+
+        if (sample.profilerOutput().isEmpty()) {
+            return ValidationReport.fail("beam profiler readout missing", 0.0D);
+        }
+
+        double actualPower = sample.actualPower();
+
+        if (Math.abs(actualPower - expectedPower) > POWER_TOLERANCE) {
+            return ValidationReport.fail("profiler power mismatch", actualPower);
+        }
+
+        return ValidationReport.pass(actualPower);
+    }
+
+    private static void logValidation(
+            ServerLevel level,
+            String testName,
+            TestLayout layout,
+            TestSample sample,
+            ValidationReport report,
+            double expectedPower
+    ) {
+        OpticalCompilerDebugLogger.logExampleValidation(
+                level,
+                testName,
+                layout.source(),
+                layout.direction(),
+                sample.graph(),
+                sample.solution(),
+                sample.outputs(),
+                report.passed(),
+                report.message(),
+                report.actualPower(),
+                expectedPower,
+                POWER_TOLERANCE
+        );
+    }
+
+    private static Direction horizontalTestDirection(CommandSourceStack source) {
+        Direction testDirection = source.getEntity() instanceof ServerPlayer player
+                ? player.getDirection()
+                : DEFAULT_TEST_DIRECTION;
+        return testDirection.getAxis().isHorizontal() ? testDirection : DEFAULT_TEST_DIRECTION;
     }
 
     private static double expectedSplitterLensSplitterPower() {
@@ -394,6 +777,51 @@ final class OpticalExampleValidator {
 
         private BlockPos profilerSupport() {
             return origin.relative(direction, 9);
+        }
+    }
+
+    private record FiberTestLayout(BlockPos origin, Direction direction) {
+        private BlockPos source() {
+            return origin;
+        }
+
+        private BlockPos firstSplitter() {
+            return origin.relative(direction, 2);
+        }
+
+        private BlockPos inputInterface() {
+            return origin.relative(direction, 4);
+        }
+
+        private BlockPos outputInterface() {
+            return origin.relative(direction, 6);
+        }
+
+        private BlockPos secondSplitter() {
+            return origin.relative(direction, 8);
+        }
+
+        private BlockPos profiler() {
+            return origin.relative(direction, 10);
+        }
+
+        private BlockPos profilerSupport() {
+            return origin.relative(direction, 11);
+        }
+
+        private TestLayout asTestLayout() {
+            return new TestLayout(origin, direction);
+        }
+    }
+
+    private record TestSample(
+            CompiledPortGraph graph,
+            ScalarPowerSolution solution,
+            List<ReceiverOutput> outputs,
+            Optional<ReceiverOutput> profilerOutput
+    ) {
+        private double actualPower() {
+            return profilerOutput.map(ReceiverOutput::power).orElse(0.0D);
         }
     }
 

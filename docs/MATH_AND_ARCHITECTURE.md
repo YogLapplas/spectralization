@@ -25,6 +25,17 @@ world event
 -> readout and visualization export
 ```
 
+运行时 authority 必须保持单一：
+
+```text
+world -> port graph -> effective edge gains -> power solve -> readout
+```
+
+这条路径是 `authority=gameplay`。legacy trace、profile-state exact 小图校验、debug
+oracle 和 example validator 可以继续存在，但它们属于 `authority=reference`、
+`authority=debug_oracle` 或 `authority=legacy_compare`，只能记录 mismatch、辅助
+调试或 fail test，不能反向改变机器、HUD、过载和最终读数。
+
 ## 2. 三层世界模型
 
 ### 2.1 几何层
@@ -281,8 +292,15 @@ main feedback solve tracks finite power lanes
 readout layer reports representative envelope / profile mode
 ```
 
-也就是说，光纤接受、孔径裁剪、耦合失配等几何敏感过程在编译边时查 LUT 或局部
-模型，写成 `gain <= 1`。进入反馈主求解后，它们不再展开成新的非线性固定点。
+也就是说，光纤接受、孔径裁剪、耦合失配等几何敏感过程在编译边或 collapsed
+solver 组矩阵时查 LUT / 局部模型，写成一次 `gain <= 1`：
+
+```text
+effectiveGain = sampleGain * equivalentProfileGain
+```
+
+进入反馈主求解后，它们不再展开成新的非线性固定点，也不把输出 profile 再反馈
+成新的未知量。
 
 推荐的最小 profile state 使用二阶矩描述横向相空间：
 
@@ -346,8 +364,12 @@ readout / recipe 层，不能把效率结果再写回光学网络。
 编译器先规划，再求解。当前主路径是 `ProfileLanePowerSolver`：
 
 - 无反馈图：`PROFILE_STATE_EXACT`，可以保留有限 profile-state 精确传播。
-- 有反馈图：`PROFILE_COLLAPSED_EXACT`，profile 敏感损耗必须已经折叠进边 gain。
+- 有反馈图：`PROFILE_COLLAPSED_EXACT`，profile 敏感损耗必须折叠进矩阵边权。
 - 空图或无有效 source：`NONE`。
+
+无反馈图如果 profile state 溢出或 exact solve 失败，可以降级到 collapsed，但必须
+在日志中标记 `profile_overflow` 或 `profile_fallback`。降级结果可用于游戏读数，
+但不能被误读为完整 profile-state 精确解。
 
 旧的 scalar planner 仍然参与 region、SCC 和日志解释。已接入或预留的求解器：
 
@@ -566,8 +588,12 @@ transfer edge。未进入 guided mode 的功率被当作接口附近的倏逝场
 实现边界：
 
 - 无反馈结构可以把 `fiberGuidedProfile` 作为有限 profile state 继续传播。
-- 反馈结构必须把接受率、长度损耗和弯折损耗折叠成一次等效边 gain。
+- 反馈结构必须把接受率、长度损耗和弯折损耗折叠成一次等效矩阵边权。
 - 光纤输出的代表性导波 profile 用于 readout 和后续局部 LUT，不在反馈环里无限刷新。
+- 路线拓扑和长度损耗由 `remoteOutputPorts` 提供；半径/发散接受率由
+  `profileTransferForEdge` 提供；最终矩阵边权是二者乘积。
+- 同端点并联路线先对 `routeGain * acceptance` 求和再 clamp，不能把低接受率路线
+  平均成更容易耦合的光。
 
 该模型不作为玩家面对的真实波导参数系统。玩家侧只表达为导光匹配：光斑太宽、
 光束太散、路线太长或弯折太强会造成端口损耗。半径和发散影响的是光纤入口的

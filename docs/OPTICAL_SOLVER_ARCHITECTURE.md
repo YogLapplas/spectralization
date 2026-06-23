@@ -27,6 +27,46 @@ world blocks
 
 ## 2. 核心哲学
 
+### 2.0 Authority 分层
+
+光学代码分三类路径：
+
+```text
+A. authoritative runtime path
+   真正决定机器、HUD、过载、读数的主路径。
+
+B. reference / oracle path
+   用来校验主路径，例如 example validator、profile-state exact 小图验证、legacy compare。
+
+C. migration residue
+   迁移期兼容旧语义的残留路径。它可以暂时存在，但不能获得 gameplay authority。
+```
+
+主路径只有一条：
+
+```text
+world
+-> port graph
+-> effective edge gains
+-> power solve
+-> readout
+```
+
+机器处理、传感器输出、光纤过载和 HUD 主结果只能读取 `authority=gameplay` 的结果。
+reference / oracle 可以写日志、做命令验证、提示 mismatch 或 fail test，但不能改变机器输出、
+缓存 authority、过载烧毁判断或玩家看到的最终读数。
+
+日志字段必须显式写出：
+
+```text
+authority=gameplay
+authority=reference
+authority=debug_oracle
+authority=legacy_compare
+```
+
+这样保留复杂校对路径时，reviewer 仍能判断哪条路径拥有玩法权威。
+
 ### 2.1 无迭代
 
 主线光学网络的默认语义是线性系统：
@@ -148,13 +188,39 @@ solve finite state graph exactly
 
 ```text
 state = port + frequency + coherence + representative profile
-edge gain already includes equivalent profile-sensitive loss
+transition gain = edge sample gain * equivalent profile-sensitive loss
 profile itself is not repeatedly transformed around the feedback loop
 ```
 
 这个 solver 仍然是精确线性求解，不是迭代近似。
 
 它保留 `powerByLane`，让 beam profiler、machine readout 和 envelope layer 还能读取频率、相干性和代表性 profile。
+
+注意这里的 “edge gain” 不是只指 `PortGraphEdge.sampleGain`。在 collapsed feedback 中，矩阵边权必须额外乘一次局部 profile 等效损耗：
+
+```text
+effectiveGain(edge, lane)
+  = edge.sampleGainFor(lane.frequency)
+  * equivalentProfileGain(edge, lane.profile)
+```
+
+`equivalentProfileGain` 只读代表性 profile，返回 `gain <= 1`。它可以捕获光纤入口接受率、透镜孔径裁剪、耦合失配等 radius-based loss，但不能把输出 profile 再塞回反馈状态。
+
+如果无反馈图因为 profile state 数量过大或 exact profile solve 失败而降级到 collapsed solver，日志必须显式标记：
+
+```text
+profile_mode=collapsed_due_to_overflow
+profile_overflow=true
+```
+
+或：
+
+```text
+profile_mode=collapsed_fallback
+profile_fallback=true
+```
+
+这种结果仍可用于游戏读数，但调试时应按降级结果处理。
 
 ### 4.3 NONE / scalar
 
@@ -197,7 +263,22 @@ edge.sampleGain
 edge.sampleGainByFrequency
 ```
 
-然后主求解器只看到线性 gain。
+或者在 collapsed solver 组矩阵时作为 `equivalentProfileGain(edge, lane.profile)` 乘入。无论在哪一层完成，进入线性方程的最终边权必须已经包含该损耗。
+
+当前光纤的责任划分：
+
+```text
+remoteOutputPorts:
+  route topology + route transmission + output split only
+
+profileTransferForEdge:
+  radius acceptance + angular acceptance + guided output profile
+
+matrix edge:
+  route/split gain * profile transfer gain
+```
+
+不要把光纤入口 acceptance 同时写入 `remoteOutputPorts` 和 `profileTransferForEdge`，否则主求解、过载和日志会重复计算。
 
 对玩家表达为：
 
@@ -288,6 +369,10 @@ residual > epsilon
 
 ```text
 /spectralization opticaltest splitter_lens_splitter
+/spectralization opticaltest lens_aperture_clip
+/spectralization opticaltest fiber_radius_coupling
+/spectralization opticaltest feedback_fiber_radius_loss
+/spectralization opticaltest parallel_fiber_same_endpoint
 ```
 
 它会生成：
@@ -326,6 +411,22 @@ expected=0.303716673
 ```
 
 该命令还会写入 `stage=example_validation`，用于 review 和回归定位。
+
+新增的 profile 回归重点：
+
+```text
+lens_aperture_clip:
+  宽光束通过标准透镜时，功率应乘 aperture² / radius² 近似裁剪因子。
+
+fiber_radius_coupling:
+  radius=0.125 和 radius=0.25 进入基础光纤时，宽光束输出应接近窄光束的 0.25。
+
+feedback_fiber_radius_loss:
+  光纤在反馈 SCC 内时，宽光束输出必须显著低于窄光束，且 solver 应为 collapsed。
+
+parallel_fiber_same_endpoint:
+  同端点并联光纤不能比单条更差，也不能超过 1.0 总 gain。
+```
 
 ## 11. Review 检查点
 

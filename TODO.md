@@ -75,9 +75,15 @@
 - [x] Feedback SCC / chord 数值求解。
 - [x] Stable feedback gain scheduler。
 - [x] Effective gain softcap + hard rho。
+- [x] Authoritative runtime path：gameplay 只读取 compiled effective edge gains + power solve + readout。
+- [x] Reference / oracle path 身份标注：`gameplay`、`reference`、`debug_oracle`、`legacy_compare`。
+- [x] 多等效 profile 损耗：光纤耦合、透镜孔径裁剪等半径敏感损耗先折叠进边 gain，再进入功率系统。
+- [x] Collapsed feedback 路径接入 equivalent profile gain，避免反馈环绕过半径/发散损耗。
+- [x] Profile fallback / overflow 标记进入 solution 和日志。
 - [x] 64x64 分光镜阵列和高频红石压力测试达到可玩水平。
 - [~] 多源、多网络、网络切分/合并需要长期回归。
 - [~] 数据层状态 LUT 还可强化。
+- [~] Profile-state exact solver 保留为 reference，用于校对小型无反馈网络和迁移期语义。
 - [ ] 清点旧 tracer 仍参与 gameplay 的位置，逐步迁移到 compiled output 或删除。
 - [ ] Weighted BFS attention scheduler。
 - [ ] 量级分池。
@@ -86,6 +92,7 @@
 - [ ] 对称性 / 重复子图压缩。
 - [ ] Solver metadata：误差界、残差、稳定性余量、截断功率。
 - [ ] Debug command 导出 graph / solver plan / readout / gain schedule。
+- [ ] 给 collapsed fallback 的读数层增加更明显的玩家/调试提示。
 
 ## 调度与可靠性
 
@@ -160,7 +167,10 @@
 - [x] 连接容量由并行光纤自然增加。
 - [x] Jade 显示光纤节点连接数。
 - [x] 光纤接口暂时承担半个 PTS + 光源的收发角色。
+- [x] 光纤 effective transfer gain 统一包含 route gain 和 profile acceptance，主 solver 与过载监控共享语义。
+- [x] 并联光纤到同 endpoint 时按 `clamp(sum(routeGain * acceptance))` 语义聚合。
 - [~] 单模/多模区分仍是设计方向，当前主要是能量传输光纤。
+- [~] 半径/发散对光纤入口的影响采用多等效损耗，不暴露 NA 术语给玩家。
 - [ ] 机器绑定器。
 - [ ] 全息平板。
 - [ ] 远程机器 GUI。
@@ -343,7 +353,9 @@
 - [x] 中英双语技术写作规范。
 - [x] 本地测试计划。
 - [x] AI 机器 UI 设计规范：默认少文字、pending 一等状态、原版元素优先和自检模板。
+- [x] 游戏内光学示例验证命令：`splitter_lens_splitter`、`lens_aperture_clip`、`fiber_radius_coupling`、`feedback_fiber_radius_loss`、`parallel_fiber_same_endpoint`。
 - [ ] 单元测试：材料插值、softcap、SCC、可靠性门控。
 - [ ] 游戏内 debug 命令导出当前网络报告。
+- [ ] 把 opticaltest 覆盖面接入自动化回归，避免只依赖手动进游戏验证。
 - [ ] 数据包文档：材料 LUT、涂层 LUT、频率区间、场源、增益介质。
 - [ ] 美术规范：Blockbench 初始朝向、旋转、透明材质、item 视角。

@@ -22,8 +22,42 @@ public record ScalarPowerSolution(
         Map<PortGraphNode, Double> powerByNode,
         Map<PortGraphNode, Double> coherentPowerByNode,
         Map<SpectralPowerLane, Map<PortGraphNode, Double>> powerByLane,
-        List<ScalarSolverRegionResult> regionResults
+        List<ScalarSolverRegionResult> regionResults,
+        boolean profileCollapsedFallback,
+        boolean profileOverflow
 ) {
+    public ScalarPowerSolution(
+            ScalarSolverKind solverKind,
+            ScalarSolverPlan solverPlan,
+            boolean converged,
+            boolean unstable,
+            int iterations,
+            double residual,
+            double maxNodePower,
+            double totalNodePower,
+            Map<PortGraphNode, Double> powerByNode,
+            Map<PortGraphNode, Double> coherentPowerByNode,
+            Map<SpectralPowerLane, Map<PortGraphNode, Double>> powerByLane,
+            List<ScalarSolverRegionResult> regionResults
+    ) {
+        this(
+                solverKind,
+                solverPlan,
+                converged,
+                unstable,
+                iterations,
+                residual,
+                maxNodePower,
+                totalNodePower,
+                powerByNode,
+                coherentPowerByNode,
+                powerByLane,
+                regionResults,
+                false,
+                false
+        );
+    }
+
     public ScalarPowerSolution {
         Objects.requireNonNull(solverKind, "solverKind");
         Objects.requireNonNull(solverPlan, "solverPlan");
@@ -199,7 +233,9 @@ public record ScalarPowerSolution(
                 powerByNode,
                 coherentPowerByNode,
                 powerByLane,
-                regionResults
+                regionResults,
+                profileCollapsedFallback,
+                profileOverflow
         );
     }
 

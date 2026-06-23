@@ -95,9 +95,13 @@ D:\Release 2.3.0\sins&tec\.minecraft\versions\1.21.1-NeoForge_21.1.233\mods\spec
 
 ```text
 /spectralization opticaltest splitter_lens_splitter
+/spectralization opticaltest lens_aperture_clip
+/spectralization opticaltest fiber_radius_coupling
+/spectralization opticaltest feedback_fiber_radius_loss
+/spectralization opticaltest parallel_fiber_same_endpoint
 ```
 
-该命令会生成：
+第一个命令会生成：
 
 ```text
 creative light source -> beam splitter -> lens holder -> beam splitter -> beam profiler
@@ -111,6 +115,13 @@ creative light source -> beam splitter -> lens holder -> beam splitter -> beam p
 - `profile_mode=collapsed_equivalence`。
 - `readout_reliable=true`。
 - profiler 读数和 expected 的差值在 tolerance 内。
+
+其他命令覆盖 profile-sensitive gain：
+
+- `lens_aperture_clip`：宽光束经过标准透镜时，孔径裁剪应降低输出功率。
+- `fiber_radius_coupling`：基础光纤应让 `radius=0.25` 的输出接近 `radius=0.125` 的四分之一。
+- `feedback_fiber_radius_loss`：光纤位于反馈 SCC 内时，宽光束仍应显著低于窄光束。
+- `parallel_fiber_same_endpoint`：同端点并联光纤不能降低输出，也不能超过 1.0 总 gain。
 
 必须检查的不变量：
 

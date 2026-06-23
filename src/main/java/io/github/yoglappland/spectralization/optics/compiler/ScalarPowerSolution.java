@@ -89,6 +89,29 @@ public record ScalarPowerSolution(
         return powerByLane.getOrDefault(lane, Map.of());
     }
 
+    public Map<PortGraphNode, Double> powerByNodeForSpectral(FrequencyKey frequency, CoherenceKind coherence) {
+        Objects.requireNonNull(frequency, "frequency");
+        Objects.requireNonNull(coherence, "coherence");
+
+        Map<PortGraphNode, Double> powers = new HashMap<>();
+
+        for (Map.Entry<SpectralPowerLane, Map<PortGraphNode, Double>> entry : powerByLane.entrySet()) {
+            SpectralPowerLane lane = entry.getKey();
+
+            if (!lane.frequency().equals(frequency) || lane.coherence() != coherence) {
+                continue;
+            }
+
+            for (Map.Entry<PortGraphNode, Double> powerEntry : entry.getValue().entrySet()) {
+                if (powerEntry.getValue() > 0.0) {
+                    powers.merge(powerEntry.getKey(), powerEntry.getValue(), Double::sum);
+                }
+            }
+        }
+
+        return powers.isEmpty() ? Map.of() : Map.copyOf(powers);
+    }
+
     public Map<FrequencyKey, Double> powerByFrequencyAt(PortGraphNode node) {
         if (node == null) {
             return Map.of();

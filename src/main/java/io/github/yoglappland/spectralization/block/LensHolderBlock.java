@@ -6,6 +6,9 @@ import io.github.yoglappland.spectralization.optics.CompiledOpticalNetwork;
 import io.github.yoglappland.spectralization.optics.OpticalElement;
 import io.github.yoglappland.spectralization.optics.OpticalResult;
 import io.github.yoglappland.spectralization.optics.BeamEnvelope;
+import io.github.yoglappland.spectralization.optics.geometry.BeamProfileKey;
+import io.github.yoglappland.spectralization.optics.geometry.BeamProfileTransfer;
+import io.github.yoglappland.spectralization.optics.geometry.PhaseSpaceMap;
 import io.github.yoglappland.spectralization.optics.geometry.SpatialModeCoupling;
 import io.github.yoglappland.spectralization.optics.geometry.SpatialProfileElement;
 import io.github.yoglappland.spectralization.optics.geometry.SpatialTransformContext;
@@ -106,6 +109,28 @@ public class LensHolderBlock extends Block implements EntityBlock, OpticalElemen
     }
 
     @Override
+    public PhaseSpaceMap profilePhaseSpaceMap(SpatialTransformContext context) {
+        if (!(context.level().getBlockEntity(context.pos()) instanceof LensHolderBlockEntity lensHolder)
+                || !lensHolder.hasLens()
+                || context.outgoingDirection() != context.incomingDirection().getOpposite()) {
+            return PhaseSpaceMap.IDENTITY;
+        }
+
+        return lensHolder.lensProfile().phaseSpaceMap();
+    }
+
+    @Override
+    public String profileTransitionSignature(SpatialTransformContext context) {
+        if (!(context.level().getBlockEntity(context.pos()) instanceof LensHolderBlockEntity lensHolder)
+                || !lensHolder.hasLens()
+                || context.outgoingDirection() != context.incomingDirection().getOpposite()) {
+            return context.state().toString();
+        }
+
+        return context.state() + "|lens=" + lensHolder.lensProfile();
+    }
+
+    @Override
     public SpatialModeCoupling transformSpatialProfile(
             BeamEnvelope inputEnvelope,
             SpatialTransformContext context
@@ -117,6 +142,20 @@ public class LensHolderBlock extends Block implements EntityBlock, OpticalElemen
         }
 
         return SpatialModeCoupling.ordered(lensHolder.lensProfile().transformTransmittedEnvelope(inputEnvelope));
+    }
+
+    @Override
+    public BeamProfileTransfer transformProfileState(
+            BeamProfileKey inputProfile,
+            SpatialTransformContext context
+    ) {
+        if (!(context.level().getBlockEntity(context.pos()) instanceof LensHolderBlockEntity lensHolder)
+                || !lensHolder.hasLens()
+                || context.outgoingDirection() != context.incomingDirection().getOpposite()) {
+            return BeamProfileTransfer.of(inputProfile, 1.0D);
+        }
+
+        return lensHolder.lensProfile().transformTransmittedProfile(inputProfile);
     }
 
     @Override

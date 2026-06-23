@@ -75,7 +75,13 @@ public final class ScalarPowerSolver {
                     ));
         }
 
-        return IterativeScalarSolver.solve(graph, nodeIds, source, solverPlan);
+        return failedPlannedSolverSolution(
+                ScalarSolverKind.NO_EXACT_SOLVER,
+                graph,
+                nodeIds,
+                source,
+                solverPlan
+        );
     }
 
     private static ScalarPowerSolution failedPlannedSolverSolution(

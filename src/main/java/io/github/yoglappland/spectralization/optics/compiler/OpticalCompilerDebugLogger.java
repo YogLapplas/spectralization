@@ -336,6 +336,60 @@ public final class OpticalCompilerDebugLogger {
         write(builder.toString());
     }
 
+    public static void logExampleValidation(
+            Level level,
+            String testName,
+            BlockPos sourcePos,
+            Direction direction,
+            CompiledPortGraph graph,
+            ScalarPowerSolution solution,
+            List<ReceiverOutput> receiverOutputs,
+            boolean passed,
+            String message,
+            double actualPower,
+            double expectedPower,
+            double tolerance
+    ) {
+        if (!SpectralizationConfig.opticalCompilerDebugLog()) {
+            return;
+        }
+
+        StringBuilder builder = new StringBuilder(8192);
+        builder.append("=== spectralization optical compiler ===\n");
+        builder.append("session_log=").append(SESSION_LOG_FILE_NAME).append('\n');
+        builder.append("stage=example_validation\n");
+        builder.append("time=").append(Instant.now()).append('\n');
+        builder.append("dimension=").append(level.dimension().location()).append('\n');
+        builder.append("test=").append(testName)
+                .append(" passed=").append(passed)
+                .append(" message=\"").append(message.replace("\"", "\\\"")).append('"')
+                .append('\n');
+        builder.append("source=").append(formatPos(sourcePos))
+                .append(" direction=").append(direction)
+                .append(" actual=").append(formatPower(actualPower))
+                .append(" expected=").append(formatPower(expectedPower))
+                .append(" delta=").append(formatPower(actualPower - expectedPower))
+                .append(" tolerance=").append(formatPower(tolerance))
+                .append(" profile_mode=").append(profileMode(solution.solverKind()))
+                .append('\n');
+        appendGraphSummary(builder, "example", graph, -1, graph.terminationCount());
+        appendTemplateSummary(builder, "example", level, graph);
+        appendScalarSolution(builder, "example_scalar", solution);
+        appendReadoutOutputList(builder, "example", receiverOutputs);
+
+        if (verboseLog() || !passed) {
+            appendSccs(builder, "example", graph);
+            appendChords(builder, "example", graph);
+            appendStrongestNodes(builder, "example_scalar", solution);
+            appendEdges(builder, "example", graph);
+        } else {
+            appendVerboseSectionsSkipped(builder);
+        }
+
+        builder.append('\n');
+        write(builder.toString());
+    }
+
     public static void logSystemRebuild(
             Level level,
             int requestedNetworkId,
@@ -879,10 +933,20 @@ public final class OpticalCompilerDebugLogger {
                 .append(" graph_edges=").append(graph.edges().size())
                 .append(" feedback_sccs=").append(graph.feedbackSccCount())
                 .append(" beta1=").append(graph.beta1())
+                .append(" profile_mode=").append(profileMode(solution.solverKind()))
                 .append('\n');
         appendScalarSolution(builder, channel + "_lane_solution", solution);
         builder.append('\n');
         write(builder.toString());
+    }
+
+    private static String profileMode(ScalarSolverKind solverKind) {
+        return switch (solverKind) {
+            case PROFILE_COLLAPSED_EXACT -> "collapsed_equivalence";
+            case PROFILE_STATE_EXACT -> "state_exact";
+            case NONE -> "none";
+            default -> "scalar";
+        };
     }
 
     private static void appendTemplateSummary(

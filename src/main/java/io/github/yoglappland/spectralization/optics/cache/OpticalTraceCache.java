@@ -42,13 +42,14 @@ import io.github.yoglappland.spectralization.optics.compiler.PortGraphEdgeKind;
 import io.github.yoglappland.spectralization.optics.compiler.PortGraphNode;
 import io.github.yoglappland.spectralization.optics.compiler.PortWaveKind;
 import io.github.yoglappland.spectralization.optics.compiler.OpticalReadoutLayerCompiler;
+import io.github.yoglappland.spectralization.optics.compiler.ProfileLanePowerSolver;
 import io.github.yoglappland.spectralization.optics.compiler.ScalarPowerSolution;
-import io.github.yoglappland.spectralization.optics.compiler.ScalarPowerSolver;
 import io.github.yoglappland.spectralization.optics.compiler.ScalarSolverKind;
 import io.github.yoglappland.spectralization.optics.compiler.ScalarSolverPlan;
 import io.github.yoglappland.spectralization.optics.compiler.SpectralPowerLane;
 import io.github.yoglappland.spectralization.optics.compiler.gain.GainSchedule;
 import io.github.yoglappland.spectralization.optics.compiler.gain.GainSchedulers;
+import io.github.yoglappland.spectralization.optics.geometry.BeamProfileKey;
 import io.github.yoglappland.spectralization.optics.surface.SurfaceKey;
 import io.github.yoglappland.spectralization.optics.validation.OpticalTraceValidator;
 import io.github.yoglappland.spectralization.optics.world.OpticalDormantSourceData;
@@ -2007,9 +2008,9 @@ public final class OpticalTraceCache {
         double maxNodeSourcePower = 0.0;
         List<RubyCoherentSource> sources = new ArrayList<>();
 
-        SpectralPowerLane rubyStrayLane = new SpectralPowerLane(RubyBlock.RUBY_LINE, CoherenceKind.INCOHERENT);
-
-        for (Map.Entry<PortGraphNode, Double> entry : incoherentSolution.powerByNodeForLane(rubyStrayLane).entrySet()) {
+        for (Map.Entry<PortGraphNode, Double> entry : incoherentSolution
+                .powerByNodeForSpectral(RubyBlock.RUBY_LINE, CoherenceKind.INCOHERENT)
+                .entrySet()) {
             PortGraphNode node = entry.getKey();
 
             if (node.waveKind() != PortWaveKind.OUTGOING || !level.isLoaded(node.pos())) {
@@ -2123,7 +2124,11 @@ public final class OpticalTraceCache {
         }
 
         Set<PortGraphNode> coherentNodes = new HashSet<>(coherentGraph.nodes());
-        SpectralPowerLane rubyCoherentLane = new SpectralPowerLane(RubyBlock.RUBY_LINE, CoherenceKind.COHERENT);
+        SpectralPowerLane rubyCoherentLane = new SpectralPowerLane(
+                RubyBlock.RUBY_LINE,
+                CoherenceKind.COHERENT,
+                BeamProfileKey.collimated(0.25D)
+        );
         Map<PortGraphNode, Double> rubyCoherentSourcePowersByNode =
                 coherentSourcePowersByLane.computeIfAbsent(rubyCoherentLane, ignored -> new HashMap<>());
 
@@ -2240,7 +2245,11 @@ public final class OpticalTraceCache {
                 continue;
             }
 
-            SpectralPowerLane lane = new SpectralPowerLane(component.frequency(), coherence);
+            SpectralPowerLane lane = new SpectralPowerLane(
+                    component.frequency(),
+                    coherence,
+                    BeamProfileKey.fromEnvelope(outputBeam.beam().envelope())
+            );
             sourcePowersByLane.computeIfAbsent(lane, ignored -> new HashMap<>())
                     .merge(sourceNode, component.power(), Double::sum);
         }
@@ -2259,151 +2268,20 @@ public final class OpticalTraceCache {
         List<Map.Entry<SpectralPowerLane, Map<PortGraphNode, Double>>> lanes =
                 new ArrayList<>(sourcePowersByLane.entrySet());
         lanes.sort(Map.Entry.comparingByKey(SpectralPowerLane.COMPARATOR));
-
-        boolean parallel = shouldSolveLanesInParallel(graph, lanes.size());
         long startNanos = System.nanoTime();
-        List<LaneScalarSolution> laneSolutions = parallel
-                ? lanes.parallelStream()
-                        .map(entry -> solveSingleLane(graph, entry))
-                        .filter(Objects::nonNull)
-                        .toList()
-                : lanes.stream()
-                        .map(entry -> solveSingleLane(graph, entry))
-                        .filter(Objects::nonNull)
-                        .toList();
+        ScalarPowerSolution solution = ProfileLanePowerSolver.solve(level, graph, sourcePowersByLane);
         long elapsedNanos = System.nanoTime() - startNanos;
-        ScalarPowerSolution solution = combineLaneSolutions(laneSolutions);
         OpticalCompilerDebugLogger.logSpectralLaneSolve(
                 level,
                 channel,
                 graph,
                 lanes.size(),
-                laneSolutions.size(),
-                parallel,
+                solution.powerByLane().size(),
+                false,
                 elapsedNanos,
                 solution
         );
         return solution;
-    }
-
-    private static LaneScalarSolution solveSingleLane(
-            CompiledPortGraph graph,
-            Map.Entry<SpectralPowerLane, Map<PortGraphNode, Double>> entry
-    ) {
-        Map<PortGraphNode, Double> sourcePowersByNode = positivePowerMap(entry.getValue());
-
-        if (sourcePowersByNode.isEmpty()) {
-            return null;
-        }
-
-        CompiledPortGraph laneGraph = graphForFrequency(graph, entry.getKey().frequency());
-        return new LaneScalarSolution(
-                entry.getKey(),
-                ScalarPowerSolver.solve(laneGraph, sourcePowersByNode)
-        );
-    }
-
-    private static boolean shouldSolveLanesInParallel(CompiledPortGraph graph, int laneCount) {
-        if (laneCount < SPECTRAL_LANE_PARALLEL_MIN_LANES || Runtime.getRuntime().availableProcessors() <= 1) {
-            return false;
-        }
-
-        int workEstimate = laneCount * Math.max(1, graph.edges().size() + graph.nodes().size());
-        return workEstimate >= SPECTRAL_LANE_PARALLEL_MIN_WORK;
-    }
-
-    private static CompiledPortGraph graphForFrequency(CompiledPortGraph graph, FrequencyKey frequency) {
-        List<PortGraphEdge> edges = new ArrayList<>(graph.edges().size());
-
-        for (PortGraphEdge edge : graph.edges()) {
-            double gain = edge.sampleGainFor(frequency);
-            edges.add(new PortGraphEdge(
-                    edge.id(),
-                    edge.kind(),
-                    edge.from(),
-                    edge.to(),
-                    edge.distance(),
-                    1.0,
-                    Math.max(0.0, gain),
-                    frequency,
-                    Map.of(frequency, Math.max(0.0, gain))
-            ));
-        }
-
-        return new CompiledPortGraph(
-                graph.sourcePos(),
-                graph.sourceDirection(),
-                graph.sourceNode(),
-                graph.nodes(),
-                edges,
-                graph.sccs(),
-                graph.chords(),
-                graph.terminationCount()
-        );
-    }
-
-    private static ScalarPowerSolution combineLaneSolutions(List<LaneScalarSolution> laneSolutions) {
-        if (laneSolutions.isEmpty()) {
-            return ScalarPowerSolution.empty();
-        }
-
-        Map<PortGraphNode, Double> totalPowerByNode = new HashMap<>();
-        Map<PortGraphNode, Double> coherentPowerByNode = new HashMap<>();
-        Map<SpectralPowerLane, Map<PortGraphNode, Double>> powerByLane = new HashMap<>();
-        List<io.github.yoglappland.spectralization.optics.compiler.ScalarSolverRegionResult> regionResults = new ArrayList<>();
-        boolean converged = true;
-        boolean unstable = false;
-        int iterations = 0;
-        double residual = 0.0;
-        ScalarSolverKind solverKind = ScalarSolverKind.NONE;
-        ScalarSolverPlan solverPlan = ScalarSolverPlan.empty();
-
-        for (LaneScalarSolution laneSolution : laneSolutions) {
-            ScalarPowerSolution solution = laneSolution.solution();
-
-            if (solverKind == ScalarSolverKind.NONE && solution.solverKind() != ScalarSolverKind.NONE) {
-                solverKind = solution.solverKind();
-                solverPlan = solution.solverPlan();
-            }
-
-            converged &= solution.converged();
-            unstable |= solution.unstable();
-            iterations += solution.iterations();
-            residual = Math.max(residual, solution.residual());
-            regionResults.addAll(solution.regionResults());
-            powerByLane.put(laneSolution.lane(), solution.powerByNode());
-
-            for (Map.Entry<PortGraphNode, Double> entry : solution.powerByNode().entrySet()) {
-                totalPowerByNode.merge(entry.getKey(), entry.getValue(), Double::sum);
-
-                if (laneSolution.lane().coherence() == CoherenceKind.COHERENT) {
-                    coherentPowerByNode.merge(entry.getKey(), entry.getValue(), Double::sum);
-                }
-            }
-        }
-
-        double maxPower = 0.0;
-        double totalPower = 0.0;
-
-        for (double power : totalPowerByNode.values()) {
-            maxPower = Math.max(maxPower, power);
-            totalPower += power;
-        }
-
-        return new ScalarPowerSolution(
-                solverKind,
-                solverPlan,
-                converged,
-                unstable,
-                iterations,
-                residual,
-                maxPower,
-                totalPower,
-                totalPowerByNode,
-                coherentPowerByNode,
-                powerByLane,
-                regionResults
-        );
     }
 
     private static Map<SpectralPowerLane, Map<PortGraphNode, Double>> copyLanePowerMap(
@@ -2432,18 +2310,6 @@ public final class OpticalTraceCache {
         }
 
         return collapsed;
-    }
-
-    private static Map<PortGraphNode, Double> positivePowerMap(Map<PortGraphNode, Double> source) {
-        Map<PortGraphNode, Double> positive = new HashMap<>();
-
-        for (Map.Entry<PortGraphNode, Double> entry : source.entrySet()) {
-            if (entry.getValue() > 0.0) {
-                positive.put(entry.getKey(), entry.getValue());
-            }
-        }
-
-        return positive;
     }
 
     private static double totalSourcePower(Map<PortGraphNode, Double> sourcePowersByNode) {
@@ -2482,13 +2348,6 @@ public final class OpticalTraceCache {
             Objects.requireNonNull(solution, "solution");
             coherentSourcePowersByNode = Map.copyOf(coherentSourcePowersByNode);
             coherentSourcePowersByLane = copyLanePowerMap(coherentSourcePowersByLane);
-        }
-    }
-
-    private record LaneScalarSolution(SpectralPowerLane lane, ScalarPowerSolution solution) {
-        private LaneScalarSolution {
-            Objects.requireNonNull(lane, "lane");
-            Objects.requireNonNull(solution, "solution");
         }
     }
 

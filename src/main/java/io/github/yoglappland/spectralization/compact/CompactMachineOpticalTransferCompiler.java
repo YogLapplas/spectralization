@@ -14,6 +14,8 @@ import io.github.yoglappland.spectralization.optics.OpticalResult;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.PlaneWaveComponent;
 import io.github.yoglappland.spectralization.optics.fiber.FiberOpticalTransfer;
+import io.github.yoglappland.spectralization.optics.geometry.BeamProfileKey;
+import io.github.yoglappland.spectralization.optics.geometry.BeamProfileTransfer;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -290,7 +292,18 @@ public final class CompactMachineOpticalTransferCompiler {
             }
 
             Direction outputDirection = outputPort.direction();
-            BeamPacket outputBeam = inputBeam.withDirection(outputDirection).scalePower(outputPort.gain());
+            BeamProfileTransfer transfer = FiberOpticalTransfer.profileTransferForEdge(
+                    level,
+                    inputPos,
+                    incomingDirection,
+                    outputPort.pos(),
+                    outputDirection,
+                    BeamProfileKey.fromEnvelope(inputBeam.envelope())
+            );
+            BeamPacket outputBeam = inputBeam
+                    .withDirection(outputDirection)
+                    .withEnvelope(transfer.outputProfile().toEnvelope())
+                    .scalePower(outputPort.gain() * transfer.gain());
             enqueue(pending, outputPort.pos().relative(outputDirection), outputDirection, outputBeam);
         }
     }

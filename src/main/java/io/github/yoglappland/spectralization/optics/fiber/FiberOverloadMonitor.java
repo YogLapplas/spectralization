@@ -8,6 +8,7 @@ import io.github.yoglappland.spectralization.optics.compiler.PortGraphEdgeKind;
 import io.github.yoglappland.spectralization.optics.compiler.PortWaveKind;
 import io.github.yoglappland.spectralization.optics.compiler.ScalarPowerSolution;
 import io.github.yoglappland.spectralization.optics.compiler.SpectralPowerLane;
+import io.github.yoglappland.spectralization.optics.geometry.BeamProfileTransfer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -40,7 +41,7 @@ public final class FiberOverloadMonitor {
             return false;
         }
 
-        Map<FiberSegmentKey, Double> loadBySegment = loadByFiberSegment(snapshot, graph, solution);
+        Map<FiberSegmentKey, Double> loadBySegment = loadByFiberSegment(level, snapshot, graph, solution);
 
         if (loadBySegment.isEmpty()) {
             return false;
@@ -83,6 +84,7 @@ public final class FiberOverloadMonitor {
     }
 
     private static Map<FiberSegmentKey, Double> loadByFiberSegment(
+            ServerLevel level,
             FiberNetworkSnapshot snapshot,
             CompiledPortGraph graph,
             ScalarPowerSolution solution
@@ -94,7 +96,7 @@ public final class FiberOverloadMonitor {
                 continue;
             }
 
-            double transferredPower = transferredPower(edge, solution);
+            double transferredPower = transferredPower(level, edge, solution);
 
             if (transferredPower <= 0.0D) {
                 continue;
@@ -118,11 +120,21 @@ public final class FiberOverloadMonitor {
         return loadBySegment;
     }
 
-    private static double transferredPower(PortGraphEdge edge, ScalarPowerSolution solution) {
+    private static double transferredPower(ServerLevel level, PortGraphEdge edge, ScalarPowerSolution solution) {
         double power = 0.0D;
 
         for (SpectralPowerLane lane : solution.powerByLane().keySet()) {
-            power += solution.powerAt(edge.from(), lane) * edge.sampleGainFor(lane.frequency());
+            BeamProfileTransfer transfer = FiberOpticalTransfer.profileTransferForEdge(
+                    level,
+                    edge.from().pos(),
+                    edge.from().side(),
+                    edge.to().pos(),
+                    edge.to().side(),
+                    lane.profile()
+            );
+            power += solution.powerAt(edge.from(), lane)
+                    * edge.sampleGainFor(lane.frequency())
+                    * transfer.gain();
         }
 
         if (power > 0.0D) {

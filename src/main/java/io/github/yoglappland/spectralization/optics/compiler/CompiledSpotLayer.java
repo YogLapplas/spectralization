@@ -167,10 +167,11 @@ public final class CompiledSpotLayer {
             ScalarPowerSolution solution,
             PortGraphNode node
     ) {
-        BeamEnvelope envelope = BeamGeometryOps.propagate(
+        BeamEnvelope fallbackEnvelope = BeamGeometryOps.propagate(
                 sourceOutput.beam().envelope(),
                 Math.max(0, distance)
         );
+        BeamEnvelope envelope = dominantProfileEnvelope(solution, node, fallbackEnvelope);
         List<PlaneWaveComponent> components = solution.powerByLane().entrySet().stream()
                 .map(entry -> {
                     double power = entry.getValue().getOrDefault(node, 0.0);
@@ -192,6 +193,26 @@ public final class CompiledSpotLayer {
         return sourceOutput.beam()
                 .withDirection(sourceOutput.outgoingDirection())
                 .withEnvelope(envelope);
+    }
+
+    private static BeamEnvelope dominantProfileEnvelope(
+            ScalarPowerSolution solution,
+            PortGraphNode node,
+            BeamEnvelope fallback
+    ) {
+        double strongestPower = 0.0D;
+        BeamEnvelope strongestEnvelope = fallback;
+
+        for (Map.Entry<SpectralPowerLane, Map<PortGraphNode, Double>> entry : solution.powerByLane().entrySet()) {
+            double power = entry.getValue().getOrDefault(node, 0.0D);
+
+            if (power > strongestPower) {
+                strongestPower = power;
+                strongestEnvelope = entry.getKey().profile().toEnvelope();
+            }
+        }
+
+        return strongestEnvelope;
     }
 
     private static double scaledCoherentPower(double targetPower, double sourceTotalPower, double sourceCoherentPower) {

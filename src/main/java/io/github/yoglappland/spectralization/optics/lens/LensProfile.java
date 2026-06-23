@@ -3,6 +3,9 @@ package io.github.yoglappland.spectralization.optics.lens;
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.optics.BeamEnvelope;
 import io.github.yoglappland.spectralization.optics.geometry.BeamGeometryOps;
+import io.github.yoglappland.spectralization.optics.geometry.BeamProfileKey;
+import io.github.yoglappland.spectralization.optics.geometry.BeamProfileTransfer;
+import io.github.yoglappland.spectralization.optics.geometry.PhaseSpaceMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -97,6 +100,23 @@ public record LensProfile(
         };
 
         return BeamGeometryOps.applyThinLens(input, focalLength, apertureRadius, qualityMultiplier);
+    }
+
+    public PhaseSpaceMap phaseSpaceMap() {
+        return PhaseSpaceMap.thinLens(focalLength);
+    }
+
+    public BeamProfileTransfer transformTransmittedProfile(BeamProfileKey input) {
+        Objects.requireNonNull(input, "input");
+
+        double apertureRadius = aperture / 100.0;
+        double qualityMultiplier = switch (quality) {
+            case 1 -> 1.5;
+            case 3 -> 1.0;
+            default -> 1.15;
+        };
+
+        return input.toShape().thinLens(focalLength, apertureRadius, qualityMultiplier);
     }
 
     public String qualityNameKey() {

@@ -217,8 +217,8 @@ final class ScalarPowerSolutions {
     }
 
     private static ScalarSolverKind executedSolverKind(ScalarSolverKind solverKind, ScalarSolverRegion region) {
-        if (solverKind == ScalarSolverKind.ITERATIVE_FIXED_POINT) {
-            return ScalarSolverKind.ITERATIVE_FIXED_POINT;
+        if (solverKind == ScalarSolverKind.NO_EXACT_SOLVER) {
+            return ScalarSolverKind.NO_EXACT_SOLVER;
         }
 
         if (solverKind == ScalarSolverKind.NONE) {

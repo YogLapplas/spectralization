@@ -16,8 +16,8 @@ final class StableFeedbackGainScheduler implements GainScheduler {
 
     private final GainSourceCollector sourceCollector = new GainSourceCollector();
     private final GainParticipationAnalyzer participationAnalyzer = new GainParticipationAnalyzer();
-    private final SpectralRadiusEstimator spectralRadiusEstimator = new SpectralRadiusEstimator();
-    private final EffectiveGainSoftcap softcap = new EffectiveGainSoftcap(spectralRadiusEstimator);
+    private final FeedbackGainBoundEstimator boundEstimator = new FeedbackGainBoundEstimator();
+    private final EffectiveGainSoftcap softcap = new EffectiveGainSoftcap(boundEstimator);
 
     @Override
     public GainSchedule schedule(Level level, CompiledPortGraph graph) {
@@ -54,7 +54,7 @@ final class StableFeedbackGainScheduler implements GainScheduler {
                 : analyzeParticipation
                 ? participationAnalyzer.weightedSources(graph, index, feedbackGainSourcesByEdgeId)
                 : fallbackWeightedSources(feedbackGainSourcesByEdgeId);
-        double rhoBefore = spectralRadiusEstimator.estimate(
+        double rhoBefore = boundEstimator.estimate(
                 graph,
                 index,
                 edge -> gainSourcesByEdgeId.getOrDefault(edge.id(), GainSource.passive()).baseGain()
@@ -67,7 +67,7 @@ final class StableFeedbackGainScheduler implements GainScheduler {
 
         if (rhoAfter >= EffectiveGainSoftcap.SOLVER_TARGET_RHO
                 && softcap.hasActiveScheduledGain(feedbackEffectiveGainsByEdgeId)) {
-            feedbackEffectiveGainsByEdgeId = softcap.shrinkExtraLogGainsToTarget(
+            feedbackEffectiveGainsByEdgeId = softcap.shrinkExtraGainsToTarget(
                     graph,
                     index,
                     feedbackEffectiveGainsByEdgeId,

@@ -1,6 +1,8 @@
 package io.github.yoglappland.spectralization.optics.compiler.gain;
 
 import io.github.yoglappland.spectralization.optics.compiler.CompiledPortGraph;
+import io.github.yoglappland.spectralization.optics.compiler.PortGraphEdge;
+import io.github.yoglappland.spectralization.optics.compiler.PortGraphNode;
 import io.github.yoglappland.spectralization.optics.compiler.PortGraphScc;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -11,13 +13,12 @@ final class EffectiveGainSoftcap {
     static final double HARD_RHO = 0.985;
     static final double SOLVER_TARGET_RHO = 0.940;
 
-    private static final int SAFETY_BISECTION_STEPS = 14;
     private static final double SOFTCAP_SHARPNESS = 4.0;
 
-    private final SpectralRadiusEstimator spectralRadiusEstimator;
+    private final FeedbackGainBoundEstimator boundEstimator;
 
-    EffectiveGainSoftcap(SpectralRadiusEstimator spectralRadiusEstimator) {
-        this.spectralRadiusEstimator = spectralRadiusEstimator;
+    EffectiveGainSoftcap(FeedbackGainBoundEstimator boundEstimator) {
+        this.boundEstimator = boundEstimator;
     }
 
     ScheduledGains schedule(GainGraphIndex index, List<GainSource> gainSources) {
@@ -35,7 +36,7 @@ final class EffectiveGainSoftcap {
                 continue;
             }
 
-            double passiveRho = spectralRadiusEstimator.estimateScc(scc, index, edge -> 1.0);
+            double passiveRho = boundEstimator.estimateScc(scc, index, edge -> 1.0);
             maxPassiveRho = Math.max(maxPassiveRho, passiveRho);
 
             for (GainSource source : entry.getValue()) {
@@ -62,35 +63,23 @@ final class EffectiveGainSoftcap {
             GainGraphIndex index,
             Map<Integer, Double> effectiveGainsByEdgeId
     ) {
-        return spectralRadiusEstimator.estimate(
+        return boundEstimator.estimate(
                 graph,
                 index,
                 edge -> effectiveGainsByEdgeId.getOrDefault(edge.id(), 1.0)
         );
     }
 
-    Map<Integer, Double> shrinkExtraLogGainsToTarget(
+    Map<Integer, Double> shrinkExtraGainsToTarget(
             CompiledPortGraph graph,
             GainGraphIndex index,
             Map<Integer, Double> effectiveGainsByEdgeId,
             double targetRho
     ) {
-        double low = 0.0;
-        double high = 1.0;
-
-        for (int step = 0; step < SAFETY_BISECTION_STEPS; step++) {
-            double middle = (low + high) * 0.5;
-            Map<Integer, Double> gains = scaledExtraLogGains(effectiveGainsByEdgeId, middle);
-            double rho = estimateWithGains(graph, index, gains);
-
-            if (rho < targetRho) {
-                low = middle;
-            } else {
-                high = middle;
-            }
-        }
-
-        return scaledExtraLogGains(effectiveGainsByEdgeId, low);
+        return scaledExtraLinearGains(
+                effectiveGainsByEdgeId,
+                extraGainScaleToTarget(index, effectiveGainsByEdgeId, targetRho)
+        );
     }
 
     boolean hasActiveScheduledGain(Map<Integer, Double> effectiveGainsByEdgeId) {
@@ -153,7 +142,86 @@ final class EffectiveGainSoftcap {
         return 1.0 + effectiveExtraGain;
     }
 
-    private static Map<Integer, Double> scaledExtraLogGains(
+    private static double extraGainScaleToTarget(
+            GainGraphIndex index,
+            Map<Integer, Double> effectiveGainsByEdgeId,
+            double targetRho
+    ) {
+        double scale = 1.0D;
+
+        for (PortGraphScc scc : index.feedbackSccsById().values()) {
+            SccGainSums sums = sccGainSums(index.internalEdges(scc), effectiveGainsByEdgeId);
+            scale = Math.min(scale, scaleForSums(scc, sums.outgoingUnityByNode(), sums.outgoingExtraByNode(), targetRho));
+            scale = Math.min(scale, scaleForSums(scc, sums.incomingUnityByNode(), sums.incomingExtraByNode(), targetRho));
+        }
+
+        if (!Double.isFinite(scale)) {
+            return 0.0D;
+        }
+
+        return Math.max(0.0D, Math.min(1.0D, scale));
+    }
+
+    private static SccGainSums sccGainSums(
+            List<PortGraphEdge> edges,
+            Map<Integer, Double> effectiveGainsByEdgeId
+    ) {
+        Map<PortGraphNode, Double> outgoingUnityByNode = new HashMap<>();
+        Map<PortGraphNode, Double> outgoingExtraByNode = new HashMap<>();
+        Map<PortGraphNode, Double> incomingUnityByNode = new HashMap<>();
+        Map<PortGraphNode, Double> incomingExtraByNode = new HashMap<>();
+
+        for (PortGraphEdge edge : edges) {
+            double baseGain = edge.sampleGain();
+
+            if (!Double.isFinite(baseGain) || baseGain <= 0.0D) {
+                continue;
+            }
+
+            double effectiveGain = Math.max(1.0D, effectiveGainsByEdgeId.getOrDefault(edge.id(), 1.0D));
+            double extraGain = Math.max(0.0D, effectiveGain - 1.0D);
+
+            outgoingUnityByNode.merge(edge.from(), baseGain, Double::sum);
+            incomingUnityByNode.merge(edge.to(), baseGain, Double::sum);
+
+            if (extraGain > 0.0D) {
+                double extra = baseGain * extraGain;
+                outgoingExtraByNode.merge(edge.from(), extra, Double::sum);
+                incomingExtraByNode.merge(edge.to(), extra, Double::sum);
+            }
+        }
+
+        return new SccGainSums(
+                outgoingUnityByNode,
+                outgoingExtraByNode,
+                incomingUnityByNode,
+                incomingExtraByNode
+        );
+    }
+
+    private static double scaleForSums(
+            PortGraphScc scc,
+            Map<PortGraphNode, Double> unityByNode,
+            Map<PortGraphNode, Double> extraByNode,
+            double targetRho
+    ) {
+        double scale = 1.0D;
+
+        for (PortGraphNode node : scc.nodes()) {
+            double extra = extraByNode.getOrDefault(node, 0.0D);
+
+            if (extra <= 0.0D) {
+                continue;
+            }
+
+            double unity = unityByNode.getOrDefault(node, 0.0D);
+            scale = Math.min(scale, (targetRho - unity) / extra);
+        }
+
+        return scale;
+    }
+
+    private static Map<Integer, Double> scaledExtraLinearGains(
             Map<Integer, Double> effectiveGainsByEdgeId,
             double scale
     ) {
@@ -167,9 +235,17 @@ final class EffectiveGainSoftcap {
                 continue;
             }
 
-            scaledGains.put(entry.getKey(), Math.exp(Math.log(gain) * scale));
+            scaledGains.put(entry.getKey(), 1.0D + (gain - 1.0D) * scale);
         }
 
         return scaledGains;
+    }
+
+    private record SccGainSums(
+            Map<PortGraphNode, Double> outgoingUnityByNode,
+            Map<PortGraphNode, Double> outgoingExtraByNode,
+            Map<PortGraphNode, Double> incomingUnityByNode,
+            Map<PortGraphNode, Double> incomingExtraByNode
+    ) {
     }
 }

@@ -3,6 +3,9 @@ package io.github.yoglappland.spectralization.optics.fiber;
 import io.github.yoglappland.spectralization.block.FiberOpticInterfaceBlock;
 import io.github.yoglappland.spectralization.optics.BeamEnvelope;
 import io.github.yoglappland.spectralization.optics.geometry.BeamGeometryOps;
+import io.github.yoglappland.spectralization.optics.geometry.BeamProfileKey;
+import io.github.yoglappland.spectralization.optics.geometry.BeamProfileShape;
+import io.github.yoglappland.spectralization.optics.geometry.BeamProfileTransfer;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -81,7 +84,7 @@ public final class FiberOpticalTransfer {
                 continue;
             }
 
-            double guidedGain = guidedGain(snapshot, routeOutput.route(), inputEnvelope);
+            double guidedGain = routeGain(snapshot, routeOutput.route());
 
             if (guidedGain <= MIN_GUIDED_GAIN) {
                 continue;
@@ -216,9 +219,17 @@ public final class FiberOpticalTransfer {
         RouteProfile profile = limitingRouteProfile(snapshot, route);
         double spotGain = spotCoupling(inputEnvelope, profile.coreRadius());
         double angularGain = angularCoupling(inputEnvelope, profile.numericalAperture());
+        return BeamGeometryOps.clamp01(spotGain * angularGain * routeGain(profile, route));
+    }
+
+    private static double routeGain(FiberNetworkSnapshot snapshot, FiberRoute route) {
+        return routeGain(limitingRouteProfile(snapshot, route), route);
+    }
+
+    private static double routeGain(RouteProfile profile, FiberRoute route) {
         double lengthGain = Math.pow(profile.transmissionPerBlock(), route.totalLength());
         double bendGain = bendTransmission(route, profile.bendTransmissionPerRightAngle());
-        return BeamGeometryOps.clamp01(spotGain * angularGain * lengthGain * bendGain);
+        return BeamGeometryOps.clamp01(lengthGain * bendGain);
     }
 
     private static RouteProfile limitingRouteProfile(FiberNetworkSnapshot snapshot, FiberRoute route) {
@@ -268,6 +279,91 @@ public final class FiberOpticalTransfer {
 
         double ratio = numericalAperture / angularSpread;
         return BeamGeometryOps.clamp01(ratio * ratio);
+    }
+
+    public static BeamProfileTransfer profileTransferForEdge(
+            ServerLevel level,
+            BlockPos inputPos,
+            Direction incomingDirection,
+            BlockPos outputPos,
+            Direction outputDirection,
+            BeamProfileKey inputProfile
+    ) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(inputPos, "inputPos");
+        Objects.requireNonNull(incomingDirection, "incomingDirection");
+        Objects.requireNonNull(outputPos, "outputPos");
+        Objects.requireNonNull(outputDirection, "outputDirection");
+        Objects.requireNonNull(inputProfile, "inputProfile");
+
+        if (!level.isLoaded(inputPos) || !level.isLoaded(outputPos)) {
+            return BeamProfileTransfer.of(inputProfile, 0.0D);
+        }
+
+        BlockState inputState = level.getBlockState(inputPos);
+        BlockState outputState = level.getBlockState(outputPos);
+
+        if (!(inputState.getBlock() instanceof FiberOpticInterfaceBlock)
+                || inputState.getValue(FiberOpticInterfaceBlock.FACING) != incomingDirection
+                || !(outputState.getBlock() instanceof FiberOpticInterfaceBlock)
+                || outputState.getValue(FiberOpticInterfaceBlock.FACING) != outputDirection) {
+            return BeamProfileTransfer.of(inputProfile, 0.0D);
+        }
+
+        FiberNetworkSnapshot snapshot = FiberNetworkIndex.snapshot(level);
+        List<FiberRoute> routes = directEndpointRoutes(snapshot, inputPos, outputPos);
+
+        if (routes.isEmpty()) {
+            return BeamProfileTransfer.of(inputProfile, 0.0D);
+        }
+
+        BeamProfileShape shape = inputProfile.toShape();
+        double routeGainSum = 0.0D;
+        double acceptedGainSum = 0.0D;
+        RouteProfile outputProfile = null;
+
+        for (FiberRoute route : routes) {
+            RouteProfile routeProfile = limitingRouteProfile(snapshot, route);
+            double routeGain = routeGain(routeProfile, route);
+
+            if (routeGain <= 0.0D) {
+                continue;
+            }
+
+            double acceptance = profileAcceptance(shape, routeProfile);
+            routeGainSum += routeGain;
+            acceptedGainSum += routeGain * acceptance;
+            outputProfile = outputProfile == null ? routeProfile : outputProfile.limiting(routeProfile);
+        }
+
+        if (routeGainSum <= 0.0D || outputProfile == null) {
+            return BeamProfileTransfer.of(inputProfile, 0.0D);
+        }
+
+        double acceptanceGain = BeamGeometryOps.clamp01(acceptedGainSum / routeGainSum);
+        BeamProfileKey outputKey = shape
+                .guidedOutput(outputProfile.coreRadius(), outputProfile.numericalAperture())
+                .toKey();
+        return BeamProfileTransfer.of(outputKey, acceptanceGain);
+    }
+
+    private static double profileAcceptance(BeamProfileShape shape, RouteProfile profile) {
+        double radius = Math.max(BeamEnvelope.DEFAULT_MIN_WAIST_RADIUS, Math.sqrt(Math.max(0.0D, shape.r2())));
+        double spotGain = radius <= profile.coreRadius()
+                ? 1.0D
+                : BeamGeometryOps.clamp01((profile.coreRadius() / radius) * (profile.coreRadius() / radius));
+        double angularSpread = Math.sqrt(Math.max(0.0D, shape.theta2())) * Math.sqrt(Math.max(1.0D, shape.quality()))
+                + shape.scatter() * profile.numericalAperture() * 2.0D;
+        double angularGain;
+
+        if (angularSpread <= profile.numericalAperture()) {
+            angularGain = 1.0D;
+        } else {
+            double ratio = profile.numericalAperture() / angularSpread;
+            angularGain = BeamGeometryOps.clamp01(ratio * ratio);
+        }
+
+        return BeamGeometryOps.clamp01(spotGain * angularGain);
     }
 
     private static double bendTransmission(FiberRoute route, double bendTransmissionPerRightAngle) {
@@ -391,6 +487,15 @@ public final class FiberOpticalTransfer {
                 FiberNodeProfile.BASIC_INTERFACE.transmissionPerBlock(),
                 FiberNodeProfile.BASIC_INTERFACE.bendTransmissionPerRightAngle()
         );
+
+        private RouteProfile limiting(RouteProfile other) {
+            return new RouteProfile(
+                    Math.min(coreRadius, other.coreRadius),
+                    Math.min(numericalAperture, other.numericalAperture),
+                    Math.min(transmissionPerBlock, other.transmissionPerBlock),
+                    Math.min(bendTransmissionPerRightAngle, other.bendTransmissionPerRightAngle)
+            );
+        }
     }
 
     private static final class OutputAccumulator {

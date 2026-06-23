@@ -91,6 +91,27 @@ D:\Release 2.3.0\sins&tec\.minecraft\versions\1.21.1-NeoForge_21.1.233\mods\spec
 7. 环境光收集器 -> 传感器。
 8. 涂层表面改变前后各测一次。
 
+内置命令：
+
+```text
+/spectralization opticaltest splitter_lens_splitter
+```
+
+该命令会生成：
+
+```text
+creative light source -> beam splitter -> lens holder -> beam splitter -> beam profiler
+```
+
+这是一个带反馈 SCC 的最小回归结构。通过时应同时满足：
+
+- `latest.log` 出现 `Optical test splitter_lens_splitter PASS`。
+- `optical_compiler_*.log` 出现 `stage=example_validation`。
+- solver 为 `PROFILE_COLLAPSED_EXACT`。
+- `profile_mode=collapsed_equivalence`。
+- `readout_reliable=true`。
+- profiler 读数和 expected 的差值在 tolerance 内。
+
 必须检查的不变量：
 
 - 被动网络不凭空增加总功率。

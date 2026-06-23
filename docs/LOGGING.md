@@ -112,6 +112,7 @@ debug_log_verbose = false
 - solver plan 是否合理。
 - readout 是否 reliable。
 - 输出总功率是否符合输入。
+- profile 是精确状态传播还是反馈等效折叠。
 
 只有需要检查以下内容时，才开启 verbose：
 
@@ -132,6 +133,30 @@ debug_log_verbose = true
 ```
 
 收集完样本后关掉 verbose。
+
+关键字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `solver=PROFILE_STATE_EXACT` | 无反馈或有限 profile 状态图的精确求解。 |
+| `solver=PROFILE_COLLAPSED_EXACT` | 反馈图使用“多等效”折叠后的精确线性求解。 |
+| `profile_mode=state_exact` | profile key 参与有限状态传播。 |
+| `profile_mode=collapsed_equivalence` | profile 敏感损耗已经写入边 gain，反馈主求解不再展开 profile。 |
+| `readout_reliable=true` | 机器、传感器和可视化可以使用该次读数。 |
+| `readout_reliable=false` | 读数处于过渡或失败状态，不应作为新结果判断。 |
+| `residual` | 线性求解残差；应接近 0。 |
+
+反馈结构的正常样子通常是：
+
+```text
+feedback_sccs>0
+solver=PROFILE_COLLAPSED_EXACT
+profile_mode=collapsed_equivalence
+readout_reliable=true
+```
+
+如果看到 `feedback_sccs>0` 但 profile state 数量持续膨胀，优先怀疑有新的几何敏感
+过程绕过了等效边 gain，重新进入了反馈主求解。
 
 ## 8. 功率和颜色问题
 

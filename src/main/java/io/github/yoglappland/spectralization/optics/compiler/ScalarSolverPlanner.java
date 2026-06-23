@@ -39,7 +39,7 @@ public final class ScalarSolverPlanner {
             ScalarSolverKind executionKind = executionFeedbackSolver(chordFeedbackPlan, scc, preferredKind);
             allFeedbackRegionsExact &= executionKind == ScalarSolverKind.FEEDBACK_SCC_EXACT;
             allFeedbackRegionsChord &= executionKind == ScalarSolverKind.FEEDBACK_CHORD;
-            allFeedbackRegionsExecutable &= executionKind != ScalarSolverKind.ITERATIVE_FIXED_POINT;
+            allFeedbackRegionsExecutable &= executionKind != ScalarSolverKind.NO_EXACT_SOLVER;
 
             if (preferredKind != executionKind) {
                 fallbackRegionCount++;
@@ -128,7 +128,7 @@ public final class ScalarSolverPlanner {
             return ScalarSolverKind.FEEDBACK_CHORD;
         }
 
-        return ScalarSolverKind.ITERATIVE_FIXED_POINT;
+        return ScalarSolverKind.NO_EXACT_SOLVER;
     }
 
     private static ScalarSolverKind primarySolverKind(
@@ -148,7 +148,7 @@ public final class ScalarSolverPlanner {
             return ScalarSolverKind.MIXED_REGION;
         }
 
-        return ScalarSolverKind.ITERATIVE_FIXED_POINT;
+        return ScalarSolverKind.NO_EXACT_SOLVER;
     }
 
     private static List<Integer> nonFeedbackEdgeIds(CompiledPortGraph graph, Set<Integer> feedbackEdgeIds) {

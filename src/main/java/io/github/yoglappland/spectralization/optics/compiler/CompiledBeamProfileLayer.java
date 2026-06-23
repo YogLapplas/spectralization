@@ -127,6 +127,10 @@ public record CompiledBeamProfileLayer(
     }
 
     private BeamEnvelope envelopeAt(SpectralPowerLane lane, PortGraphNode node) {
+        if (lane.profile() != null) {
+            return lane.profile().toEnvelope();
+        }
+
         Map<PortGraphNode, BeamEnvelope> envelopesByNode = envelopesByLane.get(lane);
 
         if (envelopesByNode == null) {
@@ -187,7 +191,11 @@ public record CompiledBeamProfileLayer(
                     continue;
                 }
 
-                SpectralPowerLane lane = new SpectralPowerLane(component.frequency(), component.coherence());
+                SpectralPowerLane lane = new SpectralPowerLane(
+                        component.frequency(),
+                        component.coherence(),
+                        io.github.yoglappland.spectralization.optics.geometry.BeamProfileKey.fromEnvelope(source.outputBeam().beam().envelope())
+                );
                 seedsByLane.computeIfAbsent(lane, ignored -> new ArrayList<>())
                         .add(new ProfileSeed(sourceNode, source.outputBeam().beam().envelope(), order++));
             }

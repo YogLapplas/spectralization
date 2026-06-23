@@ -81,6 +81,7 @@ public final class SpectralCommands {
                                         context.getSource(),
                                         !SpectralizationConfig.opticalCompilerDebugLog()
                                 ))))
+                .then(OpticalExampleValidator.command())
                 .then(Commands.literal("uidebug")
                         .executes(context -> reportUiDebugState(context.getSource()))
                         .then(Commands.literal("on")

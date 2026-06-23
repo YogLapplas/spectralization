@@ -33,7 +33,6 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 
 public class FiberOpticInterfaceBlock extends Block implements EntityBlock, FiberNodeBlock, OpticalElement, SpatialProfileElement {
     public static final DirectionProperty FACING = BlockStateProperties.FACING;
-    private static final double FIBER_OUTPUT_RADIUS = 0.125D;
     private static final VoxelShape SHAPE = Block.box(3.0D, 0.0D, 3.0D, 13.0D, 9.0D, 13.0D);
 
     public FiberOpticInterfaceBlock(Properties properties) {
@@ -72,7 +71,8 @@ public class FiberOpticInterfaceBlock extends Block implements EntityBlock, Fibe
             BeamEnvelope inputEnvelope,
             SpatialTransformContext context
     ) {
-        BeamEnvelope outputEnvelope = BeamEnvelope.collimated(FIBER_OUTPUT_RADIUS)
+        FiberNodeProfile profile = fiberNodeProfile(context.state(), context.level(), context.pos());
+        BeamEnvelope outputEnvelope = BeamEnvelope.collimated(profile.coreRadius())
                 .withBeamQuality(inputEnvelope.beamQuality())
                 .withScatter(inputEnvelope.scatter());
         return SpatialModeCoupling.ordered(outputEnvelope);

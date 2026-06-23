@@ -1,6 +1,8 @@
 package io.github.yoglappland.spectralization.optics.fiber;
 
 import io.github.yoglappland.spectralization.block.FiberOpticInterfaceBlock;
+import io.github.yoglappland.spectralization.optics.BeamEnvelope;
+import io.github.yoglappland.spectralization.optics.geometry.BeamGeometryOps;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -12,8 +14,10 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 
 public final class FiberOpticalTransfer {
+    private static final double MIN_GUIDED_GAIN = 1.0E-6;
     private static final Comparator<BlockPos> POS_ORDER = Comparator
             .comparingInt((BlockPos pos) -> pos.getX())
             .thenComparingInt(pos -> pos.getY())
@@ -24,9 +28,19 @@ public final class FiberOpticalTransfer {
             BlockPos inputPos,
             Direction incomingDirection
     ) {
+        return remoteOutputPorts(level, inputPos, incomingDirection, BeamEnvelope.DEFAULT_COLLIMATED);
+    }
+
+    public static List<OutputPort> remoteOutputPorts(
+            ServerLevel level,
+            BlockPos inputPos,
+            Direction incomingDirection,
+            BeamEnvelope inputEnvelope
+    ) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(inputPos, "inputPos");
         Objects.requireNonNull(incomingDirection, "incomingDirection");
+        Objects.requireNonNull(inputEnvelope, "inputEnvelope");
 
         if (!level.isLoaded(inputPos)) {
             return List.of();
@@ -46,37 +60,50 @@ public final class FiberOpticalTransfer {
             return List.of();
         }
 
-        List<BlockPos> outputPositions = directEndpointOutputs(snapshot, inputPos);
+        List<RouteOutput> routeOutputs = directEndpointRouteOutputs(snapshot, inputPos);
 
-        if (outputPositions.isEmpty()) {
+        if (routeOutputs.isEmpty()) {
             return List.of();
         }
 
-        List<OutputPort> outputPorts = new ArrayList<>();
+        Map<BlockPos, OutputAccumulator> outputAccumulators = new HashMap<>();
 
-        for (BlockPos outputPos : outputPositions) {
-            FiberNode outputNode = snapshot.nodeAt(outputPos).orElse(null);
+        for (RouteOutput routeOutput : routeOutputs) {
+            FiberNode outputNode = snapshot.nodeAt(routeOutput.outputPos()).orElse(null);
 
-            if (outputNode == null || outputNode.kind() != FiberNodeKind.INTERFACE || !level.isLoaded(outputPos)) {
+            if (outputNode == null || outputNode.kind() != FiberNodeKind.INTERFACE || !level.isLoaded(routeOutput.outputPos())) {
                 continue;
             }
 
-            BlockState outputState = level.getBlockState(outputPos);
+            BlockState outputState = level.getBlockState(routeOutput.outputPos());
 
             if (!(outputState.getBlock() instanceof FiberOpticInterfaceBlock)) {
                 continue;
             }
 
-            outputPorts.add(new OutputPort(outputPos, outputState.getValue(FiberOpticInterfaceBlock.FACING)));
+            double guidedGain = guidedGain(snapshot, routeOutput.route(), inputEnvelope);
+
+            if (guidedGain <= MIN_GUIDED_GAIN) {
+                continue;
+            }
+
+            outputAccumulators.computeIfAbsent(
+                    routeOutput.outputPos(),
+                    ignored -> new OutputAccumulator(
+                            routeOutput.outputPos(),
+                            outputState.getValue(FiberOpticInterfaceBlock.FACING)
+                    )
+            ).accept(routeOutput.route(), guidedGain);
         }
 
-        if (outputPorts.isEmpty()) {
+        if (outputAccumulators.isEmpty()) {
             return List.of();
         }
 
-        double splitGain = 1.0D / outputPorts.size();
-        return outputPorts.stream()
-                .map(outputPort -> new OutputPort(outputPort.pos(), outputPort.direction(), splitGain))
+        double splitGain = 1.0D / outputAccumulators.size();
+        return outputAccumulators.values().stream()
+                .sorted(Comparator.comparing(OutputAccumulator::pos, POS_ORDER))
+                .map(output -> output.toOutputPort(splitGain))
                 .toList();
     }
 
@@ -155,8 +182,8 @@ public final class FiberOpticalTransfer {
         return Optional.empty();
     }
 
-    private static List<BlockPos> directEndpointOutputs(FiberNetworkSnapshot snapshot, BlockPos inputPos) {
-        List<BlockPos> outputs = new ArrayList<>();
+    private static List<RouteOutput> directEndpointRouteOutputs(FiberNetworkSnapshot snapshot, BlockPos inputPos) {
+        List<RouteOutput> outputs = new ArrayList<>();
 
         for (FiberCompiledConnection compiledConnection : snapshot.connections()) {
             if (!compiledConnection.valid()) {
@@ -172,8 +199,8 @@ public final class FiberOpticalTransfer {
                 outputPos = connection.endpointA();
             }
 
-            if (outputPos != null && !outputs.contains(outputPos)) {
-                outputs.add(outputPos);
+            if (outputPos != null) {
+                outputs.add(new RouteOutput(outputPos, connection.route()));
             }
         }
 
@@ -181,8 +208,97 @@ public final class FiberOpticalTransfer {
             return List.of();
         }
 
-        outputs.sort(POS_ORDER);
+        outputs.sort(Comparator.comparing(RouteOutput::outputPos, POS_ORDER));
         return List.copyOf(outputs);
+    }
+
+    private static double guidedGain(FiberNetworkSnapshot snapshot, FiberRoute route, BeamEnvelope inputEnvelope) {
+        RouteProfile profile = limitingRouteProfile(snapshot, route);
+        double spotGain = spotCoupling(inputEnvelope, profile.coreRadius());
+        double angularGain = angularCoupling(inputEnvelope, profile.numericalAperture());
+        double lengthGain = Math.pow(profile.transmissionPerBlock(), route.totalLength());
+        double bendGain = bendTransmission(route, profile.bendTransmissionPerRightAngle());
+        return BeamGeometryOps.clamp01(spotGain * angularGain * lengthGain * bendGain);
+    }
+
+    private static RouteProfile limitingRouteProfile(FiberNetworkSnapshot snapshot, FiberRoute route) {
+        double coreRadius = Double.POSITIVE_INFINITY;
+        double numericalAperture = Double.POSITIVE_INFINITY;
+        double transmissionPerBlock = 1.0D;
+        double bendTransmissionPerRightAngle = 1.0D;
+
+        for (BlockPos nodePos : route.nodes()) {
+            FiberNodeProfile profile = snapshot.nodeAt(nodePos)
+                    .map(FiberNode::profile)
+                    .orElse(FiberNodeProfile.BASIC_RELAY);
+            coreRadius = Math.min(coreRadius, profile.coreRadius());
+            numericalAperture = Math.min(numericalAperture, profile.numericalAperture());
+            transmissionPerBlock = Math.min(transmissionPerBlock, profile.transmissionPerBlock());
+            bendTransmissionPerRightAngle = Math.min(
+                    bendTransmissionPerRightAngle,
+                    profile.bendTransmissionPerRightAngle()
+            );
+        }
+
+        if (!Double.isFinite(coreRadius) || !Double.isFinite(numericalAperture)) {
+            return RouteProfile.BASIC;
+        }
+
+        return new RouteProfile(coreRadius, numericalAperture, transmissionPerBlock, bendTransmissionPerRightAngle);
+    }
+
+    private static double spotCoupling(BeamEnvelope envelope, double coreRadius) {
+        double radius = Math.max(BeamEnvelope.DEFAULT_MIN_WAIST_RADIUS, envelope.radius());
+
+        if (radius <= coreRadius) {
+            return 1.0D;
+        }
+
+        double ratio = coreRadius / radius;
+        return BeamGeometryOps.clamp01(ratio * ratio);
+    }
+
+    private static double angularCoupling(BeamEnvelope envelope, double numericalAperture) {
+        double angularSpread = envelope.divergence() * Math.sqrt(Math.max(1.0D, envelope.beamQuality()))
+                + envelope.scatter() * numericalAperture * 2.0D;
+
+        if (angularSpread <= numericalAperture) {
+            return 1.0D;
+        }
+
+        double ratio = numericalAperture / angularSpread;
+        return BeamGeometryOps.clamp01(ratio * ratio);
+    }
+
+    private static double bendTransmission(FiberRoute route, double bendTransmissionPerRightAngle) {
+        if (route.nodes().size() < 3) {
+            return 1.0D;
+        }
+
+        double rightAngleUnits = 0.0D;
+
+        for (int index = 1; index < route.nodes().size() - 1; index++) {
+            Vec3 incoming = vectorBetween(route.nodes().get(index - 1), route.nodes().get(index));
+            Vec3 outgoing = vectorBetween(route.nodes().get(index), route.nodes().get(index + 1));
+
+            if (incoming.lengthSqr() <= 1.0E-9D || outgoing.lengthSqr() <= 1.0E-9D) {
+                continue;
+            }
+
+            double dot = incoming.normalize().dot(outgoing.normalize());
+            double angle = Math.acos(Math.max(-1.0D, Math.min(1.0D, dot)));
+            rightAngleUnits += angle / (Math.PI * 0.5D);
+        }
+
+        if (rightAngleUnits <= 0.0D) {
+            return 1.0D;
+        }
+
+        return Math.pow(bendTransmissionPerRightAngle, rightAngleUnits);
+    }
+
+    private static Vec3 vectorBetween(BlockPos from, BlockPos to) {
+        return new Vec3(to.getX() - from.getX(), to.getY() - from.getY(), to.getZ() - from.getZ());
     }
 
     private static Map<BlockPos, List<RouteEdge>> weightedAdjacency(FiberNetworkSnapshot snapshot) {
@@ -227,9 +343,13 @@ public final class FiberOpticalTransfer {
         return path;
     }
 
-    public record OutputPort(BlockPos pos, Direction direction, double gain) {
+    public record OutputPort(BlockPos pos, Direction direction, double gain, double guidedGain, double routeLength) {
         public OutputPort(BlockPos pos, Direction direction) {
-            this(pos, direction, 1.0D);
+            this(pos, direction, 1.0D, 1.0D, 0.0D);
+        }
+
+        public OutputPort(BlockPos pos, Direction direction, double gain) {
+            this(pos, direction, gain, gain, 0.0D);
         }
 
         public OutputPort {
@@ -240,6 +360,62 @@ public final class FiberOpticalTransfer {
             if (!Double.isFinite(gain) || gain <= 0.0D || gain > 1.0D) {
                 throw new IllegalArgumentException("Fiber output gain must be finite and between 0 and 1");
             }
+
+            if (!Double.isFinite(guidedGain) || guidedGain <= 0.0D || guidedGain > 1.0D) {
+                throw new IllegalArgumentException("Fiber guided gain must be finite and between 0 and 1");
+            }
+
+            if (!Double.isFinite(routeLength) || routeLength < 0.0D) {
+                throw new IllegalArgumentException("Fiber route length must be finite and non-negative");
+            }
+        }
+    }
+
+    private record RouteOutput(BlockPos outputPos, FiberRoute route) {
+        private RouteOutput {
+            Objects.requireNonNull(outputPos, "outputPos");
+            Objects.requireNonNull(route, "route");
+            outputPos = outputPos.immutable();
+        }
+    }
+
+    private record RouteProfile(
+            double coreRadius,
+            double numericalAperture,
+            double transmissionPerBlock,
+            double bendTransmissionPerRightAngle
+    ) {
+        private static final RouteProfile BASIC = new RouteProfile(
+                FiberNodeProfile.BASIC_INTERFACE.coreRadius(),
+                FiberNodeProfile.BASIC_INTERFACE.numericalAperture(),
+                FiberNodeProfile.BASIC_INTERFACE.transmissionPerBlock(),
+                FiberNodeProfile.BASIC_INTERFACE.bendTransmissionPerRightAngle()
+        );
+    }
+
+    private static final class OutputAccumulator {
+        private final BlockPos pos;
+        private final Direction direction;
+        private double guidedGainSum;
+        private double longestRoute;
+
+        private OutputAccumulator(BlockPos pos, Direction direction) {
+            this.pos = pos.immutable();
+            this.direction = direction;
+        }
+
+        private BlockPos pos() {
+            return pos;
+        }
+
+        private void accept(FiberRoute route, double guidedGain) {
+            guidedGainSum += guidedGain;
+            longestRoute = Math.max(longestRoute, route.totalLength());
+        }
+
+        private OutputPort toOutputPort(double splitGain) {
+            double cappedGuidedGain = BeamGeometryOps.clamp01(guidedGainSum);
+            return new OutputPort(pos, direction, splitGain * cappedGuidedGain, cappedGuidedGain, longestRoute);
         }
     }
 

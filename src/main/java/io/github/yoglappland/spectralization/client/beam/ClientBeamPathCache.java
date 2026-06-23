@@ -12,15 +12,16 @@ import net.minecraft.core.BlockPos;
 
 public final class ClientBeamPathCache {
     private static final Map<SegmentKey, BeamPathOverlayPayload.Segment> SEGMENTS = new HashMap<>();
-    private static final Comparator<BeamPathOverlayPayload.Segment> SEGMENT_ORDER = Comparator
-            .comparingInt((BeamPathOverlayPayload.Segment segment) -> segment.from().getX())
-            .thenComparingInt(segment -> segment.from().getY())
-            .thenComparingInt(segment -> segment.from().getZ())
-            .thenComparingInt(segment -> segment.to().getX())
-            .thenComparingInt(segment -> segment.to().getY())
-            .thenComparingInt(segment -> segment.to().getZ())
-            .thenComparingInt(segment -> segment.direction().ordinal());
+    private static final Comparator<RenderedSegment> SEGMENT_ORDER = Comparator
+            .comparingInt((RenderedSegment rendered) -> rendered.segment().from().getX())
+            .thenComparingInt(rendered -> rendered.segment().from().getY())
+            .thenComparingInt(rendered -> rendered.segment().from().getZ())
+            .thenComparingInt(rendered -> rendered.segment().to().getX())
+            .thenComparingInt(rendered -> rendered.segment().to().getY())
+            .thenComparingInt(rendered -> rendered.segment().to().getZ())
+            .thenComparingInt(rendered -> rendered.segment().direction().ordinal());
     private static List<BeamPathOverlayPayload.Segment> activeSegments = List.of();
+    private static List<RenderedSegment> activeRenderedSegments = List.of();
     private static Object lastLevel;
 
     public static void accept(BeamPathOverlayPayload payload) {
@@ -55,6 +56,19 @@ public final class ClientBeamPathCache {
         return activeSegments;
     }
 
+    public static Collection<RenderedSegment> activeRenderedSegments() {
+        Minecraft minecraft = Minecraft.getInstance();
+
+        if (minecraft.level == null) {
+            clearLevel();
+            return List.of();
+        }
+
+        clearIfLevelChanged(minecraft.level);
+
+        return activeRenderedSegments;
+    }
+
     public static void clear() {
         clearLevel();
     }
@@ -66,18 +80,21 @@ public final class ClientBeamPathCache {
 
         SEGMENTS.clear();
         activeSegments = List.of();
+        activeRenderedSegments = List.of();
         lastLevel = level;
     }
 
     private static void clearLevel() {
         SEGMENTS.clear();
         activeSegments = List.of();
+        activeRenderedSegments = List.of();
         lastLevel = null;
     }
 
     private static void rebuildActiveSegments() {
         if (SEGMENTS.isEmpty()) {
             activeSegments = List.of();
+            activeRenderedSegments = List.of();
             return;
         }
 
@@ -92,14 +109,15 @@ public final class ClientBeamPathCache {
             );
         }
 
-        List<BeamPathOverlayPayload.Segment> rebuilt = new ArrayList<>(mergedSegments.size());
+        List<RenderedSegment> rebuilt = new ArrayList<>(mergedSegments.size());
 
         for (OwnedSegment ownedSegment : mergedSegments.values()) {
-            rebuilt.add(ownedSegment.segment());
+            rebuilt.add(new RenderedSegment(ownedSegment.ownerId(), ownedSegment.segment()));
         }
 
         rebuilt.sort(SEGMENT_ORDER);
-        activeSegments = List.copyOf(rebuilt);
+        activeRenderedSegments = List.copyOf(rebuilt);
+        activeSegments = rebuilt.stream().map(RenderedSegment::segment).toList();
     }
 
     private static OwnedSegment mergeOwnedSegment(OwnedSegment first, OwnedSegment second) {
@@ -140,6 +158,9 @@ public final class ClientBeamPathCache {
     }
 
     private record OwnedSegment(int ownerId, BeamPathOverlayPayload.Segment segment) {
+    }
+
+    public record RenderedSegment(int ownerId, BeamPathOverlayPayload.Segment segment) {
     }
 
     private static int compare(BlockPos left, BlockPos right) {

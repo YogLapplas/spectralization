@@ -1024,6 +1024,16 @@ tasks.register('verifyBasicLithographyMachineUiLayout') {
         def opticalBar = rect('optical_bar', intValue('OPTICAL_BAR_X'), intValue('OPTICAL_BAR_Y'), intValue('BAR_WIDTH'), intValue('BAR_HEIGHT'))
         def recipeArrow = rect('recipe_arrow', intValue('RECIPE_ARROW_X'), intValue('RECIPE_ARROW_Y'), intValue('RECIPE_ARROW_WIDTH'), intValue('RECIPE_ARROW_HEIGHT'))
         def ruleButton = rect('rule_button', intValue('RULE_BUTTON_X'), intValue('RULE_BUTTON_Y'), intValue('RULE_BUTTON_WIDTH'), intValue('RULE_BUTTON_HEIGHT'))
+        def ioButton = rect('io_button', intValue('IO_BUTTON_X'), intValue('IO_BUTTON_Y'), intValue('IO_BUTTON_WIDTH'), intValue('IO_BUTTON_HEIGHT'))
+        def ioPanel = rect('io_panel', intValue('IO_PANEL_X'), intValue('IO_PANEL_Y'), intValue('IO_PANEL_WIDTH'), intValue('IO_PANEL_HEIGHT'))
+        def ioFaceButtons = [
+                rect('io_face_top', intValue('IO_FACE_CENTER_X'), intValue('IO_FACE_TOP_Y'), intValue('IO_FACE_BUTTON_SIZE'), intValue('IO_FACE_BUTTON_SIZE')),
+                rect('io_face_left', intValue('IO_FACE_LEFT_X'), intValue('IO_FACE_MIDDLE_Y'), intValue('IO_FACE_BUTTON_SIZE'), intValue('IO_FACE_BUTTON_SIZE')),
+                rect('io_face_front', intValue('IO_FACE_CENTER_X'), intValue('IO_FACE_MIDDLE_Y'), intValue('IO_FACE_BUTTON_SIZE'), intValue('IO_FACE_BUTTON_SIZE')),
+                rect('io_face_right', intValue('IO_FACE_RIGHT_X'), intValue('IO_FACE_MIDDLE_Y'), intValue('IO_FACE_BUTTON_SIZE'), intValue('IO_FACE_BUTTON_SIZE')),
+                rect('io_face_back', intValue('IO_FACE_LEFT_X'), intValue('IO_FACE_BOTTOM_Y'), intValue('IO_FACE_BUTTON_SIZE'), intValue('IO_FACE_BUTTON_SIZE')),
+                rect('io_face_bottom', intValue('IO_FACE_CENTER_X'), intValue('IO_FACE_BOTTOM_Y'), intValue('IO_FACE_BUTTON_SIZE'), intValue('IO_FACE_BUTTON_SIZE'))
+        ]
         def inputTemplateConnector = rect('template_input_connector', intValue('TEMPLATE_CONNECTOR_X'), intValue('TEMPLATE_INPUT_LINE_Y'),
                 intValue('TEMPLATE_CONNECTOR_WIDTH'), 1)
         def outputTemplateConnector = rect('template_output_connector', intValue('TEMPLATE_CONNECTOR_X'), intValue('TEMPLATE_OUTPUT_LINE_Y'),
@@ -1068,6 +1078,26 @@ tasks.register('verifyBasicLithographyMachineUiLayout') {
                 || intValue('RULE_BUTTON_Y') + intValue('RULE_BUTTON_HEIGHT') > intValue('MACHINE_HEIGHT')) {
             throw new GradleException('Basic lithography machine template rule button must hang from the left edge of the machine window.')
         }
+        if (intValue('IO_BUTTON_X') != intValue('RULE_BUTTON_X')
+                || intValue('IO_BUTTON_X') + intValue('IO_BUTTON_WIDTH') <= 0
+                || intValue('IO_BUTTON_X') + intValue('IO_BUTTON_WIDTH') > 2
+                || intValue('IO_BUTTON_Y') <= intValue('RULE_BUTTON_Y') + intValue('RULE_BUTTON_HEIGHT')
+                || intValue('IO_BUTTON_Y') + intValue('IO_BUTTON_HEIGHT') > intValue('MACHINE_HEIGHT')) {
+            throw new GradleException('Basic lithography machine IO button must hang below the template rule tab on the left edge.')
+        }
+        assertNoOverlap('left hanging tab', [ruleButton, ioButton])
+        assertInside(machine, ioPanel)
+        ioFaceButtons.each { assertInside(ioPanel, it) }
+        assertNoOverlap('IO face button', ioFaceButtons)
+        assertNear('Basic lithography IO face center column',
+                intValue('IO_FACE_CENTER_X') + intValue('IO_FACE_BUTTON_SIZE') / 2.0,
+                intValue('IO_PANEL_X') + intValue('IO_PANEL_WIDTH') / 2.0,
+                0.0)
+        assertNear('Basic lithography IO left/right columns mirror',
+                intValue('IO_FACE_LEFT_X') + intValue('IO_FACE_BUTTON_SIZE') / 2.0
+                        + intValue('IO_FACE_RIGHT_X') + intValue('IO_FACE_BUTTON_SIZE') / 2.0,
+                2.0 * (intValue('IO_PANEL_X') + intValue('IO_PANEL_WIDTH') / 2.0),
+                0.0)
         if (intValue('TEMPLATE_LEFT_X') * 2 + intValue('TEMPLATE_PAIR_WIDTH') != intValue('IMAGE_WIDTH')) {
             throw new GradleException('Basic lithography template slot pair must stay centered.')
         }
@@ -1115,11 +1145,13 @@ tasks.register('verifyBasicLithographyMachineUiLayout') {
                 rect('recipe_arrow_hover', intValue('RECIPE_ARROW_X'), intValue('RECIPE_ARROW_Y'), intValue('RECIPE_ARROW_WIDTH'), intValue('RECIPE_ARROW_HEIGHT'))
         ]
         def ruleButtonHover = rect('rule_button_hover', intValue('RULE_BUTTON_X'), intValue('RULE_BUTTON_Y'), intValue('RULE_BUTTON_WIDTH'), intValue('RULE_BUTTON_HEIGHT'))
+        def ioButtonHover = rect('io_button_hover', intValue('IO_BUTTON_X'), intValue('IO_BUTTON_Y'), intValue('IO_BUTTON_WIDTH'), intValue('IO_BUTTON_HEIGHT'))
         def screenWithLeftTab = rect('screen_with_left_tab', intValue('RULE_BUTTON_X'), 0,
                 intValue('IMAGE_WIDTH') - intValue('RULE_BUTTON_X'), intValue('IMAGE_HEIGHT'))
         hoverAreas.each { assertInside(screen, it) }
         assertInside(screenWithLeftTab, ruleButtonHover)
-        assertNoOverlap('hover area', hoverAreas + [ruleButtonHover])
+        assertInside(screenWithLeftTab, ioButtonHover)
+        assertNoOverlap('hover area', hoverAreas + [ruleButtonHover, ioButtonHover])
 
         if (intValue('ITEM_TEMPLATE_INPUT_A_X') != intValue('TEMPLATE_LEFT_X') + intValue('ITEM_SLOT_INSET')
                 || intValue('ITEM_TEMPLATE_INPUT_A_Y') != intValue('TEMPLATE_INPUT_Y') + intValue('ITEM_SLOT_INSET')

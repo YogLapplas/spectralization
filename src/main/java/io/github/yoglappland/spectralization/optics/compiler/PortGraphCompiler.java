@@ -403,7 +403,7 @@ public final class PortGraphCompiler {
         }
 
         List<FiberOpticalTransfer.OutputPort> outputPorts =
-                FiberOpticalTransfer.remoteOutputPorts(serverLevel, pos, incomingDirection);
+                FiberOpticalTransfer.remoteOutputPorts(serverLevel, pos, incomingDirection, inputBeam.envelope());
 
         if (outputPorts.isEmpty()) {
             return;

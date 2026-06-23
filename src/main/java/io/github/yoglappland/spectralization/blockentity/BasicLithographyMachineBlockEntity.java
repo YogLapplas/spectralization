@@ -60,12 +60,12 @@ public class BasicLithographyMachineBlockEntity extends BlockEntity implements P
     public static final int DATA_READY = 7;
     public static final int DATA_OUTPUT_BLOCKED = 8;
     public static final int DATA_REDSTONE_MODE = 9;
-    public static final int DATA_FACE_DOWN = 10;
-    public static final int DATA_FACE_UP = 11;
-    public static final int DATA_FACE_NORTH = 12;
-    public static final int DATA_FACE_SOUTH = 13;
-    public static final int DATA_FACE_WEST = 14;
-    public static final int DATA_FACE_EAST = 15;
+    public static final int DATA_FACE_FRONT = 10;
+    public static final int DATA_FACE_LEFT = 11;
+    public static final int DATA_FACE_RIGHT = 12;
+    public static final int DATA_FACE_BACK = 13;
+    public static final int DATA_FACE_TOP = 14;
+    public static final int DATA_FACE_BOTTOM = 15;
     public static final int DATA_COUNT = 16;
 
     private static final long SAMPLE_HOLD_TICKS = 1L;
@@ -99,7 +99,7 @@ public class BasicLithographyMachineBlockEntity extends BlockEntity implements P
             0,
             this::setChanged
     );
-    private final EnumMap<Direction, AutomationFaceMode> faceModes = new EnumMap<>(Direction.class);
+    private final EnumMap<MachineRelativeSide, AutomationFaceMode> faceModes = new EnumMap<>(MachineRelativeSide.class);
     private final EnumMap<Direction, IItemHandler> sidedItemHandlers = new EnumMap<>(Direction.class);
 
     private final ItemStackHandler items = new ItemStackHandler(SLOT_COUNT) {
@@ -139,8 +139,11 @@ public class BasicLithographyMachineBlockEntity extends BlockEntity implements P
 
     public BasicLithographyMachineBlockEntity(BlockPos pos, BlockState blockState) {
         super(SpectralBlockEntities.BASIC_LITHOGRAPHY_MACHINE.get(), pos, blockState);
+        for (MachineRelativeSide side : MachineRelativeSide.values()) {
+            faceModes.put(side, AutomationFaceMode.INPUT_OUTPUT);
+        }
+
         for (Direction direction : Direction.values()) {
-            faceModes.put(direction, AutomationFaceMode.INPUT_OUTPUT);
             sidedItemHandlers.put(direction, new SidedItems(direction));
         }
     }
@@ -189,11 +192,15 @@ public class BasicLithographyMachineBlockEntity extends BlockEntity implements P
     }
 
     public AutomationFaceMode faceMode(Direction side) {
+        return relativeFaceMode(MachineRelativeSide.fromDirections(facing(), side));
+    }
+
+    public AutomationFaceMode relativeFaceMode(MachineRelativeSide side) {
         return faceModes.getOrDefault(side, AutomationFaceMode.INPUT_OUTPUT);
     }
 
-    public void cycleFaceMode(Direction side, boolean reverse) {
-        faceModes.put(side, faceMode(side).next(reverse));
+    public void cycleFaceMode(MachineRelativeSide side, boolean reverse) {
+        faceModes.put(side, relativeFaceMode(side).next(reverse));
         setChanged();
         logFaceModeChanged(side);
     }
@@ -245,7 +252,7 @@ public class BasicLithographyMachineBlockEntity extends BlockEntity implements P
     }
 
     public static boolean isTemplate(ItemStack stack) {
-        return stack.is(SpectralItemTags.METASURFACE_TEMPLATE) || stack.is(SpectralItemTags.LITHOGRAPHY_MASK);
+        return stack.is(SpectralItemTags.LITHOGRAPHY_MASK);
     }
 
     public static boolean isTemplateInputSlot(int slot) {
@@ -534,9 +541,9 @@ public class BasicLithographyMachineBlockEntity extends BlockEntity implements P
                 redstoneControlMode = RedstoneControlMode.byOrdinal(value);
                 setChanged();
             }
-            case DATA_FACE_DOWN, DATA_FACE_UP, DATA_FACE_NORTH, DATA_FACE_SOUTH, DATA_FACE_WEST, DATA_FACE_EAST -> {
-                Direction direction = directionForData(index);
-                faceModes.put(direction, AutomationFaceMode.byOrdinal(value));
+            case DATA_FACE_FRONT, DATA_FACE_LEFT, DATA_FACE_RIGHT, DATA_FACE_BACK, DATA_FACE_TOP, DATA_FACE_BOTTOM -> {
+                MachineRelativeSide side = relativeSideForData(index);
+                faceModes.put(side, AutomationFaceMode.byOrdinal(value));
                 setChanged();
             }
             case DATA_ENERGY -> energy.setEnergyStored(value);
@@ -557,22 +564,29 @@ public class BasicLithographyMachineBlockEntity extends BlockEntity implements P
             case DATA_READY -> canPreviewRecipe() ? 1 : 0;
             case DATA_OUTPUT_BLOCKED -> outputBlocked() ? 1 : 0;
             case DATA_REDSTONE_MODE -> redstoneControlMode.ordinal();
-            case DATA_FACE_DOWN, DATA_FACE_UP, DATA_FACE_NORTH, DATA_FACE_SOUTH, DATA_FACE_WEST, DATA_FACE_EAST ->
-                    faceMode(directionForData(index)).ordinal();
+            case DATA_FACE_FRONT, DATA_FACE_LEFT, DATA_FACE_RIGHT, DATA_FACE_BACK, DATA_FACE_TOP, DATA_FACE_BOTTOM ->
+                    relativeFaceMode(relativeSideForData(index)).ordinal();
             default -> 0;
         };
     }
 
-    private static Direction directionForData(int index) {
+    private static MachineRelativeSide relativeSideForData(int index) {
         return switch (index) {
-            case DATA_FACE_DOWN -> Direction.DOWN;
-            case DATA_FACE_UP -> Direction.UP;
-            case DATA_FACE_NORTH -> Direction.NORTH;
-            case DATA_FACE_SOUTH -> Direction.SOUTH;
-            case DATA_FACE_WEST -> Direction.WEST;
-            case DATA_FACE_EAST -> Direction.EAST;
-            default -> Direction.NORTH;
+            case DATA_FACE_FRONT -> MachineRelativeSide.FRONT;
+            case DATA_FACE_LEFT -> MachineRelativeSide.LEFT;
+            case DATA_FACE_RIGHT -> MachineRelativeSide.RIGHT;
+            case DATA_FACE_BACK -> MachineRelativeSide.BACK;
+            case DATA_FACE_TOP -> MachineRelativeSide.TOP;
+            case DATA_FACE_BOTTOM -> MachineRelativeSide.BOTTOM;
+            default -> MachineRelativeSide.FRONT;
         };
+    }
+
+    private Direction facing() {
+        BlockState state = getBlockState();
+        return state.hasProperty(BasicLithographyMachineBlock.FACING)
+                ? state.getValue(BasicLithographyMachineBlock.FACING)
+                : Direction.NORTH;
     }
 
     private void logSlotChanged(int slot) {
@@ -615,15 +629,16 @@ public class BasicLithographyMachineBlockEntity extends BlockEntity implements P
                 .write();
     }
 
-    private void logFaceModeChanged(Direction side) {
+    private void logFaceModeChanged(MachineRelativeSide side) {
         if (level == null || level.isClientSide) {
             return;
         }
 
         SpectralDiagnostics.transition(level, SpectralDiagnostics.Subsystem.LITHOGRAPHY, "face_mode_changed")
                 .pos("machine", worldPosition)
-                .field("side", side)
-                .field("face_mode", faceMode(side).id())
+                .field("relative_side", side.id())
+                .field("world_side", side.toDirection(facing()))
+                .field("face_mode", relativeFaceMode(side).id())
                 .write();
     }
 
@@ -699,10 +714,18 @@ public class BasicLithographyMachineBlockEntity extends BlockEntity implements P
 
         if (tag.contains(FACE_MODES_TAG)) {
             CompoundTag faceModesTag = tag.getCompound(FACE_MODES_TAG);
+            for (MachineRelativeSide side : MachineRelativeSide.values()) {
+                String key = side.id();
+                if (faceModesTag.contains(key)) {
+                    faceModes.put(side, AutomationFaceMode.byId(faceModesTag.getString(key)));
+                }
+            }
+
             for (Direction direction : Direction.values()) {
                 String key = direction.getSerializedName();
                 if (faceModesTag.contains(key)) {
-                    faceModes.put(direction, AutomationFaceMode.byId(faceModesTag.getString(key)));
+                    faceModes.put(MachineRelativeSide.fromDirections(facing(), direction),
+                            AutomationFaceMode.byId(faceModesTag.getString(key)));
                 }
             }
         }
@@ -723,10 +746,73 @@ public class BasicLithographyMachineBlockEntity extends BlockEntity implements P
         tag.putDouble(OPTICAL_POWER_TAG, committedCoherentPower);
 
         CompoundTag faceModesTag = new CompoundTag();
-        for (Map.Entry<Direction, AutomationFaceMode> entry : faceModes.entrySet()) {
-            faceModesTag.putString(entry.getKey().getSerializedName(), entry.getValue().id());
+        for (Map.Entry<MachineRelativeSide, AutomationFaceMode> entry : faceModes.entrySet()) {
+            faceModesTag.putString(entry.getKey().id(), entry.getValue().id());
         }
         tag.put(FACE_MODES_TAG, faceModesTag);
+    }
+
+    public enum MachineRelativeSide {
+        FRONT,
+        LEFT,
+        RIGHT,
+        BACK,
+        TOP,
+        BOTTOM;
+
+        public String id() {
+            return name().toLowerCase(Locale.ROOT);
+        }
+
+        public Direction toDirection(Direction facing) {
+            return switch (this) {
+                case FRONT -> facing;
+                case BACK -> facing.getOpposite();
+                case LEFT -> facing == Direction.DOWN || facing == Direction.UP ? Direction.EAST : facing.getClockWise();
+                case RIGHT -> facing == Direction.DOWN || facing == Direction.UP ? Direction.WEST : facing.getCounterClockWise();
+                case TOP -> switch (facing) {
+                    case DOWN -> Direction.NORTH;
+                    case UP -> Direction.SOUTH;
+                    default -> Direction.UP;
+                };
+                case BOTTOM -> switch (facing) {
+                    case DOWN -> Direction.SOUTH;
+                    case UP -> Direction.NORTH;
+                    default -> Direction.DOWN;
+                };
+            };
+        }
+
+        public static MachineRelativeSide fromDirections(Direction facing, Direction side) {
+            if (side == facing) {
+                return FRONT;
+            } else if (side == facing.getOpposite()) {
+                return BACK;
+            } else if (facing == Direction.DOWN || facing == Direction.UP) {
+                return switch (side) {
+                    case NORTH -> facing == Direction.DOWN ? TOP : BOTTOM;
+                    case SOUTH -> facing == Direction.DOWN ? BOTTOM : TOP;
+                    case WEST -> RIGHT;
+                    case EAST -> LEFT;
+                    default -> FRONT;
+                };
+            } else if (side == Direction.DOWN) {
+                return BOTTOM;
+            } else if (side == Direction.UP) {
+                return TOP;
+            } else if (side == facing.getCounterClockWise()) {
+                return RIGHT;
+            } else if (side == facing.getClockWise()) {
+                return LEFT;
+            }
+
+            return FRONT;
+        }
+
+        public static MachineRelativeSide byOrdinal(int ordinal) {
+            MachineRelativeSide[] values = MachineRelativeSide.values();
+            return ordinal >= 0 && ordinal < values.length ? values[ordinal] : FRONT;
+        }
     }
 
     public enum AutomationFaceMode {

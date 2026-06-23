@@ -135,7 +135,7 @@ y = C x
 
 变量含义：
 
-- `x`：端口或边上的 profile。
+- `x`：端口、频率、相干性和空间 profile state 上的功率未知量。
 - `T`：由局部元件拼成的传输算子。
 - `s`：光源注入。
 - `y`：传感器、机器、HUD 和可视化读数。
@@ -210,6 +210,124 @@ merge readout
 - 焦点、束腰和发散用少量导出参数表达，而不是全场采样。
 
 未来透镜系统可以用类似 q 参数或矩阵语言更新 envelope，但必须保持玩家可读：焦距、束腰半径、发散趋势应能在手册和 UI 中解释。
+
+重要边界：几何 envelope 的旧模型只适合作为读数层和局部效率层。只要半径、
+发散或模式会改变网络内部 transfer，例如光纤入口、孔径、透镜后的耦合边或会
+反馈到拓扑的分流结构，就不能先把同频同相干的功率合成一个标量再估计平均半径。
+
+```text
+power solution -> envelope readout -> local effective rate / local loss display
+```
+
+对于读数和非反馈机器，可以使用一次求解后的 envelope 估计有效效率：
+
+```text
+effectivePower = solvedPower * localEfficiency(envelope, machineProfile)
+```
+
+这个近似不反向改变网络功率，只改变机器处理速率、显示和诊断信息，因此不会
+破坏线性求解。它只允许用于非反馈、非分流、非远端传输的机器读数。
+
+### 5.4 相空间功率分布
+
+最终规则：
+
+```text
+合流时合并的是相空间功率分布，不是半径/发散的平均值。
+几何敏感元件读取分布，对每个 profile component 分别作用，再把结果线性求和。
+```
+
+同一个入口前的光应表示为离散正分布：
+
+```text
+D = sum_j P_j * delta(g_j)
+```
+
+其中 `g_j` 是空间 profile state，`P_j` 是该 state 上的功率。光纤、孔径和
+其他几何敏感元件读取的是每个 `g_j`，而不是 `D` 的平均 envelope：
+
+```text
+P_accepted = sum_j P_j * accept(g_j)
+```
+
+因此功率系统仍然只求解一次，但 lane 维度必须包含空间 profile：
+
+```text
+x[port, frequency, coherence, profileState]
+```
+
+普通传播、透镜和光纤入口分别表现为：
+
+```text
+free propagation: profile_j -> profile_k, gain <= 1
+lens transform:   profile_j -> profile_k, gain <= 1
+fiber input:      profile_j -> fiberGuidedProfile, gain = accept(profile_j) * routeGain
+```
+
+这保证多来源合流仍然线性：
+
+```text
+T(D_a + D_b) = T(D_a) + T(D_b)
+```
+
+推荐的最小 profile state 使用二阶矩描述横向相空间：
+
+```text
+R = <r^2>
+C = <r * theta>
+A = <theta^2>
+```
+
+`C` 不能省略。半径和发散相同的两束光可能一个正在收敛、一个正在发散；没有
+`C` 时，透镜和自由传播后的结果会被错误合并。工程结构可以拆成：
+
+```java
+record ProfileShape(
+    double r2,
+    double rTheta,
+    double theta2,
+    double quality,
+    double scatter,
+    int modeM,
+    int modeN
+) {}
+
+record WeightedProfileComponent(
+    double weight,
+    ProfileShape shape
+) {}
+```
+
+`ProfileShape` 或其离散化 key 进入 solver lane。`WeightedProfileComponent`
+用于 UI、调试和局部分布对象。不要同时在 profile component 和 solver unknown
+里保存同一份真实功率，避免双重计数。
+
+自由传播和薄透镜可以先用 ABCD 二阶矩近似：
+
+```text
+free space d:
+R' = R + 2dC + d^2A
+C' = C + dA
+A' = A
+
+thin lens f:
+R' = R
+C' = C - R/f
+A' = A - 2C/f + R/f^2
+```
+
+这些变换只移动 profile state，不凭空增加功率。任何 aperture、吸收、散射、
+导光接受或坏品质惩罚都必须写成 `gain <= 1`。
+
+组件数量需要上限。压缩只能发生在相近 profile 之间；如果必须压缩到粗 bucket，
+压缩结果必须保守：它可以降低未来几何敏感元件的接受率，不能让“好光 + 坏光”
+被平均成更容易耦合的光。UI 可以显示平均等效半径，但真实损耗不能依赖 UI
+平均值。
+
+迁移边界：当前代码仍有旧式 `BeamPacket(List<PlaneWaveComponent>, BeamEnvelope)`
+结构，所有频率分量共享一个 `BeamEnvelope`，并会按 frequency、direction 和
+coherence 合并功率。后续改动透镜、光纤或几何敏感机器时，不能继续扩展这个
+共享 envelope 模型；应迁移到 profile state lane。
 
 ## 6. 求解计划
 
@@ -396,8 +514,38 @@ propagation -> interface -> propagation -> interface
 - 多条平行光纤自然增加同一对节点之间的容量。
 - 混合光束必须使用统一颜色和功率合并函数。
 - 剪断、遮挡、过载烧毁必须切断光纤连接并诱导光学网络变化。
+- 光纤线缆是世界内可见物体，不受 beam HUD 开关限制；自由空间诊断光束仍然受 HUD 和查看器限制。
 
 relay 属于光纤网络的几何和拓扑层，不应直接参与光学网络。
+
+内部接口规则：
+
+- 光纤接口把外部光学端口映射为远端外部光学端口，编译器看到的是一条线性 transfer edge。
+- 光纤路径本身保存端点、路径、容量、占用和渲染状态，不保存每 tick 的求解状态。
+- relay 只负责路径锚定、可视化和连接维护，不产生吸收、反射、增益或混合节点。
+- 未来的损耗、容量、模式标签和信道标签应作为 transfer profile 参数进入数据层，而不是把导光接受参数、弯曲模式或多模耦合写成新的非线性求解器。
+- 如果接口、relay、遮挡或剪断改变路径，光纤网络先 dirty，再诱导相关光学网络 dirty。
+
+光纤端口导光匹配模型：
+
+```text
+D_in = sum_j P_j * delta(profile_j)
+routeGain = transmissionPerBlock ^ routeLength
+          * bendTransmissionPerRightAngle ^ bendUnits
+
+P_guided = sum_j P_j * accept(profile_j, fiberInputProfile) * routeGain
+x[fiberOut, frequency, coherence, fiberGuidedProfile] += P_guided
+```
+
+`accept(profile_j, fiberInputProfile)` 只依赖该 component 的相空间状态和光纤入口
+profile，不依赖当前总功率。长度和弯折也只依赖静态路线。因此光纤仍然是线性
+transfer edge。未进入 guided mode 的功率被当作接口附近的倏逝场和包层损耗，
+不作为新的自由空间光源进入求解。
+
+该模型不作为玩家面对的真实波导参数系统。玩家侧只表达为导光匹配：光斑太宽、
+光束太散、路线太长或弯折太强会造成端口损耗。半径和发散影响的是光纤入口的
+接受率；光进入光纤后会重置为光纤自己的标准导波 profile，不继续按自由空间
+envelope 传播，也不在光纤内部追踪多半径模式。
 
 ### 10.2 全息存储
 

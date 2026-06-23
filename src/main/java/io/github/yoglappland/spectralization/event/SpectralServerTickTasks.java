@@ -15,7 +15,7 @@ public final class SpectralServerTickTasks {
         OpticalTraceCache.processQueues(server);
         HolographicStorageMultiblock.processPendingRefreshes(server);
         CompactMachineNetworkData.processPendingRefreshes(server);
-        FiberOverlayPublisher.publishToInterestedPlayers(server);
+        FiberOverlayPublisher.publishToPlayers(server);
         CompactMachineOverlayPublisher.publishToPlayers(server);
     }
 }

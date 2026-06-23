@@ -2,6 +2,7 @@ package io.github.yoglappland.spectralization.menu;
 
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.blockentity.BasicLithographyMachineBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.BasicLithographyMachineBlockEntity.MachineRelativeSide;
 import io.github.yoglappland.spectralization.registry.SpectralMenus;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -11,7 +12,6 @@ import net.minecraft.world.inventory.SimpleContainerData;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
-import net.minecraft.core.Direction;
 import net.neoforged.neoforge.items.ItemStackHandler;
 import net.neoforged.neoforge.items.SlotItemHandler;
 
@@ -19,6 +19,7 @@ public class BasicLithographyMachineMenu extends AbstractContainerMenu {
     public static final int BUTTON_TOGGLE_TEMPLATE_RULE = 0;
     public static final int BUTTON_CYCLE_REDSTONE_MODE = 1;
     public static final int BUTTON_CYCLE_FACE_MODE_BASE = 2;
+    public static final int BUTTON_CYCLE_FACE_MODE_REVERSE_BASE = BUTTON_CYCLE_FACE_MODE_BASE + 6;
 
     private static final int MACHINE_SLOT_COUNT = BasicLithographyMachineBlockEntity.SLOT_COUNT;
     private static final int PLAYER_INVENTORY_START = MACHINE_SLOT_COUNT;
@@ -107,14 +108,14 @@ public class BasicLithographyMachineMenu extends AbstractContainerMenu {
         return getData(BasicLithographyMachineBlockEntity.DATA_REDSTONE_MODE);
     }
 
-    public int faceMode(Direction side) {
+    public int faceMode(MachineRelativeSide side) {
         return getData(switch (side) {
-            case DOWN -> BasicLithographyMachineBlockEntity.DATA_FACE_DOWN;
-            case UP -> BasicLithographyMachineBlockEntity.DATA_FACE_UP;
-            case NORTH -> BasicLithographyMachineBlockEntity.DATA_FACE_NORTH;
-            case SOUTH -> BasicLithographyMachineBlockEntity.DATA_FACE_SOUTH;
-            case WEST -> BasicLithographyMachineBlockEntity.DATA_FACE_WEST;
-            case EAST -> BasicLithographyMachineBlockEntity.DATA_FACE_EAST;
+            case FRONT -> BasicLithographyMachineBlockEntity.DATA_FACE_FRONT;
+            case LEFT -> BasicLithographyMachineBlockEntity.DATA_FACE_LEFT;
+            case RIGHT -> BasicLithographyMachineBlockEntity.DATA_FACE_RIGHT;
+            case BACK -> BasicLithographyMachineBlockEntity.DATA_FACE_BACK;
+            case TOP -> BasicLithographyMachineBlockEntity.DATA_FACE_TOP;
+            case BOTTOM -> BasicLithographyMachineBlockEntity.DATA_FACE_BOTTOM;
         });
     }
 
@@ -135,9 +136,15 @@ public class BasicLithographyMachineMenu extends AbstractContainerMenu {
         }
 
         int faceIndex = id - BUTTON_CYCLE_FACE_MODE_BASE;
-        Direction[] directions = Direction.values();
-        if (faceIndex >= 0 && faceIndex < directions.length) {
-            machine.cycleFaceMode(directions[faceIndex], false);
+        MachineRelativeSide[] sides = MachineRelativeSide.values();
+        if (faceIndex >= 0 && faceIndex < sides.length) {
+            machine.cycleFaceMode(sides[faceIndex], false);
+            return true;
+        }
+
+        int reverseFaceIndex = id - BUTTON_CYCLE_FACE_MODE_REVERSE_BASE;
+        if (reverseFaceIndex >= 0 && reverseFaceIndex < sides.length) {
+            machine.cycleFaceMode(sides[reverseFaceIndex], true);
             return true;
         }
 

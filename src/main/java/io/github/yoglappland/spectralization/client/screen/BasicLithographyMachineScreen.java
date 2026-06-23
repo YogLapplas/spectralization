@@ -1,6 +1,8 @@
 package io.github.yoglappland.spectralization.client.screen;
 
 import io.github.yoglappland.spectralization.blockentity.BasicLithographyMachineBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.BasicLithographyMachineBlockEntity.AutomationFaceMode;
+import io.github.yoglappland.spectralization.blockentity.BasicLithographyMachineBlockEntity.MachineRelativeSide;
 import io.github.yoglappland.spectralization.client.gui.SpectralMachineScreen;
 import io.github.yoglappland.spectralization.client.gui.ThermalSmelterUiSkin;
 import io.github.yoglappland.spectralization.menu.BasicLithographyMachineLayout;
@@ -16,6 +18,12 @@ public class BasicLithographyMachineScreen extends SpectralMachineScreen<BasicLi
     private static final int OPTICAL_COLOR = 0xFFFFB24A;
     private static final int TEMPLATE_COLOR = 0xFF9FE7DF;
     private static final int MATERIAL_COLOR = ThermalSmelterUiSkin.PROGRESS;
+    private static final int IO_INPUT_COLOR = 0xFFFFA451;
+    private static final int IO_OUTPUT_COLOR = 0xFF67DCE8;
+    private static final int IO_BOTH_COLOR = 0xFFC49BFF;
+    private static final int IO_DISABLED_COLOR = 0xFF8C8A8E;
+
+    private boolean showIoConfig = false;
 
     public BasicLithographyMachineScreen(BasicLithographyMachineMenu menu, Inventory playerInventory, Component title) {
         super(
@@ -33,11 +41,31 @@ public class BasicLithographyMachineScreen extends SpectralMachineScreen<BasicLi
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
+        if (showIoConfig) {
+            drawIoConfigOverlay(graphics, mouseX, mouseY);
+        }
         renderMachineTooltip(graphics, mouseX, mouseY);
     }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (showIoConfig) {
+            MachineRelativeSide side = ioSideAt(mouseX, mouseY);
+            if (side != null && (button == 0 || button == 1)) {
+                click((button == 1 ? BasicLithographyMachineMenu.BUTTON_CYCLE_FACE_MODE_REVERSE_BASE
+                        : BasicLithographyMachineMenu.BUTTON_CYCLE_FACE_MODE_BASE) + side.ordinal());
+                return true;
+            }
+
+            if (insideLocal(mouseX, mouseY,
+                    BasicLithographyMachineLayout.IO_PANEL_X,
+                    BasicLithographyMachineLayout.IO_PANEL_Y,
+                    BasicLithographyMachineLayout.IO_PANEL_WIDTH,
+                    BasicLithographyMachineLayout.IO_PANEL_HEIGHT)) {
+                return true;
+            }
+        }
+
         if (button == 0 && insideLocal(mouseX, mouseY,
                 BasicLithographyMachineLayout.RULE_BUTTON_X,
                 BasicLithographyMachineLayout.RULE_BUTTON_Y,
@@ -47,7 +75,39 @@ public class BasicLithographyMachineScreen extends SpectralMachineScreen<BasicLi
             return true;
         }
 
+        if (button == 0 && insideLocal(mouseX, mouseY,
+                BasicLithographyMachineLayout.IO_BUTTON_X,
+                BasicLithographyMachineLayout.IO_BUTTON_Y,
+                BasicLithographyMachineLayout.IO_BUTTON_WIDTH,
+                BasicLithographyMachineLayout.IO_BUTTON_HEIGHT)) {
+            showIoConfig = !showIoConfig;
+            return true;
+        }
+
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        if (ioPanelContains(mouseX, mouseY)) {
+            return true;
+        }
+
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (ioPanelContains(mouseX, mouseY)) {
+            return true;
+        }
+
+        return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    @Override
+    protected boolean isHovering(int x, int y, int width, int height, double mouseX, double mouseY) {
+        return !ioPanelContains(mouseX, mouseY) && super.isHovering(x, y, width, height, mouseX, mouseY);
     }
 
     @Override
@@ -152,6 +212,7 @@ public class BasicLithographyMachineScreen extends SpectralMachineScreen<BasicLi
         drawRecipeArrow(graphics, mouseX, mouseY);
         drawProgressBar(graphics);
         drawRuleButton(graphics);
+        drawIoButton(graphics);
         drawTemplateSlots(graphics);
     }
 
@@ -311,6 +372,95 @@ public class BasicLithographyMachineScreen extends SpectralMachineScreen<BasicLi
         }
     }
 
+    private void drawIoButton(GuiGraphics graphics) {
+        int x = leftPos + BasicLithographyMachineLayout.IO_BUTTON_X;
+        int y = topPos + BasicLithographyMachineLayout.IO_BUTTON_Y;
+        int color = showIoConfig ? ThermalSmelterUiSkin.withAlpha(IO_OUTPUT_COLOR, 190)
+                : ThermalSmelterUiSkin.withAlpha(IO_OUTPUT_COLOR, 112);
+        int fill = showIoConfig ? ThermalSmelterUiSkin.withAlpha(IO_OUTPUT_COLOR, 48)
+                : ThermalSmelterUiSkin.withAlpha(IO_OUTPUT_COLOR, 24);
+
+        softButtonShell(
+                graphics,
+                x,
+                y,
+                BasicLithographyMachineLayout.IO_BUTTON_WIDTH,
+                BasicLithographyMachineLayout.IO_BUTTON_HEIGHT,
+                fill
+        );
+        outline(graphics, x, y, BasicLithographyMachineLayout.IO_BUTTON_WIDTH, BasicLithographyMachineLayout.IO_BUTTON_HEIGHT,
+                ThermalSmelterUiSkin.withAlpha(IO_OUTPUT_COLOR, showIoConfig ? 148 : 84));
+        graphics.fill(x + 5, y + 5, x + 8, y + 8, color);
+        graphics.fill(x + 10, y + 5, x + 13, y + 8, color);
+        graphics.fill(x + 5, y + 10, x + 8, y + 13, color);
+        graphics.fill(x + 10, y + 10, x + 13, y + 13, color);
+    }
+
+    private void drawIoConfigOverlay(GuiGraphics graphics, int mouseX, int mouseY) {
+        int x = leftPos + BasicLithographyMachineLayout.IO_PANEL_X;
+        int y = topPos + BasicLithographyMachineLayout.IO_PANEL_Y;
+        graphics.fill(x - 3, y - 3,
+                x + BasicLithographyMachineLayout.IO_PANEL_WIDTH + 3,
+                y + BasicLithographyMachineLayout.IO_PANEL_HEIGHT + 3,
+                ThermalSmelterUiSkin.withAlpha(ThermalSmelterUiSkin.CHAMBER_SHADOW, 122));
+        drawCeramicPanel(graphics, x, y, BasicLithographyMachineLayout.IO_PANEL_WIDTH, BasicLithographyMachineLayout.IO_PANEL_HEIGHT);
+        subtleRegion(graphics, x + 5, y + 5,
+                BasicLithographyMachineLayout.IO_PANEL_WIDTH - 10,
+                BasicLithographyMachineLayout.IO_PANEL_HEIGHT - 10,
+                ThermalSmelterUiSkin.withAlpha(ThermalSmelterUiSkin.PANEL_HIGHLIGHT, 26));
+        drawCenteredText(graphics, font, "IO", x + BasicLithographyMachineLayout.IO_PANEL_WIDTH / 2, y + 5, 0.48F,
+                ThermalSmelterUiSkin.TEXT_SUB);
+
+        drawIoFaceButton(graphics, mouseX, mouseY, MachineRelativeSide.TOP, BasicLithographyMachineLayout.IO_FACE_CENTER_X, BasicLithographyMachineLayout.IO_FACE_TOP_Y, "T");
+        drawIoFaceButton(graphics, mouseX, mouseY, MachineRelativeSide.LEFT, BasicLithographyMachineLayout.IO_FACE_LEFT_X, BasicLithographyMachineLayout.IO_FACE_MIDDLE_Y, "L");
+        drawIoFaceButton(graphics, mouseX, mouseY, MachineRelativeSide.FRONT, BasicLithographyMachineLayout.IO_FACE_CENTER_X, BasicLithographyMachineLayout.IO_FACE_MIDDLE_Y, "F");
+        drawIoFaceButton(graphics, mouseX, mouseY, MachineRelativeSide.RIGHT, BasicLithographyMachineLayout.IO_FACE_RIGHT_X, BasicLithographyMachineLayout.IO_FACE_MIDDLE_Y, "R");
+        drawIoFaceButton(graphics, mouseX, mouseY, MachineRelativeSide.BACK, BasicLithographyMachineLayout.IO_FACE_LEFT_X, BasicLithographyMachineLayout.IO_FACE_BOTTOM_Y, "B");
+        drawIoFaceButton(graphics, mouseX, mouseY, MachineRelativeSide.BOTTOM, BasicLithographyMachineLayout.IO_FACE_CENTER_X, BasicLithographyMachineLayout.IO_FACE_BOTTOM_Y, "D");
+    }
+
+    private void drawIoFaceButton(GuiGraphics graphics, int mouseX, int mouseY, MachineRelativeSide side, int localX, int localY, String label) {
+        int mode = menu.faceMode(side);
+        int color = faceModeColor(mode);
+        int x = leftPos + localX;
+        int y = topPos + localY;
+        boolean hovered = insideLocal(mouseX, mouseY, localX, localY,
+                BasicLithographyMachineLayout.IO_FACE_BUTTON_SIZE,
+                BasicLithographyMachineLayout.IO_FACE_BUTTON_SIZE);
+
+        softButtonShell(graphics, x, y,
+                BasicLithographyMachineLayout.IO_FACE_BUTTON_SIZE,
+                BasicLithographyMachineLayout.IO_FACE_BUTTON_SIZE,
+                ThermalSmelterUiSkin.withAlpha(color, hovered ? 58 : 38));
+        outline(graphics, x, y,
+                BasicLithographyMachineLayout.IO_FACE_BUTTON_SIZE,
+                BasicLithographyMachineLayout.IO_FACE_BUTTON_SIZE,
+                ThermalSmelterUiSkin.withAlpha(color, hovered ? 170 : 116));
+        drawCenteredText(graphics, font, label, x + BasicLithographyMachineLayout.IO_FACE_BUTTON_SIZE / 2, y + 4, 0.55F,
+                ThermalSmelterUiSkin.withAlpha(ThermalSmelterUiSkin.TEXT, 205));
+        drawModeGlyph(graphics, x, y, mode, color);
+    }
+
+    private static void drawModeGlyph(GuiGraphics graphics, int x, int y, int mode, int color) {
+        int alphaColor = ThermalSmelterUiSkin.withAlpha(color, 190);
+        int bottom = y + BasicLithographyMachineLayout.IO_FACE_BUTTON_SIZE - 4;
+        switch (AutomationFaceMode.byOrdinal(mode)) {
+            case DISABLED -> graphics.fill(x + 6, bottom, x + 12, bottom + 1, ThermalSmelterUiSkin.withAlpha(IO_DISABLED_COLOR, 150));
+            case INPUT -> {
+                graphics.fill(x + 5, bottom - 3, x + 7, bottom + 2, alphaColor);
+                pixelArrowRight(graphics, x + 7, bottom - 3, 6, 5, alphaColor);
+            }
+            case OUTPUT -> {
+                graphics.fill(x + 11, bottom - 3, x + 13, bottom + 2, alphaColor);
+                pixelArrowRight(graphics, x + 5, bottom - 3, 6, 5, alphaColor);
+            }
+            case INPUT_OUTPUT -> {
+                graphics.fill(x + 5, bottom - 3, x + 7, bottom + 2, alphaColor);
+                graphics.fill(x + 11, bottom - 3, x + 13, bottom + 2, alphaColor);
+            }
+        }
+    }
+
     private void drawVerticalGauge(GuiGraphics graphics, int x, int y, int width, int height, int value, int max, int color) {
         int clampedMax = Math.max(1, max);
         int fillHeight = Math.round((height - 4) * Math.min(clampedMax, Math.max(0, value)) / (float) clampedMax);
@@ -386,6 +536,23 @@ public class BasicLithographyMachineScreen extends SpectralMachineScreen<BasicLi
     }
 
     private List<Component> tooltipAt(int mouseX, int mouseY) {
+        if (showIoConfig) {
+            MachineRelativeSide side = ioSideAt(mouseX, mouseY);
+            if (side != null) {
+                return List.of(
+                        Component.translatable("screen.spectralization.basic_lithography_machine.tooltip.io_side",
+                                Component.translatable("screen.spectralization.basic_lithography_machine.side." + side.id()),
+                                Component.translatable("screen.spectralization.basic_lithography_machine.face_mode."
+                                        + AutomationFaceMode.byOrdinal(menu.faceMode(side)).id())),
+                        Component.translatable("screen.spectralization.basic_lithography_machine.tooltip.io_side_hint")
+                );
+            }
+
+            if (ioPanelContains(mouseX, mouseY)) {
+                return List.of();
+            }
+        }
+
         if (insideLocal(mouseX, mouseY,
                 BasicLithographyMachineLayout.RULE_BUTTON_X,
                 BasicLithographyMachineLayout.RULE_BUTTON_Y,
@@ -394,6 +561,14 @@ public class BasicLithographyMachineScreen extends SpectralMachineScreen<BasicLi
             return List.of(Component.translatable(menu.moveUsedTemplates()
                     ? "screen.spectralization.basic_lithography_machine.tooltip.rule_move"
                     : "screen.spectralization.basic_lithography_machine.tooltip.rule_keep"));
+        }
+
+        if (insideLocal(mouseX, mouseY,
+                BasicLithographyMachineLayout.IO_BUTTON_X,
+                BasicLithographyMachineLayout.IO_BUTTON_Y,
+                BasicLithographyMachineLayout.IO_BUTTON_WIDTH,
+                BasicLithographyMachineLayout.IO_BUTTON_HEIGHT)) {
+            return List.of(Component.translatable("screen.spectralization.basic_lithography_machine.tooltip.io_config"));
         }
 
         if (insideLocal(mouseX, mouseY,
@@ -453,6 +628,56 @@ public class BasicLithographyMachineScreen extends SpectralMachineScreen<BasicLi
         }
 
         return List.of();
+    }
+
+    private MachineRelativeSide ioSideAt(double mouseX, double mouseY) {
+        if (!showIoConfig) {
+            return null;
+        }
+
+        if (insideLocal(mouseX, mouseY, BasicLithographyMachineLayout.IO_FACE_CENTER_X, BasicLithographyMachineLayout.IO_FACE_TOP_Y,
+                BasicLithographyMachineLayout.IO_FACE_BUTTON_SIZE, BasicLithographyMachineLayout.IO_FACE_BUTTON_SIZE)) {
+            return MachineRelativeSide.TOP;
+        }
+        if (insideLocal(mouseX, mouseY, BasicLithographyMachineLayout.IO_FACE_LEFT_X, BasicLithographyMachineLayout.IO_FACE_MIDDLE_Y,
+                BasicLithographyMachineLayout.IO_FACE_BUTTON_SIZE, BasicLithographyMachineLayout.IO_FACE_BUTTON_SIZE)) {
+            return MachineRelativeSide.LEFT;
+        }
+        if (insideLocal(mouseX, mouseY, BasicLithographyMachineLayout.IO_FACE_CENTER_X, BasicLithographyMachineLayout.IO_FACE_MIDDLE_Y,
+                BasicLithographyMachineLayout.IO_FACE_BUTTON_SIZE, BasicLithographyMachineLayout.IO_FACE_BUTTON_SIZE)) {
+            return MachineRelativeSide.FRONT;
+        }
+        if (insideLocal(mouseX, mouseY, BasicLithographyMachineLayout.IO_FACE_RIGHT_X, BasicLithographyMachineLayout.IO_FACE_MIDDLE_Y,
+                BasicLithographyMachineLayout.IO_FACE_BUTTON_SIZE, BasicLithographyMachineLayout.IO_FACE_BUTTON_SIZE)) {
+            return MachineRelativeSide.RIGHT;
+        }
+        if (insideLocal(mouseX, mouseY, BasicLithographyMachineLayout.IO_FACE_LEFT_X, BasicLithographyMachineLayout.IO_FACE_BOTTOM_Y,
+                BasicLithographyMachineLayout.IO_FACE_BUTTON_SIZE, BasicLithographyMachineLayout.IO_FACE_BUTTON_SIZE)) {
+            return MachineRelativeSide.BACK;
+        }
+        if (insideLocal(mouseX, mouseY, BasicLithographyMachineLayout.IO_FACE_CENTER_X, BasicLithographyMachineLayout.IO_FACE_BOTTOM_Y,
+                BasicLithographyMachineLayout.IO_FACE_BUTTON_SIZE, BasicLithographyMachineLayout.IO_FACE_BUTTON_SIZE)) {
+            return MachineRelativeSide.BOTTOM;
+        }
+
+        return null;
+    }
+
+    private boolean ioPanelContains(double mouseX, double mouseY) {
+        return showIoConfig && insideLocal(mouseX, mouseY,
+                BasicLithographyMachineLayout.IO_PANEL_X,
+                BasicLithographyMachineLayout.IO_PANEL_Y,
+                BasicLithographyMachineLayout.IO_PANEL_WIDTH,
+                BasicLithographyMachineLayout.IO_PANEL_HEIGHT);
+    }
+
+    private static int faceModeColor(int mode) {
+        return switch (AutomationFaceMode.byOrdinal(mode)) {
+            case DISABLED -> IO_DISABLED_COLOR;
+            case INPUT -> IO_INPUT_COLOR;
+            case OUTPUT -> IO_OUTPUT_COLOR;
+            case INPUT_OUTPUT -> IO_BOTH_COLOR;
+        };
     }
 
     private boolean insideSlot(int mouseX, int mouseY, int x, int y) {

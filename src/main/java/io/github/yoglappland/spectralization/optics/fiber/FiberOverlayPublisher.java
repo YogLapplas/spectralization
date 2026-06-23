@@ -1,6 +1,5 @@
 package io.github.yoglappland.spectralization.optics.fiber;
 
-import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.network.BeamPathOverlayPayload;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -11,8 +10,6 @@ import net.minecraft.core.Direction;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 public final class FiberOverlayPublisher {
@@ -24,25 +21,25 @@ public final class FiberOverlayPublisher {
             .comparingLong((Map.Entry<FiberSegmentKey, Integer> entry) -> entry.getKey().first())
             .thenComparingLong(entry -> entry.getKey().second());
 
-    public static void publishToInterestedPlayers(MinecraftServer server) {
+    public static void publishToPlayers(MinecraftServer server) {
         for (ServerLevel level : server.getAllLevels()) {
-            publishToInterestedPlayers(level, false);
+            publishToPlayers(level, false);
         }
     }
 
     public static void publishNow(ServerLevel level) {
-        publishToInterestedPlayers(level, true);
+        publishToPlayers(level, true);
     }
 
     public static void publishToPlayer(ServerPlayer player) {
-        if (!isInterested(player) || !(player.level() instanceof ServerLevel level)) {
+        if (!(player.level() instanceof ServerLevel level)) {
             return;
         }
 
         PacketDistributor.sendToPlayer(player, payload(FiberNetworkIndex.snapshot(level)));
     }
 
-    private static void publishToInterestedPlayers(ServerLevel level, boolean force) {
+    private static void publishToPlayers(ServerLevel level, boolean force) {
         if (!force && level.getGameTime() % REFRESH_INTERVAL_TICKS != 0L) {
             return;
         }
@@ -50,9 +47,7 @@ public final class FiberOverlayPublisher {
         BeamPathOverlayPayload payload = payload(FiberNetworkIndex.snapshot(level));
 
         for (ServerPlayer player : level.players()) {
-            if (isInterested(player)) {
-                PacketDistributor.sendToPlayer(player, payload);
-            }
+            PacketDistributor.sendToPlayer(player, payload);
         }
     }
 
@@ -113,16 +108,6 @@ public final class FiberOverlayPublisher {
         }
 
         return dz >= 0 ? Direction.SOUTH : Direction.NORTH;
-    }
-
-    private static boolean isInterested(ServerPlayer player) {
-        var helmet = player.getItemBySlot(EquipmentSlot.HEAD);
-        return player.getMainHandItem().is(Spectralization.OPTICAL_FIBER_COIL.get())
-                || player.getOffhandItem().is(Spectralization.OPTICAL_FIBER_COIL.get())
-                || player.getMainHandItem().is(Items.SHEARS)
-                || player.getOffhandItem().is(Items.SHEARS)
-                || helmet.is(Spectralization.VERITY_HELM_OF_ALL_SEEING_INSIGHT.get())
-                || helmet.is(Items.LEATHER_HELMET);
     }
 
     private FiberOverlayPublisher() {

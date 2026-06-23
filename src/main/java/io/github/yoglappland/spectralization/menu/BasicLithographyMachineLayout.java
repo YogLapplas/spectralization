@@ -82,6 +82,22 @@ public final class BasicLithographyMachineLayout {
     public static final int RULE_BUTTON_WIDTH = 18;
     public static final int RULE_BUTTON_HEIGHT = 18;
 
+    public static final int IO_BUTTON_X = RULE_BUTTON_X;
+    public static final int IO_BUTTON_Y = RULE_BUTTON_Y + 22;
+    public static final int IO_BUTTON_WIDTH = RULE_BUTTON_WIDTH;
+    public static final int IO_BUTTON_HEIGHT = RULE_BUTTON_HEIGHT;
+    public static final int IO_PANEL_WIDTH = 96;
+    public static final int IO_PANEL_HEIGHT = 84;
+    public static final int IO_PANEL_X = IMAGE_WIDTH / 2 - IO_PANEL_WIDTH / 2;
+    public static final int IO_PANEL_Y = SIDE_PANEL_Y + 22;
+    public static final int IO_FACE_BUTTON_SIZE = 18;
+    public static final int IO_FACE_CENTER_X = IO_PANEL_X + IO_PANEL_WIDTH / 2 - IO_FACE_BUTTON_SIZE / 2;
+    public static final int IO_FACE_TOP_Y = IO_PANEL_Y + 14;
+    public static final int IO_FACE_MIDDLE_Y = IO_PANEL_Y + 37;
+    public static final int IO_FACE_BOTTOM_Y = IO_PANEL_Y + 60;
+    public static final int IO_FACE_LEFT_X = IO_FACE_CENTER_X - 23;
+    public static final int IO_FACE_RIGHT_X = IO_FACE_CENTER_X + 23;
+
     public static final int PLAYER_INVENTORY_X = (IMAGE_WIDTH - 9 * SLOT_SIZE) / 2;
     public static final int PLAYER_INVENTORY_Y = 160;
     public static final int PLAYER_INVENTORY_ITEM_X = PLAYER_INVENTORY_X;

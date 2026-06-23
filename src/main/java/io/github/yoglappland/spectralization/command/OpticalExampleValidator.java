@@ -25,6 +25,7 @@ import io.github.yoglappland.spectralization.optics.compiler.PortGraphCompiler;
 import io.github.yoglappland.spectralization.optics.compiler.PortGraphNode;
 import io.github.yoglappland.spectralization.optics.compiler.ProfileLanePowerSolver;
 import io.github.yoglappland.spectralization.optics.compiler.ScalarPowerSolution;
+import io.github.yoglappland.spectralization.optics.compiler.ScalarSolverKind;
 import io.github.yoglappland.spectralization.optics.compiler.SpectralPowerLane;
 import io.github.yoglappland.spectralization.optics.geometry.BeamProfileKey;
 import io.github.yoglappland.spectralization.optics.fiber.FiberNetworkData;
@@ -33,6 +34,7 @@ import io.github.yoglappland.spectralization.optics.fiber.FiberNodeKind;
 import io.github.yoglappland.spectralization.optics.fiber.FiberNodeProfile;
 import io.github.yoglappland.spectralization.optics.fiber.FiberRoute;
 import io.github.yoglappland.spectralization.optics.lens.LensProfile;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -61,19 +63,49 @@ final class OpticalExampleValidator {
     private static final int NARROW_FIBER_RADIUS_MILLI = 125;
     private static final int WIDE_FIBER_RADIUS_MILLI = 250;
     private static final int WIDE_LENS_RADIUS_MILLI = 2000;
+    private static final int BEAM_EXPANDER_SOURCE_RADIUS_MILLI = 125;
+    private static final int BEAM_EXPANDER_FIRST_LENS_DISTANCE = 2;
+    private static final int BEAM_EXPANDER_SECOND_LENS_DISTANCE = 22;
+    private static final int BEAM_EXPANDER_INPUT_DISTANCE = 64;
+    private static final double BEAM_EXPANDER_MIN_IMPROVEMENT = 2.0D;
+    private static final double BEAM_EXPANDER_MAX_IMPROVEMENT = 20.0D;
 
     static LiteralArgumentBuilder<CommandSourceStack> command() {
         return Commands.literal("opticaltest")
+                .executes(context -> listTests(context.getSource()))
+                .then(Commands.literal("1")
+                        .executes(context -> runSplitterLensSplitter(context.getSource())))
                 .then(Commands.literal("splitter_lens_splitter")
                         .executes(context -> runSplitterLensSplitter(context.getSource())))
+                .then(Commands.literal("2")
+                        .executes(context -> runLensApertureClip(context.getSource())))
                 .then(Commands.literal("lens_aperture_clip")
                         .executes(context -> runLensApertureClip(context.getSource())))
+                .then(Commands.literal("3")
+                        .executes(context -> runFiberRadiusCoupling(context.getSource())))
                 .then(Commands.literal("fiber_radius_coupling")
                         .executes(context -> runFiberRadiusCoupling(context.getSource())))
+                .then(Commands.literal("4")
+                        .executes(context -> runFeedbackFiberRadiusLoss(context.getSource())))
                 .then(Commands.literal("feedback_fiber_radius_loss")
                         .executes(context -> runFeedbackFiberRadiusLoss(context.getSource())))
+                .then(Commands.literal("5")
+                        .executes(context -> runParallelFiberSameEndpoint(context.getSource())))
                 .then(Commands.literal("parallel_fiber_same_endpoint")
-                        .executes(context -> runParallelFiberSameEndpoint(context.getSource())));
+                        .executes(context -> runParallelFiberSameEndpoint(context.getSource())))
+                .then(Commands.literal("6")
+                        .executes(context -> runBeamExpanderFiberCoupling(context.getSource())))
+                .then(Commands.literal("beam_expander_fiber_coupling")
+                        .executes(context -> runBeamExpanderFiberCoupling(context.getSource())));
+    }
+
+    private static int listTests(CommandSourceStack source) {
+        source.sendSuccess(() -> Component.literal(
+                "Optical tests: 1=splitter_lens_splitter, 2=lens_aperture_clip, "
+                        + "3=fiber_radius_coupling, 4=feedback_fiber_radius_loss, "
+                        + "5=parallel_fiber_same_endpoint, 6=beam_expander_fiber_coupling"
+        ), false);
+        return 1;
     }
 
     private static int runSplitterLensSplitter(CommandSourceStack source) {
@@ -90,65 +122,41 @@ final class OpticalExampleValidator {
         TestLayout layout = new TestLayout(origin, testDirection);
 
         placeSplitterLensSplitter(level, layout);
-        OutputBeam outputBeam = sourceOutput(level, layout.source());
-        CompiledPortGraph graph = PortGraphCompiler.compileDirect(level, layout.source(), outputBeam);
-        ScalarPowerSolution solution = ProfileLanePowerSolver.solve(
-                level,
-                graph,
-                sourcePowerByLane(graph.sourceNode(), outputBeam)
-        );
-        CompiledReadoutLayer readoutLayer = OpticalReadoutLayerCompiler.compile(
-                level,
-                graph,
-                List.of(new BeamProfileSource(layout.source(), outputBeam))
-        );
-        List<ReceiverOutput> outputs = readoutLayer.sample(solution);
-        Optional<ReceiverOutput> profilerOutput = outputs.stream()
-                .filter(output -> output.kind() == ReceiverOutputKind.BEAM_PROFILER)
-                .filter(output -> output.pos().equals(layout.profiler()))
-                .findFirst();
+        TestSample sample = sample(level, layout.source(), layout.profiler());
         double expectedPower = expectedSplitterLensSplitterPower();
-        ValidationReport report = validate(graph, solution, profilerOutput, expectedPower);
-        OpticalCompilerDebugLogger.logExampleValidation(
-                level,
-                "splitter_lens_splitter",
-                layout.source(),
-                layout.direction(),
-                graph,
-                solution,
-                outputs,
-                report.passed(),
-                report.message(),
-                report.actualPower(),
-                expectedPower,
-                POWER_TOLERANCE
-        );
+        ValidationReport report = validateSplitterLensSplitter(sample, expectedPower);
+        logValidation(level, "splitter_lens_splitter", layout, sample, report, expectedPower);
 
         if (report.passed()) {
             source.sendSuccess(() -> Component.literal(String.format(
-                    "Optical test splitter_lens_splitter PASS at %s: profiler=%.9f expected=%.9f graph=%d/%d feedback_scc=%d lanes=%d",
+                    "Optical test splitter_lens_splitter PASS at %s: profiler=%.9f expected=%.9f graph=%d/%d feedback_scc=%d solver=%s fallback=%s overflow=%s lanes=%d",
                     layout.source().toShortString(),
                     report.actualPower(),
                     expectedPower,
-                    graph.nodes().size(),
-                    graph.edges().size(),
-                        graph.feedbackSccCount(),
-                        solution.powerByLane().size()
+                    sample.graph().nodes().size(),
+                    sample.graph().edges().size(),
+                    sample.graph().feedbackSccCount(),
+                    sample.solution().solverKind(),
+                    sample.solution().profileCollapsedFallback(),
+                    sample.solution().profileOverflow(),
+                    sample.solution().powerByLane().size()
             )), true);
             return 1;
         }
 
         source.sendFailure(Component.literal(String.format(
-                "Optical test splitter_lens_splitter FAIL at %s: %s profiler=%.9f expected=%.9f graph=%d/%d feedback_scc=%d solver=%s reliable=%s",
+                "Optical test splitter_lens_splitter FAIL at %s: %s profiler=%.9f expected=%.9f graph=%d/%d feedback_scc=%d solver=%s fallback=%s overflow=%s reliable=%s",
                 layout.source().toShortString(),
                 report.message(),
                 report.actualPower(),
                 expectedPower,
-                graph.nodes().size(),
-                graph.edges().size(),
-                        graph.feedbackSccCount(),
-                        solution.solverKind(),
-                        solution.reliableForReadout()
+                sample.graph().nodes().size(),
+                sample.graph().edges().size(),
+                sample.graph().feedbackSccCount(),
+                sample.solution().solverKind(),
+                sample.solution().profileCollapsedFallback(),
+                sample.solution().profileOverflow(),
+                sample.solution().reliableForReadout()
         )));
         return 0;
     }
@@ -162,6 +170,8 @@ final class OpticalExampleValidator {
         double apertureGain = BeamProfileKey.collimated(WIDE_LENS_RADIUS_MILLI / 1000.0D)
                 .toShape()
                 .propagate(2)
+                .toKey()
+                .toShape()
                 .thinLens(
                         LensProfile.STANDARD.focalLength(),
                         LensProfile.STANDARD.aperture() / 100.0D,
@@ -172,7 +182,7 @@ final class OpticalExampleValidator {
                 * Math.pow(AIR_PROPAGATION_FACTOR, 8)
                 * LENS_TRANSMITTANCE
                 * apertureGain;
-        ValidationReport report = validateSimplePower(sample, expectedPower, false);
+        ValidationReport report = validateLensApertureClip(sample, expectedPower, apertureGain);
         logValidation(level, "lens_aperture_clip", layout, sample, report, expectedPower);
 
         if (report.passed()) {
@@ -210,15 +220,7 @@ final class OpticalExampleValidator {
         configureSource(level, layout.source(), WIDE_FIBER_RADIUS_MILLI);
         TestSample wide = sample(level, layout.source(), layout.profiler());
         double ratio = narrow.actualPower() <= 0.0D ? 0.0D : wide.actualPower() / narrow.actualPower();
-        boolean passed = narrow.solution().reliableForReadout()
-                && wide.solution().reliableForReadout()
-                && narrow.graph().feedbackSccCount() == 0
-                && wide.graph().feedbackSccCount() == 0
-                && ratio > 0.18D
-                && ratio < 0.36D;
-        ValidationReport report = passed
-                ? ValidationReport.pass(wide.actualPower())
-                : ValidationReport.fail("fiber radius coupling ratio out of range: " + ratio, wide.actualPower());
+        ValidationReport report = validateFiberRadiusCoupling(narrow, wide, ratio);
         logValidation(level, "fiber_radius_coupling", layout.asTestLayout(), wide, report, narrow.actualPower() * 0.25D);
 
         if (report.passed()) {
@@ -255,16 +257,7 @@ final class OpticalExampleValidator {
         configureSource(level, layout.source(), WIDE_FIBER_RADIUS_MILLI);
         TestSample wide = sample(level, layout.source(), layout.profiler());
         double ratio = narrow.actualPower() <= 0.0D ? 0.0D : wide.actualPower() / narrow.actualPower();
-        boolean passed = narrow.solution().reliableForReadout()
-                && wide.solution().reliableForReadout()
-                && narrow.graph().feedbackSccCount() > 0
-                && wide.graph().feedbackSccCount() > 0
-                && narrow.solution().solverKind().name().contains("COLLAPSED")
-                && wide.solution().solverKind().name().contains("COLLAPSED")
-                && wide.actualPower() < narrow.actualPower() * 0.6D;
-        ValidationReport report = passed
-                ? ValidationReport.pass(wide.actualPower())
-                : ValidationReport.fail("feedback fiber radius loss did not reduce wide beam enough: " + ratio, wide.actualPower());
+        ValidationReport report = validateFeedbackFiberRadiusLoss(narrow, wide, ratio);
         logValidation(level, "feedback_fiber_radius_loss", layout.asTestLayout(), wide, report, narrow.actualPower() * 0.25D);
 
         if (report.passed()) {
@@ -303,13 +296,7 @@ final class OpticalExampleValidator {
         TestSample single = sample(level, layout.source(), layout.profiler());
         placeFiberLine(level, layout, 2, WIDE_FIBER_RADIUS_MILLI);
         TestSample parallel = sample(level, layout.source(), layout.profiler());
-        boolean passed = single.solution().reliableForReadout()
-                && parallel.solution().reliableForReadout()
-                && parallel.actualPower() + POWER_TOLERANCE >= single.actualPower()
-                && parallel.actualPower() <= SOURCE_POWER + POWER_TOLERANCE;
-        ValidationReport report = passed
-                ? ValidationReport.pass(parallel.actualPower())
-                : ValidationReport.fail("parallel fiber output decreased or exceeded cap", parallel.actualPower());
+        ValidationReport report = validateParallelFiberSameEndpoint(single, parallel);
         logValidation(level, "parallel_fiber_same_endpoint", layout.asTestLayout(), parallel, report, single.actualPower());
 
         if (report.passed()) {
@@ -328,6 +315,52 @@ final class OpticalExampleValidator {
                 report.message(),
                 single.actualPower(),
                 parallel.actualPower()
+        )));
+        return 0;
+    }
+
+    private static int runBeamExpanderFiberCoupling(CommandSourceStack source) {
+        ServerLevel level = source.getLevel();
+        Direction testDirection = horizontalTestDirection(source);
+        BeamExpanderTestLayout layout = new BeamExpanderTestLayout(
+                BlockPos.containing(source.getPosition()).relative(testDirection, 3).above(),
+                testDirection
+        );
+        placeBeamExpanderFiberLine(level, layout, false);
+        TestSample direct = sample(level, layout.source(), layout.profiler());
+        placeBeamExpanderFiberLine(level, layout, true);
+        TestSample expanded = sample(level, layout.source(), layout.profiler());
+        double ratio = direct.actualPower() <= 0.0D ? 0.0D : expanded.actualPower() / direct.actualPower();
+        ValidationReport report = validateBeamExpanderFiberCoupling(direct, expanded, ratio);
+        logValidation(
+                level,
+                "beam_expander_fiber_coupling",
+                layout.asTestLayout(),
+                expanded,
+                report,
+                direct.actualPower() * BEAM_EXPANDER_MIN_IMPROVEMENT
+        );
+
+        if (report.passed()) {
+            source.sendSuccess(() -> Component.literal(String.format(
+                    "Optical test beam_expander_fiber_coupling PASS at %s: direct=%.9f expanded=%.9f ratio=%.6f",
+                    layout.source().toShortString(),
+                    direct.actualPower(),
+                    expanded.actualPower(),
+                    ratio
+            )), true);
+            return 1;
+        }
+
+        source.sendFailure(Component.literal(String.format(
+                "Optical test beam_expander_fiber_coupling FAIL at %s: %s direct=%.9f expanded=%.9f ratio=%.6f solver=%s reliable=%s",
+                layout.source().toShortString(),
+                report.message(),
+                direct.actualPower(),
+                expanded.actualPower(),
+                ratio,
+                expanded.solution().solverKind(),
+                expanded.solution().reliableForReadout()
         )));
         return 0;
     }
@@ -455,6 +488,51 @@ final class OpticalExampleValidator {
         );
     }
 
+    private static void placeBeamExpanderFiberLine(ServerLevel level, BeamExpanderTestLayout layout, boolean expanded) {
+        clearTestVolume(level, layout.origin(), layout.direction(), layout.profilerSupportDistance() + 2);
+        removeFiberConnections(level, layout.inputInterface(), layout.outputInterface());
+
+        level.setBlock(
+                layout.source(),
+                Spectralization.CREATIVE_LIGHT_SOURCE.get()
+                        .defaultBlockState()
+                        .setValue(CreativeLightSourceBlock.FACING, layout.direction()),
+                3
+        );
+        configureSource(level, layout.source(), BEAM_EXPANDER_SOURCE_RADIUS_MILLI);
+
+        if (expanded) {
+            placeLensHolder(level, layout.firstLens(), layout.direction(), LensProfile.preset("short"));
+            placeLensHolder(level, layout.secondLens(), layout.direction(), LensProfile.preset("long"));
+        }
+
+        placeFiberInterface(level, layout.inputInterface(), layout.direction().getOpposite());
+        placeFiberInterface(level, layout.outputInterface(), layout.direction());
+        addFiberRoutes(level, layout.inputInterface(), layout.outputInterface(), 1);
+        level.setBlock(layout.profilerSupport(), Blocks.SMOOTH_STONE.defaultBlockState(), 3);
+        level.setBlock(
+                layout.profiler(),
+                Spectralization.BEAM_PROFILER.get()
+                        .defaultBlockState()
+                        .setValue(BeamProfilerBlock.FACING, layout.direction()),
+                3
+        );
+    }
+
+    private static void placeLensHolder(ServerLevel level, BlockPos pos, Direction direction, LensProfile lensProfile) {
+        level.setBlock(
+                pos,
+                Spectralization.LENS_HOLDER.get()
+                        .defaultBlockState()
+                        .setValue(LensHolderBlock.FACING, direction),
+                3
+        );
+
+        if (level.getBlockEntity(pos) instanceof LensHolderBlockEntity lensHolder) {
+            lensHolder.setLens(lensProfile.createStack());
+        }
+    }
+
     private static void placeFiberInterface(ServerLevel level, BlockPos pos, Direction facing) {
         level.setBlock(
                 pos,
@@ -478,8 +556,12 @@ final class OpticalExampleValidator {
     }
 
     private static void clearTestVolume(ServerLevel level, BlockPos origin, Direction direction) {
+        clearTestVolume(level, origin, direction, 12);
+    }
+
+    private static void clearTestVolume(ServerLevel level, BlockPos origin, Direction direction, int maxAlong) {
         Direction lateral = direction.getClockWise();
-        for (int along = -4; along <= 12; along++) {
+        for (int along = -4; along <= Math.max(12, maxAlong); along++) {
             for (int dy = -2; dy <= 2; dy++) {
                 for (int side = -8; side <= 8; side++) {
                     level.setBlock(
@@ -577,65 +659,251 @@ final class OpticalExampleValidator {
         return sourcePowers;
     }
 
-    private static ValidationReport validate(
-            CompiledPortGraph graph,
-            ScalarPowerSolution solution,
-            Optional<ReceiverOutput> profilerOutput,
-            double expectedPower
-    ) {
-        if (!solution.reliableForReadout()) {
-            return ValidationReport.fail("solution is not reliable", profilerOutput.map(ReceiverOutput::power).orElse(0.0D));
-        }
-
-        if (graph.feedbackSccCount() <= 0) {
-            return ValidationReport.fail("expected at least one feedback SCC", profilerOutput.map(ReceiverOutput::power).orElse(0.0D));
-        }
-
-        if (profilerOutput.isEmpty()) {
-            return ValidationReport.fail("beam profiler readout missing", 0.0D);
-        }
-
-        double actualPower = profilerOutput.get().power();
-
-        if (Math.abs(actualPower - expectedPower) > POWER_TOLERANCE) {
-            return ValidationReport.fail("profiler power mismatch", actualPower);
-        }
-
-        if (Math.abs(profilerOutput.get().coherentPower() - actualPower) > POWER_TOLERANCE) {
-            return ValidationReport.fail("profiler coherent power mismatch", actualPower);
-        }
-
-        if (!Double.isFinite(profilerOutput.get().envelope().radius()) || profilerOutput.get().envelope().radius() <= 0.0D) {
-            return ValidationReport.fail("profiler envelope radius invalid", actualPower);
-        }
-
-        return ValidationReport.pass(actualPower);
+    private static ValidationReport validateSplitterLensSplitter(TestSample sample, double expectedPower) {
+        List<String> failures = commonProfilerFailures(sample);
+        expectFeedback(sample, true, failures);
+        expectFeedbackOracleSolver(sample, failures);
+        expectPowerClose(sample.actualPower(), expectedPower, "profiler power", failures);
+        expectPositive(sample.solution().powerByLane().size(), "profile lane count", failures);
+        return report(failures, sample.actualPower());
     }
 
-    private static ValidationReport validateSimplePower(
+    private static ValidationReport validateLensApertureClip(
             TestSample sample,
             double expectedPower,
-            boolean requireFeedback
+            double apertureGain
     ) {
-        if (!sample.solution().reliableForReadout()) {
-            return ValidationReport.fail("solution is not reliable", sample.actualPower());
+        List<String> failures = commonProfilerFailures(sample);
+        expectFeedback(sample, false, failures);
+        expectSolver(sample, ScalarSolverKind.PROFILE_STATE_EXACT, failures);
+        expectNoProfileDegradation(sample, failures);
+        expectPowerClose(sample.actualPower(), expectedPower, "profiler power", failures);
+
+        if (!(apertureGain > 0.0D && apertureGain < 1.0D)) {
+            failures.add("aperture gain should be a clipping loss, got " + apertureGain);
         }
 
-        if (requireFeedback && sample.graph().feedbackSccCount() <= 0) {
-            return ValidationReport.fail("expected at least one feedback SCC", sample.actualPower());
+        return report(failures, sample.actualPower());
+    }
+
+    private static ValidationReport validateFiberRadiusCoupling(
+            TestSample narrow,
+            TestSample wide,
+            double ratio
+    ) {
+        List<String> failures = commonProfilerFailures(narrow, "narrow");
+        failures.addAll(commonProfilerFailures(wide, "wide"));
+        expectFeedback(narrow, false, failures);
+        expectFeedback(wide, false, failures);
+        expectSolver(narrow, ScalarSolverKind.PROFILE_STATE_EXACT, failures);
+        expectSolver(wide, ScalarSolverKind.PROFILE_STATE_EXACT, failures);
+        expectNoProfileDegradation(narrow, failures);
+        expectNoProfileDegradation(wide, failures);
+
+        if (!(wide.actualPower() < narrow.actualPower())) {
+            failures.add("wide beam should couple less power than narrow beam");
+        }
+
+        if (!(ratio > 0.18D && ratio < 0.36D)) {
+            failures.add("wide/narrow coupling ratio out of range: " + ratio);
+        }
+
+        return report(failures, wide.actualPower());
+    }
+
+    private static ValidationReport validateFeedbackFiberRadiusLoss(
+            TestSample narrow,
+            TestSample wide,
+            double ratio
+    ) {
+        List<String> failures = commonProfilerFailures(narrow, "narrow");
+        failures.addAll(commonProfilerFailures(wide, "wide"));
+        expectFeedback(narrow, true, failures);
+        expectFeedback(wide, true, failures);
+        expectSolver(narrow, ScalarSolverKind.PROFILE_STATE_EXACT, failures);
+        expectSolver(wide, ScalarSolverKind.PROFILE_STATE_EXACT, failures);
+        expectNoProfileDegradation(narrow, failures);
+        expectNoProfileDegradation(wide, failures);
+
+        if (!(wide.actualPower() < narrow.actualPower() * 0.6D)) {
+            failures.add("feedback fiber radius loss did not reduce wide beam enough: " + ratio);
+        }
+
+        if (!(ratio > 0.05D && ratio < 0.6D)) {
+            failures.add("feedback wide/narrow ratio out of range: " + ratio);
+        }
+
+        return report(failures, wide.actualPower());
+    }
+
+    private static ValidationReport validateParallelFiberSameEndpoint(
+            TestSample single,
+            TestSample parallel
+    ) {
+        List<String> failures = commonProfilerFailures(single, "single");
+        failures.addAll(commonProfilerFailures(parallel, "parallel"));
+        expectFeedback(single, false, failures);
+        expectFeedback(parallel, false, failures);
+        expectSolver(single, ScalarSolverKind.PROFILE_STATE_EXACT, failures);
+        expectSolver(parallel, ScalarSolverKind.PROFILE_STATE_EXACT, failures);
+        expectNoProfileDegradation(single, failures);
+        expectNoProfileDegradation(parallel, failures);
+
+        double expectedParallel = Math.min(SOURCE_POWER, single.actualPower() * 2.0D);
+        expectPowerClose(parallel.actualPower(), expectedParallel, "parallel route power", failures);
+
+        if (parallel.actualPower() + POWER_TOLERANCE < single.actualPower()) {
+            failures.add("parallel fiber output decreased compared to single route");
+        }
+
+        return report(failures, parallel.actualPower());
+    }
+
+    private static ValidationReport validateBeamExpanderFiberCoupling(
+            TestSample direct,
+            TestSample expanded,
+            double ratio
+    ) {
+        List<String> failures = commonProfilerFailures(direct, "direct");
+        failures.addAll(commonProfilerFailures(expanded, "expanded"));
+        expectFeedback(direct, false, failures);
+        expectFeedback(expanded, true, failures);
+        expectSolver(direct, ScalarSolverKind.PROFILE_STATE_EXACT, failures);
+        expectSolver(expanded, ScalarSolverKind.PROFILE_STATE_EXACT, failures);
+        expectNoProfileDegradation(direct, failures);
+        expectNoProfileDegradation(expanded, failures);
+
+        if (!(expanded.actualPower() > direct.actualPower() * BEAM_EXPANDER_MIN_IMPROVEMENT)) {
+            failures.add("beam expander did not improve long-distance fiber coupling enough: " + ratio);
+        }
+
+        if (!(ratio < BEAM_EXPANDER_MAX_IMPROVEMENT)) {
+            failures.add("beam expander improvement is suspiciously large: " + ratio);
+        }
+
+        return report(failures, expanded.actualPower());
+    }
+
+    private static List<String> commonProfilerFailures(TestSample sample) {
+        return commonProfilerFailures(sample, "sample");
+    }
+
+    private static List<String> commonProfilerFailures(TestSample sample, String label) {
+        List<String> failures = new ArrayList<>();
+
+        if (!sample.solution().reliableForReadout()) {
+            failures.add(label + " solution is not reliable");
         }
 
         if (sample.profilerOutput().isEmpty()) {
-            return ValidationReport.fail("beam profiler readout missing", 0.0D);
+            failures.add(label + " beam profiler readout missing");
+            return failures;
         }
 
-        double actualPower = sample.actualPower();
+        ReceiverOutput output = sample.profilerOutput().get();
 
+        if (!Double.isFinite(output.power()) || output.power() < 0.0D) {
+            failures.add(label + " profiler power is invalid");
+        }
+
+        if (output.power() > SOURCE_POWER + POWER_TOLERANCE) {
+            failures.add(label + " profiler power exceeds source power");
+        }
+
+        if (Math.abs(output.coherentPower() - output.power()) > POWER_TOLERANCE) {
+            failures.add(label + " coherent power does not match total profiler power");
+        }
+
+        if (output.strayPower() > POWER_TOLERANCE) {
+            failures.add(label + " unexpected stray power");
+        }
+
+        if (!Double.isFinite(output.envelope().radius()) || output.envelope().radius() <= 0.0D) {
+            failures.add(label + " envelope radius invalid");
+        }
+
+        if (!Double.isFinite(output.envelope().waistRadius()) || output.envelope().waistRadius() <= 0.0D) {
+            failures.add(label + " envelope waist radius invalid");
+        }
+
+        if (!Double.isFinite(output.envelope().divergence())) {
+            failures.add(label + " envelope divergence invalid");
+        }
+
+        if (!Double.isFinite(output.envelope().focusDistance())) {
+            failures.add(label + " envelope focus distance invalid");
+        }
+
+        return failures;
+    }
+
+    private static void expectFeedback(TestSample sample, boolean feedbackExpected, List<String> failures) {
+        if (feedbackExpected && sample.graph().feedbackSccCount() <= 0) {
+            failures.add("expected at least one feedback SCC");
+        }
+
+        if (!feedbackExpected && sample.graph().feedbackSccCount() != 0) {
+            failures.add("expected no feedback SCC, got " + sample.graph().feedbackSccCount());
+        }
+    }
+
+    private static void expectSolver(
+            TestSample sample,
+            ScalarSolverKind expectedSolver,
+            List<String> failures
+    ) {
+        if (sample.solution().solverKind() != expectedSolver) {
+            failures.add("expected solver " + expectedSolver + ", got " + sample.solution().solverKind());
+        }
+    }
+
+    private static void expectFeedbackOracleSolver(TestSample sample, List<String> failures) {
+        ScalarSolverKind solverKind = sample.solution().solverKind();
+
+        if (solverKind == ScalarSolverKind.PROFILE_STATE_EXACT) {
+            expectNoProfileDegradation(sample, failures);
+            return;
+        }
+
+        if (solverKind == ScalarSolverKind.PROFILE_COLLAPSED_EXACT
+                && sample.solution().profileCollapsedFallback()) {
+            return;
+        }
+
+        failures.add("expected profile-state exact or explicit collapsed feedback fallback, got " + solverKind);
+    }
+
+    private static void expectNoProfileDegradation(TestSample sample, List<String> failures) {
+        if (sample.solution().profileCollapsedFallback()) {
+            failures.add("profile solver fell back to collapsed mode");
+        }
+
+        if (sample.solution().profileOverflow()) {
+            failures.add("profile state overflow");
+        }
+    }
+
+    private static void expectPowerClose(
+            double actualPower,
+            double expectedPower,
+            String label,
+            List<String> failures
+    ) {
         if (Math.abs(actualPower - expectedPower) > POWER_TOLERANCE) {
-            return ValidationReport.fail("profiler power mismatch", actualPower);
+            failures.add(label + " mismatch: actual=" + actualPower + " expected=" + expectedPower);
         }
+    }
 
-        return ValidationReport.pass(actualPower);
+    private static void expectPositive(int value, String label, List<String> failures) {
+        if (value <= 0) {
+            failures.add(label + " should be positive");
+        }
+    }
+
+    private static ValidationReport report(List<String> failures, double actualPower) {
+        return failures.isEmpty()
+                ? ValidationReport.pass(actualPower)
+                : ValidationReport.fail(String.join("; ", failures), actualPower);
     }
 
     private static void logValidation(
@@ -807,6 +1075,44 @@ final class OpticalExampleValidator {
 
         private BlockPos profilerSupport() {
             return origin.relative(direction, 11);
+        }
+
+        private TestLayout asTestLayout() {
+            return new TestLayout(origin, direction);
+        }
+    }
+
+    private record BeamExpanderTestLayout(BlockPos origin, Direction direction) {
+        private BlockPos source() {
+            return origin;
+        }
+
+        private BlockPos firstLens() {
+            return origin.relative(direction, BEAM_EXPANDER_FIRST_LENS_DISTANCE);
+        }
+
+        private BlockPos secondLens() {
+            return origin.relative(direction, BEAM_EXPANDER_SECOND_LENS_DISTANCE);
+        }
+
+        private BlockPos inputInterface() {
+            return origin.relative(direction, BEAM_EXPANDER_INPUT_DISTANCE);
+        }
+
+        private BlockPos outputInterface() {
+            return origin.relative(direction, BEAM_EXPANDER_INPUT_DISTANCE + 2);
+        }
+
+        private BlockPos profiler() {
+            return origin.relative(direction, BEAM_EXPANDER_INPUT_DISTANCE + 4);
+        }
+
+        private BlockPos profilerSupport() {
+            return origin.relative(direction, profilerSupportDistance());
+        }
+
+        private int profilerSupportDistance() {
+            return BEAM_EXPANDER_INPUT_DISTANCE + 5;
         }
 
         private TestLayout asTestLayout() {

@@ -28,6 +28,7 @@ import net.minecraft.world.level.block.state.BlockState;
 public final class ProfileLanePowerSolver {
     private static final int MAX_PROFILE_STATES = 4096;
     private static final int MAX_EXACT_SCC_STATES = 384;
+    private static final double PROFILE_PATH_GAIN_CUTOFF = 1.0E-8;
     private static final double PIVOT_EPSILON = 1.0E-10;
     private static final double RESIDUAL_EPSILON = 1.0E-6;
     private static final double RELATIVE_RESIDUAL_EPSILON = 1.0E-7;
@@ -47,11 +48,6 @@ public final class ProfileLanePowerSolver {
 
         if (sources.isEmpty() || graph.nodes().isEmpty()) {
             return ScalarPowerSolutions.empty(ScalarSolverKind.NONE, solverPlan);
-        }
-
-        // In feedback, profile-sensitive effects are folded into each edge as one equivalent loss.
-        if (graph.feedbackSccCount() > 0) {
-            return solveProfileCollapsedExact(level, graph, sources, solverPlan, false, false);
         }
 
         FiniteProfileSystem system = buildFiniteProfileSystem(level, graph, sources);
@@ -865,6 +861,10 @@ public final class ProfileLanePowerSolver {
                 accumulatedGain *= stepGain;
 
                 if (!Double.isFinite(accumulatedGain) || accumulatedGain <= 0.0D) {
+                    return FoldedProfilePath.blocked(startNode, startState.lane());
+                }
+
+                if (accumulatedGain < PROFILE_PATH_GAIN_CUTOFF) {
                     return FoldedProfilePath.blocked(startNode, startState.lane());
                 }
 

@@ -2,10 +2,14 @@ package io.github.yoglappland.spectralization.client.screen;
 
 import io.github.yoglappland.spectralization.blockentity.SolarDopingChamberBlockEntity;
 import io.github.yoglappland.spectralization.client.gui.SpectralMachineScreen;
+import io.github.yoglappland.spectralization.client.gui.SolarDopingPieChart;
 import io.github.yoglappland.spectralization.client.gui.ThermalSmelterUiSkin;
+import io.github.yoglappland.spectralization.machine.SolarDopingRecipe;
 import io.github.yoglappland.spectralization.menu.SolarDopingChamberLayout;
 import io.github.yoglappland.spectralization.menu.SolarDopingChamberMenu;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
@@ -150,33 +154,22 @@ public class SolarDopingChamberScreen extends SpectralMachineScreen<SolarDopingC
     }
 
     private void drawProbabilityPie(GuiGraphics graphics) {
-        int chancePpm = data(SolarDopingChamberBlockEntity.DATA_CHANCE_PPM);
         int accent = data(SolarDopingChamberBlockEntity.DATA_RECIPE_COLOR);
-        int state = data(SolarDopingChamberBlockEntity.DATA_STATE);
         int centerX = leftPos + SolarDopingChamberLayout.PIE_CENTER_X;
         int centerY = topPos + SolarDopingChamberLayout.PIE_CENTER_Y;
         int radius = SolarDopingChamberLayout.PIE_RADIUS;
         int innerRadius = SolarDopingChamberLayout.PIE_INNER_RADIUS;
-        double filled = Math.max(0.0, Math.min(1.0, chancePpm / 1_000_000.0));
-        int activeColor = state == SolarDopingChamberBlockEntity.STATE_COMPLETE
-                ? ThermalSmelterUiSkin.STATUS_READY
-                : ThermalSmelterUiSkin.withAlpha(accent == 0 ? PROBABILITY_COLOR : accent, 210);
-
-        for (int dy = -radius; dy <= radius; dy++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                double distance = Math.sqrt(dx * dx + dy * dy);
-                if (distance > radius || distance < innerRadius) {
-                    continue;
-                }
-
-                double angle = Math.atan2(-dy, dx);
-                double normalized = (angle < 0.0 ? angle + Math.PI * 2.0 : angle) / (Math.PI * 2.0);
-                int color = normalized <= filled
-                        ? activeColor
-                        : ThermalSmelterUiSkin.withAlpha(ThermalSmelterUiSkin.EMPTY, 82);
-                graphics.fill(centerX + dx, centerY + dy, centerX + dx + 1, centerY + dy + 1, color);
-            }
-        }
+        int activeColor = accent == 0 ? PROBABILITY_COLOR : accent;
+        SolarDopingPieChart.draw(
+                graphics,
+                centerX,
+                centerY,
+                radius,
+                innerRadius,
+                activeRecipe().orElse(null),
+                activeColor,
+                ThermalSmelterUiSkin.withAlpha(ThermalSmelterUiSkin.EMPTY, 82)
+        );
 
         outline(graphics, centerX - radius - 1, centerY - radius - 1, radius * 2 + 3, radius * 2 + 3,
                 ThermalSmelterUiSkin.withAlpha(ThermalSmelterUiSkin.BORDER, 100));
@@ -274,16 +267,24 @@ public class SolarDopingChamberScreen extends SpectralMachineScreen<SolarDopingC
                 SolarDopingChamberLayout.PIE_CENTER_Y - SolarDopingChamberLayout.PIE_RADIUS - 2,
                 SolarDopingChamberLayout.PIE_RADIUS * 2 + 4,
                 SolarDopingChamberLayout.PIE_RADIUS * 2 + 4)) {
-            return List.of(
-                    Component.translatable(
-                            "screen.spectralization.solar_doping_chamber.tooltip.probability",
+            List<Component> tooltip = new ArrayList<>();
+            activeRecipe().ifPresent(recipe -> {
+                if (recipe.hasRandomResults()) {
+                    tooltip.add(Component.translatable(
+                            "screen.spectralization.solar_doping_chamber.tooltip.output_ratios"
+                    ));
+                    tooltip.addAll(SolarDopingPieChart.ratioTooltipLines(recipe));
+                }
+            });
+            tooltip.add(Component.translatable(
+                    "screen.spectralization.solar_doping_chamber.tooltip.probability",
                     data(SolarDopingChamberBlockEntity.DATA_CHANCE_PPM) / 10000.0
-                    ),
-                    Component.translatable(
-                            "screen.spectralization.solar_doping_chamber.tooltip.time",
-                            secondsText(data(SolarDopingChamberBlockEntity.DATA_EXPECTED_TICKS))
-                    )
-            );
+            ));
+            tooltip.add(Component.translatable(
+                    "screen.spectralization.solar_doping_chamber.tooltip.time",
+                    secondsText(data(SolarDopingChamberBlockEntity.DATA_EXPECTED_TICKS))
+            ));
+            return tooltip;
         }
 
         if (insideSlot(mouseX, mouseY, SolarDopingChamberLayout.FILTER_SLOT_X, SolarDopingChamberLayout.FILTER_SLOT_Y)) {
@@ -312,6 +313,13 @@ public class SolarDopingChamberScreen extends SpectralMachineScreen<SolarDopingC
 
     private int data(int index) {
         return menu.getData(index);
+    }
+
+    private Optional<SolarDopingRecipe> activeRecipe() {
+        return SolarDopingRecipe.find(
+                menu.getSlot(SolarDopingChamberBlockEntity.SLOT_PROCESS).getItem(),
+                menu.getSlot(SolarDopingChamberBlockEntity.SLOT_FILTER).getItem()
+        );
     }
 
     private boolean insideSlot(int mouseX, int mouseY, int x, int y) {

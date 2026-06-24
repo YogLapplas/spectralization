@@ -215,11 +215,45 @@ public class Spectralization {
     public static final DeferredItem<Item> ALUMINA_DUST =
             ITEMS.registerSimpleItem("alumina_dust", new Item.Properties());
     public static final DeferredItem<Item> FLUORITE = ITEMS.registerSimpleItem("fluorite", new Item.Properties());
+    public static final DeferredItem<Item> ND_FLUORITE_CRYSTAL =
+            ITEMS.registerSimpleItem("nd_fluorite_crystal", new Item.Properties());
+    public static final DeferredItem<Item> YB_FLUORITE_CRYSTAL =
+            ITEMS.registerSimpleItem("yb_fluorite_crystal", new Item.Properties());
+    public static final DeferredItem<Item> ER_FLUORITE_CRYSTAL =
+            ITEMS.registerSimpleItem("er_fluorite_crystal", new Item.Properties());
+    public static final DeferredItem<Item> CE_FLUORITE_CRYSTAL =
+            ITEMS.registerSimpleItem("ce_fluorite_crystal", new Item.Properties());
     public static final DeferredItem<Item> YTTRIUM_OXIDE =
             ITEMS.registerSimpleItem("yttrium_oxide", new Item.Properties());
     public static final DeferredItem<Item> YAG_CRYSTAL =
             ITEMS.registerSimpleItem("yag_crystal", new Item.Properties());
+    public static final DeferredItem<Item> ND_YAG_CRYSTAL =
+            ITEMS.registerSimpleItem("nd_yag_crystal", new Item.Properties());
+    public static final DeferredItem<Item> YB_YAG_CRYSTAL =
+            ITEMS.registerSimpleItem("yb_yag_crystal", new Item.Properties());
+    public static final DeferredItem<Item> ER_YAG_CRYSTAL =
+            ITEMS.registerSimpleItem("er_yag_crystal", new Item.Properties());
+    public static final DeferredItem<Item> CE_YAG_CRYSTAL =
+            ITEMS.registerSimpleItem("ce_yag_crystal", new Item.Properties());
     public static final DeferredItem<Item> RUBY = ITEMS.registerSimpleItem("ruby", new Item.Properties());
+    public static final DeferredItem<Item> ND_DOPED_SILICA =
+            ITEMS.registerSimpleItem("nd_doped_silica", new Item.Properties());
+    public static final DeferredItem<Item> YB_DOPED_SILICA =
+            ITEMS.registerSimpleItem("yb_doped_silica", new Item.Properties());
+    public static final DeferredItem<Item> ER_DOPED_SILICA =
+            ITEMS.registerSimpleItem("er_doped_silica", new Item.Properties());
+    public static final DeferredItem<Item> CE_DOPED_SILICA =
+            ITEMS.registerSimpleItem("ce_doped_silica", new Item.Properties());
+    public static final DeferredItem<Item> SILICON =
+            ITEMS.registerSimpleItem("silicon", new Item.Properties());
+    public static final DeferredItem<Item> BORON_DOPED_SILICON =
+            ITEMS.registerSimpleItem("boron_doped_silicon", new Item.Properties());
+    public static final DeferredItem<Item> PHOSPHORUS_DOPED_SILICON =
+            ITEMS.registerSimpleItem("phosphorus_doped_silicon", new Item.Properties());
+    public static final DeferredItem<Item> ARSENIC_DOPED_SILICON =
+            ITEMS.registerSimpleItem("arsenic_doped_silicon", new Item.Properties());
+    public static final DeferredItem<Item> ERBIUM_DOPED_SILICON =
+            ITEMS.registerSimpleItem("erbium_doped_silicon", new Item.Properties());
     public static final DeferredItem<Item> RAW_SILVER =
             ITEMS.registerSimpleItem("raw_silver", new Item.Properties());
     public static final DeferredItem<Item> SILVER_INGOT =

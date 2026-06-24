@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "spectralization:item/nd_yag_crystal"
+  }
+}

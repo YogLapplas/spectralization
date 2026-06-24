@@ -10,8 +10,8 @@ import javax.annotation.Nullable;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ItemLike;
-import net.minecraft.world.level.block.Blocks;
 
 public record SolarDopingRecipe(
         String id,
@@ -22,27 +22,51 @@ public record SolarDopingRecipe(
 ) {
     private static final List<SolarDopingRecipe> RECIPES = List.of(
             recipe(
-                    "primitive_board_doping",
-                    Spectralization.PRIMITIVE_CIRCUIT_BOARD.get(),
-                    () -> new ItemStack(Spectralization.ADVANCED_CIRCUIT_BOARD.get()),
+                    "corundum_ruby_doping",
+                    Spectralization.CORUNDUM.get(),
+                    () -> new ItemStack(Spectralization.RUBY.get()),
                     0.000060,
-                    0xFF9FE7DF
-            ),
-            recipe(
-                    "advanced_board_doping",
-                    Spectralization.ADVANCED_CIRCUIT_BOARD.get(),
-                    () -> new ItemStack(Spectralization.PRECISION_CIRCUIT_BOARD.get()),
-                    0.000040,
-                    0xFFC49BFF
+                    0xFFFF6F8E
             ),
             weightedRecipe(
-                    "white_concrete_random_doping",
-                    Blocks.WHITE_CONCRETE,
-                    0.000100,
-                    0xFFE6D9FF,
-                    weightedResult(Blocks.RED_CONCRETE, 20),
-                    weightedResult(Blocks.YELLOW_CONCRETE, 30),
-                    weightedResult(Blocks.BLUE_CONCRETE, 50)
+                    "yag_rare_earth_doping",
+                    Spectralization.YAG_CRYSTAL.get(),
+                    0.000050,
+                    0xFFBFA8FF,
+                    weightedResult(Spectralization.CE_YAG_CRYSTAL.get(), 35),
+                    weightedResult(Spectralization.ND_YAG_CRYSTAL.get(), 35),
+                    weightedResult(Spectralization.YB_YAG_CRYSTAL.get(), 15),
+                    weightedResult(Spectralization.ER_YAG_CRYSTAL.get(), 15)
+            ),
+            weightedRecipe(
+                    "fluorite_rare_earth_doping",
+                    Spectralization.FLUORITE.get(),
+                    0.000055,
+                    0xFF96E6FF,
+                    weightedResult(Spectralization.CE_FLUORITE_CRYSTAL.get(), 30),
+                    weightedResult(Spectralization.ND_FLUORITE_CRYSTAL.get(), 30),
+                    weightedResult(Spectralization.YB_FLUORITE_CRYSTAL.get(), 20),
+                    weightedResult(Spectralization.ER_FLUORITE_CRYSTAL.get(), 20)
+            ),
+            weightedRecipe(
+                    "silica_rare_earth_doping",
+                    Items.QUARTZ,
+                    0.000050,
+                    0xFFDDEFFF,
+                    weightedResult(Spectralization.CE_DOPED_SILICA.get(), 25),
+                    weightedResult(Spectralization.ND_DOPED_SILICA.get(), 25),
+                    weightedResult(Spectralization.YB_DOPED_SILICA.get(), 25),
+                    weightedResult(Spectralization.ER_DOPED_SILICA.get(), 25)
+            ),
+            weightedRecipe(
+                    "silicon_electronic_doping",
+                    Spectralization.SILICON.get(),
+                    0.000065,
+                    0xFF9BA6B5,
+                    weightedResult(Spectralization.BORON_DOPED_SILICON.get(), 35),
+                    weightedResult(Spectralization.PHOSPHORUS_DOPED_SILICON.get(), 35),
+                    weightedResult(Spectralization.ARSENIC_DOPED_SILICON.get(), 20),
+                    weightedResult(Spectralization.ERBIUM_DOPED_SILICON.get(), 10)
             )
     );
 

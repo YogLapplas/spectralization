@@ -1,4 +1,10 @@
 {
   "replace": false,
-  "values": []
+  "values": [
+    "spectralization:silicon",
+    "spectralization:boron_doped_silicon",
+    "spectralization:phosphorus_doped_silicon",
+    "spectralization:arsenic_doped_silicon",
+    "spectralization:erbium_doped_silicon"
+  ]
 }

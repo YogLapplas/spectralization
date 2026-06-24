@@ -2,6 +2,7 @@ package io.github.yoglappland.spectralization.compat.jei;
 
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.blockentity.SolarDopingChamberBlockEntity;
+import io.github.yoglappland.spectralization.client.gui.SolarDopingPieChart;
 import io.github.yoglappland.spectralization.client.gui.ThermalSmelterUiSkin;
 import io.github.yoglappland.spectralization.machine.SolarDopingRecipe;
 import mezz.jei.api.gui.builder.IRecipeLayoutBuilder;
@@ -112,8 +113,13 @@ public final class SolarDopingRecipeCategory implements IRecipeCategory<SolarDop
             double mouseY
     ) {
         if (inside(mouseX, mouseY, PIE_CENTER_X - PIE_RADIUS - 2, PIE_CENTER_Y - PIE_RADIUS - 2,
-                PIE_RADIUS * 2 + 4, PIE_RADIUS * 2 + 4)
-                || inside(mouseX, mouseY, STRIP_X, STRIP_Y - 2, STRIP_WIDTH, 8)) {
+                PIE_RADIUS * 2 + 4, PIE_RADIUS * 2 + 4)) {
+            if (recipe.hasRandomResults()) {
+                tooltip.add(tt("jei.random_outputs"));
+                SolarDopingPieChart.ratioTooltipLines(recipe).forEach(tooltip::add);
+            }
+            tooltip.add(tt("jei.average_seconds", secondsText(recipe.expectedTicks(1.0, 1.0))));
+        } else if (inside(mouseX, mouseY, STRIP_X, STRIP_Y - 2, STRIP_WIDTH, 8)) {
             tooltip.add(tt("jei.energy_per_tick", SolarDopingChamberBlockEntity.ENERGY_PER_TICK * 20));
             tooltip.add(tt("jei.average_seconds", secondsText(recipe.expectedTicks(1.0, 1.0))));
         }
@@ -125,23 +131,16 @@ public final class SolarDopingRecipeCategory implements IRecipeCategory<SolarDop
     }
 
     private static void drawPie(GuiGraphics graphics, SolarDopingRecipe recipe) {
-        int expected = Math.max(1, recipe.expectedTicks(1.0, 1.0));
-        double shownChance = Math.min(1.0, 1.0 / expected);
-        int activeColor = ThermalSmelterUiSkin.withAlpha(recipe.accentColor(), 210);
-
-        for (int dy = -PIE_RADIUS; dy <= PIE_RADIUS; dy++) {
-            for (int dx = -PIE_RADIUS; dx <= PIE_RADIUS; dx++) {
-                double distance = Math.sqrt(dx * dx + dy * dy);
-                if (distance > PIE_RADIUS || distance < PIE_INNER_RADIUS) {
-                    continue;
-                }
-
-                double angle = Math.atan2(-dy, dx);
-                double normalized = (angle < 0.0 ? angle + Math.PI * 2.0 : angle) / (Math.PI * 2.0);
-                int color = normalized < shownChance ? activeColor : ThermalSmelterUiSkin.withAlpha(ThermalSmelterUiSkin.EMPTY, 82);
-                graphics.fill(PIE_CENTER_X + dx, PIE_CENTER_Y + dy, PIE_CENTER_X + dx + 1, PIE_CENTER_Y + dy + 1, color);
-            }
-        }
+        SolarDopingPieChart.draw(
+                graphics,
+                PIE_CENTER_X,
+                PIE_CENTER_Y,
+                PIE_RADIUS,
+                PIE_INNER_RADIUS,
+                recipe,
+                recipe.accentColor(),
+                ThermalSmelterUiSkin.withAlpha(ThermalSmelterUiSkin.EMPTY, 82)
+        );
     }
 
     private static void energyStrip(GuiGraphics graphics) {

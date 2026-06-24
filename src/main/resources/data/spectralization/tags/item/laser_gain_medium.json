@@ -2,6 +2,16 @@
   "replace": false,
   "values": [
     "spectralization:ruby",
-    "spectralization:ruby_block"
+    "spectralization:ruby_block",
+    "spectralization:nd_yag_crystal",
+    "spectralization:yb_yag_crystal",
+    "spectralization:er_yag_crystal",
+    "spectralization:nd_fluorite_crystal",
+    "spectralization:yb_fluorite_crystal",
+    "spectralization:er_fluorite_crystal",
+    "spectralization:nd_doped_silica",
+    "spectralization:yb_doped_silica",
+    "spectralization:er_doped_silica",
+    "spectralization:erbium_doped_silicon"
   ]
 }

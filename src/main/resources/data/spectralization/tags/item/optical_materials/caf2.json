@@ -2,6 +2,10 @@
   "replace": false,
   "values": [
     "spectralization:fluorite",
-    "spectralization:fluorite_block"
+    "spectralization:fluorite_block",
+    "spectralization:nd_fluorite_crystal",
+    "spectralization:yb_fluorite_crystal",
+    "spectralization:er_fluorite_crystal",
+    "spectralization:ce_fluorite_crystal"
   ]
 }

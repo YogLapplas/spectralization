@@ -1,4 +1,6 @@
 {
   "replace": false,
-  "values": []
+  "values": [
+    "spectralization:nd_yag_crystal"
+  ]
 }

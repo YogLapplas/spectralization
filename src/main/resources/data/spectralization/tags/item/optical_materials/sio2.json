@@ -4,6 +4,10 @@
     "minecraft:quartz",
     "minecraft:glass",
     "minecraft:glass_pane",
-    "minecraft:sand"
+    "minecraft:sand",
+    "spectralization:nd_doped_silica",
+    "spectralization:yb_doped_silica",
+    "spectralization:er_doped_silica",
+    "spectralization:ce_doped_silica"
   ]
 }

@@ -1,6 +1,10 @@
 {
   "replace": false,
   "values": [
-    "spectralization:yag_crystal"
+    "spectralization:yag_crystal",
+    "spectralization:nd_yag_crystal",
+    "spectralization:yb_yag_crystal",
+    "spectralization:er_yag_crystal",
+    "spectralization:ce_yag_crystal"
   ]
 }

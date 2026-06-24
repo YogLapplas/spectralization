@@ -14,6 +14,7 @@ import io.github.yoglappland.spectralization.client.screen.CoatingBrushScreen;
 import io.github.yoglappland.spectralization.client.screen.CompactMachineCoreScreen;
 import io.github.yoglappland.spectralization.client.screen.CompactedMachineScreen;
 import io.github.yoglappland.spectralization.client.screen.CreativeLightSourceScreen;
+import io.github.yoglappland.spectralization.client.screen.FiberLaserScreen;
 import io.github.yoglappland.spectralization.client.screen.HolographicStorageCoreScreen;
 import io.github.yoglappland.spectralization.client.screen.HolographicStorageScreen;
 import io.github.yoglappland.spectralization.client.screen.LensGrindingBenchScreen;
@@ -96,6 +97,7 @@ public final class SpectralClientModEvents {
         event.register(SpectralMenus.LENS_GRINDING_BENCH.get(), LensGrindingBenchScreen::new);
         event.register(SpectralMenus.METAMATERIAL_DESIGN_TABLE.get(), MetamaterialDesignTableScreen::new);
         event.register(SpectralMenus.BASIC_LITHOGRAPHY_MACHINE.get(), BasicLithographyMachineScreen::new);
+        event.register(SpectralMenus.FIBER_LASER.get(), FiberLaserScreen::new);
         event.register(SpectralMenus.HOLOGRAPHIC_STORAGE.get(), HolographicStorageScreen::new);
         event.register(SpectralMenus.HOLOGRAPHIC_STORAGE_CORE.get(), HolographicStorageCoreScreen::new);
         event.register(SpectralMenus.COMPACT_MACHINE_CORE.get(), CompactMachineCoreScreen::new);

@@ -13,6 +13,7 @@ import io.github.yoglappland.spectralization.optics.OpticalTraceStep;
 import io.github.yoglappland.spectralization.optics.OpticalTraceTermination;
 import io.github.yoglappland.spectralization.optics.OpticalTransferEdge;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
+import io.github.yoglappland.spectralization.optics.fiber.FiberLikeFaces;
 import io.github.yoglappland.spectralization.optics.fiber.FiberOpticalTransfer;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -276,21 +277,29 @@ public final class PortGraphCompiler {
                 return 1;
             }
 
-            propagationFactor *= OpticalPropagationLoss.factor(level, cursor, sampleBeam);
+            BlockState state = level.getBlockState(cursor);
+            Direction incomingDirection = travelDirection.getOpposite();
+            double stepPropagationFactor = FiberLikeFaces.isDirectGuidedAdjacency(
+                    level,
+                    outgoingNode.pos(),
+                    travelDirection,
+                    cursor,
+                    incomingDirection
+            )
+                    ? 1.0D
+                    : OpticalPropagationLoss.factor(level, cursor, sampleBeam);
+            propagationFactor *= stepPropagationFactor;
             double estimatedIncomingPower = estimatedOutgoingPower * propagationFactor;
 
             if (estimatedIncomingPower < DIRECT_MIN_RELATIVE_POWER) {
                 return 0;
             }
 
-            BlockState state = level.getBlockState(cursor);
-
             if (OpticalMaterialProfiles.isAirLike(state)) {
                 cursor = cursor.relative(travelDirection);
                 continue;
             }
 
-            Direction incomingDirection = travelDirection.getOpposite();
             PortGraphNode incomingNode = PortGraphNode.incoming(new OpticalPort(cursor, incomingDirection));
             interestingNodes.add(incomingNode);
             addRawEdge(

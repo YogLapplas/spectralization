@@ -11,7 +11,8 @@ import java.util.Map;
 final class GainGraphRewriter {
     static CompiledPortGraph applyEffectiveGains(
             CompiledPortGraph graph,
-            Map<Integer, Double> effectiveGainsByEdgeId
+            Map<Integer, Double> effectiveGainsByEdgeId,
+            Map<Integer, GainSpectralScope> spectralScopesByEdgeId
     ) {
         if (!hasActiveScheduledGain(effectiveGainsByEdgeId)) {
             return graph;
@@ -36,7 +37,12 @@ final class GainGraphRewriter {
                     edge.sampleInputPower(),
                     edge.sampleOutputPower() * gain,
                     edge.sampleFrequency(),
-                    scaledFrequencyGains(edge.sampleGainByFrequency(), edge.sampleFrequency(), gain)
+                    scaledFrequencyGains(
+                            edge.sampleGainByFrequency(),
+                            edge.sampleFrequency(),
+                            spectralScopesByEdgeId.getOrDefault(edge.id(), GainSpectralScope.SAMPLE_FREQUENCY),
+                            gain
+                    )
             ));
         }
 
@@ -65,6 +71,7 @@ final class GainGraphRewriter {
     private static Map<FrequencyKey, Double> scaledFrequencyGains(
             Map<FrequencyKey, Double> gains,
             FrequencyKey targetFrequency,
+            GainSpectralScope spectralScope,
             double factor
     ) {
         if (gains.isEmpty()) {
@@ -74,13 +81,21 @@ final class GainGraphRewriter {
         Map<FrequencyKey, Double> scaled = new HashMap<>();
 
         for (Map.Entry<FrequencyKey, Double> entry : gains.entrySet()) {
-            double gain = entry.getKey().equals(targetFrequency)
+            double gain = shouldScaleFrequency(entry.getKey(), targetFrequency, spectralScope)
                     ? entry.getValue() * factor
                     : entry.getValue();
             scaled.put(entry.getKey(), gain);
         }
 
         return scaled;
+    }
+
+    private static boolean shouldScaleFrequency(
+            FrequencyKey frequency,
+            FrequencyKey targetFrequency,
+            GainSpectralScope spectralScope
+    ) {
+        return spectralScope == GainSpectralScope.ALL_PRESENT_FREQUENCIES || frequency.equals(targetFrequency);
     }
 
     private GainGraphRewriter() {

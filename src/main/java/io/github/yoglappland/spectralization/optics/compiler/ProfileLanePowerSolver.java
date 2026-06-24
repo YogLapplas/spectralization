@@ -3,6 +3,7 @@ package io.github.yoglappland.spectralization.optics.compiler;
 import io.github.yoglappland.spectralization.block.FiberOpticInterfaceBlock;
 import io.github.yoglappland.spectralization.optics.CoherenceKind;
 import io.github.yoglappland.spectralization.optics.FrequencyKey;
+import io.github.yoglappland.spectralization.optics.fiber.FiberLikeFaces;
 import io.github.yoglappland.spectralization.optics.fiber.FiberOpticalTransfer;
 import io.github.yoglappland.spectralization.optics.geometry.BeamGeometryOps;
 import io.github.yoglappland.spectralization.optics.geometry.BeamProfileKey;
@@ -435,6 +436,16 @@ public final class ProfileLanePowerSolver {
             SpectralPowerLane lane
     ) {
         if (edge.kind() == PortGraphEdgeKind.PROPAGATION) {
+            if (FiberLikeFaces.isDirectGuidedAdjacency(
+                    level,
+                    edge.from().pos(),
+                    edge.from().side(),
+                    edge.to().pos(),
+                    edge.to().side()
+            )) {
+                return ProfileTransitionSignature.identity();
+            }
+
             return ProfileTransitionSignature.freeSpace(edge.distance());
         }
 

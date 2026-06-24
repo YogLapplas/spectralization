@@ -24,6 +24,11 @@ public final class SpectralCapabilities {
                 (machine, side) -> machine.getEnergyStorage(side)
         );
         event.registerBlockEntity(
+                Capabilities.EnergyStorage.BLOCK,
+                SpectralBlockEntities.FIBER_LASER.get(),
+                (laser, side) -> laser.getEnergyStorage(side)
+        );
+        event.registerBlockEntity(
                 Capabilities.ItemHandler.BLOCK,
                 SpectralBlockEntities.PHOTOTHERMAL_GENERATOR.get(),
                 (generator, side) -> generator.getFuelItems(side)

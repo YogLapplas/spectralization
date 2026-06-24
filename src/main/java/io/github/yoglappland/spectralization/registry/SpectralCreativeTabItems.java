@@ -52,6 +52,7 @@ public final class SpectralCreativeTabItems {
         output.accept(Spectralization.BASIC_LITHOGRAPHY_MACHINE_ITEM.get());
         output.accept(Spectralization.FIBER_OPTIC_INTERFACE_ITEM.get());
         output.accept(Spectralization.FIBER_RELAY_ITEM.get());
+        output.accept(Spectralization.FIBER_LASER_ITEM.get());
         output.accept(Spectralization.HOLOGRAPHIC_STORAGE_SHELL_ITEM.get());
         output.accept(Spectralization.HOLOGRAPHIC_STORAGE_CRYSTAL_ITEM.get());
         output.accept(Spectralization.HOLOGRAPHIC_STORAGE_MAIN_CORE_ITEM.get());

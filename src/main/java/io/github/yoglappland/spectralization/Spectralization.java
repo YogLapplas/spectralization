@@ -12,6 +12,7 @@ import io.github.yoglappland.spectralization.block.CompactedMachineBlock;
 import io.github.yoglappland.spectralization.block.CreativeLightSourceBlock;
 import io.github.yoglappland.spectralization.block.DynamicBeamSplitterBlock;
 import io.github.yoglappland.spectralization.block.DynamicMirrorBlock;
+import io.github.yoglappland.spectralization.block.FiberLaserBlock;
 import io.github.yoglappland.spectralization.block.FiberOpticInterfaceBlock;
 import io.github.yoglappland.spectralization.block.FiberRelayBlock;
 import io.github.yoglappland.spectralization.block.HolographicStorageCrystalBlock;
@@ -300,6 +301,21 @@ public class Spectralization {
 
     public static final DeferredItem<BlockItem> FIBER_RELAY_ITEM =
             ITEMS.registerSimpleBlockItem("fiber_relay", FIBER_RELAY);
+
+    public static final DeferredBlock<FiberLaserBlock> FIBER_LASER = BLOCKS.register(
+            "fiber_laser",
+            () -> new FiberLaserBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_LIGHT_BLUE)
+                    .strength(2.0F, 6.0F)
+                    .sound(SoundType.METAL)
+                    .noOcclusion()
+                    .isRedstoneConductor((state, level, pos) -> false)
+                    .isSuffocating((state, level, pos) -> false)
+                    .isViewBlocking((state, level, pos) -> false))
+    );
+
+    public static final DeferredItem<BlockItem> FIBER_LASER_ITEM =
+            ITEMS.registerSimpleBlockItem("fiber_laser", FIBER_LASER);
 
     public static final DeferredBlock<HolographicStorageShellBlock> HOLOGRAPHIC_STORAGE_SHELL = BLOCKS.register(
             "holographic_storage_shell",

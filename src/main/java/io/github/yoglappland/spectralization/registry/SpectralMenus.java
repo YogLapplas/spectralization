@@ -6,6 +6,7 @@ import io.github.yoglappland.spectralization.menu.CoatingBrushMenu;
 import io.github.yoglappland.spectralization.menu.CompactMachineCoreMenu;
 import io.github.yoglappland.spectralization.menu.CompactedMachineMenu;
 import io.github.yoglappland.spectralization.menu.CreativeLightSourceMenu;
+import io.github.yoglappland.spectralization.menu.FiberLaserMenu;
 import io.github.yoglappland.spectralization.menu.HolographicStorageCoreMenu;
 import io.github.yoglappland.spectralization.menu.HolographicStorageMenu;
 import io.github.yoglappland.spectralization.menu.LensGrindingBenchMenu;
@@ -56,6 +57,10 @@ public final class SpectralMenus {
     public static final DeferredHolder<MenuType<?>, MenuType<BasicLithographyMachineMenu>> BASIC_LITHOGRAPHY_MACHINE =
             MENU_TYPES.register("basic_lithography_machine", () ->
                     new MenuType<>(BasicLithographyMachineMenu::new, FeatureFlags.DEFAULT_FLAGS));
+
+    public static final DeferredHolder<MenuType<?>, MenuType<FiberLaserMenu>> FIBER_LASER =
+            MENU_TYPES.register("fiber_laser", () ->
+                    new MenuType<>(FiberLaserMenu::new, FeatureFlags.DEFAULT_FLAGS));
 
     public static final DeferredHolder<MenuType<?>, MenuType<HolographicStorageMenu>> HOLOGRAPHIC_STORAGE =
             MENU_TYPES.register("holographic_storage", () ->

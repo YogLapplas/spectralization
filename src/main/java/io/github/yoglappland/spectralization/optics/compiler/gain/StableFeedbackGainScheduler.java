@@ -65,20 +65,13 @@ final class StableFeedbackGainScheduler implements GainScheduler {
         Map<Integer, Double> feedbackEffectiveGainsByEdgeId = scheduledGains.effectiveGainsByEdgeId();
         double rhoAfter = softcap.estimateWithGains(graph, index, feedbackEffectiveGainsByEdgeId);
 
-        if (rhoAfter >= EffectiveGainSoftcap.SOLVER_TARGET_RHO
-                && softcap.hasActiveScheduledGain(feedbackEffectiveGainsByEdgeId)) {
-            feedbackEffectiveGainsByEdgeId = softcap.shrinkExtraGainsToTarget(
-                    graph,
-                    index,
-                    feedbackEffectiveGainsByEdgeId,
-                    EffectiveGainSoftcap.SOLVER_TARGET_RHO
-            );
-            rhoAfter = softcap.estimateWithGains(graph, index, feedbackEffectiveGainsByEdgeId);
-        }
-
         Map<Integer, Double> effectiveGainsByEdgeId = new HashMap<>(directEffectiveGainsByEdgeId);
         effectiveGainsByEdgeId.putAll(feedbackEffectiveGainsByEdgeId);
-        CompiledPortGraph scheduledGraph = GainGraphRewriter.applyEffectiveGains(graph, effectiveGainsByEdgeId);
+        CompiledPortGraph scheduledGraph = GainGraphRewriter.applyEffectiveGains(
+                graph,
+                effectiveGainsByEdgeId,
+                spectralScopesByEdgeId(gainSourcesByEdgeId)
+        );
         String schedulerMode = schedulerMode(feedbackMode, directEffectiveGainsByEdgeId, feedbackGainSourcesByEdgeId);
 
         return new GainSchedule(
@@ -87,7 +80,7 @@ final class StableFeedbackGainScheduler implements GainScheduler {
                 rhoAfter < EffectiveGainSoftcap.HARD_RHO,
                 schedulerMode,
                 scheduledGains.passiveRho(),
-                EffectiveGainSoftcap.SOLVER_TARGET_RHO,
+                EffectiveGainSoftcap.HARD_RHO,
                 EffectiveGainSoftcap.HARD_RHO,
                 rhoBefore,
                 rhoAfter,
@@ -117,6 +110,16 @@ final class StableFeedbackGainScheduler implements GainScheduler {
         }
 
         return feedbackMode;
+    }
+
+    private static Map<Integer, GainSpectralScope> spectralScopesByEdgeId(Map<Integer, GainSource> gainSourcesByEdgeId) {
+        Map<Integer, GainSpectralScope> scopesByEdgeId = new HashMap<>();
+
+        for (GainSource source : gainSourcesByEdgeId.values()) {
+            scopesByEdgeId.put(source.edgeId(), source.spectralScope());
+        }
+
+        return scopesByEdgeId;
     }
 
     private static double directGainHeadroom(Map<Integer, Double> directEffectiveGainsByEdgeId) {

@@ -5,6 +5,7 @@ import io.github.yoglappland.spectralization.optics.BeamModel;
 import io.github.yoglappland.spectralization.optics.CoherenceKind;
 import io.github.yoglappland.spectralization.optics.OpticalPort;
 import io.github.yoglappland.spectralization.optics.PlaneWaveComponent;
+import io.github.yoglappland.spectralization.optics.fiber.FiberLikeFaces;
 import io.github.yoglappland.spectralization.optics.geometry.BeamGeometryOps;
 import io.github.yoglappland.spectralization.optics.geometry.SpatialModeCoupling;
 import io.github.yoglappland.spectralization.optics.geometry.SpatialProfileElement;
@@ -266,6 +267,16 @@ public record CompiledBeamProfileLayer(
             BeamEnvelope envelope
     ) {
         if (edge.kind() == PortGraphEdgeKind.PROPAGATION) {
+            if (FiberLikeFaces.isDirectGuidedAdjacency(
+                    level,
+                    edge.from().pos(),
+                    edge.from().side(),
+                    edge.to().pos(),
+                    edge.to().side()
+            )) {
+                return envelope;
+            }
+
             return BeamGeometryOps.propagate(envelope, edge.distance());
         }
 

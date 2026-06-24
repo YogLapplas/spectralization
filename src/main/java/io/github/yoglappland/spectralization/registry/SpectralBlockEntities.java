@@ -7,6 +7,7 @@ import io.github.yoglappland.spectralization.blockentity.CmosSensorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.CompactMachineCoreBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.CompactedMachineBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.CreativeLightSourceBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.FiberLaserBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.FiberOpticInterfaceBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.FiberRelayBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.HolographicStorageCrystalBlockEntity;
@@ -63,6 +64,10 @@ public final class SpectralBlockEntities {
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<FiberRelayBlockEntity>> FIBER_RELAY =
             BLOCK_ENTITY_TYPES.register("fiber_relay", () ->
                     BlockEntityType.Builder.of(FiberRelayBlockEntity::new, Spectralization.FIBER_RELAY.get()).build(null));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<FiberLaserBlockEntity>> FIBER_LASER =
+            BLOCK_ENTITY_TYPES.register("fiber_laser", () ->
+                    BlockEntityType.Builder.of(FiberLaserBlockEntity::new, Spectralization.FIBER_LASER.get()).build(null));
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<HolographicStorageCrystalBlockEntity>> HOLOGRAPHIC_STORAGE_CRYSTAL =
             BLOCK_ENTITY_TYPES.register("holographic_storage_crystal", () ->

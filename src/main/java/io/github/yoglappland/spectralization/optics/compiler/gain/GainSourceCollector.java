@@ -28,7 +28,7 @@ final class GainSourceCollector {
         Map<Integer, GainSource> gainSourcesByEdgeId = new HashMap<>();
 
         for (PortGraphEdge edge : graph.edges()) {
-            if (!isLocalGainCandidate(edge)) {
+            if (!isLocalMaterialGainCandidate(edge)) {
                 continue;
             }
 
@@ -39,7 +39,12 @@ final class GainSourceCollector {
             }
 
             BlockState state = level.getBlockState(pos);
-            double baseGain = OpticalMaterialProfiles.scheduledCoherentBaseGainFor(level, pos, state, edge.sampleFrequency());
+            double baseGain = OpticalMaterialProfiles.scheduledCoherentBaseGainFor(
+                    level,
+                    pos,
+                    state,
+                    edge.sampleFrequency()
+            );
             double materialWeight = OpticalMaterialProfiles.gainMaterialWeightFor(state);
 
             if (baseGain <= 1.0 + MIN_GAIN_DELTA || materialWeight <= 0.0) {
@@ -56,6 +61,9 @@ final class GainSourceCollector {
                     edge.id(),
                     sccId,
                     baseGain,
+                    OpticalMaterialProfiles.scheduledCoherentGainAffectsAllPresentFrequencies(state)
+                            ? GainSpectralScope.ALL_PRESENT_FREQUENCIES
+                            : GainSpectralScope.SAMPLE_FREQUENCY,
                     materialWeight,
                     MIN_PARTICIPATION,
                     MIN_PARTICIPATION
@@ -65,7 +73,7 @@ final class GainSourceCollector {
         return gainSourcesByEdgeId;
     }
 
-    private static boolean isLocalGainCandidate(PortGraphEdge edge) {
+    private static boolean isLocalMaterialGainCandidate(PortGraphEdge edge) {
         return edge.kind() == PortGraphEdgeKind.LOCAL_SCATTERING
                 && edge.sampleGain() > 0.0
                 && edge.from().pos().equals(edge.to().pos())

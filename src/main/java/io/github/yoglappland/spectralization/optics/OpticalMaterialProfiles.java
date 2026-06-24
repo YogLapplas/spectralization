@@ -2,6 +2,7 @@ package io.github.yoglappland.spectralization.optics;
 
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.block.RubyBlock;
+import io.github.yoglappland.spectralization.blockentity.FiberLaserBlockEntity;
 import io.github.yoglappland.spectralization.optics.pump.OpticalPumpSources;
 import java.util.Map;
 import java.util.Set;
@@ -284,6 +285,16 @@ public final class OpticalMaterialProfiles {
     }
 
     public static double scheduledCoherentBaseGainFor(Level level, BlockPos pos, BlockState state, FrequencyKey frequency) {
+        if (state.is(Spectralization.FIBER_LASER.get())) {
+            if (level != null
+                    && pos != null
+                    && level.getBlockEntity(pos) instanceof FiberLaserBlockEntity fiberLaser) {
+                return fiberLaser.scheduledCoherentBaseGain();
+            }
+
+            return 1.0;
+        }
+
         if (state.getBlock() != Spectralization.RUBY_BLOCK.get()) {
             return 1.0;
         }
@@ -304,11 +315,19 @@ public final class OpticalMaterialProfiles {
     }
 
     public static double gainMaterialWeightFor(BlockState state) {
+        if (state.is(Spectralization.FIBER_LASER.get())) {
+            return FiberLaserBlockEntity.GAIN_MATERIAL_WEIGHT;
+        }
+
         if (state.getBlock() == Spectralization.RUBY_BLOCK.get()) {
             return RUBY_GAIN_MATERIAL_WEIGHT;
         }
 
         return 0.0;
+    }
+
+    public static boolean scheduledCoherentGainAffectsAllPresentFrequencies(BlockState state) {
+        return state.is(Spectralization.FIBER_LASER.get());
     }
 
     public static double saturatedCoherentEmissionFor(Level level, BlockPos pos, BlockState state, double seedPower) {

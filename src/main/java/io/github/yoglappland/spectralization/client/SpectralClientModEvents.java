@@ -7,6 +7,7 @@ import io.github.yoglappland.spectralization.client.model.SingularMaterialDynami
 import io.github.yoglappland.spectralization.client.renderer.LensHolderRenderer;
 import io.github.yoglappland.spectralization.client.renderer.MetamaterialDesignTableRenderer;
 import io.github.yoglappland.spectralization.client.renderer.MetamaterialTemplateItemRenderer;
+import io.github.yoglappland.spectralization.client.renderer.SolarDopingChamberRenderer;
 import io.github.yoglappland.spectralization.client.renderer.SingularMaterialItemRenderer;
 import io.github.yoglappland.spectralization.client.screen.BasicLithographyMachineScreen;
 import io.github.yoglappland.spectralization.client.renderer.BasicLithographyMachineRenderer;
@@ -20,6 +21,7 @@ import io.github.yoglappland.spectralization.client.screen.HolographicStorageScr
 import io.github.yoglappland.spectralization.client.screen.LensGrindingBenchScreen;
 import io.github.yoglappland.spectralization.client.screen.MetamaterialDesignTableScreen;
 import io.github.yoglappland.spectralization.client.screen.PhotothermalGeneratorScreen;
+import io.github.yoglappland.spectralization.client.screen.SolarDopingChamberScreen;
 import io.github.yoglappland.spectralization.client.screen.SpectrometerScreen;
 import io.github.yoglappland.spectralization.client.screen.ThermalSmelterScreen;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
@@ -49,6 +51,10 @@ public final class SpectralClientModEvents {
         event.registerBlockEntityRenderer(
                 SpectralBlockEntities.BASIC_LITHOGRAPHY_MACHINE.get(),
                 BasicLithographyMachineRenderer::new
+        );
+        event.registerBlockEntityRenderer(
+                SpectralBlockEntities.SOLAR_DOPING_CHAMBER.get(),
+                SolarDopingChamberRenderer::new
         );
     }
 
@@ -97,6 +103,7 @@ public final class SpectralClientModEvents {
         event.register(SpectralMenus.LENS_GRINDING_BENCH.get(), LensGrindingBenchScreen::new);
         event.register(SpectralMenus.METAMATERIAL_DESIGN_TABLE.get(), MetamaterialDesignTableScreen::new);
         event.register(SpectralMenus.BASIC_LITHOGRAPHY_MACHINE.get(), BasicLithographyMachineScreen::new);
+        event.register(SpectralMenus.SOLAR_DOPING_CHAMBER.get(), SolarDopingChamberScreen::new);
         event.register(SpectralMenus.FIBER_LASER.get(), FiberLaserScreen::new);
         event.register(SpectralMenus.HOLOGRAPHIC_STORAGE.get(), HolographicStorageScreen::new);
         event.register(SpectralMenus.HOLOGRAPHIC_STORAGE_CORE.get(), HolographicStorageCoreScreen::new);

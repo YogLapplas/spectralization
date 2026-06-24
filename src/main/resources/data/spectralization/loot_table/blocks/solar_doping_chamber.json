@@ -1,0 +1,21 @@
+{
+  "type": "minecraft:block",
+  "pools": [
+    {
+      "bonus_rolls": 0.0,
+      "conditions": [
+        {
+          "condition": "minecraft:survives_explosion"
+        }
+      ],
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "name": "spectralization:solar_doping_chamber"
+        }
+      ],
+      "rolls": 1.0
+    }
+  ],
+  "random_sequence": "spectralization:blocks/solar_doping_chamber"
+}

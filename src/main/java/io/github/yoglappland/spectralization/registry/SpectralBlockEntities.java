@@ -19,6 +19,7 @@ import io.github.yoglappland.spectralization.blockentity.PassThroughSensorBlockE
 import io.github.yoglappland.spectralization.blockentity.PhotonicGradientGeneratorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.PhotothermalGeneratorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.RubyBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.SolarDopingChamberBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.SpectrometerBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.StrayLightEmitterBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.ThermalSmelterBlockEntity;
@@ -55,6 +56,13 @@ public final class SpectralBlockEntities {
                     BlockEntityType.Builder.of(
                             BasicLithographyMachineBlockEntity::new,
                             Spectralization.BASIC_LITHOGRAPHY_MACHINE.get()
+                    ).build(null));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<SolarDopingChamberBlockEntity>> SOLAR_DOPING_CHAMBER =
+            BLOCK_ENTITY_TYPES.register("solar_doping_chamber", () ->
+                    BlockEntityType.Builder.of(
+                            SolarDopingChamberBlockEntity::new,
+                            Spectralization.SOLAR_DOPING_CHAMBER.get()
                     ).build(null));
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<FiberOpticInterfaceBlockEntity>> FIBER_OPTIC_INTERFACE =

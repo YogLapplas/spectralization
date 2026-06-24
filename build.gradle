@@ -211,6 +211,7 @@ def lensGuiTextureDir = file('src/main/resources/assets/spectralization/textures
 def metamaterialDesignTableLayoutSourceFile = file('src/main/java/io/github/yoglappland/spectralization/menu/MetamaterialDesignTableLayout.java')
 def basicLithographyMachineLayoutSourceFile = file('src/main/java/io/github/yoglappland/spectralization/menu/BasicLithographyMachineLayout.java')
 def basicLithographyMachineScreenSourceFile = file('src/main/java/io/github/yoglappland/spectralization/client/screen/BasicLithographyMachineScreen.java')
+def solarDopingChamberLayoutSourceFile = file('src/main/java/io/github/yoglappland/spectralization/menu/SolarDopingChamberLayout.java')
 tasks.register('verifyThermalSmelterUiLayout') {
     inputs.file(thermalSmelterLayoutSourceFile)
 
@@ -1189,11 +1190,199 @@ tasks.register('verifyBasicLithographyMachineUiLayout') {
     }
 }
 
+tasks.register('verifySolarDopingChamberUiLayout') {
+    inputs.file(solarDopingChamberLayoutSourceFile)
+
+    doLast {
+        def source = solarDopingChamberLayoutSourceFile.text
+        def constants = [:]
+        def constantsPattern = ~/public static final int\s+([A-Z0-9_]+)\s*=\s*([^;]+);/
+
+        10.times {
+            (source =~ constantsPattern).each { match ->
+                def name = match[1]
+                def expression = match[2]
+                if (!constants.containsKey(name)) {
+                    def resolvedExpression = expression.replaceAll(/\b[A-Z][A-Z0-9_]*\b/) { token ->
+                        def key = token.toString()
+                        constants.containsKey(key) ? constants[key].toString() : key
+                    }
+
+                    if (resolvedExpression ==~ '[0-9+\\-*/ ()]+') {
+                        constants[name] = groovy.util.Eval.me(resolvedExpression) as int
+                    }
+                }
+            }
+        }
+
+        def intValue = { String name ->
+            if (!constants.containsKey(name)) {
+                throw new GradleException("Could not resolve SolarDopingChamberLayout constant '${name}' for UI layout verification.")
+            }
+            constants[name] as int
+        }
+        def rect = { String name, int x, int y, int width, int height ->
+            [name: name, x: x, y: y, width: width, height: height]
+        }
+        def overlaps = { a, b ->
+            a.x < b.x + b.width
+                    && a.x + a.width > b.x
+                    && a.y < b.y + b.height
+                    && a.y + a.height > b.y
+        }
+        def assertInside = { outer, inner ->
+            if (inner.x < outer.x
+                    || inner.y < outer.y
+                    || inner.x + inner.width > outer.x + outer.width
+                    || inner.y + inner.height > outer.y + outer.height) {
+                throw new GradleException("Solar doping chamber ${inner.name} must stay inside ${outer.name}.")
+            }
+        }
+        def assertNoOverlap = { String group, areas ->
+            def collisions = []
+            for (int leftIndex = 0; leftIndex < areas.size(); leftIndex++) {
+                for (int rightIndex = leftIndex + 1; rightIndex < areas.size(); rightIndex++) {
+                    if (overlaps(areas[leftIndex], areas[rightIndex])) {
+                        collisions.add("${areas[leftIndex].name}<->${areas[rightIndex].name}")
+                    }
+                }
+            }
+            if (!collisions.isEmpty()) {
+                throw new GradleException("Solar doping chamber ${group} overlap: ${collisions.join(', ')}")
+            }
+        }
+
+        def screen = rect('screen', 0, 0, intValue('IMAGE_WIDTH'), intValue('IMAGE_HEIGHT'))
+        def machine = rect('machine', intValue('PROCESS_X'), intValue('PROCESS_Y'), intValue('PROCESS_WIDTH'), intValue('PROCESS_HEIGHT'))
+        def leftPanel = rect('left_panel', intValue('LEFT_PANEL_X'), intValue('SIDE_PANEL_Y'), intValue('SIDE_PANEL_WIDTH'), intValue('SIDE_PANEL_HEIGHT'))
+        def rightPanel = rect('right_panel', intValue('RIGHT_PANEL_X'), intValue('SIDE_PANEL_Y'), intValue('SIDE_PANEL_WIDTH'), intValue('SIDE_PANEL_HEIGHT'))
+        def chamber = rect('chamber', intValue('CHAMBER_X'), intValue('CHAMBER_Y'), intValue('CHAMBER_WIDTH'), intValue('CHAMBER_HEIGHT'))
+        def mainPanel = rect('main_panel', intValue('MAIN_PANEL_X'), intValue('MAIN_PANEL_Y'), intValue('MAIN_PANEL_WIDTH'), intValue('MAIN_PANEL_HEIGHT'))
+        def workRegion = rect('work_region', intValue('WORK_REGION_X'), intValue('MAIN_PANEL_Y'), intValue('WORK_REGION_WIDTH'), intValue('MAIN_PANEL_HEIGHT'))
+        def heightRegion = rect('height_region', intValue('HEIGHT_DIVIDER_X'), intValue('MAIN_PANEL_Y'), intValue('HEIGHT_REGION_WIDTH'), intValue('MAIN_PANEL_HEIGHT'))
+        def energyBar = rect('energy_bar', intValue('ENERGY_BAR_X'), intValue('ENERGY_BAR_Y'), intValue('BAR_WIDTH'), intValue('BAR_HEIGHT'))
+        def heightBar = rect('height_bar', intValue('HEIGHT_BAR_X'), intValue('HEIGHT_BAR_Y'), intValue('BAR_WIDTH'), intValue('BAR_HEIGHT'))
+        def filterSlot = rect('filter_slot', intValue('FILTER_SLOT_X'), intValue('FILTER_SLOT_Y'), intValue('SLOT_SIZE'), intValue('SLOT_SIZE'))
+        def processSlot = rect('process_slot', intValue('PROCESS_SLOT_X'), intValue('PROCESS_SLOT_Y'), intValue('SLOT_SIZE'), intValue('SLOT_SIZE'))
+        def catalystClick = rect('catalyst_click', intValue('CATALYST_CLICK_X'), intValue('CATALYST_CLICK_Y'), intValue('CATALYST_CLICK_WIDTH'), intValue('CATALYST_CLICK_HEIGHT'))
+        def recipeRegion = rect('recipe_region', intValue('RECIPE_REGION_X'), intValue('RECIPE_REGION_Y'), intValue('RECIPE_REGION_WIDTH'), intValue('RECIPE_REGION_HEIGHT'))
+        def recipeRing = [
+                rect('recipe_click_top', intValue('RECIPE_CLICK_TOP_X'), intValue('RECIPE_CLICK_TOP_Y'), intValue('RECIPE_CLICK_TOP_WIDTH'), intValue('RECIPE_CLICK_TOP_HEIGHT')),
+                rect('recipe_click_left', intValue('RECIPE_CLICK_LEFT_X'), intValue('RECIPE_CLICK_LEFT_Y'), intValue('RECIPE_CLICK_LEFT_WIDTH'), intValue('RECIPE_CLICK_LEFT_HEIGHT')),
+                rect('recipe_click_right', intValue('RECIPE_CLICK_RIGHT_X'), intValue('RECIPE_CLICK_RIGHT_Y'), intValue('RECIPE_CLICK_RIGHT_WIDTH'), intValue('RECIPE_CLICK_RIGHT_HEIGHT')),
+                rect('recipe_click_bottom', intValue('RECIPE_CLICK_BOTTOM_X'), intValue('RECIPE_CLICK_BOTTOM_Y'), intValue('RECIPE_CLICK_BOTTOM_WIDTH'), intValue('RECIPE_CLICK_BOTTOM_HEIGHT'))
+        ]
+        def pie = rect('probability_pie', intValue('PIE_CENTER_X') - intValue('PIE_RADIUS') - 2, intValue('PIE_CENTER_Y') - intValue('PIE_RADIUS') - 2, intValue('PIE_RADIUS') * 2 + 4, intValue('PIE_RADIUS') * 2 + 4)
+        def status = rect('status_strip', intValue('STATUS_STRIP_X'), intValue('STATUS_STRIP_Y'), intValue('STATUS_STRIP_WIDTH'), intValue('STATUS_STRIP_HEIGHT'))
+        def playerPanel = rect('player_inventory_panel', intValue('PLAYER_INVENTORY_PANEL_X'), intValue('PLAYER_INVENTORY_PANEL_Y'), intValue('PLAYER_INVENTORY_PANEL_WIDTH'), intValue('PLAYER_INVENTORY_PANEL_HEIGHT'))
+        def playerSlots = []
+        for (int row = 0; row < 3; row++) {
+            for (int column = 0; column < 9; column++) {
+                playerSlots.add(rect("player_inventory_${row}_${column}",
+                        intValue('PLAYER_INVENTORY_X') + column * intValue('SLOT_SIZE'),
+                        intValue('PLAYER_INVENTORY_Y') + row * intValue('SLOT_SIZE'),
+                        intValue('SLOT_SIZE'),
+                        intValue('SLOT_SIZE')))
+            }
+        }
+        def hotbarY = intValue('PLAYER_INVENTORY_Y') + 58
+        for (int column = 0; column < 9; column++) {
+            playerSlots.add(rect("player_hotbar_${column}",
+                    intValue('PLAYER_INVENTORY_X') + column * intValue('SLOT_SIZE'),
+                    hotbarY,
+                    intValue('SLOT_SIZE'),
+                    intValue('SLOT_SIZE')))
+        }
+
+        [machine, leftPanel, rightPanel, chamber, mainPanel, playerPanel].each { assertInside(screen, it) }
+        [workRegion, heightRegion].each { assertInside(mainPanel, it) }
+        assertInside(leftPanel, energyBar)
+        assertInside(heightRegion, heightBar)
+        [filterSlot, processSlot, catalystClick, recipeRegion].each { assertInside(workRegion, it) }
+        assertInside(recipeRegion, processSlot)
+        recipeRing.each { assertInside(recipeRegion, it) }
+        if (recipeRing.any { it.width <= 0 || it.height <= 0 }) {
+            throw new GradleException('Solar doping chamber recipe click ring rectangles must have positive size.')
+        }
+        [pie, status].each { assertInside(rightPanel, it) }
+        playerSlots.each { assertInside(playerPanel, it) }
+
+        if (intValue('SIDE_PANEL_HEIGHT') != intValue('CHAMBER_HEIGHT')) {
+            throw new GradleException('Solar doping chamber left, center, and right panels must share height.')
+        }
+        if (intValue('RIGHT_PANEL_X') != intValue('IMAGE_WIDTH') - intValue('LEFT_PANEL_X') - intValue('SIDE_PANEL_WIDTH')) {
+            throw new GradleException('Solar doping chamber side panels must mirror across the screen center.')
+        }
+        if (intValue('CHAMBER_X') * 2 + intValue('CHAMBER_WIDTH') != intValue('IMAGE_WIDTH')) {
+            throw new GradleException('Solar doping chamber main chamber must be horizontally centered.')
+        }
+        if (intValue('HEIGHT_DIVIDER_X') != intValue('MAIN_PANEL_X') + intValue('MAIN_PANEL_WIDTH') - intValue('HEIGHT_REGION_WIDTH')) {
+            throw new GradleException('Solar doping chamber height divider must follow the configured height region width.')
+        }
+        if (intValue('WORK_DIVIDER_Y') <= intValue('FILTER_SLOT_Y') + intValue('SLOT_SIZE')
+                || intValue('WORK_DIVIDER_Y') >= intValue('PROCESS_SLOT_Y')) {
+            throw new GradleException('Solar doping chamber work divider must separate the catalyst and recipe regions.')
+        }
+        if (intValue('FILTER_SLOT_X') != intValue('PROCESS_SLOT_X')) {
+            throw new GradleException('Solar doping chamber filter and process slots must share a vertical axis.')
+        }
+        if (intValue('PROCESS_SLOT_X') * 2 + intValue('SLOT_SIZE')
+                != intValue('WORK_REGION_X') * 2 + intValue('WORK_REGION_WIDTH')) {
+            throw new GradleException('Solar doping chamber shared input/output slot must stay horizontally centered in the lower work region.')
+        }
+        if (intValue('PROCESS_SLOT_Y') < intValue('WORK_DIVIDER_Y')
+                || intValue('PROCESS_SLOT_Y') + intValue('SLOT_SIZE') > intValue('MAIN_PANEL_Y') + intValue('MAIN_PANEL_HEIGHT')) {
+            throw new GradleException('Solar doping chamber shared input/output slot must stay inside the lower work region.')
+        }
+        def lowerCenterDelta = Math.abs(
+                intValue('PROCESS_SLOT_Y') * 2 + intValue('SLOT_SIZE')
+                        - (intValue('WORK_DIVIDER_Y') + intValue('MAIN_PANEL_Y') + intValue('MAIN_PANEL_HEIGHT'))
+        )
+        if (lowerCenterDelta > 1) {
+            throw new GradleException('Solar doping chamber shared input/output slot must stay vertically centered in the lower work region.')
+        }
+        if (!overlaps(recipeRegion, processSlot)) {
+            throw new GradleException('Solar doping chamber recipe region must surround the shared input/output slot.')
+        }
+        if (overlaps(recipeRegion, filterSlot)) {
+            throw new GradleException('Solar doping chamber recipe region must stay in the lower work region.')
+        }
+        if (recipeRing.any { overlaps(it, processSlot) || overlaps(it, filterSlot) }) {
+            throw new GradleException('Solar doping chamber recipe click ring must not overlap physical item slots.')
+        }
+        assertNoOverlap('recipe click ring area', recipeRing)
+        def recipeRingArea = recipeRing.collect { it.width * it.height }.sum()
+        def expectedRecipeRingArea = recipeRegion.width * recipeRegion.height - processSlot.width * processSlot.height
+        if (recipeRingArea != expectedRecipeRingArea) {
+            throw new GradleException('Solar doping chamber recipe click ring must cover the lower-left recipe region except the item slot.')
+        }
+        if (intValue('ITEM_PROCESS_X') != intValue('PROCESS_SLOT_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_PROCESS_Y') != intValue('PROCESS_SLOT_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_FILTER_X') != intValue('FILTER_SLOT_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_FILTER_Y') != intValue('FILTER_SLOT_Y') + intValue('ITEM_SLOT_INSET')) {
+            throw new GradleException('Solar doping chamber machine item slots must stay inset from visible 18px slot frames.')
+        }
+        if (intValue('PLAYER_INVENTORY_X') * 2 + 9 * intValue('SLOT_SIZE') != intValue('IMAGE_WIDTH')
+                || intValue('PLAYER_INVENTORY_ITEM_X') != intValue('PLAYER_INVENTORY_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('PLAYER_INVENTORY_ITEM_Y') != intValue('PLAYER_INVENTORY_Y') + intValue('ITEM_SLOT_INSET')) {
+            throw new GradleException('Solar doping chamber player inventory must stay centered with 1px item inset.')
+        }
+        if (intValue('PLAYER_INVENTORY_PANEL_X') + intValue('PLAYER_INVENTORY_PANEL_WIDTH') / 2.0 != intValue('IMAGE_WIDTH') / 2.0) {
+            throw new GradleException('Solar doping chamber player inventory backing panel must be centered.')
+        }
+
+        assertNoOverlap('machine hard hover area', [energyBar, heightBar, pie, status])
+        assertNoOverlap('work region click area', [catalystClick] + recipeRing)
+        assertNoOverlap('player inventory slot', playerSlots)
+    }
+}
+
 tasks.named('check') {
     dependsOn tasks.named('verifyThermalSmelterUiLayout')
     dependsOn tasks.named('verifyLensGrindingBenchUiLayout')
     dependsOn tasks.named('verifyMetamaterialDesignTableUiLayout')
     dependsOn tasks.named('verifyBasicLithographyMachineUiLayout')
+    dependsOn tasks.named('verifySolarDopingChamberUiLayout')
 }
 
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.

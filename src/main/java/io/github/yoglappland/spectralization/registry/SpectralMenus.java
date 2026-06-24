@@ -12,6 +12,7 @@ import io.github.yoglappland.spectralization.menu.HolographicStorageMenu;
 import io.github.yoglappland.spectralization.menu.LensGrindingBenchMenu;
 import io.github.yoglappland.spectralization.menu.MetamaterialDesignTableMenu;
 import io.github.yoglappland.spectralization.menu.PhotothermalGeneratorMenu;
+import io.github.yoglappland.spectralization.menu.SolarDopingChamberMenu;
 import io.github.yoglappland.spectralization.menu.SpectrometerMenu;
 import io.github.yoglappland.spectralization.menu.ThermalSmelterMenu;
 import net.minecraft.core.registries.Registries;
@@ -57,6 +58,10 @@ public final class SpectralMenus {
     public static final DeferredHolder<MenuType<?>, MenuType<BasicLithographyMachineMenu>> BASIC_LITHOGRAPHY_MACHINE =
             MENU_TYPES.register("basic_lithography_machine", () ->
                     new MenuType<>(BasicLithographyMachineMenu::new, FeatureFlags.DEFAULT_FLAGS));
+
+    public static final DeferredHolder<MenuType<?>, MenuType<SolarDopingChamberMenu>> SOLAR_DOPING_CHAMBER =
+            MENU_TYPES.register("solar_doping_chamber", () ->
+                    new MenuType<>(SolarDopingChamberMenu::new, FeatureFlags.DEFAULT_FLAGS));
 
     public static final DeferredHolder<MenuType<?>, MenuType<FiberLaserMenu>> FIBER_LASER =
             MENU_TYPES.register("fiber_laser", () ->

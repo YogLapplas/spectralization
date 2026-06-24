@@ -28,6 +28,7 @@ import io.github.yoglappland.spectralization.block.PhotonicGradientGeneratorBloc
 import io.github.yoglappland.spectralization.block.PhotothermalGeneratorBlock;
 import io.github.yoglappland.spectralization.block.RubyBlock;
 import io.github.yoglappland.spectralization.block.SilverGlassBlock;
+import io.github.yoglappland.spectralization.block.SolarDopingChamberBlock;
 import io.github.yoglappland.spectralization.block.SpectrometerBlock;
 import io.github.yoglappland.spectralization.block.StrayLightEmitterBlock;
 import io.github.yoglappland.spectralization.block.ThermalSmelterBlock;
@@ -277,6 +278,21 @@ public class Spectralization {
 
     public static final DeferredItem<BlockItem> BASIC_LITHOGRAPHY_MACHINE_ITEM =
             ITEMS.registerSimpleBlockItem("basic_lithography_machine", BASIC_LITHOGRAPHY_MACHINE);
+
+    public static final DeferredBlock<SolarDopingChamberBlock> SOLAR_DOPING_CHAMBER = BLOCKS.register(
+            "solar_doping_chamber",
+            () -> new SolarDopingChamberBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(2.0F, 6.0F)
+                    .sound(SoundType.METAL)
+                    .noOcclusion()
+                    .isRedstoneConductor((state, level, pos) -> false)
+                    .isSuffocating((state, level, pos) -> false)
+                    .isViewBlocking((state, level, pos) -> false))
+    );
+
+    public static final DeferredItem<BlockItem> SOLAR_DOPING_CHAMBER_ITEM =
+            ITEMS.registerSimpleBlockItem("solar_doping_chamber", SOLAR_DOPING_CHAMBER);
 
     public static final DeferredBlock<FiberOpticInterfaceBlock> FIBER_OPTIC_INTERFACE = BLOCKS.register(
             "fiber_optic_interface",

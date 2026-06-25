@@ -35,6 +35,51 @@ public record ThermalSmelterRecipe(
                     480.0,
                     160
             ),
+            itemWithAdditive(
+                    Items.GLASS,
+                    Ingredient.of(Items.QUARTZ),
+                    Spectralization.QUARTZ_GLASS_ITEM,
+                    1,
+                    1660,
+                    620.0,
+                    180
+            ),
+            itemLikeWithAdditive(
+                    Spectralization.QUARTZ_GLASS_ITEM,
+                    Ingredient.of(Spectralization.BORAX_ITEM.get()),
+                    Spectralization.BOROSILICATE_GLASS_ITEM,
+                    1,
+                    1480,
+                    520.0,
+                    160
+            ),
+            itemLikeWithAdditive(
+                    Spectralization.QUARTZ_GLASS_ITEM,
+                    Ingredient.of(Items.CALCITE),
+                    Spectralization.CROWN_GLASS_ITEM,
+                    1,
+                    1540,
+                    560.0,
+                    170
+            ),
+            itemLikeWithAdditive(
+                    Spectralization.CROWN_GLASS_ITEM,
+                    Ingredient.of(Items.FLINT),
+                    Spectralization.FLINT_GLASS_ITEM,
+                    1,
+                    1640,
+                    700.0,
+                    190
+            ),
+            itemLikeWithAdditive(
+                    Spectralization.FLINT_GLASS_ITEM,
+                    Ingredient.of(c("gems/rutile")),
+                    Spectralization.HEAVY_GLASS_ITEM,
+                    1,
+                    1740,
+                    820.0,
+                    220
+            ),
             tagged(c("gems/rutile"), Spectralization.TITANIUM_DIOXIDE_DUST, 1700, 720.0, 190),
             tagged(c("gems/corundum"), Spectralization.ALUMINA_DUST, 1820, 900.0, 220),
             tagged(c("gems/ruby"), Spectralization.ALUMINA_DUST, 1820, 1040.0, 260),
@@ -140,6 +185,26 @@ public record ThermalSmelterRecipe(
     ) {
         return new ThermalSmelterRecipe(
                 Ingredient.of(item),
+                additive,
+                () -> new ItemStack(result.get()),
+                additiveCost,
+                minimumTemperature,
+                heatCost,
+                processTicks
+        );
+    }
+
+    private static ThermalSmelterRecipe itemLikeWithAdditive(
+            Supplier<? extends ItemLike> item,
+            Ingredient additive,
+            Supplier<? extends ItemLike> result,
+            int additiveCost,
+            int minimumTemperature,
+            double heatCost,
+            int processTicks
+    ) {
+        return new ThermalSmelterRecipe(
+                Ingredient.of(item.get()),
                 additive,
                 () -> new ItemStack(result.get()),
                 additiveCost,

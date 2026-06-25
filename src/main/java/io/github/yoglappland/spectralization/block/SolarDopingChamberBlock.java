@@ -36,8 +36,17 @@ public class SolarDopingChamberBlock extends Block implements EntityBlock {
     private static final VoxelShape POST_SE = Block.box(15.0, 6.0, 15.0, 16.0, 15.0, 16.0);
     private static final VoxelShape SHAPE = Shapes.or(BASE, TOP, POST_NW, POST_NE, POST_SW, POST_SE);
 
+    private final String subsystem;
+    private final String containerKey;
+
     public SolarDopingChamberBlock(Properties properties) {
+        this(properties, "solar_doping", "container.spectralization.solar_doping_chamber");
+    }
+
+    public SolarDopingChamberBlock(Properties properties, String subsystem, String containerKey) {
         super(properties);
+        this.subsystem = subsystem;
+        this.containerKey = containerKey;
         registerDefaultState(stateDefinition.any().setValue(ACTIVE, false));
     }
 
@@ -64,13 +73,13 @@ public class SolarDopingChamberBlock extends Block implements EntityBlock {
     @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
         if (!level.isClientSide && level.getBlockEntity(pos) instanceof SolarDopingChamberBlockEntity chamber) {
-            SpectralDiagnostics.event(level, "solar_doping", "menu_opened")
+            SpectralDiagnostics.event(level, subsystem, "menu_opened")
                     .pos("machine", pos)
                     .field("player", player.getScoreboardName())
                     .write();
             player.openMenu(new SimpleMenuProvider(
                     (containerId, inventory, menuPlayer) -> new SolarDopingChamberMenu(containerId, inventory, chamber),
-                    Component.translatable("container.spectralization.solar_doping_chamber")
+                    Component.translatable(containerKey)
             ));
         }
 
@@ -80,7 +89,7 @@ public class SolarDopingChamberBlock extends Block implements EntityBlock {
     @Override
     protected void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean movedByPiston) {
         if (!state.is(newState.getBlock()) && level.getBlockEntity(pos) instanceof SolarDopingChamberBlockEntity chamber) {
-            SpectralDiagnostics.event(level, "solar_doping", "machine_removed")
+            SpectralDiagnostics.event(level, subsystem, "machine_removed")
                     .pos("machine", pos)
                     .field("replacement", newState.getBlock())
                     .write();

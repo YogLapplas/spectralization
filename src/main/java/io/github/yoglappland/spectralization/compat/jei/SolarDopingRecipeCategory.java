@@ -5,6 +5,7 @@ import io.github.yoglappland.spectralization.blockentity.SolarDopingChamberBlock
 import io.github.yoglappland.spectralization.client.gui.SolarDopingPieChart;
 import io.github.yoglappland.spectralization.client.gui.ThermalSmelterUiSkin;
 import io.github.yoglappland.spectralization.machine.SolarDopingRecipe;
+import java.util.Set;
 import mezz.jei.api.gui.builder.IRecipeLayoutBuilder;
 import mezz.jei.api.gui.builder.ITooltipBuilder;
 import mezz.jei.api.gui.drawable.IDrawable;
@@ -82,7 +83,12 @@ public final class SolarDopingRecipeCategory implements IRecipeCategory<SolarDop
                 int totalWeight = recipe.totalResultWeight();
                 for (SolarDopingRecipe.WeightedResult result : recipe.results()) {
                     tooltip.add(Component.literal(percentText(result.weight() * 100.0 / totalWeight) + " ")
-                            .append(result.resultStack().getHoverName()));
+                            .append(result.resultStack().getHoverName())
+                            .append(Component.literal(" "))
+                            .append(Component.translatable(
+                                    "screen.spectralization.solar_doping_chamber.jei.dimensions",
+                                    dimensionText(result.environments())
+                            )));
                 }
             });
         }
@@ -118,6 +124,7 @@ public final class SolarDopingRecipeCategory implements IRecipeCategory<SolarDop
                 tooltip.add(tt("jei.random_outputs"));
                 SolarDopingPieChart.ratioTooltipLines(recipe).forEach(tooltip::add);
             }
+            tooltip.add(tt("jei.dimensions", dimensionText(recipe.availableEnvironments())));
             tooltip.add(tt("jei.average_seconds", secondsText(recipe.expectedTicks(1.0, 1.0))));
         } else if (inside(mouseX, mouseY, STRIP_X, STRIP_Y - 2, STRIP_WIDTH, 8)) {
             tooltip.add(tt("jei.energy_per_tick", SolarDopingChamberBlockEntity.ENERGY_PER_TICK * 20));
@@ -207,5 +214,27 @@ public final class SolarDopingRecipeCategory implements IRecipeCategory<SolarDop
         }
 
         return String.format(java.util.Locale.ROOT, "%.1f%%", percent);
+    }
+
+    private static Component dimensionText(Set<SolarDopingRecipe.DopingEnvironment> environments) {
+        Component text = Component.empty();
+        boolean first = true;
+        for (SolarDopingRecipe.DopingEnvironment environment : SolarDopingRecipe.DopingEnvironment.values()) {
+            if (!environment.usable()) {
+                continue;
+            }
+            if (!environments.contains(environment)) {
+                continue;
+            }
+
+            if (!first) {
+                text = text.copy().append(Component.literal(", "));
+            }
+
+            text = text.copy().append(Component.translatable(environment.translationKey()));
+            first = false;
+        }
+
+        return first ? Component.translatable(SolarDopingRecipe.DopingEnvironment.UNAVAILABLE.translationKey()) : text;
     }
 }

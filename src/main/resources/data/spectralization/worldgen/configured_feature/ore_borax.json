@@ -1,0 +1,45 @@
+{
+  "type": "minecraft:ore",
+  "config": {
+    "discard_chance_on_air_exposure": 0.0,
+    "size": 18,
+    "targets": [
+      {
+        "state": {
+          "Name": "spectralization:borax"
+        },
+        "target": {
+          "predicate_type": "minecraft:block_match",
+          "block": "minecraft:sand"
+        }
+      },
+      {
+        "state": {
+          "Name": "spectralization:borax"
+        },
+        "target": {
+          "predicate_type": "minecraft:block_match",
+          "block": "minecraft:red_sand"
+        }
+      },
+      {
+        "state": {
+          "Name": "spectralization:borax"
+        },
+        "target": {
+          "predicate_type": "minecraft:block_match",
+          "block": "minecraft:sandstone"
+        }
+      },
+      {
+        "state": {
+          "Name": "spectralization:borax"
+        },
+        "target": {
+          "predicate_type": "minecraft:block_match",
+          "block": "minecraft:red_sandstone"
+        }
+      }
+    ]
+  }
+}

@@ -63,6 +63,7 @@ import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.SoundType;
+import net.minecraft.world.level.block.TransparentBlock;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraft.world.level.material.PushReaction;
@@ -327,6 +328,25 @@ public class Spectralization {
 
     public static final DeferredItem<BlockItem> SOLAR_DOPING_CHAMBER_ITEM =
             ITEMS.registerSimpleBlockItem("solar_doping_chamber", SOLAR_DOPING_CHAMBER);
+
+    public static final DeferredBlock<SolarDopingChamberBlock> DIMENSION_DOPING_CHAMBER = BLOCKS.register(
+            "dimension_doping_chamber",
+            () -> new SolarDopingChamberBlock(
+                    BlockBehaviour.Properties.of()
+                            .mapColor(MapColor.METAL)
+                            .strength(2.0F, 6.0F)
+                            .sound(SoundType.METAL)
+                            .noOcclusion()
+                            .isRedstoneConductor((state, level, pos) -> false)
+                            .isSuffocating((state, level, pos) -> false)
+                            .isViewBlocking((state, level, pos) -> false),
+                    "dimension_doping",
+                    "container.spectralization.dimension_doping_chamber"
+            )
+    );
+
+    public static final DeferredItem<BlockItem> DIMENSION_DOPING_CHAMBER_ITEM =
+            ITEMS.registerSimpleBlockItem("dimension_doping_chamber", DIMENSION_DOPING_CHAMBER);
 
     public static final DeferredBlock<FiberOpticInterfaceBlock> FIBER_OPTIC_INTERFACE = BLOCKS.register(
             "fiber_optic_interface",
@@ -677,6 +697,37 @@ public class Spectralization {
     public static final DeferredItem<BlockItem> SILVER_GLASS_ITEM =
             ITEMS.registerSimpleBlockItem("silver_glass", SILVER_GLASS);
 
+    public static final DeferredBlock<Block> BORAX = BLOCKS.registerSimpleBlock(
+            "borax",
+            BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.SAND)
+                    .strength(0.6F)
+                    .sound(SoundType.SAND)
+    );
+    public static final DeferredItem<BlockItem> BORAX_ITEM =
+            ITEMS.registerSimpleBlockItem("borax", BORAX);
+
+    public static final DeferredBlock<TransparentBlock> QUARTZ_GLASS =
+            glassBlock("quartz_glass", MapColor.COLOR_LIGHT_BLUE);
+    public static final DeferredItem<BlockItem> QUARTZ_GLASS_ITEM =
+            ITEMS.registerSimpleBlockItem("quartz_glass", QUARTZ_GLASS);
+    public static final DeferredBlock<TransparentBlock> BOROSILICATE_GLASS =
+            glassBlock("borosilicate_glass", MapColor.COLOR_LIGHT_BLUE);
+    public static final DeferredItem<BlockItem> BOROSILICATE_GLASS_ITEM =
+            ITEMS.registerSimpleBlockItem("borosilicate_glass", BOROSILICATE_GLASS);
+    public static final DeferredBlock<TransparentBlock> CROWN_GLASS =
+            glassBlock("crown_glass", MapColor.COLOR_LIGHT_GRAY);
+    public static final DeferredItem<BlockItem> CROWN_GLASS_ITEM =
+            ITEMS.registerSimpleBlockItem("crown_glass", CROWN_GLASS);
+    public static final DeferredBlock<TransparentBlock> FLINT_GLASS =
+            glassBlock("flint_glass", MapColor.COLOR_BROWN);
+    public static final DeferredItem<BlockItem> FLINT_GLASS_ITEM =
+            ITEMS.registerSimpleBlockItem("flint_glass", FLINT_GLASS);
+    public static final DeferredBlock<TransparentBlock> HEAVY_GLASS =
+            glassBlock("heavy_glass", MapColor.COLOR_LIGHT_GRAY);
+    public static final DeferredItem<BlockItem> HEAVY_GLASS_ITEM =
+            ITEMS.registerSimpleBlockItem("heavy_glass", HEAVY_GLASS);
+
     public static final DeferredBlock<Block> SILVER_ORE = oreBlock("silver_ore", MapColor.STONE, 3.0F);
     public static final DeferredItem<BlockItem> SILVER_ORE_ITEM =
             ITEMS.registerSimpleBlockItem("silver_ore", SILVER_ORE);
@@ -775,6 +826,22 @@ public class Spectralization {
                         .strength(3.0F, 6.0F)
                         .requiresCorrectToolForDrops()
                         .sound(soundType)
+        );
+    }
+
+    private static DeferredBlock<TransparentBlock> glassBlock(String name, MapColor mapColor) {
+        return BLOCKS.register(
+                name,
+                () -> new TransparentBlock(
+                        BlockBehaviour.Properties.of()
+                                .mapColor(mapColor)
+                                .strength(0.3F)
+                                .sound(SoundType.GLASS)
+                                .noOcclusion()
+                                .isRedstoneConductor((state, level, pos) -> false)
+                                .isSuffocating((state, level, pos) -> false)
+                                .isViewBlocking((state, level, pos) -> false)
+                )
         );
     }
 

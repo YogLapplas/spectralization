@@ -62,7 +62,8 @@ public final class SpectralBlockEntities {
             BLOCK_ENTITY_TYPES.register("solar_doping_chamber", () ->
                     BlockEntityType.Builder.of(
                             SolarDopingChamberBlockEntity::new,
-                            Spectralization.SOLAR_DOPING_CHAMBER.get()
+                            Spectralization.SOLAR_DOPING_CHAMBER.get(),
+                            Spectralization.DIMENSION_DOPING_CHAMBER.get()
                     ).build(null));
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<FiberOpticInterfaceBlockEntity>> FIBER_OPTIC_INTERFACE =

@@ -55,7 +55,8 @@ public class SolarDopingChamberBlockEntity extends BlockEntity {
     public static final int DATA_ARRAY_MULTIPLIER_PPM = 9;
     public static final int DATA_STATE = 10;
     public static final int DATA_RECIPE_COLOR = 11;
-    public static final int DATA_COUNT = 12;
+    public static final int DATA_DOPING_ENVIRONMENT = 12;
+    public static final int DATA_COUNT = 13;
 
     public static final int ENERGY_PER_TICK = 64;
     private static final int ENERGY_CAPACITY = 32_000;
@@ -228,7 +229,8 @@ public class SolarDopingChamberBlockEntity extends BlockEntity {
     private Optional<SolarDopingRecipe> activeRecipe() {
         return SolarDopingRecipe.find(
                 items.getStackInSlot(SLOT_PROCESS),
-                items.getStackInSlot(SLOT_FILTER)
+                items.getStackInSlot(SLOT_FILTER),
+                dopingEnvironment()
         );
     }
 
@@ -251,6 +253,7 @@ public class SolarDopingChamberBlockEntity extends BlockEntity {
                     .pos("machine", worldPosition)
                     .field("recipe", recipe.id())
                     .field("result", BuiltInRegistries.ITEM.getKey(result.getItem()))
+                    .field("environment", dopingEnvironment().name().toLowerCase(java.util.Locale.ROOT))
                     .field("array_count", cachedArrayCount)
                     .field("height_multiplier", heightMultiplier(level, worldPosition))
                     .write();
@@ -299,6 +302,7 @@ public class SolarDopingChamberBlockEntity extends BlockEntity {
             case DATA_ARRAY_MULTIPLIER_PPM -> (int) Math.round(arrayMultiplier * 1_000.0);
             case DATA_STATE -> stateCode(match.isPresent());
             case DATA_RECIPE_COLOR -> recipe == null ? 0xFF9FE7DF : recipe.accentColor();
+            case DATA_DOPING_ENVIRONMENT -> dopingEnvironment().dataId();
             default -> 0;
         };
     }
@@ -351,7 +355,7 @@ public class SolarDopingChamberBlockEntity extends BlockEntity {
 
             for (Direction direction : Direction.Plane.HORIZONTAL) {
                 BlockPos next = current.relative(direction);
-                if (!visited.contains(next) && level.getBlockState(next).is(Spectralization.SOLAR_DOPING_CHAMBER.get())) {
+                if (!visited.contains(next) && level.getBlockState(next).is(getBlockState().getBlock())) {
                     queue.addLast(next);
                 }
             }
@@ -368,6 +372,18 @@ public class SolarDopingChamberBlockEntity extends BlockEntity {
         if (getBlockState().getValue(SolarDopingChamberBlock.ACTIVE) != active) {
             level.setBlock(worldPosition, getBlockState().setValue(SolarDopingChamberBlock.ACTIVE, active), Block.UPDATE_CLIENTS);
         }
+    }
+
+    private SolarDopingRecipe.DopingEnvironment dopingEnvironment() {
+        if (level == null) {
+            return SolarDopingRecipe.DopingEnvironment.OVERWORLD;
+        }
+
+        if (getBlockState().is(Spectralization.DIMENSION_DOPING_CHAMBER.get())) {
+            return SolarDopingRecipe.DopingEnvironment.fromLevel(level);
+        }
+
+        return SolarDopingRecipe.DopingEnvironment.solarFromLevel(level);
     }
 
     private void logSlotChanged(int slot) {

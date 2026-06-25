@@ -1,0 +1,14 @@
+{
+  "multipart": [
+    {
+      "apply": {
+        "model": "spectralization:block/dimension_doping_chamber"
+      }
+    },
+    {
+      "apply": {
+        "model": "spectralization:block/dimension_doping_chamber_core"
+      }
+    }
+  ]
+}

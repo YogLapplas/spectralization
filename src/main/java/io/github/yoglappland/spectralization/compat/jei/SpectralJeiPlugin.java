@@ -63,6 +63,7 @@ public final class SpectralJeiPlugin implements IModPlugin {
         registration.addRecipeCatalyst(new ItemStack(Spectralization.THERMAL_SMELTER_ITEM.get()), THERMAL_SMELTER);
         registration.addRecipeCatalyst(new ItemStack(Spectralization.BASIC_LITHOGRAPHY_MACHINE_ITEM.get()), BASIC_LITHOGRAPHY);
         registration.addRecipeCatalyst(new ItemStack(Spectralization.SOLAR_DOPING_CHAMBER_ITEM.get()), SOLAR_DOPING);
+        registration.addRecipeCatalyst(new ItemStack(Spectralization.DIMENSION_DOPING_CHAMBER_ITEM.get()), SOLAR_DOPING);
     }
 
     @Override

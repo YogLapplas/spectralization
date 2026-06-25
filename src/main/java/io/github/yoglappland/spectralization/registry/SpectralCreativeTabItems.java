@@ -68,6 +68,7 @@ public final class SpectralCreativeTabItems {
         output.accept(Spectralization.METAMATERIAL_DESIGN_TABLE_ITEM.get());
         output.accept(Spectralization.BASIC_LITHOGRAPHY_MACHINE_ITEM.get());
         output.accept(Spectralization.SOLAR_DOPING_CHAMBER_ITEM.get());
+        output.accept(Spectralization.DIMENSION_DOPING_CHAMBER_ITEM.get());
         output.accept(Spectralization.FIBER_OPTIC_INTERFACE_ITEM.get());
         output.accept(Spectralization.FIBER_RELAY_ITEM.get());
         output.accept(Spectralization.FIBER_LASER_ITEM.get());
@@ -96,6 +97,12 @@ public final class SpectralCreativeTabItems {
         output.accept(Spectralization.RUBY_BLOCK_ITEM.get());
         output.accept(Spectralization.SILVER_BLOCK_ITEM.get());
         output.accept(Spectralization.SILVER_GLASS_ITEM.get());
+        output.accept(Spectralization.BORAX_ITEM.get());
+        output.accept(Spectralization.QUARTZ_GLASS_ITEM.get());
+        output.accept(Spectralization.BOROSILICATE_GLASS_ITEM.get());
+        output.accept(Spectralization.CROWN_GLASS_ITEM.get());
+        output.accept(Spectralization.FLINT_GLASS_ITEM.get());
+        output.accept(Spectralization.HEAVY_GLASS_ITEM.get());
         output.accept(Spectralization.SILVER_ORE_ITEM.get());
         output.accept(Spectralization.DEEPSLATE_SILVER_ORE_ITEM.get());
         output.accept(Spectralization.RUBY_ORE_ITEM.get());

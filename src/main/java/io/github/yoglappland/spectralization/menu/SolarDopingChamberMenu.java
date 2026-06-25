@@ -127,7 +127,12 @@ public class SolarDopingChamberMenu extends AbstractContainerMenu {
 
         return player.distanceToSqr(Vec3.atCenterOf(chamber.getBlockPos())) <= 64.0
                 && chamber.getLevel() != null
-                && chamber.getLevel().getBlockState(chamber.getBlockPos()).is(Spectralization.SOLAR_DOPING_CHAMBER.get());
+                && isDopingChamberBlock(chamber.getLevel().getBlockState(chamber.getBlockPos()));
+    }
+
+    private static boolean isDopingChamberBlock(net.minecraft.world.level.block.state.BlockState state) {
+        return state.is(Spectralization.SOLAR_DOPING_CHAMBER.get())
+                || state.is(Spectralization.DIMENSION_DOPING_CHAMBER.get());
     }
 
     private void addPlayerInventory(Inventory inventory, int left, int top) {

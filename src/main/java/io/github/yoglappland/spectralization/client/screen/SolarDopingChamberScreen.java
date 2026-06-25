@@ -259,6 +259,9 @@ public class SolarDopingChamberScreen extends SpectralMachineScreen<SolarDopingC
             return List.of(Component.translatable(
                     "screen.spectralization.solar_doping_chamber.tooltip.height",
                     data(SolarDopingChamberBlockEntity.DATA_HEIGHT_MULTIPLIER_PPM) / 1000.0
+            ), Component.translatable(
+                    "screen.spectralization.solar_doping_chamber.tooltip.dimension",
+                    Component.translatable(dopingEnvironment().translationKey())
             ));
         }
 
@@ -318,8 +321,13 @@ public class SolarDopingChamberScreen extends SpectralMachineScreen<SolarDopingC
     private Optional<SolarDopingRecipe> activeRecipe() {
         return SolarDopingRecipe.find(
                 menu.getSlot(SolarDopingChamberBlockEntity.SLOT_PROCESS).getItem(),
-                menu.getSlot(SolarDopingChamberBlockEntity.SLOT_FILTER).getItem()
+                menu.getSlot(SolarDopingChamberBlockEntity.SLOT_FILTER).getItem(),
+                dopingEnvironment()
         );
+    }
+
+    private SolarDopingRecipe.DopingEnvironment dopingEnvironment() {
+        return SolarDopingRecipe.DopingEnvironment.byDataId(data(SolarDopingChamberBlockEntity.DATA_DOPING_ENVIRONMENT));
     }
 
     private boolean insideSlot(int mouseX, int mouseY, int x, int y) {

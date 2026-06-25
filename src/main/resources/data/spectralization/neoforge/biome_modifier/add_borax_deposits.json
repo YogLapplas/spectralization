@@ -1,0 +1,8 @@
+{
+  "type": "neoforge:add_features",
+  "biomes": "#spectralization:has_borax_deposits",
+  "features": [
+    "spectralization:ore_borax"
+  ],
+  "step": "underground_ores"
+}

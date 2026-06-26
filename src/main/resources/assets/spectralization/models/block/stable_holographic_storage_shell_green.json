@@ -1,0 +1,8 @@
+{
+  "parent": "spectralization:block/stable_holographic_storage_shell",
+  "render_type": "minecraft:translucent",
+  "textures": {
+    "0": "spectralization:block/stable_holographic_storage_shell_green",
+    "particle": "spectralization:block/stable_holographic_storage_shell_green"
+  }
+}

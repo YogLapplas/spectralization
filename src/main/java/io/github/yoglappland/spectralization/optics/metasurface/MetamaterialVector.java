@@ -19,6 +19,14 @@ public record MetamaterialVector(int x, int y, int z) {
                 + (z - MIN_VALUE);
     }
 
+    public static MetamaterialVector fromChannelIndex(int channelIndex) {
+        int normalized = Math.floorMod(channelIndex, VALUE_COUNT * VALUE_COUNT * VALUE_COUNT);
+        int x = normalized / (VALUE_COUNT * VALUE_COUNT) + MIN_VALUE;
+        int y = (normalized / VALUE_COUNT) % VALUE_COUNT + MIN_VALUE;
+        int z = normalized % VALUE_COUNT + MIN_VALUE;
+        return new MetamaterialVector(x, y, z);
+    }
+
     public static int clamp(int value) {
         return Mth.clamp(value, MIN_VALUE, MAX_VALUE);
     }

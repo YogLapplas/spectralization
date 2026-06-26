@@ -11,6 +11,8 @@ import io.github.yoglappland.spectralization.network.NetworkOverlayPayload;
 import io.github.yoglappland.spectralization.optics.OpticalEntityInteractions;
 import io.github.yoglappland.spectralization.optics.OpticalPathVisualization;
 import io.github.yoglappland.spectralization.optics.lens.LensProfile;
+import io.github.yoglappland.spectralization.optics.metasurface.MetamaterialTemplateData;
+import io.github.yoglappland.spectralization.optics.metasurface.MetamaterialVector;
 import io.github.yoglappland.spectralization.optics.topology.OpticalNetworkIndex;
 import io.github.yoglappland.spectralization.optics.topology.OpticalNetworkSnapshot;
 import java.io.File;
@@ -149,6 +151,66 @@ public final class SpectralCommands {
                                                                                 IntegerArgumentType.getInteger(context, "aperture"),
                                                                                 IntegerArgumentType.getInteger(context, "quality")
                                                                         )
+                                                                ))))))))
+                .then(Commands.literal("metamaterial")
+                        .then(Commands.literal("give")
+                                .then(Commands.literal("channel")
+                                        .then(Commands.argument(
+                                                        "index",
+                                                        IntegerArgumentType.integer(
+                                                                0,
+                                                                MetamaterialVector.VALUE_COUNT
+                                                                        * MetamaterialVector.VALUE_COUNT
+                                                                        * MetamaterialVector.VALUE_COUNT
+                                                                        - 1
+                                                        )
+                                                )
+                                                .executes(context -> giveMetamaterial(
+                                                        context.getSource(),
+                                                        MetamaterialVector.fromChannelIndex(
+                                                                IntegerArgumentType.getInteger(context, "index")
+                                                        ),
+                                                        1
+                                                ))
+                                                .then(Commands.argument("count", IntegerArgumentType.integer(1, 64))
+                                                        .executes(context -> giveMetamaterial(
+                                                                context.getSource(),
+                                                                MetamaterialVector.fromChannelIndex(
+                                                                        IntegerArgumentType.getInteger(context, "index")
+                                                                ),
+                                                                IntegerArgumentType.getInteger(context, "count")
+                                                        )))))
+                                .then(Commands.argument(
+                                                "x",
+                                                IntegerArgumentType.integer(
+                                                        MetamaterialVector.MIN_VALUE,
+                                                        MetamaterialVector.MAX_VALUE
+                                                )
+                                        )
+                                        .then(Commands.argument(
+                                                        "y",
+                                                        IntegerArgumentType.integer(
+                                                                MetamaterialVector.MIN_VALUE,
+                                                                MetamaterialVector.MAX_VALUE
+                                                        )
+                                                )
+                                                .then(Commands.argument(
+                                                                "z",
+                                                                IntegerArgumentType.integer(
+                                                                        MetamaterialVector.MIN_VALUE,
+                                                                        MetamaterialVector.MAX_VALUE
+                                                                )
+                                                        )
+                                                        .executes(context -> giveMetamaterial(
+                                                                context.getSource(),
+                                                                metamaterialVectorFromContext(context),
+                                                                1
+                                                        ))
+                                                        .then(Commands.argument("count", IntegerArgumentType.integer(1, 64))
+                                                                .executes(context -> giveMetamaterial(
+                                                                        context.getSource(),
+                                                                        metamaterialVectorFromContext(context),
+                                                                        IntegerArgumentType.getInteger(context, "count")
                                                                 ))))))))
                 .then(Commands.literal("networks")
                         .executes(context -> reportNetworkStatus(context.getSource()))
@@ -339,6 +401,43 @@ public final class SpectralCommands {
                 profile.quality()
         )), true);
         return 1;
+    }
+
+    private static MetamaterialVector metamaterialVectorFromContext(
+            com.mojang.brigadier.context.CommandContext<CommandSourceStack> context
+    ) {
+        return new MetamaterialVector(
+                IntegerArgumentType.getInteger(context, "x"),
+                IntegerArgumentType.getInteger(context, "y"),
+                IntegerArgumentType.getInteger(context, "z")
+        );
+    }
+
+    private static int giveMetamaterial(CommandSourceStack source, MetamaterialVector vector, int count) {
+        ServerPlayer player;
+
+        try {
+            player = source.getPlayerOrException();
+        } catch (Exception exception) {
+            source.sendFailure(Component.literal("Metamaterial command can only give items to a player."));
+            return 0;
+        }
+
+        ItemStack stack = MetamaterialTemplateData.custom(vector).createStack();
+        stack.setCount(count);
+        if (!player.addItem(stack)) {
+            player.drop(stack, false);
+        }
+
+        source.sendSuccess(() -> Component.literal(String.format(
+                "Gave custom metamaterial x=%d y=%d z=%d channel=%d count=%d",
+                vector.x(),
+                vector.y(),
+                vector.z(),
+                vector.channelIndex(),
+                count
+        )), true);
+        return count;
     }
 
     private static int rebuildNetworkIndex(CommandSourceStack source, int radius) {

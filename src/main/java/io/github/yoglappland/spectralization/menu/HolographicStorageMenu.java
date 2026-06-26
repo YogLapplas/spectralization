@@ -48,11 +48,11 @@ public class HolographicStorageMenu extends RecipeBookMenu<CraftingInput, Crafti
     private static final int PLAYER_INVENTORY_END = PLAYER_INVENTORY_START + 27;
     private static final int HOTBAR_START = PLAYER_INVENTORY_END;
     private static final int HOTBAR_END = HOTBAR_START + 9;
-    private static final int CRAFTING_GRID_X = 80;
-    private static final int CRAFTING_GRID_Y = 132;
-    private static final int CRAFTING_RESULT_X = 204;
-    private static final int CRAFTING_RESULT_Y = 150;
-    private static final int PLAYER_INVENTORY_X = 62;
+    private static final int CRAFTING_GRID_X = 78;
+    private static final int CRAFTING_GRID_Y = 123;
+    private static final int CRAFTING_RESULT_X = 192;
+    private static final int CRAFTING_RESULT_Y = 141;
+    private static final int PLAYER_INVENTORY_X = 63;
     private static final int PLAYER_INVENTORY_Y = 210;
 
     private final HolographicStorageMainCoreBlockEntity core;

@@ -1608,6 +1608,191 @@ tasks.register('verifyFiberDrawingMachineUiLayout') {
     }
 }
 
+tasks.register('verifyHolographicStorageUiLayout') {
+    def storageScreenSourceFile =
+            file('src/main/java/io/github/yoglappland/spectralization/client/screen/HolographicStorageScreen.java')
+    def storageMenuSourceFile =
+            file('src/main/java/io/github/yoglappland/spectralization/menu/HolographicStorageMenu.java')
+    def coreScreenSourceFile =
+            file('src/main/java/io/github/yoglappland/spectralization/client/screen/HolographicStorageCoreScreen.java')
+    inputs.files(storageScreenSourceFile, storageMenuSourceFile, coreScreenSourceFile)
+
+    doLast {
+        def loadConstants = { sourceFile ->
+            def source = sourceFile.text
+            def constants = [:]
+            def constantsPattern = ~/(?:private|public)\s+static\s+final\s+int\s+([A-Z0-9_]+)\s*=\s*([^;]+);/
+
+            12.times {
+                (source =~ constantsPattern).each { match ->
+                    def name = match[1]
+                    def expression = match[2]
+                    if (!constants.containsKey(name)) {
+                        def resolvedExpression = expression.replaceAll(/\b[A-Z][A-Z0-9_]*\b/) { token ->
+                            def key = token.toString()
+                            constants.containsKey(key) ? constants[key].toString() : key
+                        }
+
+                        if (resolvedExpression ==~ '[0-9+\\-*/ ()]+') {
+                            constants[name] = groovy.util.Eval.me(resolvedExpression) as int
+                        }
+                    }
+                }
+            }
+            constants
+        }
+
+        def screenConstants = loadConstants(storageScreenSourceFile)
+        def menuConstants = loadConstants(storageMenuSourceFile)
+        def coreConstants = loadConstants(coreScreenSourceFile)
+        def screenValue = { String name ->
+            if (!screenConstants.containsKey(name)) {
+                throw new GradleException("Could not resolve HolographicStorageScreen constant '${name}' for UI layout verification.")
+            }
+            screenConstants[name] as int
+        }
+        def menuValue = { String name ->
+            if (!menuConstants.containsKey(name)) {
+                throw new GradleException("Could not resolve HolographicStorageMenu constant '${name}' for UI layout verification.")
+            }
+            menuConstants[name] as int
+        }
+        def coreValue = { String name ->
+            if (!coreConstants.containsKey(name)) {
+                throw new GradleException("Could not resolve HolographicStorageCoreScreen constant '${name}' for UI layout verification.")
+            }
+            coreConstants[name] as int
+        }
+        def rect = { String name, int x, int y, int width, int height ->
+            [name: name, x: x, y: y, width: width, height: height]
+        }
+        def overlaps = { a, b ->
+            a.x < b.x + b.width
+                    && a.x + a.width > b.x
+                    && a.y < b.y + b.height
+                    && a.y + a.height > b.y
+        }
+        def assertInside = { outer, inner ->
+            if (inner.x < outer.x
+                    || inner.y < outer.y
+                    || inner.x + inner.width > outer.x + outer.width
+                    || inner.y + inner.height > outer.y + outer.height) {
+                throw new GradleException("Holographic storage ${inner.name} must stay inside ${outer.name}.")
+            }
+        }
+        def assertNoOverlap = { String group, areas ->
+            def collisions = []
+            for (int leftIndex = 0; leftIndex < areas.size(); leftIndex++) {
+                for (int rightIndex = leftIndex + 1; rightIndex < areas.size(); rightIndex++) {
+                    if (overlaps(areas[leftIndex], areas[rightIndex])) {
+                        collisions.add("${areas[leftIndex].name}<->${areas[rightIndex].name}")
+                    }
+                }
+            }
+            if (!collisions.isEmpty()) {
+                throw new GradleException("Holographic storage ${group} overlap: ${collisions.join(', ')}")
+            }
+        }
+
+        int imageWidth = 286
+        int imageHeight = 302
+        int slot = screenValue('GRID_SLOT_SIZE')
+        def screen = rect('screen', 0, 0, imageWidth, imageHeight)
+        def storagePanel = rect('storage_panel', screenValue('STORAGE_PANEL_LEFT'), screenValue('STORAGE_PANEL_TOP'),
+                screenValue('STORAGE_PANEL_WIDTH'), screenValue('STORAGE_PANEL_HEIGHT'))
+        def matrixArea = rect('matrix_area', screenValue('MATRIX_CELL_AREA_LEFT'), screenValue('MATRIX_CELL_AREA_TOP'),
+                screenValue('MATRIX_CELL_AREA_WIDTH'), screenValue('MATRIX_CELL_AREA_HEIGHT'))
+        def meterPanel = rect('meter_panel', screenValue('METER_PANEL_LEFT'), screenValue('METER_PANEL_TOP'),
+                screenValue('METER_PANEL_WIDTH'), screenValue('METER_PANEL_HEIGHT'))
+        def craftingPanel = rect('crafting_panel', screenValue('CRAFTING_PANEL_LEFT'), screenValue('CRAFTING_PANEL_TOP'),
+                screenValue('CRAFTING_PANEL_WIDTH'), screenValue('CRAFTING_PANEL_HEIGHT'))
+        def craftingInner = rect('crafting_inner',
+                craftingPanel.x + screenValue('CRAFTING_PANEL_INSET'),
+                craftingPanel.y + screenValue('CRAFTING_PANEL_INSET'),
+                craftingPanel.width - screenValue('CRAFTING_PANEL_INSET') * 2,
+                craftingPanel.height - screenValue('CRAFTING_PANEL_INSET') * 2)
+        def inventoryPanel = rect('player_inventory_panel', screenValue('INVENTORY_PANEL_LEFT'),
+                screenValue('INVENTORY_PANEL_TOP'), screenValue('INVENTORY_PANEL_WIDTH'),
+                screenValue('INVENTORY_PANEL_HEIGHT'))
+        def storageCells = []
+
+        for (int row = 0; row < screenValue('GRID_ROWS'); row++) {
+            for (int column = 0; column < screenValue('GRID_COLUMNS'); column++) {
+                int itemX = screenValue('GRID_LEFT') + column * slot
+                int itemY = screenValue('GRID_TOP') + row * slot
+                def cell = rect("matrix_cell_${row}_${column}", itemX - 1, itemY - 1, slot, slot)
+                def item = rect("matrix_item_${row}_${column}", itemX, itemY, 16, 16)
+                storageCells.add(cell)
+                assertInside(matrixArea, cell)
+                assertInside(cell, item)
+                if (item.x * 2 + item.width != cell.x * 2 + cell.width
+                        || item.y * 2 + item.height != cell.y * 2 + cell.height) {
+                    throw new GradleException('Holographic storage matrix items must stay centered in their virtual cells.')
+                }
+            }
+        }
+
+        int gridVisualX = menuValue('CRAFTING_GRID_X') - 1
+        int gridVisualY = menuValue('CRAFTING_GRID_Y') - 1
+        def craftingGrid = rect('crafting_grid', gridVisualX, gridVisualY, slot * 3, slot * 3)
+        def resultSlot = rect('crafting_result', menuValue('CRAFTING_RESULT_X') - 1,
+                menuValue('CRAFTING_RESULT_Y') - 1, slot, slot)
+        def craftingArrow = rect('crafting_arrow',
+                menuValue('CRAFTING_GRID_X') + screenValue('CRAFTING_ARROW_OFFSET_X'),
+                menuValue('CRAFTING_RESULT_Y') + screenValue('CRAFTING_ARROW_OFFSET_Y'),
+                screenValue('CRAFTING_ARROW_WIDTH'),
+                8)
+        [craftingGrid, resultSlot, craftingArrow].each { assertInside(craftingInner, it) }
+
+        if (craftingGrid.x + resultSlot.x + resultSlot.width
+                != craftingPanel.x * 2 + craftingPanel.width) {
+            throw new GradleException('Holographic storage crafting grid and result slot must balance around the crafting panel centerline.')
+        }
+        if (craftingGrid.y * 2 + craftingGrid.height != resultSlot.y * 2 + resultSlot.height) {
+            throw new GradleException('Holographic storage crafting grid and result slot must share a vertical centerline.')
+        }
+        if (Math.abs((craftingArrow.x - (craftingGrid.x + craftingGrid.width))
+                - (resultSlot.x - (craftingArrow.x + craftingArrow.width))) > 2) {
+            throw new GradleException('Holographic storage crafting arrow must stay centered between grid and result slot.')
+        }
+
+        def playerMainSlots = rect('player_main_slots', menuValue('PLAYER_INVENTORY_X') - 1,
+                menuValue('PLAYER_INVENTORY_Y') - 1, slot * 9, slot * 3)
+        def playerHotbar = rect('player_hotbar', menuValue('PLAYER_INVENTORY_X') - 1,
+                menuValue('PLAYER_INVENTORY_Y') + 58 - 1, slot * 9, slot)
+        [playerMainSlots, playerHotbar].each { assertInside(inventoryPanel, it) }
+        if (inventoryPanel.x * 2 + inventoryPanel.width != imageWidth) {
+            throw new GradleException('Holographic storage player inventory backing panel must be horizontally centered.')
+        }
+        if (playerMainSlots.x * 2 + playerMainSlots.width != imageWidth
+                || playerHotbar.x * 2 + playerHotbar.width != imageWidth) {
+            throw new GradleException('Holographic storage player inventory slots must be horizontally centered.')
+        }
+
+        [storagePanel, craftingPanel, inventoryPanel].each { assertInside(screen, it) }
+        [matrixArea, meterPanel].each { assertInside(storagePanel, it) }
+        assertNoOverlap('top panel area', [matrixArea, meterPanel])
+        assertNoOverlap('vertical section', [storagePanel, craftingPanel, inventoryPanel])
+
+        def coreScreen = rect('core_screen', 0, 0, coreValue('SCREEN_WIDTH'), coreValue('SCREEN_HEIGHT'))
+        def corePanel = rect('core_panel', coreValue('CORE_PANEL_X'), coreValue('CORE_PANEL_Y'),
+                coreValue('CORE_PANEL_WIDTH'), coreValue('CORE_PANEL_HEIGHT'))
+        def gaugePanel = rect('gauge_panel', coreValue('GAUGE_PANEL_X'), coreValue('GAUGE_PANEL_Y'),
+                coreValue('GAUGE_PANEL_WIDTH'), coreValue('GAUGE_PANEL_HEIGHT'))
+        def statusPanel = rect('status_panel', coreValue('STATUS_PANEL_X'), coreValue('STATUS_PANEL_Y'),
+                coreValue('STATUS_PANEL_WIDTH'), coreValue('STATUS_PANEL_HEIGHT'))
+        [corePanel, gaugePanel, statusPanel].each { assertInside(coreScreen, it) }
+        [gaugePanel, statusPanel].each { assertInside(corePanel, it) }
+        assertNoOverlap('core panel area', [gaugePanel, statusPanel])
+        if (corePanel.x * 2 + corePanel.width != coreValue('SCREEN_WIDTH')) {
+            throw new GradleException('Holographic storage core main panel must be horizontally centered.')
+        }
+        if (gaugePanel.y != statusPanel.y || gaugePanel.height != statusPanel.height) {
+            throw new GradleException('Holographic storage core gauge and status panels must share vertical bounds.')
+        }
+    }
+}
+
 tasks.named('check') {
     dependsOn tasks.named('verifyThermalSmelterUiLayout')
     dependsOn tasks.named('verifyLensGrindingBenchUiLayout')
@@ -1615,6 +1800,7 @@ tasks.named('check') {
     dependsOn tasks.named('verifyBasicLithographyMachineUiLayout')
     dependsOn tasks.named('verifySolarDopingChamberUiLayout')
     dependsOn tasks.named('verifyFiberDrawingMachineUiLayout')
+    dependsOn tasks.named('verifyHolographicStorageUiLayout')
 }
 
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.

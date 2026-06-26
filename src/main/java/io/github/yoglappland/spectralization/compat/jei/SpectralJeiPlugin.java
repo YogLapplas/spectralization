@@ -20,6 +20,7 @@ import io.github.yoglappland.spectralization.menu.SolarDopingChamberMenu;
 import io.github.yoglappland.spectralization.menu.ThermalSmelterLayout;
 import io.github.yoglappland.spectralization.menu.ThermalSmelterMenu;
 import io.github.yoglappland.spectralization.registry.SpectralMenus;
+import io.github.yoglappland.spectralization.storage.PhotoinducedReactionRecipe;
 import mezz.jei.api.IModPlugin;
 import mezz.jei.api.JeiPlugin;
 import mezz.jei.api.recipe.RecipeType;
@@ -41,6 +42,8 @@ public final class SpectralJeiPlugin implements IModPlugin {
             RecipeType.create(Spectralization.MODID, "solar_doping", SolarDopingRecipe.class);
     public static final RecipeType<FiberDrawingRecipe> FIBER_DRAWING =
             RecipeType.create(Spectralization.MODID, "fiber_drawing", FiberDrawingRecipe.class);
+    public static final RecipeType<PhotoinducedReactionRecipe> PHOTOINDUCED_REACTION =
+            RecipeType.create(Spectralization.MODID, "photoinduced_reaction", PhotoinducedReactionRecipe.class);
 
     @Override
     public ResourceLocation getPluginUid() {
@@ -53,7 +56,8 @@ public final class SpectralJeiPlugin implements IModPlugin {
                 new ThermalSmelterRecipeCategory(registration.getJeiHelpers().getGuiHelper()),
                 new BasicLithographyRecipeCategory(registration.getJeiHelpers().getGuiHelper()),
                 new SolarDopingRecipeCategory(registration.getJeiHelpers().getGuiHelper()),
-                new FiberDrawingRecipeCategory(registration.getJeiHelpers().getGuiHelper())
+                new FiberDrawingRecipeCategory(registration.getJeiHelpers().getGuiHelper()),
+                new PhotoinducedReactionRecipeCategory(registration.getJeiHelpers().getGuiHelper())
         );
     }
 
@@ -63,6 +67,7 @@ public final class SpectralJeiPlugin implements IModPlugin {
         registration.addRecipes(BASIC_LITHOGRAPHY, BasicLithographyRecipe.recipes());
         registration.addRecipes(SOLAR_DOPING, SolarDopingRecipe.recipes());
         registration.addRecipes(FIBER_DRAWING, FiberDrawingRecipe.recipes());
+        registration.addRecipes(PHOTOINDUCED_REACTION, PhotoinducedReactionRecipe.recipes());
     }
 
     @Override
@@ -72,6 +77,7 @@ public final class SpectralJeiPlugin implements IModPlugin {
         registration.addRecipeCatalyst(new ItemStack(Spectralization.SOLAR_DOPING_CHAMBER_ITEM.get()), SOLAR_DOPING);
         registration.addRecipeCatalyst(new ItemStack(Spectralization.DIMENSION_DOPING_CHAMBER_ITEM.get()), SOLAR_DOPING);
         registration.addRecipeCatalyst(new ItemStack(Spectralization.FIBER_DRAWING_MACHINE_ITEM.get()), FIBER_DRAWING);
+        registration.addRecipeCatalyst(new ItemStack(Spectralization.HOLOGRAPHIC_STORAGE_SHELL_ITEM.get()), PHOTOINDUCED_REACTION);
     }
 
     @Override

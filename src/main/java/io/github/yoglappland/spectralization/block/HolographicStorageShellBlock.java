@@ -1,9 +1,15 @@
 package io.github.yoglappland.spectralization.block;
 
 import io.github.yoglappland.spectralization.blockentity.HolographicStorageShellBlockEntity;
+import io.github.yoglappland.spectralization.heat.PhotothermalReceiverBlock;
+import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -17,13 +23,18 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityTicker;
+import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.loot.LootParams;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import net.minecraft.world.phys.BlockHitResult;
 
-public class HolographicStorageShellBlock extends Block implements EntityBlock {
+public class HolographicStorageShellBlock extends Block implements EntityBlock, PhotothermalReceiverBlock {
+    private static final Set<Direction> PHOTOINDUCED_RECEIVING_SIDES =
+            Set.copyOf(EnumSet.allOf(Direction.class));
+
     private final boolean stable;
 
     public HolographicStorageShellBlock(BlockBehaviour.Properties properties) {
@@ -43,6 +54,34 @@ public class HolographicStorageShellBlock extends Block implements EntityBlock {
     @Override
     public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
         return new HolographicStorageShellBlockEntity(pos, state);
+    }
+
+    @Nullable
+    @Override
+    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(
+            Level level,
+            BlockState state,
+            BlockEntityType<T> blockEntityType
+    ) {
+        if (level.isClientSide || blockEntityType != SpectralBlockEntities.HOLOGRAPHIC_STORAGE_SHELL.get()) {
+            return null;
+        }
+
+        return (tickLevel, pos, tickState, blockEntity) -> {
+            if (blockEntity instanceof HolographicStorageShellBlockEntity shell) {
+                HolographicStorageShellBlockEntity.tick(tickLevel, pos, shell);
+            }
+        };
+    }
+
+    @Override
+    public Direction photothermalReceivingSide(BlockState state) {
+        return Direction.NORTH;
+    }
+
+    @Override
+    public Set<Direction> photothermalReceivingSides(BlockState state) {
+        return PHOTOINDUCED_RECEIVING_SIDES;
     }
 
     @Override
@@ -131,9 +170,7 @@ public class HolographicStorageShellBlock extends Block implements EntityBlock {
     public ItemStack getCloneItemStack(LevelReader level, BlockPos pos, BlockState state) {
         if (level instanceof Level actualLevel
                 && actualLevel.getBlockEntity(pos) instanceof HolographicStorageShellBlockEntity shell) {
-            ItemStack stack = new ItemStack(this);
-            shell.saveToStack(stack, actualLevel.registryAccess());
-            return stack;
+            return dropStackFor(shell, actualLevel.registryAccess());
         }
 
         return super.getCloneItemStack(level, pos, state);
@@ -141,18 +178,20 @@ public class HolographicStorageShellBlock extends Block implements EntityBlock {
 
     @Override
     protected List<ItemStack> getDrops(BlockState state, LootParams.Builder params) {
-        List<ItemStack> drops = super.getDrops(state, params);
         BlockEntity blockEntity = params.getOptionalParameter(LootContextParams.BLOCK_ENTITY);
-
-        if (blockEntity instanceof HolographicStorageShellBlockEntity shell && shell.getLevel() != null) {
-            for (ItemStack drop : drops) {
-                if (drop.getItem() == asItem()) {
-                    shell.saveToStack(drop, shell.getLevel().registryAccess());
-                }
-            }
+        if (blockEntity instanceof HolographicStorageShellBlockEntity shell) {
+            return List.of(dropStackFor(shell, params.getLevel().registryAccess()));
         }
 
-        return drops;
+        return List.of(new ItemStack(asItem()));
+    }
+
+    private ItemStack dropStackFor(HolographicStorageShellBlockEntity shell, HolderLookup.Provider registries) {
+        ItemStack stack = new ItemStack(asItem());
+        if (shell.hasStoredItem()) {
+            shell.saveToStack(stack, registries);
+        }
+        return stack;
     }
 
     private static Component storageMessage(HolographicStorageShellBlockEntity shell) {

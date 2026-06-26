@@ -67,6 +67,7 @@ public final class SpectralClientModEvents {
     @SubscribeEvent
     static void registerAdditionalModels(ModelEvent.RegisterAdditional event) {
         CompactedMachineDynamicModel.registerAdditionalModels(event);
+        HolographicStorageShellRenderer.registerAdditionalModels(event);
     }
 
     @SubscribeEvent

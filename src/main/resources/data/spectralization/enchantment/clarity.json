@@ -1,0 +1,21 @@
+{
+  "anvil_cost": 2,
+  "description": {
+    "translate": "enchantment.spectralization.clarity"
+  },
+  "effects": {},
+  "max_cost": {
+    "base": 42,
+    "per_level_above_first": 14
+  },
+  "max_level": 3,
+  "min_cost": {
+    "base": 8,
+    "per_level_above_first": 14
+  },
+  "slots": [
+    "any"
+  ],
+  "supported_items": "#spectralization:enchantable/lens",
+  "weight": 5
+}

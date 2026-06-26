@@ -20,8 +20,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 
 public final class FiberOverloadMonitor {
-    private static final double POWER_CAPACITY_PER_FIBER = 64.0D;
-
     public static boolean burnOverloadedFibers(
             ServerLevel level,
             CompiledPortGraph graph,
@@ -42,6 +40,7 @@ public final class FiberOverloadMonitor {
         }
 
         Map<FiberSegmentKey, Double> loadBySegment = loadByFiberSegment(level, snapshot, graph, solution);
+        Map<FiberSegmentKey, Double> capacityBySegment = capacityByFiberSegment(snapshot);
 
         if (loadBySegment.isEmpty()) {
             return false;
@@ -51,8 +50,8 @@ public final class FiberOverloadMonitor {
         List<String> overloadLogParts = new ArrayList<>();
 
         for (Map.Entry<FiberSegmentKey, Double> entry : loadBySegment.entrySet()) {
+            double capacity = capacityBySegment.getOrDefault(entry.getKey(), 0.0D);
             int usage = snapshot.segmentUsage().getOrDefault(entry.getKey(), 0);
-            double capacity = usage * POWER_CAPACITY_PER_FIBER;
 
             if (usage <= 0 || entry.getValue() <= capacity) {
                 continue;
@@ -78,7 +77,7 @@ public final class FiberOverloadMonitor {
                 .field("graph_edges", graph.edges().size())
                 .field("solver", solution.solverKind())
                 .field("reliable", solution.reliableForReadout())
-                .field("capacity_per_fiber", POWER_CAPACITY_PER_FIBER)
+                .field("capacity_model", "connection_profile")
                 .write();
         return FiberNetworkData.removeConnectionsUsingAnySegment(level, overloadedSegments, "overload");
     }
@@ -102,22 +101,48 @@ public final class FiberOverloadMonitor {
                 continue;
             }
 
-            List<FiberRoute> routes = FiberOpticalTransfer.directEndpointRoutes(snapshot, edge.from().pos(), edge.to().pos());
+            List<FiberConnection> connections = FiberOpticalTransfer.directEndpointConnections(
+                    snapshot,
+                    edge.from().pos(),
+                    edge.to().pos()
+            );
 
-            if (routes.isEmpty()) {
+            if (connections.isEmpty()) {
                 continue;
             }
 
-            double routePower = transferredPower / routes.size();
+            double routePower = transferredPower / connections.size();
 
-            for (FiberRoute route : routes) {
-                for (FiberSegment segment : route.segments()) {
+            for (FiberConnection connection : connections) {
+                for (FiberSegment segment : connection.route().segments()) {
                     loadBySegment.merge(FiberSegmentKey.of(segment.from(), segment.to()), routePower, Double::sum);
                 }
             }
         }
 
         return loadBySegment;
+    }
+
+    private static Map<FiberSegmentKey, Double> capacityByFiberSegment(FiberNetworkSnapshot snapshot) {
+        Map<FiberSegmentKey, Double> capacityBySegment = new HashMap<>();
+
+        for (FiberCompiledConnection compiledConnection : snapshot.connections()) {
+            if (!compiledConnection.valid()) {
+                continue;
+            }
+
+            FiberConnection connection = compiledConnection.connection();
+
+            for (FiberSegment segment : connection.route().segments()) {
+                capacityBySegment.merge(
+                        FiberSegmentKey.of(segment.from(), segment.to()),
+                        connection.profile().maxPower(),
+                        Double::sum
+                );
+            }
+        }
+
+        return capacityBySegment;
     }
 
     private static double transferredPower(ServerLevel level, PortGraphEdge edge, ScalarPowerSolution solution) {

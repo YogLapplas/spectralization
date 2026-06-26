@@ -7,6 +7,7 @@ import io.github.yoglappland.spectralization.network.HolographicStorageActionPay
 import io.github.yoglappland.spectralization.network.HolographicStorageSnapshotPayload;
 import io.github.yoglappland.spectralization.registry.SpectralMenus;
 import io.github.yoglappland.spectralization.storage.HolographicStorageBlockEntry;
+import io.github.yoglappland.spectralization.storage.HolographicStorageAccess;
 import io.github.yoglappland.spectralization.storage.HolographicStorageCapacity;
 import io.github.yoglappland.spectralization.storage.HolographicStorageData;
 import io.github.yoglappland.spectralization.storage.HolographicStorageEntry;
@@ -349,7 +350,9 @@ public class HolographicStorageMenu extends RecipeBookMenu<CraftingInput, Crafti
             return 0;
         }
 
-        return HolographicStorageData.insert(core.getLevel(), storageId(), stack, capacity());
+        HolographicStorageMultiblock.StructureReport report =
+                HolographicStorageMultiblock.scan(core.getLevel(), core.getBlockPos());
+        return HolographicStorageAccess.insert(core.getLevel(), storageId(), stack, capacity(report), report);
     }
 
     private ItemStack extract(int entryIndex, int amount) {
@@ -357,7 +360,9 @@ public class HolographicStorageMenu extends RecipeBookMenu<CraftingInput, Crafti
             return ItemStack.EMPTY;
         }
 
-        return HolographicStorageData.extract(core.getLevel(), storageId(), entryIndex, amount, capacity());
+        HolographicStorageMultiblock.StructureReport report =
+                HolographicStorageMultiblock.scan(core.getLevel(), core.getBlockPos());
+        return HolographicStorageAccess.extract(core.getLevel(), storageId(), entryIndex, amount, capacity(report), report);
     }
 
     private void extractToCarried(int entryIndex, int amount) {
@@ -365,8 +370,10 @@ public class HolographicStorageMenu extends RecipeBookMenu<CraftingInput, Crafti
             return;
         }
 
+        HolographicStorageMultiblock.StructureReport report =
+                HolographicStorageMultiblock.scan(core.getLevel(), core.getBlockPos());
         HolographicStorageData.Snapshot snapshot =
-                HolographicStorageData.snapshot(core.getLevel(), storageId(), capacity());
+                HolographicStorageAccess.snapshot(core.getLevel(), storageId(), capacity(report), report);
         if (snapshot.interactionLocked() || entryIndex < 0 || entryIndex >= snapshot.entries().size()) {
             return;
         }
@@ -477,7 +484,7 @@ public class HolographicStorageMenu extends RecipeBookMenu<CraftingInput, Crafti
                 HolographicStorageMultiblock.scan(core.getLevel(), core.getBlockPos());
         HolographicStorageCapacity capacity = capacity(report);
         HolographicStorageData.Snapshot snapshot =
-                HolographicStorageData.snapshot(core.getLevel(), storageId(), capacity);
+                HolographicStorageAccess.snapshot(core.getLevel(), storageId(), capacity, report);
         PacketDistributor.sendToPlayer(viewer, new HolographicStorageSnapshotPayload(
                 containerId,
                 snapshot.storedItems(),

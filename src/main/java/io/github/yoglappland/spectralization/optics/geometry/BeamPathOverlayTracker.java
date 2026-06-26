@@ -244,6 +244,8 @@ public final class BeamPathOverlayTracker {
         return hasHudHelmet(player)
                 || player.getMainHandItem().is(Spectralization.OPTICAL_FIBER_COIL.get())
                 || player.getOffhandItem().is(Spectralization.OPTICAL_FIBER_COIL.get())
+                || player.getMainHandItem().is(Spectralization.SINGLE_MODE_FIBER_COIL.get())
+                || player.getOffhandItem().is(Spectralization.SINGLE_MODE_FIBER_COIL.get())
                 || player.getMainHandItem().is(Items.SHEARS)
                 || player.getOffhandItem().is(Items.SHEARS);
     }

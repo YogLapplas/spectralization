@@ -1,18 +1,18 @@
 package io.github.yoglappland.spectralization.blockentity;
 
 import io.github.yoglappland.spectralization.Spectralization;
+import io.github.yoglappland.spectralization.optics.lens.LensGrindingToolProfile;
 import io.github.yoglappland.spectralization.optics.lens.LensKind;
+import io.github.yoglappland.spectralization.optics.lens.LensMaterial;
 import io.github.yoglappland.spectralization.optics.lens.LensParameterSpec;
 import io.github.yoglappland.spectralization.optics.lens.LensProfile;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
-import io.github.yoglappland.spectralization.tag.SpectralItemTags;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.util.Mth;
 import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -41,18 +41,27 @@ public class LensGrindingBenchBlockEntity extends BlockEntity {
     public static final int DATA_READY = 12;
     public static final int DATA_LAST_RESULT = 13;
     public static final int DATA_LAST_QUALITY = 14;
-    public static final int DATA_COUNT = 15;
+    public static final int DATA_GRIND_PROGRESS = 15;
+    public static final int DATA_GRIND_PROGRESS_MAX = 16;
+    public static final int DATA_TARGET_LOCKED = 17;
+    public static final int DATA_COUNT = 18;
 
     private static final String ITEMS_TAG = "items";
     private static final String KIND_TAG = "kind";
     private static final String TARGET_TAG = "target";
+    private static final String TARGET_TENTHS_TAG = "target_tenths";
+    private static final String TARGET_UNITS_TAG = "target_units";
     private static final String LAST_RESULT_TAG = "last_result";
+    private static final String LAST_RESULT_TENTHS_TAG = "last_result_tenths";
+    private static final String LAST_RESULT_UNITS_TAG = "last_result_units";
     private static final String LAST_QUALITY_TAG = "last_quality";
+    private static final String GRIND_PROGRESS_TAG = "grind_progress";
 
     private int lensKind = LensKind.CONVEX.ordinal();
-    private int target = LensKind.CONVEX.parameter().defaultValue();
-    private int lastResult = 0;
+    private int targetUnits = LensKind.CONVEX.parameter().defaultValue() * LensProfile.FOCAL_LENGTH_SCALE;
+    private int lastResultUnits = 0;
     private int lastQuality = 0;
+    private int grindProgress = 0;
 
     private final ItemStackHandler items = new ItemStackHandler(SLOT_COUNT) {
         @Override
@@ -67,7 +76,8 @@ public class LensGrindingBenchBlockEntity extends BlockEntity {
 
         @Override
         protected void onContentsChanged(int slot) {
-            if (slot == SLOT_TOOL) {
+            if (slot == SLOT_BLANK || slot == SLOT_TOOL || slot == SLOT_REFERENCE) {
+                resetGrindProgress();
                 clampSelectionToTool();
             }
 
@@ -105,17 +115,36 @@ public class LensGrindingBenchBlockEntity extends BlockEntity {
     }
 
     public void adjustLensKind(int amount) {
+        int previousKind = lensKind;
+        int previousTarget = targetUnits;
         lensKind = Math.floorMod(lensKind + amount, LensKind.values().length);
         clampSelectionToTool();
+
+        if (lensKind != previousKind || targetUnits != previousTarget) {
+            resetGrindProgress();
+        }
+
         setChanged();
     }
 
     public void adjustTarget(int amount) {
+        if (targetLocked()) {
+            clampSelectionToTool();
+            setChanged();
+            return;
+        }
+
         int step = targetStep();
         int min = targetMin();
         int max = targetMax();
-        int next = target + amount * step;
-        target = snap(Mth.clamp(next, min, max), step, min, max);
+        int previous = targetUnits;
+        int next = targetUnits + amount * step;
+        targetUnits = snap(Mth.clamp(next, min, max), step, min, max);
+
+        if (targetUnits != previous) {
+            resetGrindProgress();
+        }
+
         setChanged();
     }
 
@@ -124,17 +153,15 @@ public class LensGrindingBenchBlockEntity extends BlockEntity {
             return false;
         }
 
-        int error = previewError();
-        int actual = Mth.clamp(target + level.random.nextInt(error * 2 + 1) - error, targetMin(), targetMax());
-        int quality = rollQuality();
-        ItemStack output = new LensProfile(LensKind.byIndex(lensKind).id(), actual, 100, quality).createStack();
+        LensGrindingToolProfile tool = toolProfile();
+        grindProgress = Math.min(LensGrindingToolProfile.GRIND_PROGRESS_MAX, grindProgress + tool.grindPerClick());
 
-        items.extractItem(SLOT_BLANK, 1, false);
-        damageTool();
-        items.setStackInSlot(SLOT_OUTPUT, output);
-        lastResult = actual;
-        lastQuality = quality;
-        setChanged();
+        if (grindProgress < LensGrindingToolProfile.GRIND_PROGRESS_MAX) {
+            setChanged();
+            return true;
+        }
+
+        finishGrinding(tool);
         return true;
     }
 
@@ -149,13 +176,34 @@ public class LensGrindingBenchBlockEntity extends BlockEntity {
     }
 
     public static boolean isBlank(ItemStack stack) {
-        return stack.is(Items.GLASS)
-                || stack.is(Items.GLASS_PANE)
-                || stack.is(Spectralization.SILVER_GLASS_ITEM.get());
+        return LensMaterial.fromBlank(stack).isPresent();
     }
 
     public static int toolTier(ItemStack stack) {
-        return stack.is(SpectralItemTags.GRINDING_KNIVES) ? 0 : -1;
+        return LensGrindingToolProfile.fromStack(stack).tier();
+    }
+
+    private void finishGrinding(LensGrindingToolProfile tool) {
+        int error = previewError();
+        int actual = Mth.clamp(targetUnits + level.random.nextInt(error * 2 + 1) - error, targetMin(), targetMax());
+        int quality = rollQuality();
+        LensMaterial material = blankMaterial();
+        ItemStack output = LensProfile.withUnits(
+                LensKind.byIndex(lensKind).id(),
+                actual,
+                100,
+                quality,
+                material.id(),
+                tool.finishPermille()
+        ).createStack();
+
+        items.extractItem(SLOT_BLANK, 1, false);
+        damageTool();
+        items.setStackInSlot(SLOT_OUTPUT, output);
+        lastResultUnits = actual;
+        lastQuality = quality;
+        resetGrindProgress();
+        setChanged();
     }
 
     private void setData(int index, int value) {
@@ -163,10 +211,19 @@ public class LensGrindingBenchBlockEntity extends BlockEntity {
             case DATA_LENS_KIND -> {
                 lensKind = Mth.clamp(value, 0, LensKind.values().length - 1);
                 clampSelectionToTool();
+                resetGrindProgress();
                 setChanged();
             }
             case DATA_TARGET -> {
-                target = Mth.clamp(value, targetMin(), targetMax());
+                int previous = targetUnits;
+                if (targetLocked()) {
+                    targetUnits = lockedTargetUnits(targetMin(), targetMax());
+                } else {
+                    targetUnits = snap(Mth.clamp(value, targetMin(), targetMax()), targetStep(), targetMin(), targetMax());
+                }
+                if (targetUnits != previous) {
+                    resetGrindProgress();
+                }
                 setChanged();
             }
             default -> {
@@ -177,34 +234,45 @@ public class LensGrindingBenchBlockEntity extends BlockEntity {
     private int getData(int index) {
         return switch (index) {
             case DATA_LENS_KIND -> Mth.clamp(lensKind, 0, LensKind.values().length - 1);
-            case DATA_TARGET -> target;
+            case DATA_TARGET -> targetUnits;
             case DATA_ALLOWED_KINDS -> craftableKindCount();
             case DATA_TARGET_MIN -> targetMin();
             case DATA_TARGET_MAX -> targetMax();
             case DATA_TARGET_STEP -> targetStep();
             case DATA_ERROR -> previewError();
-            case DATA_PREVIEW_MIN -> Math.max(targetMin(), target - previewError());
-            case DATA_PREVIEW_MAX -> Math.min(targetMax(), target + previewError());
+            case DATA_PREVIEW_MIN -> Math.max(targetMin(), targetUnits - previewError());
+            case DATA_PREVIEW_MAX -> Math.min(targetMax(), targetUnits + previewError());
             case DATA_COARSE_CHANCE -> qualityChance(1);
             case DATA_CLEAR_CHANCE -> qualityChance(2);
             case DATA_PRECISE_CHANCE -> qualityChance(3);
             case DATA_READY -> canGrind() ? 1 : 0;
-            case DATA_LAST_RESULT -> lastResult;
+            case DATA_LAST_RESULT -> lastResultUnits;
             case DATA_LAST_QUALITY -> lastQuality;
+            case DATA_GRIND_PROGRESS -> grindProgress;
+            case DATA_GRIND_PROGRESS_MAX -> LensGrindingToolProfile.GRIND_PROGRESS_MAX;
+            case DATA_TARGET_LOCKED -> targetLocked() ? 1 : 0;
             default -> 0;
         };
     }
 
     private boolean canGrind() {
-        return !items.getStackInSlot(SLOT_BLANK).isEmpty()
-                && toolTier(items.getStackInSlot(SLOT_TOOL)) >= 0
+        return isBlank(items.getStackInSlot(SLOT_BLANK))
+                && toolProfile().valid()
                 && selectedKindCraftable()
                 && items.getStackInSlot(SLOT_OUTPUT).isEmpty();
     }
 
     private void clampSelectionToTool() {
         lensKind = Mth.clamp(lensKind, 0, LensKind.values().length - 1);
-        target = Mth.clamp(target, targetMin(), targetMax());
+        int min = targetMin();
+        int max = targetMax();
+
+        if (targetLocked()) {
+            targetUnits = lockedTargetUnits(min, max);
+            return;
+        }
+
+        targetUnits = snap(Mth.clamp(targetUnits, min, max), targetStep(), min, max);
     }
 
     private boolean selectedKindCraftable() {
@@ -212,47 +280,72 @@ public class LensGrindingBenchBlockEntity extends BlockEntity {
     }
 
     private int craftableKindCount() {
-        return toolTier(items.getStackInSlot(SLOT_TOOL)) >= 0 ? LensKind.values().length : 0;
+        return toolProfile().valid() ? LensKind.values().length : 0;
     }
 
     private int targetMin() {
-        return parameter().minValue();
+        return Math.max(LensProfile.MIN_FOCAL_LENGTH_UNITS, blankMaterial().minFocalLengthUnits());
     }
 
     private int targetMax() {
-        return parameter().maxForToolTier(toolTier(items.getStackInSlot(SLOT_TOOL)));
+        int min = targetMin();
+        int parameterMax = parameter().maxValue() * LensProfile.FOCAL_LENGTH_SCALE;
+        return Math.max(
+                min,
+                Math.min(
+                        LensProfile.MAX_FOCAL_LENGTH_UNITS,
+                        Math.min(parameterMax, blankMaterial().maxFocalLengthUnits())
+                )
+        );
     }
 
     private int targetStep() {
-        return parameter().stepForToolTier(toolTier(items.getStackInSlot(SLOT_TOOL)));
+        return Math.max(1, toolProfile().targetStepUnits());
     }
 
     private int previewError() {
-        int error = parameter().baseErrorForToolTier(toolTier(items.getStackInSlot(SLOT_TOOL)));
+        int error = toolProfile().errorUnits();
 
-        return sameKindReference() ? Math.max(0, error - 1) : error;
+        return sameKindReference() ? Math.max(0, error - LensProfile.FOCAL_LENGTH_SCALE) : error;
+    }
+
+    private boolean targetLocked() {
+        return !toolProfile().targetAdjustable();
+    }
+
+    private int lockedTargetUnits(int min, int max) {
+        return Mth.clamp(parameter().defaultValue() * LensProfile.FOCAL_LENGTH_SCALE, min, max);
     }
 
     private LensParameterSpec parameter() {
         return LensKind.byIndex(lensKind).parameter();
     }
 
+    private LensMaterial blankMaterial() {
+        return LensMaterial.fromBlank(items.getStackInSlot(SLOT_BLANK)).orElse(LensMaterial.ORDINARY);
+    }
+
+    private LensGrindingToolProfile toolProfile() {
+        return LensGrindingToolProfile.fromStack(items.getStackInSlot(SLOT_TOOL));
+    }
+
     private int qualityChance(int quality) {
-        int tier = Math.max(0, toolTier(items.getStackInSlot(SLOT_TOOL)));
-        int[] chances = switch (tier) {
-            case 0 -> new int[]{70, 30, 0};
-            case 1 -> new int[]{45, 50, 5};
-            case 2 -> new int[]{20, 60, 20};
-            default -> new int[]{5, 55, 40};
-        };
+        LensGrindingToolProfile tool = toolProfile();
+        int coarse = tool.qualityChance(1);
+        int clear = tool.qualityChance(2);
+        int precise = tool.qualityChance(3);
 
         if (sameKindReference()) {
-            chances[0] = Math.max(0, chances[0] - 10);
-            chances[2] = Math.min(100, chances[2] + 10);
-            chances[1] = 100 - chances[0] - chances[2];
+            coarse = Math.max(0, coarse - 10);
+            precise = Math.min(100, precise + 10);
+            clear = Math.max(0, 100 - coarse - precise);
         }
 
-        return chances[Mth.clamp(quality, 1, 3) - 1];
+        return switch (Mth.clamp(quality, LensProfile.MIN_QUALITY, LensProfile.MAX_QUALITY)) {
+            case 1 -> coarse;
+            case 3 -> precise;
+            default -> clear;
+        };
     }
 
     private boolean sameKindReference() {
@@ -272,6 +365,10 @@ public class LensGrindingBenchBlockEntity extends BlockEntity {
         }
 
         return roll < coarse + clear ? 2 : 3;
+    }
+
+    private void resetGrindProgress() {
+        grindProgress = 0;
     }
 
     private void damageTool() {
@@ -303,14 +400,27 @@ public class LensGrindingBenchBlockEntity extends BlockEntity {
     protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
         lensKind = tag.getInt(KIND_TAG);
-        target = tag.getInt(TARGET_TAG);
-        lastResult = tag.getInt(LAST_RESULT_TAG);
+        targetUnits = tag.contains(TARGET_UNITS_TAG)
+                ? tag.getInt(TARGET_UNITS_TAG)
+                : (tag.contains(TARGET_TENTHS_TAG)
+                ? tag.getInt(TARGET_TENTHS_TAG) * 2
+                : tag.getInt(TARGET_TAG) * LensProfile.FOCAL_LENGTH_SCALE);
+        lastResultUnits = tag.contains(LAST_RESULT_UNITS_TAG)
+                ? tag.getInt(LAST_RESULT_UNITS_TAG)
+                : (tag.contains(LAST_RESULT_TENTHS_TAG)
+                ? tag.getInt(LAST_RESULT_TENTHS_TAG) * 2
+                : tag.getInt(LAST_RESULT_TAG) * LensProfile.FOCAL_LENGTH_SCALE);
+        targetUnits = LensProfile.clampFocalLengthUnits(targetUnits);
+        if (lastResultUnits > 0) {
+            lastResultUnits = LensProfile.clampFocalLengthUnits(lastResultUnits);
+        }
         lastQuality = tag.getInt(LAST_QUALITY_TAG);
 
         if (tag.contains(ITEMS_TAG)) {
             items.deserializeNBT(registries, tag.getCompound(ITEMS_TAG));
         }
 
+        grindProgress = Mth.clamp(tag.getInt(GRIND_PROGRESS_TAG), 0, LensGrindingToolProfile.GRIND_PROGRESS_MAX);
         clampSelectionToTool();
     }
 
@@ -319,8 +429,13 @@ public class LensGrindingBenchBlockEntity extends BlockEntity {
         super.saveAdditional(tag, registries);
         tag.put(ITEMS_TAG, items.serializeNBT(registries));
         tag.putInt(KIND_TAG, lensKind);
-        tag.putInt(TARGET_TAG, target);
-        tag.putInt(LAST_RESULT_TAG, lastResult);
+        tag.putInt(TARGET_TAG, Math.round(targetUnits / (float) LensProfile.FOCAL_LENGTH_SCALE));
+        tag.putInt(TARGET_TENTHS_TAG, Math.round(targetUnits * 10.0F / LensProfile.FOCAL_LENGTH_SCALE));
+        tag.putInt(TARGET_UNITS_TAG, targetUnits);
+        tag.putInt(LAST_RESULT_TAG, Math.round(lastResultUnits / (float) LensProfile.FOCAL_LENGTH_SCALE));
+        tag.putInt(LAST_RESULT_TENTHS_TAG, Math.round(lastResultUnits * 10.0F / LensProfile.FOCAL_LENGTH_SCALE));
+        tag.putInt(LAST_RESULT_UNITS_TAG, lastResultUnits);
         tag.putInt(LAST_QUALITY_TAG, lastQuality);
+        tag.putInt(GRIND_PROGRESS_TAG, grindProgress);
     }
 }

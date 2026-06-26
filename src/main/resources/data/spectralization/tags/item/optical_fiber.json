@@ -1,6 +1,7 @@
 {
   "replace": false,
   "values": [
-    "spectralization:optical_fiber_coil"
+    "spectralization:optical_fiber_coil",
+    "spectralization:single_mode_fiber_coil"
   ]
 }

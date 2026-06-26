@@ -11,10 +11,12 @@ import io.github.yoglappland.spectralization.client.renderer.SolarDopingChamberR
 import io.github.yoglappland.spectralization.client.renderer.SingularMaterialItemRenderer;
 import io.github.yoglappland.spectralization.client.screen.BasicLithographyMachineScreen;
 import io.github.yoglappland.spectralization.client.renderer.BasicLithographyMachineRenderer;
+import io.github.yoglappland.spectralization.client.renderer.HolographicStorageShellRenderer;
 import io.github.yoglappland.spectralization.client.screen.CoatingBrushScreen;
 import io.github.yoglappland.spectralization.client.screen.CompactMachineCoreScreen;
 import io.github.yoglappland.spectralization.client.screen.CompactedMachineScreen;
 import io.github.yoglappland.spectralization.client.screen.CreativeLightSourceScreen;
+import io.github.yoglappland.spectralization.client.screen.FiberDrawingMachineScreen;
 import io.github.yoglappland.spectralization.client.screen.FiberLaserScreen;
 import io.github.yoglappland.spectralization.client.screen.HolographicStorageCoreScreen;
 import io.github.yoglappland.spectralization.client.screen.HolographicStorageScreen;
@@ -55,6 +57,10 @@ public final class SpectralClientModEvents {
         event.registerBlockEntityRenderer(
                 SpectralBlockEntities.SOLAR_DOPING_CHAMBER.get(),
                 SolarDopingChamberRenderer::new
+        );
+        event.registerBlockEntityRenderer(
+                SpectralBlockEntities.HOLOGRAPHIC_STORAGE_SHELL.get(),
+                HolographicStorageShellRenderer::new
         );
     }
 
@@ -104,6 +110,7 @@ public final class SpectralClientModEvents {
         event.register(SpectralMenus.METAMATERIAL_DESIGN_TABLE.get(), MetamaterialDesignTableScreen::new);
         event.register(SpectralMenus.BASIC_LITHOGRAPHY_MACHINE.get(), BasicLithographyMachineScreen::new);
         event.register(SpectralMenus.SOLAR_DOPING_CHAMBER.get(), SolarDopingChamberScreen::new);
+        event.register(SpectralMenus.FIBER_DRAWING_MACHINE.get(), FiberDrawingMachineScreen::new);
         event.register(SpectralMenus.FIBER_LASER.get(), FiberLaserScreen::new);
         event.register(SpectralMenus.HOLOGRAPHIC_STORAGE.get(), HolographicStorageScreen::new);
         event.register(SpectralMenus.HOLOGRAPHIC_STORAGE_CORE.get(), HolographicStorageCoreScreen::new);

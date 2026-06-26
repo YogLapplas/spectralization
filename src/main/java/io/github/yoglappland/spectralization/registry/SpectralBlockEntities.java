@@ -7,11 +7,13 @@ import io.github.yoglappland.spectralization.blockentity.CmosSensorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.CompactMachineCoreBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.CompactedMachineBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.CreativeLightSourceBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.FiberDrawingMachineBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.FiberLaserBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.FiberOpticInterfaceBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.FiberRelayBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.HolographicStorageCrystalBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.HolographicStorageMainCoreBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.HolographicStorageShellBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.LensGrindingBenchBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.LensHolderBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.MetamaterialDesignTableBlockEntity;
@@ -66,6 +68,13 @@ public final class SpectralBlockEntities {
                             Spectralization.DIMENSION_DOPING_CHAMBER.get()
                     ).build(null));
 
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<FiberDrawingMachineBlockEntity>> FIBER_DRAWING_MACHINE =
+            BLOCK_ENTITY_TYPES.register("fiber_drawing_machine", () ->
+                    BlockEntityType.Builder.of(
+                            FiberDrawingMachineBlockEntity::new,
+                            Spectralization.FIBER_DRAWING_MACHINE.get()
+                    ).build(null));
+
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<FiberOpticInterfaceBlockEntity>> FIBER_OPTIC_INTERFACE =
             BLOCK_ENTITY_TYPES.register("fiber_optic_interface", () ->
                     BlockEntityType.Builder.of(FiberOpticInterfaceBlockEntity::new, Spectralization.FIBER_OPTIC_INTERFACE.get()).build(null));
@@ -83,6 +92,14 @@ public final class SpectralBlockEntities {
                     BlockEntityType.Builder.of(
                             HolographicStorageCrystalBlockEntity::new,
                             Spectralization.HOLOGRAPHIC_STORAGE_CRYSTAL.get()
+                    ).build(null));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<HolographicStorageShellBlockEntity>> HOLOGRAPHIC_STORAGE_SHELL =
+            BLOCK_ENTITY_TYPES.register("holographic_storage_shell", () ->
+                    BlockEntityType.Builder.of(
+                            HolographicStorageShellBlockEntity::new,
+                            Spectralization.HOLOGRAPHIC_STORAGE_SHELL.get(),
+                            Spectralization.STABLE_HOLOGRAPHIC_STORAGE_SHELL.get()
                     ).build(null));
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<HolographicStorageMainCoreBlockEntity>> HOLOGRAPHIC_STORAGE_MAIN_CORE =

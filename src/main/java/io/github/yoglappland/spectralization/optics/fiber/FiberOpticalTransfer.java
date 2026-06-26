@@ -16,7 +16,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.Vec3;
 
 public final class FiberOpticalTransfer {
     private static final double MIN_GUIDED_GAIN = 1.0E-6;
@@ -73,7 +72,7 @@ public final class FiberOpticalTransfer {
                 continue;
             }
 
-            double routeGain = routeGain(snapshot, routeOutput.route());
+            double routeGain = routeGain(routeOutput.profile());
 
             if (routeGain <= MIN_GUIDED_GAIN) {
                 continue;
@@ -100,6 +99,15 @@ public final class FiberOpticalTransfer {
     }
 
     public static List<FiberRoute> directEndpointRoutes(FiberNetworkSnapshot snapshot, BlockPos start, BlockPos end) {
+        List<FiberConnection> connections = directEndpointConnections(snapshot, start, end);
+        return connections.stream().map(FiberConnection::route).toList();
+    }
+
+    public static List<FiberConnection> directEndpointConnections(
+            FiberNetworkSnapshot snapshot,
+            BlockPos start,
+            BlockPos end
+    ) {
         Objects.requireNonNull(snapshot, "snapshot");
         Objects.requireNonNull(start, "start");
         Objects.requireNonNull(end, "end");
@@ -108,7 +116,7 @@ public final class FiberOpticalTransfer {
             return List.of();
         }
 
-        List<FiberRoute> routes = new ArrayList<>();
+        List<FiberConnection> connections = new ArrayList<>();
 
         for (FiberCompiledConnection compiledConnection : snapshot.connections()) {
             if (!compiledConnection.valid()) {
@@ -118,11 +126,11 @@ public final class FiberOpticalTransfer {
             FiberConnection connection = compiledConnection.connection();
 
             if (connection.connects(start, end)) {
-                routes.add(connection.route());
+                connections.add(connection);
             }
         }
 
-        return routes.isEmpty() ? List.of() : List.copyOf(routes);
+        return connections.isEmpty() ? List.of() : List.copyOf(connections);
     }
 
     public static Optional<FiberRoute> routeBetween(FiberNetworkSnapshot snapshot, BlockPos start, BlockPos end) {
@@ -192,7 +200,7 @@ public final class FiberOpticalTransfer {
             }
 
             if (outputPos != null) {
-                outputs.add(new RouteOutput(outputPos, connection.route()));
+                outputs.add(new RouteOutput(outputPos, connection.route(), connection.profile()));
             }
         }
 
@@ -204,21 +212,18 @@ public final class FiberOpticalTransfer {
         return List.copyOf(outputs);
     }
 
-    private static double routeGain(FiberNetworkSnapshot snapshot, FiberRoute route) {
-        return routeGain(limitingRouteProfile(snapshot, route), route);
+    private static double routeGain(FiberMaterialProfile profile) {
+        // Fiber routing itself is power-lossless; this is the one-time port insertion loss.
+        return profile.portTransmission();
     }
 
-    private static double routeGain(RouteProfile profile, FiberRoute route) {
-        double lengthGain = Math.pow(profile.transmissionPerBlock(), route.totalLength());
-        double bendGain = bendTransmission(route, profile.bendTransmissionPerRightAngle());
-        return BeamGeometryOps.clamp01(lengthGain * bendGain);
-    }
-
-    private static RouteProfile limitingRouteProfile(FiberNetworkSnapshot snapshot, FiberRoute route) {
-        double coreRadius = Double.POSITIVE_INFINITY;
-        double numericalAperture = Double.POSITIVE_INFINITY;
-        double transmissionPerBlock = 1.0D;
-        double bendTransmissionPerRightAngle = 1.0D;
+    private static RouteProfile limitingRouteProfile(
+            FiberNetworkSnapshot snapshot,
+            FiberRoute route,
+            FiberMaterialProfile connectionProfile
+    ) {
+        double coreRadius = connectionProfile.coreRadius();
+        double numericalAperture = connectionProfile.numericalAperture();
 
         for (BlockPos nodePos : route.nodes()) {
             FiberNodeProfile profile = snapshot.nodeAt(nodePos)
@@ -226,18 +231,13 @@ public final class FiberOpticalTransfer {
                     .orElse(FiberNodeProfile.BASIC_RELAY);
             coreRadius = Math.min(coreRadius, profile.coreRadius());
             numericalAperture = Math.min(numericalAperture, profile.numericalAperture());
-            transmissionPerBlock = Math.min(transmissionPerBlock, profile.transmissionPerBlock());
-            bendTransmissionPerRightAngle = Math.min(
-                    bendTransmissionPerRightAngle,
-                    profile.bendTransmissionPerRightAngle()
-            );
         }
 
         if (!Double.isFinite(coreRadius) || !Double.isFinite(numericalAperture)) {
             return RouteProfile.BASIC;
         }
 
-        return new RouteProfile(coreRadius, numericalAperture, transmissionPerBlock, bendTransmissionPerRightAngle);
+        return new RouteProfile(coreRadius, numericalAperture);
     }
 
     public static BeamProfileTransfer profileTransferForEdge(
@@ -270,9 +270,9 @@ public final class FiberOpticalTransfer {
         }
 
         FiberNetworkSnapshot snapshot = FiberNetworkIndex.snapshot(level);
-        List<FiberRoute> routes = directEndpointRoutes(snapshot, inputPos, outputPos);
+        List<FiberConnection> connections = directEndpointConnections(snapshot, inputPos, outputPos);
 
-        if (routes.isEmpty()) {
+        if (connections.isEmpty()) {
             return BeamProfileTransfer.of(inputProfile, 0.0D);
         }
 
@@ -281,9 +281,9 @@ public final class FiberOpticalTransfer {
         double acceptedGainSum = 0.0D;
         RouteProfile outputProfile = null;
 
-        for (FiberRoute route : routes) {
-            RouteProfile routeProfile = limitingRouteProfile(snapshot, route);
-            double routeGain = routeGain(routeProfile, route);
+        for (FiberConnection connection : connections) {
+            RouteProfile routeProfile = limitingRouteProfile(snapshot, connection.route(), connection.profile());
+            double routeGain = routeGain(connection.profile());
 
             if (routeGain <= 0.0D) {
                 continue;
@@ -327,37 +327,6 @@ public final class FiberOpticalTransfer {
         }
 
         return BeamGeometryOps.clamp01(spotGain * angularGain);
-    }
-
-    private static double bendTransmission(FiberRoute route, double bendTransmissionPerRightAngle) {
-        if (route.nodes().size() < 3) {
-            return 1.0D;
-        }
-
-        double rightAngleUnits = 0.0D;
-
-        for (int index = 1; index < route.nodes().size() - 1; index++) {
-            Vec3 incoming = vectorBetween(route.nodes().get(index - 1), route.nodes().get(index));
-            Vec3 outgoing = vectorBetween(route.nodes().get(index), route.nodes().get(index + 1));
-
-            if (incoming.lengthSqr() <= 1.0E-9D || outgoing.lengthSqr() <= 1.0E-9D) {
-                continue;
-            }
-
-            double dot = incoming.normalize().dot(outgoing.normalize());
-            double angle = Math.acos(Math.max(-1.0D, Math.min(1.0D, dot)));
-            rightAngleUnits += angle / (Math.PI * 0.5D);
-        }
-
-        if (rightAngleUnits <= 0.0D) {
-            return 1.0D;
-        }
-
-        return Math.pow(bendTransmissionPerRightAngle, rightAngleUnits);
-    }
-
-    private static Vec3 vectorBetween(BlockPos from, BlockPos to) {
-        return new Vec3(to.getX() - from.getX(), to.getY() - from.getY(), to.getZ() - from.getZ());
     }
 
     private static Map<BlockPos, List<RouteEdge>> weightedAdjacency(FiberNetworkSnapshot snapshot) {
@@ -430,33 +399,28 @@ public final class FiberOpticalTransfer {
         }
     }
 
-    private record RouteOutput(BlockPos outputPos, FiberRoute route) {
+    private record RouteOutput(BlockPos outputPos, FiberRoute route, FiberMaterialProfile profile) {
         private RouteOutput {
             Objects.requireNonNull(outputPos, "outputPos");
             Objects.requireNonNull(route, "route");
+            Objects.requireNonNull(profile, "profile");
             outputPos = outputPos.immutable();
         }
     }
 
     private record RouteProfile(
             double coreRadius,
-            double numericalAperture,
-            double transmissionPerBlock,
-            double bendTransmissionPerRightAngle
+            double numericalAperture
     ) {
         private static final RouteProfile BASIC = new RouteProfile(
                 FiberNodeProfile.BASIC_INTERFACE.coreRadius(),
-                FiberNodeProfile.BASIC_INTERFACE.numericalAperture(),
-                FiberNodeProfile.BASIC_INTERFACE.transmissionPerBlock(),
-                FiberNodeProfile.BASIC_INTERFACE.bendTransmissionPerRightAngle()
+                FiberNodeProfile.BASIC_INTERFACE.numericalAperture()
         );
 
         private RouteProfile limiting(RouteProfile other) {
             return new RouteProfile(
                     Math.min(coreRadius, other.coreRadius),
-                    Math.min(numericalAperture, other.numericalAperture),
-                    Math.min(transmissionPerBlock, other.transmissionPerBlock),
-                    Math.min(bendTransmissionPerRightAngle, other.bendTransmissionPerRightAngle)
+                    Math.min(numericalAperture, other.numericalAperture)
             );
         }
     }

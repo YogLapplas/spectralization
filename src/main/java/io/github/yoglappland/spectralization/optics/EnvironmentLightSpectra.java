@@ -339,7 +339,8 @@ public final class EnvironmentLightSpectra {
             return HOT_MOLTEN;
         }
 
-        if (isSpectralization(blockId, "holographic_storage_")) {
+        if (isSpectralization(blockId, "holographic_storage_")
+                || isSpectralization(blockId, "stable_holographic_storage_")) {
             return TECHNOLOGY_CYAN;
         }
 

@@ -526,11 +526,24 @@ tasks.register('verifyLensGrindingBenchUiLayout') {
         slotRects.each { assertInside(leftPanel, it) }
         def outputSlot = rect('output_slot', intValue('SLOT_OUTPUT_X'), intValue('SLOT_OUTPUT_Y'), slotSize, slotSize)
         assertInside(rightPanel, outputSlot)
+        def grindWheel = rect('grind_wheel', intValue('GRIND_WHEEL_X'), intValue('GRIND_WHEEL_Y'), intValue('GRIND_WHEEL_SIZE'), intValue('GRIND_WHEEL_SIZE'))
+        assertInside(rightPanel, grindWheel)
+        def grindButton = rect('grind_button', intValue('GRIND_BUTTON_X'), intValue('GRIND_BUTTON_Y'), intValue('GRIND_BUTTON_WIDTH'), intValue('GRIND_BUTTON_HEIGHT'))
+        assertInside(rightPanel, grindButton)
+        assertNoOverlap('right output panel control', [outputSlot, grindWheel, grindButton])
         assertNoOverlap('input slot', slotRects)
         assertNear('Lens grinding bench input slot center', intValue('SLOT_BLANK_X') + slotSize / 2.0, intValue('LEFT_PANEL_CENTER_X'), 0.0)
         assertNear('Lens grinding bench tool slot center', intValue('SLOT_TOOL_X') + slotSize / 2.0, intValue('LEFT_PANEL_CENTER_X'), 0.0)
         assertNear('Lens grinding bench reference slot center', intValue('SLOT_REFERENCE_X') + slotSize / 2.0, intValue('LEFT_PANEL_CENTER_X'), 0.0)
         assertNear('Lens grinding bench output slot center', intValue('SLOT_OUTPUT_X') + slotSize / 2.0, intValue('RIGHT_PANEL_CENTER_X'), 0.0)
+        assertNear('Lens grinding bench grind wheel center', intValue('GRIND_WHEEL_CENTER_X'), intValue('RIGHT_PANEL_CENTER_X'), 0.0)
+        assertNear('Lens grinding bench grind button center', intValue('GRIND_BUTTON_X') + intValue('GRIND_BUTTON_WIDTH') / 2.0, intValue('RIGHT_PANEL_CENTER_X'), 0.0)
+        assertNear(
+                'Lens grinding bench output action stack vertical center',
+                (intValue('SLOT_OUTPUT_Y') + intValue('GRIND_BUTTON_Y') + intValue('GRIND_BUTTON_HEIGHT')) / 2.0,
+                intValue('SIDE_PANEL_Y') + intValue('SIDE_PANEL_HEIGHT') / 2.0,
+                1.0
+        )
 
         def mainPanel = rect('main_panel', intValue('MAIN_PANEL_X'), intValue('MAIN_PANEL_Y'), intValue('MAIN_PANEL_WIDTH'), intValue('MAIN_PANEL_HEIGHT'))
         def kindZone = rect('kind_zone', intValue('KIND_ZONE_X'), intValue('KIND_ZONE_Y'), intValue('KIND_ZONE_WIDTH'), intValue('KIND_ZONE_HEIGHT'))
@@ -653,6 +666,9 @@ tasks.register('verifyLensGrindingBenchUiLayout') {
         if (screenSource.contains('renderGhostItems(graphics)') || screenSource.contains('renderGhostItem(')) {
             throw new GradleException('Lens grinding bench input slots should not render example ghost items.')
         }
+        if (screenSource.contains('lastResultCode(')) {
+            throw new GradleException('Lens grinding bench right output panel should not render the old last-result text code.')
+        }
         ['convex', 'concave', 'ender_lens', 'magmatic_lens', 'echo_lens'].each { texture ->
             if (!screenSource.contains("\"${texture}\"")) {
                 throw new GradleException("Lens grinding bench must map lens icon texture '${texture}.png'.")
@@ -673,7 +689,9 @@ tasks.register('verifyLensGrindingBenchUiLayout') {
                 rect('target_prev_hover', intValue('TARGET_PREV_X'), intValue('TARGET_BUTTON_Y'), intValue('TARGET_BUTTON_SIZE'), intValue('TARGET_BUTTON_SIZE')),
                 rect('target_next_hover', intValue('TARGET_NEXT_X'), intValue('TARGET_BUTTON_Y'), intValue('TARGET_BUTTON_SIZE'), intValue('TARGET_BUTTON_SIZE')),
                 rect('quality_bar_hover', intValue('QUALITY_BAR_X') - 2, intValue('QUALITY_BAR_Y') - 2, intValue('QUALITY_BAR_WIDTH') + 4, intValue('QUALITY_BAR_HEIGHT') + 4),
-                rect('range_bar_hover', intValue('RANGE_X') - 2, intValue('RANGE_Y') - 3, intValue('RANGE_WIDTH') + 4, intValue('RANGE_HEIGHT') + 6)
+                rect('range_bar_hover', intValue('RANGE_X') - 2, intValue('RANGE_Y') - 3, intValue('RANGE_WIDTH') + 4, intValue('RANGE_HEIGHT') + 6),
+                rect('grind_wheel_hover', intValue('GRIND_WHEEL_X') - 2, intValue('GRIND_WHEEL_Y') - 2, intValue('GRIND_WHEEL_SIZE') + 4, intValue('GRIND_WHEEL_SIZE') + 4),
+                rect('grind_button_hover', intValue('GRIND_BUTTON_X'), intValue('GRIND_BUTTON_Y'), intValue('GRIND_BUTTON_WIDTH'), intValue('GRIND_BUTTON_HEIGHT'))
         ]
         hoverAreas.each { assertInside(screen, it) }
         assertNoOverlap('primary hover area', hoverAreas)
@@ -1377,12 +1395,226 @@ tasks.register('verifySolarDopingChamberUiLayout') {
     }
 }
 
+tasks.register('verifyFiberDrawingMachineUiLayout') {
+    def fiberDrawingMachineLayoutSourceFile =
+            file('src/main/java/io/github/yoglappland/spectralization/menu/FiberDrawingMachineLayout.java')
+    inputs.file(fiberDrawingMachineLayoutSourceFile)
+
+    doLast {
+        def source = fiberDrawingMachineLayoutSourceFile.text
+        def constants = [:]
+        def constantsPattern = ~/public static final int\s+([A-Z0-9_]+)\s*=\s*([^;]+);/
+
+        10.times {
+            (source =~ constantsPattern).each { match ->
+                def name = match[1]
+                def expression = match[2]
+                if (!constants.containsKey(name)) {
+                    def resolvedExpression = expression.replaceAll(/\b[A-Z][A-Z0-9_]*\b/) { token ->
+                        def key = token.toString()
+                        constants.containsKey(key) ? constants[key].toString() : key
+                    }
+
+                    if (resolvedExpression ==~ '[0-9+\\-*/ ()]+') {
+                        constants[name] = groovy.util.Eval.me(resolvedExpression) as int
+                    }
+                }
+            }
+        }
+
+        def intValue = { String name ->
+            if (!constants.containsKey(name)) {
+                throw new GradleException("Could not resolve FiberDrawingMachineLayout constant '${name}' for UI layout verification.")
+            }
+            constants[name] as int
+        }
+        def rect = { String name, int x, int y, int width, int height ->
+            [name: name, x: x, y: y, width: width, height: height]
+        }
+        def overlaps = { a, b ->
+            a.x < b.x + b.width
+                    && a.x + a.width > b.x
+                    && a.y < b.y + b.height
+                    && a.y + a.height > b.y
+        }
+        def assertInside = { outer, inner ->
+            if (inner.x < outer.x
+                    || inner.y < outer.y
+                    || inner.x + inner.width > outer.x + outer.width
+                    || inner.y + inner.height > outer.y + outer.height) {
+                throw new GradleException("Fiber drawing machine ${inner.name} must stay inside ${outer.name}.")
+            }
+        }
+        def assertNoOverlap = { String group, areas ->
+            def collisions = []
+            for (int leftIndex = 0; leftIndex < areas.size(); leftIndex++) {
+                for (int rightIndex = leftIndex + 1; rightIndex < areas.size(); rightIndex++) {
+                    if (overlaps(areas[leftIndex], areas[rightIndex])) {
+                        collisions.add("${areas[leftIndex].name}<->${areas[rightIndex].name}")
+                    }
+                }
+            }
+            if (!collisions.isEmpty()) {
+                throw new GradleException("Fiber drawing machine ${group} overlap: ${collisions.join(', ')}")
+            }
+        }
+
+        def screen = rect('screen', 0, 0, intValue('IMAGE_WIDTH'), intValue('IMAGE_HEIGHT'))
+        def machine = rect('machine', intValue('MACHINE_X'), intValue('MACHINE_Y'), intValue('MACHINE_WIDTH'), intValue('MACHINE_PANEL_HEIGHT'))
+        def leftPanel = rect('left_panel', intValue('LEFT_PANEL_X'), intValue('SIDE_PANEL_Y'), intValue('SIDE_PANEL_WIDTH'), intValue('SIDE_PANEL_HEIGHT'))
+        def rightPanel = rect('right_panel', intValue('RIGHT_PANEL_X'), intValue('SIDE_PANEL_Y'), intValue('SIDE_PANEL_WIDTH'), intValue('SIDE_PANEL_HEIGHT'))
+        def mainPanel = rect('main_panel', intValue('MAIN_PANEL_X'), intValue('MAIN_PANEL_Y'), intValue('MAIN_PANEL_WIDTH'), intValue('MAIN_PANEL_HEIGHT'))
+        def mainInner = rect('main_inner', intValue('MAIN_INNER_X'), intValue('MAIN_INNER_Y'), intValue('MAIN_INNER_WIDTH'), intValue('MAIN_INNER_HEIGHT'))
+        def energyRegion = rect('energy_region', intValue('ENERGY_REGION_X'), intValue('ENERGY_REGION_Y'), intValue('ENERGY_REGION_WIDTH'), intValue('ENERGY_REGION_HEIGHT'))
+        def workRegion = rect('work_region', intValue('WORK_REGION_X'), intValue('WORK_REGION_Y'), intValue('WORK_REGION_WIDTH'), intValue('WORK_REGION_HEIGHT'))
+        def moldRegion = rect('mold_region', intValue('MOLD_REGION_X'), intValue('MOLD_REGION_Y'), intValue('MOLD_REGION_WIDTH'), intValue('MOLD_REGION_HEIGHT'))
+        def drawRegion = rect('draw_region', intValue('DRAW_REGION_X'), intValue('DRAW_REGION_Y'), intValue('DRAW_REGION_WIDTH'), intValue('DRAW_REGION_HEIGHT'))
+        def moldOutputRegion = rect('mold_output_region', intValue('MOLD_OUTPUT_REGION_X'), intValue('MOLD_OUTPUT_REGION_Y'), intValue('MOLD_OUTPUT_REGION_WIDTH'), intValue('MOLD_OUTPUT_REGION_HEIGHT'))
+        def propertyRegion = rect('property_region', intValue('PROPERTY_REGION_X'), intValue('PROPERTY_REGION_Y'), intValue('PROPERTY_REGION_WIDTH'), intValue('PROPERTY_REGION_HEIGHT'))
+        def energyBar = rect('energy_bar', intValue('ENERGY_BAR_X'), intValue('ENERGY_BAR_Y'), intValue('ENERGY_BAR_WIDTH'), intValue('ENERGY_BAR_HEIGHT'))
+        def materialSlot = rect('material_slot', intValue('MATERIAL_SLOT_X'), intValue('MATERIAL_SLOT_Y'), intValue('SLOT_SIZE'), intValue('SLOT_SIZE'))
+        def outputSlot = rect('output_slot', intValue('OUTPUT_SLOT_X'), intValue('OUTPUT_SLOT_Y'), intValue('SLOT_SIZE'), intValue('SLOT_SIZE'))
+        def moldInput = rect('mold_input_slot', intValue('MOLD_INPUT_SLOT_X'), intValue('MOLD_SLOT_Y'), intValue('SLOT_SIZE'), intValue('SLOT_SIZE'))
+        def moldOutput = rect('mold_output_slot', intValue('MOLD_OUTPUT_SLOT_X'), intValue('MOLD_OUTPUT_SLOT_Y'), intValue('SLOT_SIZE'), intValue('SLOT_SIZE'))
+        def drawLine = rect('draw_line', intValue('DRAW_LINE_X'), intValue('DRAW_LINE_Y'), intValue('DRAW_LINE_WIDTH'), intValue('DRAW_LINE_HEIGHT'))
+        def recipeClick = rect('recipe_click', intValue('RECIPE_CLICK_X'), intValue('RECIPE_CLICK_Y'), intValue('RECIPE_CLICK_WIDTH'), intValue('RECIPE_CLICK_HEIGHT'))
+        def propertyBars = []
+        for (int index = 0; index < intValue('PROPERTY_BAR_COUNT'); index++) {
+            propertyBars.add(rect("property_bar_${index}",
+                    intValue('PROPERTY_BARS_X'),
+                    intValue('PROPERTY_BARS_Y') + index * (intValue('PROPERTY_BAR_HEIGHT') + intValue('PROPERTY_BAR_GAP')),
+                    intValue('PROPERTY_BAR_WIDTH'),
+                    intValue('PROPERTY_BAR_HEIGHT')))
+        }
+        def playerPanel = rect('player_inventory_panel', intValue('PLAYER_INVENTORY_PANEL_X'), intValue('PLAYER_INVENTORY_PANEL_Y'), intValue('PLAYER_INVENTORY_PANEL_WIDTH'), intValue('PLAYER_INVENTORY_PANEL_HEIGHT'))
+        def playerSlots = []
+        for (int row = 0; row < 3; row++) {
+            for (int column = 0; column < 9; column++) {
+                playerSlots.add(rect("player_inventory_${row}_${column}",
+                        intValue('PLAYER_INVENTORY_X') + column * intValue('SLOT_SIZE'),
+                        intValue('PLAYER_INVENTORY_Y') + row * intValue('SLOT_SIZE'),
+                        intValue('SLOT_SIZE'),
+                        intValue('SLOT_SIZE')))
+            }
+        }
+        def hotbarY = intValue('PLAYER_INVENTORY_Y') + 58
+        for (int column = 0; column < 9; column++) {
+            playerSlots.add(rect("player_hotbar_${column}",
+                    intValue('PLAYER_INVENTORY_X') + column * intValue('SLOT_SIZE'),
+                    hotbarY,
+                    intValue('SLOT_SIZE'),
+                    intValue('SLOT_SIZE')))
+        }
+
+        [machine, leftPanel, rightPanel, mainPanel, playerPanel].each { assertInside(screen, it) }
+        [mainInner, energyRegion, workRegion].each { assertInside(mainPanel, it) }
+        [moldRegion, propertyRegion].each { assertInside(workRegion, it) }
+        [drawRegion, moldOutputRegion].each { assertInside(moldRegion, it) }
+        assertInside(leftPanel, materialSlot)
+        assertInside(rightPanel, outputSlot)
+        assertInside(energyRegion, energyBar)
+        assertInside(moldRegion, moldInput)
+        assertInside(moldRegion, moldOutput)
+        assertInside(moldOutputRegion, moldOutput)
+        [drawLine, recipeClick].each { assertInside(drawRegion, it) }
+        propertyBars.each { assertInside(propertyRegion, it) }
+        playerSlots.each { assertInside(playerPanel, it) }
+
+        if (intValue('SIDE_PANEL_HEIGHT') != intValue('MAIN_PANEL_HEIGHT')) {
+            throw new GradleException('Fiber drawing machine side panels and main panel must share height.')
+        }
+        if (intValue('RIGHT_PANEL_X') != intValue('IMAGE_WIDTH') - intValue('LEFT_PANEL_X') - intValue('SIDE_PANEL_WIDTH')) {
+            throw new GradleException('Fiber drawing machine side panels must mirror across the screen center.')
+        }
+        if (intValue('MAIN_PANEL_X') * 2 + intValue('MAIN_PANEL_WIDTH') != intValue('IMAGE_WIDTH')) {
+            throw new GradleException('Fiber drawing machine main panel must be horizontally centered.')
+        }
+        if (intValue('WORK_REGION_X') != intValue('ENERGY_REGION_X') + intValue('ENERGY_REGION_WIDTH') + intValue('MAIN_BOX_GAP')
+                || intValue('WORK_REGION_X') + intValue('WORK_REGION_WIDTH') != intValue('MAIN_INNER_X') + intValue('MAIN_INNER_WIDTH')) {
+            throw new GradleException('Fiber drawing machine main panel must split into FE and work columns.')
+        }
+        if (intValue('MOLD_REGION_X') != intValue('WORK_REGION_X')
+                || intValue('PROPERTY_REGION_X') != intValue('WORK_REGION_X')
+                || intValue('MOLD_REGION_WIDTH') != intValue('WORK_REGION_WIDTH')
+                || intValue('PROPERTY_REGION_WIDTH') != intValue('WORK_REGION_WIDTH')) {
+            throw new GradleException('Fiber drawing machine work column vbox regions must share x and width.')
+        }
+        if (intValue('DRAW_REGION_X') != intValue('MOLD_REGION_X')
+                || intValue('MOLD_OUTPUT_REGION_X') != intValue('MOLD_REGION_X')
+                || intValue('DRAW_REGION_WIDTH') != intValue('MOLD_REGION_WIDTH')
+                || intValue('MOLD_OUTPUT_REGION_WIDTH') != intValue('MOLD_REGION_WIDTH')) {
+            throw new GradleException('Fiber drawing machine mold and drawing rows must belong to one visible vbox.')
+        }
+        if (intValue('DRAW_REGION_Y') != intValue('MOLD_REGION_Y') + intValue('MOLD_INPUT_REGION_HEIGHT') + intValue('MAIN_BOX_GAP')
+                || intValue('MOLD_OUTPUT_REGION_Y') != intValue('DRAW_REGION_Y') + intValue('DRAW_REGION_HEIGHT') + 2
+                || intValue('MOLD_REGION_Y') + intValue('MOLD_REGION_HEIGHT') != intValue('MOLD_OUTPUT_REGION_Y') + intValue('MOLD_OUTPUT_REGION_HEIGHT')
+                || intValue('PROPERTY_REGION_Y') != intValue('MOLD_REGION_Y') + intValue('MOLD_REGION_HEIGHT') + intValue('MAIN_BOX_GAP')
+                || intValue('PROPERTY_REGION_Y') + intValue('PROPERTY_REGION_HEIGHT') != intValue('WORK_REGION_Y') + intValue('WORK_REGION_HEIGHT')) {
+            throw new GradleException('Fiber drawing machine work column must stack one mold/drawing vbox and the fiber property box vertically.')
+        }
+        if (intValue('MATERIAL_SLOT_Y') != intValue('OUTPUT_SLOT_Y')) {
+            throw new GradleException('Fiber drawing machine material and output slots must share a horizontal axis.')
+        }
+        if ((intValue('MATERIAL_SLOT_X') + intValue('SLOT_SIZE') / 2)
+                + (intValue('OUTPUT_SLOT_X') + intValue('SLOT_SIZE') / 2) != intValue('IMAGE_WIDTH')) {
+            throw new GradleException('Fiber drawing machine material and output slots must be symmetric about the screen center.')
+        }
+        if (intValue('MOLD_SLOT_Y') < intValue('MOLD_REGION_Y')
+                || intValue('MOLD_SLOT_Y') + intValue('SLOT_SIZE') > intValue('DRAW_REGION_Y')
+                || intValue('DRAW_REGION_Y') - (intValue('MOLD_SLOT_Y') + intValue('SLOT_SIZE')) != 2
+                || intValue('MOLD_OUTPUT_SLOT_Y') < intValue('MOLD_OUTPUT_REGION_Y')
+                || intValue('MOLD_OUTPUT_SLOT_Y') + intValue('SLOT_SIZE') > intValue('MOLD_REGION_Y') + intValue('MOLD_REGION_HEIGHT')
+                || intValue('MOLD_OUTPUT_SLOT_Y') - (intValue('DRAW_REGION_Y') + intValue('DRAW_REGION_HEIGHT')) != 2) {
+            throw new GradleException('Fiber drawing machine mold slots must sit close to the central drawing region inside the shared vbox.')
+        }
+        if (intValue('MOLD_INPUT_SLOT_X') != intValue('MOLD_OUTPUT_SLOT_X')
+                || intValue('MOLD_INPUT_SLOT_X') + intValue('SLOT_SIZE') / 2.0 != intValue('WORK_REGION_X') + intValue('WORK_REGION_WIDTH') / 2.0) {
+            throw new GradleException('Fiber drawing machine mold input and return slots must share the work column centerline.')
+        }
+        if (intValue('DRAW_LINE_X') + intValue('DRAW_LINE_WIDTH') / 2.0
+                != intValue('DRAW_REGION_X') + intValue('DRAW_REGION_WIDTH') / 2.0) {
+            throw new GradleException('Fiber drawing machine drawing animation must be centered in the draw region.')
+        }
+        if (intValue('RECIPE_CLICK_X') + intValue('RECIPE_CLICK_WIDTH') / 2.0
+                != intValue('DRAW_LINE_X') + intValue('DRAW_LINE_WIDTH') / 2.0
+                || intValue('RECIPE_CLICK_Y') + intValue('RECIPE_CLICK_HEIGHT') / 2.0
+                != intValue('DRAW_LINE_Y') + intValue('DRAW_LINE_HEIGHT') / 2.0) {
+            throw new GradleException('Fiber drawing machine recipe click area must stay centered on the drawing animation.')
+        }
+        if (intValue('ITEM_MATERIAL_X') != intValue('MATERIAL_SLOT_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_MATERIAL_Y') != intValue('MATERIAL_SLOT_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_OUTPUT_X') != intValue('OUTPUT_SLOT_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_OUTPUT_Y') != intValue('OUTPUT_SLOT_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_MOLD_INPUT_X') != intValue('MOLD_INPUT_SLOT_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_MOLD_INPUT_Y') != intValue('MOLD_SLOT_Y') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_MOLD_OUTPUT_X') != intValue('MOLD_OUTPUT_SLOT_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('ITEM_MOLD_OUTPUT_Y') != intValue('MOLD_OUTPUT_SLOT_Y') + intValue('ITEM_SLOT_INSET')) {
+            throw new GradleException('Fiber drawing machine item slots must stay inset from visible 18px slot frames.')
+        }
+        if (intValue('PLAYER_INVENTORY_X') * 2 + 9 * intValue('SLOT_SIZE') != intValue('IMAGE_WIDTH')
+                || intValue('PLAYER_INVENTORY_ITEM_X') != intValue('PLAYER_INVENTORY_X') + intValue('ITEM_SLOT_INSET')
+                || intValue('PLAYER_INVENTORY_ITEM_Y') != intValue('PLAYER_INVENTORY_Y') + intValue('ITEM_SLOT_INSET')) {
+            throw new GradleException('Fiber drawing machine player inventory must stay centered with 1px item inset.')
+        }
+        if (intValue('PLAYER_INVENTORY_PANEL_X') + intValue('PLAYER_INVENTORY_PANEL_WIDTH') / 2.0 != intValue('IMAGE_WIDTH') / 2.0) {
+            throw new GradleException('Fiber drawing machine player inventory backing panel must be centered.')
+        }
+
+        assertNoOverlap('machine slot', [materialSlot, outputSlot, moldInput, moldOutput])
+        assertNoOverlap('work vbox area', [moldRegion, propertyRegion])
+        assertNoOverlap('draw visual area', [moldInput, moldOutput, recipeClick])
+        assertNoOverlap('property bar', propertyBars)
+        assertNoOverlap('player inventory slot', playerSlots)
+    }
+}
+
 tasks.named('check') {
     dependsOn tasks.named('verifyThermalSmelterUiLayout')
     dependsOn tasks.named('verifyLensGrindingBenchUiLayout')
     dependsOn tasks.named('verifyMetamaterialDesignTableUiLayout')
     dependsOn tasks.named('verifyBasicLithographyMachineUiLayout')
     dependsOn tasks.named('verifySolarDopingChamberUiLayout')
+    dependsOn tasks.named('verifyFiberDrawingMachineUiLayout')
 }
 
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.

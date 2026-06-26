@@ -12,6 +12,7 @@ import io.github.yoglappland.spectralization.block.CompactedMachineBlock;
 import io.github.yoglappland.spectralization.block.CreativeLightSourceBlock;
 import io.github.yoglappland.spectralization.block.DynamicBeamSplitterBlock;
 import io.github.yoglappland.spectralization.block.DynamicMirrorBlock;
+import io.github.yoglappland.spectralization.block.FiberDrawingMachineBlock;
 import io.github.yoglappland.spectralization.block.FiberLaserBlock;
 import io.github.yoglappland.spectralization.block.FiberOpticInterfaceBlock;
 import io.github.yoglappland.spectralization.block.FiberRelayBlock;
@@ -36,6 +37,8 @@ import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.event.SpectralCommonEvents;
 import io.github.yoglappland.spectralization.item.CoatingBrushItem;
 import io.github.yoglappland.spectralization.item.CreativeBrushItem;
+import io.github.yoglappland.spectralization.item.EnchantableItem;
+import io.github.yoglappland.spectralization.item.HolographicStorageShellItem;
 import io.github.yoglappland.spectralization.item.LensItem;
 import io.github.yoglappland.spectralization.item.MetamaterialTemplateItem;
 import io.github.yoglappland.spectralization.item.OpticalFiberCoilItem;
@@ -43,6 +46,7 @@ import io.github.yoglappland.spectralization.item.PaintBucketItem;
 import io.github.yoglappland.spectralization.item.PhosphorTubeItem;
 import io.github.yoglappland.spectralization.item.SandpaperItem;
 import io.github.yoglappland.spectralization.item.SingularMaterialItem;
+import io.github.yoglappland.spectralization.item.StrawberryRodItem;
 import io.github.yoglappland.spectralization.network.SpectralNetwork;
 import io.github.yoglappland.spectralization.optics.EnvironmentLightSpectra;
 import io.github.yoglappland.spectralization.optics.surface.SurfaceTreatmentKind;
@@ -103,7 +107,7 @@ public class Spectralization {
 
     public static final DeferredItem<LensItem> LENS = ITEMS.register(
             "lens",
-            () -> new LensItem(new Item.Properties())
+            () -> new LensItem(new Item.Properties(), 12)
     );
     public static final DeferredItem<MetamaterialTemplateItem> STANDARD_METAMATERIAL_TEMPLATE = ITEMS.register(
             "standard_metamaterial_template",
@@ -115,6 +119,22 @@ public class Spectralization {
     );
     public static final DeferredItem<Item> BASIC_MASK =
             ITEMS.registerSimpleItem("basic_mask", new Item.Properties());
+    public static final DeferredItem<Item> GRATING_MASK =
+            ITEMS.registerSimpleItem("grating_mask", new Item.Properties());
+    public static final DeferredItem<Item> WAVEGUIDE_MASK =
+            ITEMS.registerSimpleItem("waveguide_mask", new Item.Properties());
+    public static final DeferredItem<Item> CIRCUIT_MASK =
+            ITEMS.registerSimpleItem("circuit_mask", new Item.Properties());
+    public static final DeferredItem<Item> FIBER_MOLD =
+            ITEMS.registerSimpleItem("fiber_mold", new Item.Properties());
+    public static final DeferredItem<Item> SINGLE_MODE_FIBER_MOLD =
+            ITEMS.registerSimpleItem("single_mode_fiber_mold", new Item.Properties());
+    public static final DeferredItem<Item> PLATE_MOLD =
+            ITEMS.registerSimpleItem("plate_mold", new Item.Properties());
+    public static final DeferredItem<Item> WIRE_MOLD =
+            ITEMS.registerSimpleItem("wire_mold", new Item.Properties());
+    public static final DeferredItem<Item> CRYSTAL_MOLD =
+            ITEMS.registerSimpleItem("crystal_mold", new Item.Properties());
     public static final DeferredItem<SingularMaterialItem> SINGULAR_MATERIAL = ITEMS.register(
             "singular_material",
             () -> new SingularMaterialItem(new Item.Properties())
@@ -128,6 +148,10 @@ public class Spectralization {
     public static final DeferredItem<OpticalFiberCoilItem> OPTICAL_FIBER_COIL = ITEMS.register(
             "optical_fiber_coil",
             () -> new OpticalFiberCoilItem(new Item.Properties().stacksTo(1))
+    );
+    public static final DeferredItem<OpticalFiberCoilItem> SINGLE_MODE_FIBER_COIL = ITEMS.register(
+            "single_mode_fiber_coil",
+            () -> new OpticalFiberCoilItem(new Item.Properties().stacksTo(1), true)
     );
     public static final DeferredItem<Item> PHOSPHOR_DUST =
             ITEMS.registerSimpleItem("phosphor_dust", new Item.Properties());
@@ -158,15 +182,15 @@ public class Spectralization {
             () -> new SandpaperItem(new Item.Properties().durability(64))
     );
     public static final DeferredItem<Item> GRINDING_KNIFE =
-            ITEMS.registerSimpleItem("grinding_knife", new Item.Properties().stacksTo(1));
+            ITEMS.register("grinding_knife", () -> new EnchantableItem(new Item.Properties().stacksTo(1), 8));
     public static final DeferredItem<Item> DIAMOND_GRINDING_KNIFE =
-            ITEMS.registerSimpleItem("diamond_grinding_knife", new Item.Properties().stacksTo(1));
+            ITEMS.register("diamond_grinding_knife", () -> new EnchantableItem(new Item.Properties().stacksTo(1), 12));
     public static final DeferredItem<Item> OBSIDIAN_GRINDING_KNIFE =
-            ITEMS.registerSimpleItem("obsidian_grinding_knife", new Item.Properties().stacksTo(1));
+            ITEMS.register("obsidian_grinding_knife", () -> new EnchantableItem(new Item.Properties().stacksTo(1), 10));
     public static final DeferredItem<Item> CERAMIC_GRINDING_KNIFE =
-            ITEMS.registerSimpleItem("ceramic_grinding_knife", new Item.Properties().stacksTo(1));
+            ITEMS.register("ceramic_grinding_knife", () -> new EnchantableItem(new Item.Properties().stacksTo(1), 16));
     public static final DeferredItem<Item> CLEAR_GRINDING_KNIFE =
-            ITEMS.registerSimpleItem("clear_grinding_knife", new Item.Properties().stacksTo(1));
+            ITEMS.register("clear_grinding_knife", () -> new EnchantableItem(new Item.Properties().stacksTo(1), 20));
     public static final DeferredItem<Item> GRINDING_TOOL =
             ITEMS.registerSimpleItem("grinding_tool", new Item.Properties().stacksTo(1));
     public static final DeferredItem<CoatingBrushItem> ADVANCED_BRUSH = ITEMS.register(
@@ -176,6 +200,10 @@ public class Spectralization {
     public static final DeferredItem<CreativeBrushItem> CREATIVE_BRUSH = ITEMS.register(
             "creative_brush",
             () -> new CreativeBrushItem(new Item.Properties().stacksTo(1))
+    );
+    public static final DeferredItem<StrawberryRodItem> ROD_OF_STRAWBERRY = ITEMS.register(
+            "rod_of_strawberry",
+            () -> new StrawberryRodItem(new Item.Properties().stacksTo(1))
     );
     public static final DeferredItem<ArmorItem> VERITY_HELM_OF_ALL_SEEING_INSIGHT = ITEMS.register(
             "verity_helm_of_all_seeing_insight",
@@ -348,6 +376,21 @@ public class Spectralization {
     public static final DeferredItem<BlockItem> DIMENSION_DOPING_CHAMBER_ITEM =
             ITEMS.registerSimpleBlockItem("dimension_doping_chamber", DIMENSION_DOPING_CHAMBER);
 
+    public static final DeferredBlock<FiberDrawingMachineBlock> FIBER_DRAWING_MACHINE = BLOCKS.register(
+            "fiber_drawing_machine",
+            () -> new FiberDrawingMachineBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(2.0F, 6.0F)
+                    .sound(SoundType.METAL)
+                    .noOcclusion()
+                    .isRedstoneConductor((state, level, pos) -> false)
+                    .isSuffocating((state, level, pos) -> false)
+                    .isViewBlocking((state, level, pos) -> false))
+    );
+
+    public static final DeferredItem<BlockItem> FIBER_DRAWING_MACHINE_ITEM =
+            ITEMS.registerSimpleBlockItem("fiber_drawing_machine", FIBER_DRAWING_MACHINE);
+
     public static final DeferredBlock<FiberOpticInterfaceBlock> FIBER_OPTIC_INTERFACE = BLOCKS.register(
             "fiber_optic_interface",
             () -> new FiberOpticInterfaceBlock(BlockBehaviour.Properties.of()
@@ -397,7 +440,22 @@ public class Spectralization {
     );
 
     public static final DeferredItem<BlockItem> HOLOGRAPHIC_STORAGE_SHELL_ITEM =
-            ITEMS.registerSimpleBlockItem("holographic_storage_shell", HOLOGRAPHIC_STORAGE_SHELL);
+            ITEMS.register("holographic_storage_shell", () ->
+                    new HolographicStorageShellItem(HOLOGRAPHIC_STORAGE_SHELL.get(), new Item.Properties()));
+
+    public static final DeferredBlock<HolographicStorageShellBlock> STABLE_HOLOGRAPHIC_STORAGE_SHELL = BLOCKS.register(
+            "stable_holographic_storage_shell",
+            () -> new HolographicStorageShellBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_LIGHT_BLUE)
+                    .strength(1.5F, 6.0F)
+                    .sound(SoundType.AMETHYST)
+                    .lightLevel(state -> 6)
+                    .noOcclusion(), true)
+    );
+
+    public static final DeferredItem<BlockItem> STABLE_HOLOGRAPHIC_STORAGE_SHELL_ITEM =
+            ITEMS.register("stable_holographic_storage_shell", () ->
+                    new HolographicStorageShellItem(STABLE_HOLOGRAPHIC_STORAGE_SHELL.get(), new Item.Properties()));
 
     public static final DeferredBlock<HolographicStorageCrystalBlock> HOLOGRAPHIC_STORAGE_CRYSTAL = BLOCKS.register(
             "holographic_storage_crystal",

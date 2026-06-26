@@ -55,8 +55,7 @@ final class OpticalExampleValidator {
     private static final double SOURCE_POWER = 1.0D;
     private static final double BEAM_SPLITTER_TRANSMITTANCE = 0.5D;
     private static final double BEAM_SPLITTER_REFLECTANCE = 0.5D;
-    private static final double LENS_TRANSMITTANCE = 0.96D;
-    private static final double LENS_REFLECTANCE = 0.02D;
+    private static final double LENS_TRANSMITTANCE = LensProfile.STANDARD.transmittance();
     private static final double AIR_PROPAGATION_FACTOR = 0.995D;
     private static final double POWER_TOLERANCE = 1.0E-6D;
     private static final int DEFAULT_RADIUS_MILLI = 250;
@@ -173,7 +172,7 @@ final class OpticalExampleValidator {
                 .toKey()
                 .toShape()
                 .thinLens(
-                        LensProfile.STANDARD.focalLength(),
+                        LensProfile.STANDARD.focalLengthBlocks(),
                         LensProfile.STANDARD.aperture() / 100.0D,
                         1.15D
                 )
@@ -943,8 +942,8 @@ final class OpticalExampleValidator {
 
         double[][] matrix = {
                 {1.0D, -q * BEAM_SPLITTER_REFLECTANCE, 0.0D, 0.0D},
-                {-q * LENS_REFLECTANCE, 1.0D, 0.0D, -q * LENS_TRANSMITTANCE},
-                {-q * LENS_TRANSMITTANCE, 0.0D, 1.0D, -q * LENS_REFLECTANCE},
+                {0.0D, 1.0D, 0.0D, -q * LENS_TRANSMITTANCE},
+                {-q * LENS_TRANSMITTANCE, 0.0D, 1.0D, 0.0D},
                 {0.0D, 0.0D, -q * BEAM_SPLITTER_REFLECTANCE, 1.0D}
         };
         double[] rhs = {

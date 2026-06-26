@@ -20,8 +20,7 @@ public class FiberNodeComponentProvider implements IBlockComponentProvider, ISer
     private static final String USAGE_KEY = "spectralization_fiber_usage";
     private static final String CAPACITY_KEY = "spectralization_fiber_capacity";
     private static final String CORE_RADIUS_KEY = "spectralization_fiber_core_radius";
-    private static final String NUMERICAL_APERTURE_KEY = "spectralization_fiber_numerical_aperture";
-    private static final String TRANSMISSION_KEY = "spectralization_fiber_transmission";
+    private static final String POWER_CAPACITY_KEY = "spectralization_fiber_power_capacity";
 
     @Override
     public void appendServerData(CompoundTag data, BlockAccessor accessor) {
@@ -41,8 +40,7 @@ public class FiberNodeComponentProvider implements IBlockComponentProvider, ISer
         data.putInt(USAGE_KEY, snapshot.nodeUsage(accessor.getPosition()));
         data.putInt(CAPACITY_KEY, node.profile().maxConnections());
         data.putDouble(CORE_RADIUS_KEY, node.profile().coreRadius());
-        data.putDouble(NUMERICAL_APERTURE_KEY, node.profile().numericalAperture());
-        data.putDouble(TRANSMISSION_KEY, node.profile().transmissionPerBlock());
+        data.putDouble(POWER_CAPACITY_KEY, node.profile().maxPower());
     }
 
     @Override
@@ -61,8 +59,7 @@ public class FiberNodeComponentProvider implements IBlockComponentProvider, ISer
         tooltip.add(Component.translatable(
                 "jade.spectralization.fiber_node.profile",
                 format(data.getDouble(CORE_RADIUS_KEY)),
-                format(data.getDouble(NUMERICAL_APERTURE_KEY)),
-                formatPercent(data.getDouble(TRANSMISSION_KEY))
+                formatPower(data.getDouble(POWER_CAPACITY_KEY))
         ));
     }
 
@@ -75,7 +72,7 @@ public class FiberNodeComponentProvider implements IBlockComponentProvider, ISer
         return String.format(Locale.ROOT, "%.3f", value);
     }
 
-    private static String formatPercent(double value) {
-        return String.format(Locale.ROOT, "%.1f%%", value * 100.0D);
+    private static String formatPower(double value) {
+        return String.format(Locale.ROOT, "%.0f SP", value);
     }
 }

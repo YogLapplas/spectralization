@@ -54,7 +54,17 @@ public final class LensGrindingBenchLayout {
     public static final int SLOT_REFERENCE_X = SLOT_BLANK_X;
     public static final int SLOT_REFERENCE_Y = 71;
     public static final int SLOT_OUTPUT_X = RIGHT_PANEL_CENTER_X - SLOT_SIZE / 2;
-    public static final int SLOT_OUTPUT_Y = 42;
+    public static final int SLOT_OUTPUT_Y = 20;
+    public static final int GRIND_WHEEL_RADIUS = 10;
+    public static final int GRIND_WHEEL_SIZE = GRIND_WHEEL_RADIUS * 2 + 1;
+    public static final int GRIND_WHEEL_CENTER_X = RIGHT_PANEL_CENTER_X;
+    public static final int GRIND_WHEEL_CENTER_Y = 57;
+    public static final int GRIND_WHEEL_X = GRIND_WHEEL_CENTER_X - GRIND_WHEEL_RADIUS;
+    public static final int GRIND_WHEEL_Y = GRIND_WHEEL_CENTER_Y - GRIND_WHEEL_RADIUS;
+    public static final int GRIND_BUTTON_WIDTH = 30;
+    public static final int GRIND_BUTTON_HEIGHT = 10;
+    public static final int GRIND_BUTTON_X = RIGHT_PANEL_CENTER_X - GRIND_BUTTON_WIDTH / 2;
+    public static final int GRIND_BUTTON_Y = 76;
 
     public static final int ITEM_BLANK_X = SLOT_BLANK_X + ITEM_SLOT_INSET;
     public static final int ITEM_BLANK_Y = SLOT_BLANK_Y + ITEM_SLOT_INSET;

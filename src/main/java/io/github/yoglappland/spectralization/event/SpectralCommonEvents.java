@@ -1,7 +1,9 @@
 package io.github.yoglappland.spectralization.event;
 
 import io.github.yoglappland.spectralization.command.SpectralCommands;
+import io.github.yoglappland.spectralization.movement.StrawberryMovementController;
 import io.github.yoglappland.spectralization.optics.cache.OpticalRuntimeCaches;
+import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
@@ -9,6 +11,7 @@ import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
+import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
 public final class SpectralCommonEvents {
@@ -25,6 +28,7 @@ public final class SpectralCommonEvents {
     @SubscribeEvent
     public void onServerStopped(ServerStoppedEvent event) {
         OpticalRuntimeCaches.clearAll();
+        StrawberryMovementController.clearAll();
     }
 
     @SubscribeEvent
@@ -50,6 +54,18 @@ public final class SpectralCommonEvents {
     @SubscribeEvent
     public void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
         SpectralPlayerInteractions.rightClickBlock(event);
+    }
+
+    @SubscribeEvent
+    public void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
+        SpectralPlayerInteractions.leftClickBlock(event);
+    }
+
+    @SubscribeEvent
+    public void onPlayerTickPost(PlayerTickEvent.Post event) {
+        if (event.getEntity() instanceof ServerPlayer serverPlayer) {
+            StrawberryMovementController.tick(serverPlayer);
+        }
     }
 
     @SubscribeEvent

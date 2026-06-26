@@ -20,6 +20,17 @@ public final class SpectralItemTags {
     public static final TagKey<Item> OPTICAL_FIBER = item("optical_fiber");
     public static final TagKey<Item> METASURFACE_TEMPLATE = item("metasurface_template");
     public static final TagKey<Item> LITHOGRAPHY_MASK = item("lithography_mask");
+    public static final TagKey<Item> MASKS = item("masks");
+    public static final TagKey<Item> GENERIC_MASKS = item("masks/generic");
+    public static final TagKey<Item> GRATING_MASKS = item("masks/grating");
+    public static final TagKey<Item> WAVEGUIDE_MASKS = item("masks/waveguide");
+    public static final TagKey<Item> CIRCUIT_MASKS = item("masks/circuit");
+    public static final TagKey<Item> MOLDS = item("molds");
+    public static final TagKey<Item> FIBER_MOLDS = item("molds/fiber");
+    public static final TagKey<Item> SINGLE_MODE_FIBER_MOLDS = item("molds/single_mode_fiber");
+    public static final TagKey<Item> PLATE_MOLDS = item("molds/plate");
+    public static final TagKey<Item> WIRE_MOLDS = item("molds/wire");
+    public static final TagKey<Item> CRYSTAL_MOLDS = item("molds/crystal");
     public static final TagKey<Item> STANDARD_METAMATERIAL_TEMPLATE = item("standard_metamaterial_template");
     public static final TagKey<Item> CUSTOM_METAMATERIAL_TEMPLATE = item("custom_metamaterial_template");
     public static final TagKey<Item> GRINDING_KNIVES = item("grinding_knives");

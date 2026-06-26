@@ -5,6 +5,7 @@ import io.github.yoglappland.spectralization.block.HolographicStorageMultiblock;
 import io.github.yoglappland.spectralization.blockentity.HolographicStorageMainCoreBlockEntity;
 import io.github.yoglappland.spectralization.network.HolographicStorageSnapshotPayload;
 import io.github.yoglappland.spectralization.registry.SpectralMenus;
+import io.github.yoglappland.spectralization.storage.HolographicStorageAccess;
 import io.github.yoglappland.spectralization.storage.HolographicStorageBlockEntry;
 import io.github.yoglappland.spectralization.storage.HolographicStorageCapacity;
 import io.github.yoglappland.spectralization.storage.HolographicStorageData;
@@ -155,7 +156,7 @@ public class HolographicStorageCoreMenu extends AbstractContainerMenu {
                 HolographicStorageMultiblock.scan(core.getLevel(), core.getBlockPos());
         HolographicStorageCapacity capacity = capacity(report);
         HolographicStorageData.Snapshot snapshot =
-                HolographicStorageData.snapshot(core.getLevel(), storageId(), capacity);
+                HolographicStorageAccess.snapshot(core.getLevel(), storageId(), capacity, report);
         PacketDistributor.sendToPlayer(viewer, new HolographicStorageSnapshotPayload(
                 containerId,
                 snapshot.storedItems(),

@@ -91,6 +91,12 @@ public final class SpectralNetwork {
                 HolographicStorageActionPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleHolographicStorageAction(payload, context.player()))
         );
+
+        registrar.playToServer(
+                StrawberryMovementInputPayload.TYPE,
+                StrawberryMovementInputPayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> handleStrawberryMovementInput(payload, context.player()))
+        );
     }
 
     private static void handleSpotUpdate(SpotUpdatePayload payload) {
@@ -200,6 +206,29 @@ public final class SpectralNetwork {
         }
 
         menu.handleAction(payload, serverPlayer);
+    }
+
+    private static void handleStrawberryMovementInput(
+            StrawberryMovementInputPayload payload,
+            net.minecraft.world.entity.player.Player player
+    ) {
+        if (!(player instanceof net.minecraft.server.level.ServerPlayer serverPlayer)) {
+            return;
+        }
+
+        if (payload.dashPressed()) {
+            io.github.yoglappland.spectralization.movement.StrawberryMovementController.requestDash(serverPlayer);
+            return;
+        }
+
+        io.github.yoglappland.spectralization.movement.StrawberryMovementController.updateInput(
+                serverPlayer,
+                payload.holdingRod(),
+                payload.jumpDown(),
+                payload.jumpPressed(),
+                payload.leftImpulse(),
+                payload.forwardImpulse()
+        );
     }
 
     private static void contextReply(

@@ -11,6 +11,7 @@ public record FiberConnection(
         BlockPos endpointB,
         List<BlockPos> nodes,
         double totalLength,
+        FiberMaterialProfile profile,
         long createdGameTime
 ) {
     public FiberConnection {
@@ -18,6 +19,7 @@ public record FiberConnection(
         Objects.requireNonNull(endpointA, "endpointA");
         Objects.requireNonNull(endpointB, "endpointB");
         Objects.requireNonNull(nodes, "nodes");
+        Objects.requireNonNull(profile, "profile");
         endpointA = endpointA.immutable();
         endpointB = endpointB.immutable();
         nodes = nodes.stream().map(BlockPos::immutable).toList();
@@ -31,8 +33,21 @@ public record FiberConnection(
         }
     }
 
-    public static FiberConnection fromRoute(UUID id, FiberRoute route, long createdGameTime) {
-        return new FiberConnection(id, route.start(), route.end(), route.nodes(), route.totalLength(), createdGameTime);
+    public static FiberConnection fromRoute(
+            UUID id,
+            FiberRoute route,
+            FiberMaterialProfile profile,
+            long createdGameTime
+    ) {
+        return new FiberConnection(
+                id,
+                route.start(),
+                route.end(),
+                route.nodes(),
+                route.totalLength(),
+                profile,
+                createdGameTime
+        );
     }
 
     public FiberRoute route() {

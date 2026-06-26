@@ -310,12 +310,16 @@ public final class HolographicStorageMultiblock {
         if (state.getBlock() instanceof HolographicStorageScreenBlock) {
             BlockPos attachedPos = pos.relative(state.getValue(HolographicStorageScreenBlock.FACING));
             BlockState attachedState = level.getBlockState(attachedPos);
-            return recognized.contains(attachedPos)
-                    && attachedState.getBlock() instanceof HolographicStorageCrystalBlock
-                    && !(attachedState.getBlock() instanceof HolographicStorageMainCoreBlock);
+            return recognized.contains(attachedPos) && isScreenAttachableStorage(attachedState);
         }
 
         return state.is(SpectralBlockTags.HOLOGRAPHIC_STORAGE);
+    }
+
+    public static boolean isScreenAttachableStorage(BlockState state) {
+        return state.is(SpectralBlockTags.HOLOGRAPHIC_STORAGE)
+                && !(state.getBlock() instanceof HolographicStorageMainCoreBlock)
+                && !(state.getBlock() instanceof HolographicStorageScreenBlock);
     }
 
     private static boolean isStorageRelevantState(BlockState state) {

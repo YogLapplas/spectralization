@@ -30,6 +30,11 @@ public final class SpectralCapabilities {
         );
         event.registerBlockEntity(
                 Capabilities.EnergyStorage.BLOCK,
+                SpectralBlockEntities.FIBER_DRAWING_MACHINE.get(),
+                (machine, side) -> machine.getEnergyStorage(side)
+        );
+        event.registerBlockEntity(
+                Capabilities.EnergyStorage.BLOCK,
                 SpectralBlockEntities.FIBER_LASER.get(),
                 (laser, side) -> laser.getEnergyStorage(side)
         );
@@ -57,6 +62,16 @@ public final class SpectralCapabilities {
                 Capabilities.ItemHandler.BLOCK,
                 SpectralBlockEntities.SOLAR_DOPING_CHAMBER.get(),
                 (chamber, side) -> chamber.getItems(side)
+        );
+        event.registerBlockEntity(
+                Capabilities.ItemHandler.BLOCK,
+                SpectralBlockEntities.FIBER_DRAWING_MACHINE.get(),
+                (machine, side) -> machine.getItems(side)
+        );
+        event.registerBlockEntity(
+                Capabilities.ItemHandler.BLOCK,
+                SpectralBlockEntities.HOLOGRAPHIC_STORAGE_SHELL.get(),
+                (shell, side) -> shell.getItems(side)
         );
         event.registerBlockEntity(
                 Capabilities.ItemHandler.BLOCK,

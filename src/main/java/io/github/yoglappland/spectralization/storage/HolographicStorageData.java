@@ -64,6 +64,21 @@ public final class HolographicStorageData extends SavedData {
         return maybeData.get().extract(storageId, entryIndex, maxAmount, capacity);
     }
 
+    public static ItemStack extract(
+            Level level,
+            UUID storageId,
+            HolographicItemKey key,
+            int maxAmount,
+            HolographicStorageCapacity capacity
+    ) {
+        Optional<HolographicStorageData> maybeData = maybeGet(level);
+        if (maybeData.isEmpty()) {
+            return ItemStack.EMPTY;
+        }
+
+        return maybeData.get().extract(storageId, key, maxAmount, capacity);
+    }
+
     private Snapshot snapshot(UUID storageId, HolographicStorageCapacity capacity) {
         Record record = recordsById.computeIfAbsent(storageId, ignored -> new Record());
         return record.snapshot(capacity);
@@ -98,11 +113,38 @@ public final class HolographicStorageData extends SavedData {
             return ItemStack.EMPTY;
         }
 
-        if (record.snapshot(capacity).interactionLocked()) {
+        if (record.interactionLocked(capacity)) {
             return ItemStack.EMPTY;
         }
 
         ItemStack extracted = record.extract(entryIndex, maxAmount);
+        if (!extracted.isEmpty()) {
+            setDirty();
+        }
+
+        return extracted;
+    }
+
+    private ItemStack extract(
+            UUID storageId,
+            HolographicItemKey key,
+            int maxAmount,
+            HolographicStorageCapacity capacity
+    ) {
+        if (key == null || maxAmount <= 0) {
+            return ItemStack.EMPTY;
+        }
+
+        Record record = recordsById.get(storageId);
+        if (record == null) {
+            return ItemStack.EMPTY;
+        }
+
+        if (record.interactionLocked(capacity)) {
+            return ItemStack.EMPTY;
+        }
+
+        ItemStack extracted = record.extract(key, maxAmount);
         if (!extracted.isEmpty()) {
             setDirty();
         }
@@ -209,7 +251,7 @@ public final class HolographicStorageData extends SavedData {
         }
 
         private int insert(ItemStack stack, HolographicStorageCapacity capacity) {
-            if (snapshot(capacity).interactionLocked()) {
+            if (interactionLocked(capacity)) {
                 return 0;
             }
 
@@ -219,8 +261,7 @@ public final class HolographicStorageData extends SavedData {
                 return 0;
             }
 
-            long storedItems = amountsByKey.values().stream().mapToLong(Long::longValue).sum();
-            long remaining = capacity.maxItems() - storedItems;
+            long remaining = capacity.maxItems() - storedItems();
             if (remaining <= 0) {
                 return 0;
             }
@@ -241,12 +282,21 @@ public final class HolographicStorageData extends SavedData {
             }
 
             Map.Entry<HolographicItemKey, Long> entry = entries.get(entryIndex);
-            long stored = entry.getValue();
+            return extract(entry.getKey(), maxAmount);
+        }
+
+        private ItemStack extract(HolographicItemKey key, int maxAmount) {
+            Long storedAmount = amountsByKey.get(key);
+            if (storedAmount == null) {
+                return ItemStack.EMPTY;
+            }
+
+            long stored = storedAmount;
             if (stored <= 0) {
                 return ItemStack.EMPTY;
             }
 
-            ItemStack template = entry.getKey().stack();
+            ItemStack template = key.stack();
             int extractedCount = (int) Math.min(stored, Math.min(maxAmount, template.getMaxStackSize()));
             if (extractedCount <= 0) {
                 return ItemStack.EMPTY;
@@ -254,12 +304,22 @@ public final class HolographicStorageData extends SavedData {
 
             long remaining = stored - extractedCount;
             if (remaining <= 0) {
-                amountsByKey.remove(entry.getKey());
+                amountsByKey.remove(key);
             } else {
-                amountsByKey.put(entry.getKey(), remaining);
+                amountsByKey.put(key, remaining);
             }
 
             return template.copyWithCount(extractedCount);
+        }
+
+        private boolean interactionLocked(HolographicStorageCapacity capacity) {
+            return capacity.structureError()
+                    || storedItems() > capacity.maxItems()
+                    || amountsByKey.size() > capacity.maxTypes();
+        }
+
+        private long storedItems() {
+            return amountsByKey.values().stream().mapToLong(Long::longValue).sum();
         }
 
         private void save(CompoundTag tag, HolderLookup.Provider registries) {

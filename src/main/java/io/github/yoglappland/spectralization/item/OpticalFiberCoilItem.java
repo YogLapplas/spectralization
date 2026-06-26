@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization.item;
 
 import io.github.yoglappland.spectralization.optics.fiber.FiberConnection;
+import io.github.yoglappland.spectralization.optics.fiber.FiberMaterialProfile;
 import io.github.yoglappland.spectralization.optics.fiber.FiberOverlayPublisher;
 import io.github.yoglappland.spectralization.optics.fiber.FiberNetworkData;
 import io.github.yoglappland.spectralization.optics.fiber.FiberNetworkIndex;
@@ -31,8 +32,15 @@ public class OpticalFiberCoilItem extends Item {
     private static final String ANCHOR_POS_KEY = "spectralization_fiber_anchor_pos";
     private static final String ANCHOR_DIMENSION_KEY = "spectralization_fiber_anchor_dimension";
 
+    private final boolean defaultSingleMode;
+
     public OpticalFiberCoilItem(Properties properties) {
+        this(properties, false);
+    }
+
+    public OpticalFiberCoilItem(Properties properties, boolean defaultSingleMode) {
         super(properties);
+        this.defaultSingleMode = defaultSingleMode;
     }
 
     @Override
@@ -119,7 +127,8 @@ public class OpticalFiberCoilItem extends Item {
         }
 
         FiberRoute route = maybeRoute.get();
-        Optional<FiberConnection> connection = FiberNetworkData.addConnection(level, route);
+        FiberMaterialProfile profile = fiberProfile(stack);
+        Optional<FiberConnection> connection = FiberNetworkData.addConnection(level, route, profile);
         clearAnchor(stack);
 
         if (connection.isEmpty()) {
@@ -144,10 +153,26 @@ public class OpticalFiberCoilItem extends Item {
             TooltipFlag tooltipFlag
     ) {
         Optional<Anchor> maybeAnchor = anchor(stack);
+        FiberMaterialProfile profile = fiberProfile(stack);
+
+        tooltipComponents.add(Component.translatable(
+                "item.spectralization.optical_fiber_coil.tooltip.material",
+                Component.translatable(profile.material().translationKey())
+        ).withStyle(ChatFormatting.GRAY));
+        tooltipComponents.add(Component.translatable(
+                "item.spectralization.optical_fiber_coil.tooltip.core_diameter",
+                profile.coreDiameterText()
+        ).withStyle(ChatFormatting.GRAY));
+        tooltipComponents.add(Component.translatable(
+                "item.spectralization.optical_fiber_coil.tooltip.capacity",
+                profile.maxPowerText()
+        ).withStyle(ChatFormatting.GRAY));
+        tooltipComponents.add(Component.translatable(
+                "item.spectralization.optical_fiber_coil.tooltip.loss",
+                profile.portLossText()
+        ).withStyle(ChatFormatting.GRAY));
 
         if (maybeAnchor.isEmpty()) {
-            tooltipComponents.add(Component.translatable("item.spectralization.optical_fiber_coil.tooltip.empty")
-                    .withStyle(ChatFormatting.GRAY));
             return;
         }
 
@@ -158,6 +183,10 @@ public class OpticalFiberCoilItem extends Item {
                 anchor.pos().getY(),
                 anchor.pos().getZ()
         ).withStyle(ChatFormatting.GRAY));
+    }
+
+    private FiberMaterialProfile fiberProfile(ItemStack stack) {
+        return FiberMaterialProfile.fromStack(stack, defaultSingleMode);
     }
 
     private static Optional<Anchor> anchor(ItemStack stack) {

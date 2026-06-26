@@ -79,22 +79,19 @@ public final class BasicLithographyRecipeCategory implements IRecipeCategory<Bas
             int y = ITEM_INPUT_Y + (index / 2) * (SLOT_SIZE + ITEM_SLOT_GAP);
             builder.addSlot(RecipeIngredientRole.INPUT, x + ITEM_SLOT_INSET, y + ITEM_SLOT_INSET)
                     .setSlotName("item_" + index)
-                    .addItemStack(new ItemStack(cost.item(), cost.count()))
-                    .addRichTooltipCallback((view, tooltip) -> tooltip.add(tt("tooltip.item_input")));
+                    .addItemStack(new ItemStack(cost.item(), cost.count()));
             index++;
         }
 
         if (recipe.usesTemplate() && recipe.templateItem() != null) {
             builder.addSlot(RecipeIngredientRole.INPUT, TEMPLATE_X + ITEM_SLOT_INSET, TEMPLATE_Y + ITEM_SLOT_INSET)
                     .setSlotName("template")
-                    .addItemStack(new ItemStack(recipe.templateItem()))
-                    .addRichTooltipCallback((view, tooltip) -> tooltip.add(tt("tooltip.template_input")));
+                    .addItemStack(new ItemStack(recipe.templateItem()));
         }
 
         builder.addSlot(RecipeIngredientRole.OUTPUT, OUTPUT_X + ITEM_SLOT_INSET, OUTPUT_Y + ITEM_SLOT_INSET)
                 .setSlotName("output")
-                .addItemStack(recipe.resultStack())
-                .addRichTooltipCallback((view, tooltip) -> tooltip.add(tt("tooltip.item_output")));
+                .addItemStack(recipe.resultStack());
 
         builder.moveRecipeTransferButton(WIDTH - 18, 4);
     }

@@ -11,6 +11,9 @@ import snownee.jade.api.config.IPluginConfig;
 
 public class BeamProfilerComponentProvider implements IBlockComponentProvider {
     public static final BeamProfilerComponentProvider INSTANCE = new BeamProfilerComponentProvider();
+    private static final double POWER_EPSILON = 1.0E-9;
+    private static final double DIVERGENCE_EPSILON = 1.0E-6;
+    private static final double SCATTERED_THRESHOLD = 0.35;
 
     @Override
     public void appendTooltip(ITooltip tooltip, BlockAccessor accessor, IPluginConfig config) {
@@ -35,22 +38,34 @@ public class BeamProfilerComponentProvider implements IBlockComponentProvider {
         ));
         tooltip.add(Component.translatable("jade.spectralization.beam_profiler.radius", format(sample.radius())));
         tooltip.add(Component.translatable(
-                "jade.spectralization.beam_profiler.waist_focus",
-                format(sample.waistRadius()),
-                format(sample.focusDistance())
-        ));
-        tooltip.add(Component.translatable("jade.spectralization.beam_profiler.divergence", format(sample.divergence())));
-        tooltip.add(Component.translatable("jade.spectralization.beam_profiler.irradiance", format(sample.irradiance())));
-        tooltip.add(Component.translatable(
-                "jade.spectralization.beam_profiler.quality",
-                format(sample.beamQuality()),
-                format(sample.scatter())
+                "jade.spectralization.beam_profiler.status",
+                Component.translatable(profileStateKey(sample))
         ));
     }
 
     @Override
     public ResourceLocation getUid() {
         return SpectralJadePlugin.BEAM_PROFILER;
+    }
+
+    private static String profileStateKey(BeamProfileReadoutSample sample) {
+        if (sample.power() <= POWER_EPSILON) {
+            return "jade.spectralization.beam_profiler.status.none";
+        }
+
+        if (sample.scatter() >= SCATTERED_THRESHOLD) {
+            return "jade.spectralization.beam_profiler.status.scattered";
+        }
+
+        if (sample.divergence() <= DIVERGENCE_EPSILON) {
+            return "jade.spectralization.beam_profiler.status.collimated";
+        }
+
+        if (sample.focusDistance() < -DIVERGENCE_EPSILON) {
+            return "jade.spectralization.beam_profiler.status.diverging";
+        }
+
+        return "jade.spectralization.beam_profiler.status.focused";
     }
 
     private static String format(double value) {

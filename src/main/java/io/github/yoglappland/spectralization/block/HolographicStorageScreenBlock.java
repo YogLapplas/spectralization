@@ -157,13 +157,16 @@ public class HolographicStorageScreenBlock extends Block {
     private static boolean isConnected(Level level, BlockPos pos, Direction attachmentDirection) {
         BlockPos attachedPos = pos.relative(attachmentDirection);
         BlockState attachedState = level.getBlockState(attachedPos);
-        if (!(attachedState.getBlock() instanceof HolographicStorageCrystalBlock)
-                || attachedState.getBlock() instanceof HolographicStorageMainCoreBlock) {
+        if (!HolographicStorageMultiblock.isScreenAttachableStorage(attachedState)) {
             return false;
         }
 
-        return attachedState.getValue(HolographicStorageCrystalBlock.LINKED)
-                || HolographicStorageMultiblock.isRecognizedCrystal(level, attachedPos);
+        if (attachedState.getBlock() instanceof HolographicStorageCrystalBlock) {
+            return attachedState.getValue(HolographicStorageCrystalBlock.LINKED)
+                    || HolographicStorageMultiblock.isRecognizedCrystal(level, attachedPos);
+        }
+
+        return HolographicStorageMultiblock.isRecognizedCrystal(level, attachedPos);
     }
 
     private static Optional<HolographicStorageMainCoreBlockEntity> findCore(Level level, BlockPos pos, BlockState state) {

@@ -24,7 +24,7 @@ public record LensParameterSpec(
                 LensProfile.MIN_FOCAL_LENGTH,
                 16,
                 24,
-                40,
+                LensProfile.MAX_FOCAL_LENGTH,
                 LensProfile.MAX_FOCAL_LENGTH,
                 2,
                 1,

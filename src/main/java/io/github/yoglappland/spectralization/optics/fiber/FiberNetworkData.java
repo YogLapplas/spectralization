@@ -47,6 +47,14 @@ public final class FiberNetworkData extends SavedData {
     }
 
     public static Optional<FiberConnection> addConnection(ServerLevel level, FiberRoute route) {
+        return addConnection(level, route, FiberMaterialProfile.DEFAULT_NORMAL);
+    }
+
+    public static Optional<FiberConnection> addConnection(
+            ServerLevel level,
+            FiberRoute route,
+            FiberMaterialProfile profile
+    ) {
         Optional<FiberNetworkData> maybeData = maybeGet(level);
 
         if (maybeData.isEmpty()) {
@@ -55,7 +63,7 @@ public final class FiberNetworkData extends SavedData {
 
         FiberNetworkData data = maybeData.get();
         Set<BlockPos> dirtyEndpoints = new HashSet<>();
-        FiberConnection connection = FiberConnection.fromRoute(UUID.randomUUID(), route, level.getGameTime());
+        FiberConnection connection = FiberConnection.fromRoute(UUID.randomUUID(), route, profile, level.getGameTime());
         data.connectionsById.put(connection.id(), connection);
         dirtyEndpoints.add(connection.endpointA());
         dirtyEndpoints.add(connection.endpointB());
@@ -64,13 +72,17 @@ public final class FiberNetworkData extends SavedData {
         markEndpointsDirty(level, dirtyEndpoints);
         int parallelCount = data.connectionCountBetween(connection.endpointA(), connection.endpointB());
         Spectralization.LOGGER.info(
-                "Fiber connection added in {}: {} -> {}, {} node(s), length {}, parallel {}",
+                "Fiber connection added in {}: {} -> {}, {} node(s), length {}, parallel {}, profile {}/{} core {} cap {}",
                 level.dimension().location(),
                 formatPos(connection.endpointA()),
                 formatPos(connection.endpointB()),
                 connection.nodes().size(),
                 String.format(java.util.Locale.ROOT, "%.3f", connection.totalLength()),
-                parallelCount
+                parallelCount,
+                connection.profile().material().id(),
+                connection.profile().singleMode() ? "single" : "normal",
+                connection.profile().coreDiameterText(),
+                connection.profile().maxPowerText()
         );
         SpectralDiagnostics.event(level, SpectralDiagnostics.Subsystem.FIBER, "connection_added")
                 .pos("endpoint_a", connection.endpointA())
@@ -78,6 +90,10 @@ public final class FiberNetworkData extends SavedData {
                 .field("nodes", connection.nodes().size())
                 .field("length", connection.totalLength())
                 .field("parallel", parallelCount)
+                .field("material", connection.profile().material().id())
+                .field("single_mode", connection.profile().singleMode())
+                .field("core_diameter", connection.profile().coreDiameter())
+                .field("max_power", connection.profile().maxPower())
                 .field("optical_dirty", true)
                 .write();
         return Optional.of(connection);
@@ -381,6 +397,7 @@ public final class FiberNetworkData extends SavedData {
             connectionTag.putLong("endpoint_b", connection.endpointB().asLong());
             connectionTag.putDouble("length", connection.totalLength());
             connectionTag.putLong("created", connection.createdGameTime());
+            connectionTag.put(FiberMaterialProfile.TAG_KEY, connection.profile().write());
 
             ListTag nodes = new ListTag();
             for (BlockPos node : connection.nodes()) {
@@ -433,12 +450,17 @@ public final class FiberNetworkData extends SavedData {
         }
 
         try {
+            FiberMaterialProfile profile = tag.contains(FiberMaterialProfile.TAG_KEY)
+                    ? FiberMaterialProfile.read(tag.getCompound(FiberMaterialProfile.TAG_KEY))
+                    .orElse(FiberMaterialProfile.DEFAULT_NORMAL)
+                    : FiberMaterialProfile.DEFAULT_NORMAL;
             return new FiberConnection(
                     id,
                     BlockPos.of(tag.getLong("endpoint_a")),
                     BlockPos.of(tag.getLong("endpoint_b")),
                     nodes,
                     tag.getDouble("length"),
+                    profile,
                     tag.getLong("created")
             );
         } catch (IllegalArgumentException exception) {

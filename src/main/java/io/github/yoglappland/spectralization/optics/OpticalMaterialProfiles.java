@@ -180,6 +180,12 @@ public final class OpticalMaterialProfiles {
             return WATER;
         }
 
+        if (block == Spectralization.HOLOGRAPHIC_STORAGE_SHELL.get()
+                || block == Spectralization.STABLE_HOLOGRAPHIC_STORAGE_SHELL.get()
+                || block == Spectralization.HOLOGRAPHIC_STORAGE_CRYSTAL.get()) {
+            return AIR;
+        }
+
         if (CLEAR_GLASS_BLOCKS.contains(block)) {
             return CLEAR_GLASS;
         }
@@ -254,6 +260,9 @@ public final class OpticalMaterialProfiles {
                 || block == Spectralization.RUTILE_BLOCK.get()
                 || block == Spectralization.CORUNDUM_BLOCK.get()
                 || block == Spectralization.FLUORITE_BLOCK.get()
+                || block == Spectralization.HOLOGRAPHIC_STORAGE_SHELL.get()
+                || block == Spectralization.STABLE_HOLOGRAPHIC_STORAGE_SHELL.get()
+                || block == Spectralization.HOLOGRAPHIC_STORAGE_CRYSTAL.get()
                 || block == Blocks.GLOWSTONE;
     }
 

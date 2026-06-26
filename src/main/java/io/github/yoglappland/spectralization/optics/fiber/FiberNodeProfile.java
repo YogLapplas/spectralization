@@ -10,8 +10,8 @@ public record FiberNodeProfile(
         double transmissionPerBlock,
         double bendTransmissionPerRightAngle
 ) {
-    public static final FiberNodeProfile BASIC_INTERFACE = new FiberNodeProfile(1, 24.0, 64.0, 8, 0.125, 0.04, 0.985, 0.92);
-    public static final FiberNodeProfile BASIC_RELAY = new FiberNodeProfile(1, 24.0, 64.0, 8, 0.125, 0.04, 0.985, 0.92);
+    public static final FiberNodeProfile BASIC_INTERFACE = new FiberNodeProfile(1, 24.0, 64.0, 8, 0.125, 0.04, 1.0, 1.0);
+    public static final FiberNodeProfile BASIC_RELAY = new FiberNodeProfile(1, 24.0, 64.0, 8, 0.125, 0.04, 1.0, 1.0);
 
     public FiberNodeProfile {
         if (tier < 1) {

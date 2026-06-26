@@ -73,24 +73,21 @@ public final class ThermalSmelterRecipeCategory implements IRecipeCategory<Therm
                         INPUT_X + ITEM_SLOT_INSET,
                         (recipe.consumesAdditive() ? INPUT_PAIR_Y : INPUT_SINGLE_Y) + ITEM_SLOT_INSET)
                 .setSlotName("input")
-                .addIngredients(recipe.ingredient())
-                .addRichTooltipCallback((view, tooltip) -> tooltip.add(tt("tooltip.input")));
+                .addIngredients(recipe.ingredient());
 
         if (recipe.consumesAdditive()) {
             builder.addSlot(RecipeIngredientRole.INPUT,
                             INPUT_X + ITEM_SLOT_INSET,
                             ADDITIVE_Y + ITEM_SLOT_INSET)
                     .setSlotName("additive")
-                    .addIngredients(recipe.additive())
-                    .addRichTooltipCallback((view, tooltip) -> tooltip.add(tt("jei.additive_cost", recipe.additiveCost())));
+                    .addIngredients(recipe.additive());
         }
 
         builder.addSlot(RecipeIngredientRole.OUTPUT,
                         OUTPUT_X + ITEM_SLOT_INSET,
                         OUTPUT_Y + ITEM_SLOT_INSET)
                 .setSlotName("output")
-                .addItemStack(recipe.resultStack())
-                .addRichTooltipCallback((view, tooltip) -> tooltip.add(tt("tooltip.output")));
+                .addItemStack(recipe.resultStack());
 
         builder.moveRecipeTransferButton(WIDTH - 18, 4);
     }

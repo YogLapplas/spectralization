@@ -12,6 +12,7 @@ import io.github.yoglappland.spectralization.optics.geometry.PhaseSpaceMap;
 import io.github.yoglappland.spectralization.optics.geometry.SpatialModeCoupling;
 import io.github.yoglappland.spectralization.optics.geometry.SpatialProfileElement;
 import io.github.yoglappland.spectralization.optics.geometry.SpatialTransformContext;
+import io.github.yoglappland.spectralization.optics.lens.LensProfile;
 import io.github.yoglappland.spectralization.tag.SpectralItemTags;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
@@ -40,8 +41,6 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 
 public class LensHolderBlock extends Block implements EntityBlock, OpticalElement, SpatialProfileElement {
     public static final DirectionProperty FACING = BlockStateProperties.HORIZONTAL_FACING;
-    private static final double LENS_TRANSMITTANCE = 0.96;
-    private static final double LENS_REFLECTANCE = 0.02;
 
     private static final double[][] BASE_BOXES = {
             {0.0, 0.0, 5.0, 16.0, 1.0, 11.0},
@@ -86,9 +85,11 @@ public class LensHolderBlock extends Block implements EntityBlock, OpticalElemen
     public CompiledOpticalNetwork compileOpticalNetwork(BlockState state, Level level, BlockPos pos) {
         Direction positiveDirection = state.getValue(FACING);
         Direction negativeDirection = positiveDirection.getOpposite();
-        boolean hasLens = level.getBlockEntity(pos) instanceof LensHolderBlockEntity lensHolder && lensHolder.hasLens();
-        double transmittance = hasLens ? LENS_TRANSMITTANCE : 1.0D;
-        double reflectance = hasLens ? LENS_REFLECTANCE : 0.0D;
+        LensProfile lensProfile = null;
+        if (level.getBlockEntity(pos) instanceof LensHolderBlockEntity lensHolder && lensHolder.hasLens()) {
+            lensProfile = lensHolder.lensProfile();
+        }
+        double transmittance = lensProfile == null ? 1.0D : lensProfile.transmittance();
         CompiledOpticalNetwork.Builder builder = CompiledOpticalNetwork.builder();
 
         for (Direction incomingDirection : Direction.values()) {
@@ -99,10 +100,6 @@ public class LensHolderBlock extends Block implements EntityBlock, OpticalElemen
             }
 
             builder.addRule(incomingDirection, transmittedDirection, CompiledOpticalNetwork.scale(transmittance));
-
-            if (reflectance > 0.0D) {
-                builder.addRule(incomingDirection, incomingDirection, CompiledOpticalNetwork.scale(reflectance));
-            }
         }
 
         return builder.build();

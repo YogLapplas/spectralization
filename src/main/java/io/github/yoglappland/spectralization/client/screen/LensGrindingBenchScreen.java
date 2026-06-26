@@ -7,6 +7,8 @@ import io.github.yoglappland.spectralization.client.gui.ThermalSmelterUiSkin;
 import io.github.yoglappland.spectralization.menu.LensGrindingBenchLayout;
 import io.github.yoglappland.spectralization.menu.LensGrindingBenchMenu;
 import io.github.yoglappland.spectralization.optics.lens.LensKind;
+import io.github.yoglappland.spectralization.optics.lens.LensMaterial;
+import io.github.yoglappland.spectralization.optics.lens.LensProfile;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.gui.Font;
@@ -63,7 +65,7 @@ public class LensGrindingBenchScreen extends SpectralMachineScreen<LensGrindingB
                 return true;
             }
 
-            if (insideLocal(mouseX, mouseY,
+            if (!targetLocked() && insideLocal(mouseX, mouseY,
                     LensGrindingBenchLayout.TARGET_PREV_X,
                     LensGrindingBenchLayout.TARGET_BUTTON_Y,
                     LensGrindingBenchLayout.TARGET_BUTTON_SIZE,
@@ -72,7 +74,7 @@ public class LensGrindingBenchScreen extends SpectralMachineScreen<LensGrindingB
                 return true;
             }
 
-            if (insideLocal(mouseX, mouseY,
+            if (!targetLocked() && insideLocal(mouseX, mouseY,
                     LensGrindingBenchLayout.TARGET_NEXT_X,
                     LensGrindingBenchLayout.TARGET_BUTTON_Y,
                     LensGrindingBenchLayout.TARGET_BUTTON_SIZE,
@@ -81,9 +83,31 @@ public class LensGrindingBenchScreen extends SpectralMachineScreen<LensGrindingB
                 return true;
             }
 
+            if (insideGrindWheel(mouseX, mouseY)) {
+                click(LensGrindingBenchMenu.BUTTON_GRIND);
+                return true;
+            }
+
+            if (insideGrindButton(mouseX, mouseY)) {
+                click(LensGrindingBenchMenu.BUTTON_GRIND);
+                return true;
+            }
+
         }
 
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (!targetLocked() && scrollY != 0.0D && insideTargetControls(mouseX, mouseY)) {
+            click(scrollY > 0.0D
+                    ? LensGrindingBenchMenu.BUTTON_TARGET_UP
+                    : LensGrindingBenchMenu.BUTTON_TARGET_DOWN);
+            return true;
+        }
+
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
     }
 
     @Override
@@ -143,23 +167,60 @@ public class LensGrindingBenchScreen extends SpectralMachineScreen<LensGrindingB
     private void drawOutputPanel(GuiGraphics graphics) {
         int slotX = leftPos + LensGrindingBenchLayout.SLOT_OUTPUT_X;
         int slotY = topPos + LensGrindingBenchLayout.SLOT_OUTPUT_Y;
-        int centerX = slotX + LensGrindingBenchLayout.SLOT_SIZE / 2;
-        int stateColor = menu.ready() ? ThermalSmelterUiSkin.STATUS_READY
-                : outputBlocked() ? ThermalSmelterUiSkin.STATUS_INVALID
-                : ThermalSmelterUiSkin.STATUS_EMPTY;
 
         slotFrame(graphics, slotX, slotY, ThermalSmelterUiSkin.PROGRESS, true);
-        graphics.fill(slotX + 2, slotY + 24, slotX + 16, slotY + 29, ThermalSmelterUiSkin.withAlpha(stateColor, 112));
-        outline(graphics, slotX + 2, slotY + 24, 14, 5, ThermalSmelterUiSkin.withAlpha(stateColor, 190));
-
-        int last = data(LensGrindingBenchBlockEntity.DATA_LAST_RESULT);
-        if (last > 0) {
-            drawCenteredText(graphics, font, lastResultCode(), centerX, topPos + 75, 0.42F, ThermalSmelterUiSkin.TEXT_SUB);
-        }
+        drawGrindingWheel(graphics);
+        drawGrindButton(graphics);
 
         if (outputBlocked()) {
             blockedOverlay(graphics, slotX, slotY);
         }
+    }
+
+    private void drawGrindingWheel(GuiGraphics graphics) {
+        int centerX = leftPos + LensGrindingBenchLayout.GRIND_WHEEL_CENTER_X;
+        int centerY = topPos + LensGrindingBenchLayout.GRIND_WHEEL_CENTER_Y;
+        int radius = LensGrindingBenchLayout.GRIND_WHEEL_RADIUS;
+        int stateColor = menu.ready() ? ThermalSmelterUiSkin.STATUS_READY
+                : outputBlocked() ? ThermalSmelterUiSkin.STATUS_INVALID
+                : ThermalSmelterUiSkin.STATUS_EMPTY;
+        int max = Math.max(1, data(LensGrindingBenchBlockEntity.DATA_GRIND_PROGRESS_MAX));
+        int progress = Math.max(0, Math.min(max, data(LensGrindingBenchBlockEntity.DATA_GRIND_PROGRESS)));
+        double sweep = 360.0D * progress / max;
+
+        drawDisk(graphics, centerX, centerY, radius, ThermalSmelterUiSkin.withAlpha(ThermalSmelterUiSkin.CHAMBER_SHADOW, 122));
+        drawRing(graphics, centerX, centerY, radius, 3, ThermalSmelterUiSkin.withAlpha(ThermalSmelterUiSkin.STRONG_BORDER, 184));
+        drawArcRing(graphics, centerX, centerY, radius, 3, sweep, ThermalSmelterUiSkin.withAlpha(stateColor, menu.ready() ? 230 : 150));
+        drawRing(graphics, centerX, centerY, radius - 4, 1, ThermalSmelterUiSkin.withAlpha(ThermalSmelterUiSkin.PANEL_HIGHLIGHT, 80));
+        drawDisk(graphics, centerX, centerY, 3, ThermalSmelterUiSkin.withAlpha(ThermalSmelterUiSkin.PANEL, 235));
+        drawRing(graphics, centerX, centerY, 4, 1, ThermalSmelterUiSkin.withAlpha(ThermalSmelterUiSkin.BORDER, 150));
+        graphics.fill(centerX - radius + 3, centerY - radius + 3, centerX - radius + 6, centerY - radius + 4, ThermalSmelterUiSkin.withAlpha(ThermalSmelterUiSkin.PANEL_HIGHLIGHT, 110));
+        graphics.fill(centerX + radius - 5, centerY + radius - 4, centerX + radius - 2, centerY + radius - 3, ThermalSmelterUiSkin.withAlpha(ThermalSmelterUiSkin.PANEL_SHADOW, 155));
+    }
+
+    private void drawGrindButton(GuiGraphics graphics) {
+        int x = leftPos + LensGrindingBenchLayout.GRIND_BUTTON_X;
+        int y = topPos + LensGrindingBenchLayout.GRIND_BUTTON_Y;
+        int width = LensGrindingBenchLayout.GRIND_BUTTON_WIDTH;
+        int height = LensGrindingBenchLayout.GRIND_BUTTON_HEIGHT;
+        InteractionWeight weight = menu.ready() ? InteractionWeight.PRIMARY
+                : outputBlocked() ? InteractionWeight.SECONDARY
+                : InteractionWeight.TERTIARY;
+        int stateColor = menu.ready() ? ThermalSmelterUiSkin.STATUS_READY
+                : outputBlocked() ? ThermalSmelterUiSkin.STATUS_INVALID
+                : ThermalSmelterUiSkin.STATUS_EMPTY;
+
+        softButtonShell(graphics, x, y, width, height, weight);
+        graphics.fill(x + 2, y + height - 2, x + width - 2, y + height - 1, ThermalSmelterUiSkin.withAlpha(stateColor, menu.ready() ? 180 : 92));
+        drawCenteredText(
+                graphics,
+                font,
+                Component.translatable("screen.spectralization.lens_grinding_bench.grind").getString(),
+                x + width / 2,
+                y + 2,
+                0.46F,
+                weight.arrowColor()
+        );
     }
 
     private void drawChamber(GuiGraphics graphics) {
@@ -224,9 +285,10 @@ public class LensGrindingBenchScreen extends SpectralMachineScreen<LensGrindingB
         int boxX = leftPos + LensGrindingBenchLayout.TARGET_BOX_X;
         int boxY = topPos + LensGrindingBenchLayout.TARGET_BOX_Y;
         int centerX = boxX + LensGrindingBenchLayout.TARGET_BOX_WIDTH / 2;
-        drawIconButton(graphics, LensGrindingBenchLayout.TARGET_PREV_X, LensGrindingBenchLayout.TARGET_BUTTON_Y, false, InteractionWeight.TERTIARY);
-        drawIconButton(graphics, LensGrindingBenchLayout.TARGET_NEXT_X, LensGrindingBenchLayout.TARGET_BUTTON_Y, true, InteractionWeight.TERTIARY);
-        drawCenteredText(graphics, font, parameterSymbol() + "=" + data(LensGrindingBenchBlockEntity.DATA_TARGET), centerX, boxY, 0.72F, ThermalSmelterUiSkin.TEXT_SUB);
+        InteractionWeight targetWeight = targetLocked() ? InteractionWeight.DISABLED : InteractionWeight.TERTIARY;
+        drawIconButton(graphics, LensGrindingBenchLayout.TARGET_PREV_X, LensGrindingBenchLayout.TARGET_BUTTON_Y, false, targetWeight);
+        drawIconButton(graphics, LensGrindingBenchLayout.TARGET_NEXT_X, LensGrindingBenchLayout.TARGET_BUTTON_Y, true, targetWeight);
+        drawCenteredText(graphics, font, parameterSymbol() + "=" + formatUnits(data(LensGrindingBenchBlockEntity.DATA_TARGET)), centerX, boxY, 0.72F, ThermalSmelterUiSkin.TEXT_SUB);
     }
 
     private void drawQualityBar(GuiGraphics graphics) {
@@ -286,8 +348,8 @@ public class LensGrindingBenchScreen extends SpectralMachineScreen<LensGrindingB
         drawSideScaleLabels(
                 graphics,
                 font,
-                Integer.toString(max),
-                Integer.toString(min),
+                formatUnits(max),
+                formatUnits(min),
                 leftPos + LensGrindingBenchLayout.RANGE_SCALE_LABEL_X,
                 topPos + LensGrindingBenchLayout.SCALE_TOP_LABEL_Y,
                 topPos + LensGrindingBenchLayout.SCALE_BOTTOM_LABEL_Y,
@@ -325,6 +387,14 @@ public class LensGrindingBenchScreen extends SpectralMachineScreen<LensGrindingB
             return List.of(outputBlocked() ? tt("tooltip.output_blocked") : tt("tooltip.output"));
         }
 
+        if (insideGrindWheel(mouseX, mouseY)) {
+            return grindWheelTooltip();
+        }
+
+        if (insideGrindButton(mouseX, mouseY)) {
+            return grindWheelTooltip();
+        }
+
         if (insideAnyButton(mouseX, mouseY, LensGrindingBenchLayout.KIND_PREV_X, LensGrindingBenchLayout.KIND_BUTTON_Y)
                 || insideAnyButton(mouseX, mouseY, LensGrindingBenchLayout.KIND_NEXT_X, LensGrindingBenchLayout.KIND_BUTTON_Y)) {
             return List.of(tt("tooltip.kind", Component.translatable(lensKind().translationKey())));
@@ -338,14 +408,8 @@ public class LensGrindingBenchScreen extends SpectralMachineScreen<LensGrindingB
             return List.of(tt("tooltip.kind", Component.translatable(lensKind().translationKey())));
         }
 
-        if (insideAnyButton(mouseX, mouseY, LensGrindingBenchLayout.TARGET_PREV_X, LensGrindingBenchLayout.TARGET_BUTTON_Y)
-                || insideAnyButton(mouseX, mouseY, LensGrindingBenchLayout.TARGET_NEXT_X, LensGrindingBenchLayout.TARGET_BUTTON_Y)
-                || insideLocal(mouseX, mouseY, LensGrindingBenchLayout.TARGET_BOX_X, LensGrindingBenchLayout.TARGET_BOX_Y, LensGrindingBenchLayout.TARGET_BOX_WIDTH, LensGrindingBenchLayout.TARGET_BOX_HEIGHT)
-                || insideLocal(mouseX, mouseY, LensGrindingBenchLayout.TARGET_ZONE_X, LensGrindingBenchLayout.TARGET_ZONE_Y, LensGrindingBenchLayout.TARGET_ZONE_WIDTH, LensGrindingBenchLayout.TARGET_ZONE_HEIGHT)) {
-            return List.of(
-                    tt("tooltip.target", Component.translatable(lensKind().parameterKey()), data(LensGrindingBenchBlockEntity.DATA_TARGET)),
-                    tt("tooltip.aperture_fixed")
-            );
+        if (insideTargetControls(mouseX, mouseY)) {
+            return targetTooltip();
         }
 
         if (insideLocal(mouseX, mouseY, LensGrindingBenchLayout.QUALITY_BAR_X - 2, LensGrindingBenchLayout.QUALITY_BAR_Y - 2, LensGrindingBenchLayout.QUALITY_BAR_WIDTH + 4, LensGrindingBenchLayout.QUALITY_BAR_HEIGHT + 4)) {
@@ -358,12 +422,7 @@ public class LensGrindingBenchScreen extends SpectralMachineScreen<LensGrindingB
         }
 
         if (insideLocal(mouseX, mouseY, LensGrindingBenchLayout.RANGE_X - 2, LensGrindingBenchLayout.RANGE_Y - 3, LensGrindingBenchLayout.RANGE_WIDTH + 4, LensGrindingBenchLayout.RANGE_HEIGHT + 6)) {
-            return List.of(tt(
-                    "tooltip.preview",
-                    data(LensGrindingBenchBlockEntity.DATA_PREVIEW_MIN),
-                    data(LensGrindingBenchBlockEntity.DATA_PREVIEW_MAX),
-                    data(LensGrindingBenchBlockEntity.DATA_ERROR)
-            ));
+            return previewTooltip();
         }
 
         if (insideLocal(mouseX, mouseY,
@@ -371,19 +430,49 @@ public class LensGrindingBenchScreen extends SpectralMachineScreen<LensGrindingB
                 LensGrindingBenchLayout.RIGHT_ZONE_Y,
                 LensGrindingBenchLayout.RIGHT_ZONE_WIDTH,
                 LensGrindingBenchLayout.RIGHT_ZONE_HEIGHT)) {
-            return List.of(
-                    tt("tooltip.quality",
-                            data(LensGrindingBenchBlockEntity.DATA_COARSE_CHANCE),
-                            data(LensGrindingBenchBlockEntity.DATA_CLEAR_CHANCE),
-                            data(LensGrindingBenchBlockEntity.DATA_PRECISE_CHANCE)),
-                    tt("tooltip.preview",
-                            data(LensGrindingBenchBlockEntity.DATA_PREVIEW_MIN),
-                            data(LensGrindingBenchBlockEntity.DATA_PREVIEW_MAX),
-                            data(LensGrindingBenchBlockEntity.DATA_ERROR))
-            );
+            return rightZoneTooltip();
         }
 
         return List.of();
+    }
+
+    private List<Component> targetTooltip() {
+        List<Component> tooltip = new ArrayList<>();
+        tooltip.add(tt("tooltip.target", Component.translatable(lensKind().parameterKey()), formatUnits(data(LensGrindingBenchBlockEntity.DATA_TARGET))));
+        if (targetLocked()) {
+            tooltip.add(tt("tooltip.target_locked"));
+        }
+        appendMaterialTooltip(tooltip);
+        tooltip.add(tt("tooltip.aperture_fixed"));
+        return tooltip;
+    }
+
+    private List<Component> previewTooltip() {
+        List<Component> tooltip = new ArrayList<>();
+        tooltip.add(tt(
+                "tooltip.preview",
+                formatUnits(data(LensGrindingBenchBlockEntity.DATA_PREVIEW_MIN)),
+                formatUnits(data(LensGrindingBenchBlockEntity.DATA_PREVIEW_MAX)),
+                formatUnits(data(LensGrindingBenchBlockEntity.DATA_ERROR))
+        ));
+        appendMaterialTooltip(tooltip);
+        return tooltip;
+    }
+
+    private List<Component> rightZoneTooltip() {
+        List<Component> tooltip = new ArrayList<>();
+        tooltip.add(tt("tooltip.quality",
+                data(LensGrindingBenchBlockEntity.DATA_COARSE_CHANCE),
+                data(LensGrindingBenchBlockEntity.DATA_CLEAR_CHANCE),
+                data(LensGrindingBenchBlockEntity.DATA_PRECISE_CHANCE)));
+        tooltip.add(tt(
+                "tooltip.preview",
+                formatUnits(data(LensGrindingBenchBlockEntity.DATA_PREVIEW_MIN)),
+                formatUnits(data(LensGrindingBenchBlockEntity.DATA_PREVIEW_MAX)),
+                formatUnits(data(LensGrindingBenchBlockEntity.DATA_ERROR))
+        ));
+        appendMaterialTooltip(tooltip);
+        return tooltip;
     }
 
     private List<Component> toolTooltip() {
@@ -391,8 +480,48 @@ public class LensGrindingBenchScreen extends SpectralMachineScreen<LensGrindingB
         int tier = LensGrindingBenchBlockEntity.toolTier(tool);
         List<Component> tooltip = new ArrayList<>();
         tooltip.add(tt("tooltip.tool"));
-        tooltip.add(tt("tooltip.tool_tier", Math.max(0, tier + 1), data(LensGrindingBenchBlockEntity.DATA_ALLOWED_KINDS)));
+        if (tier >= 0) {
+            tooltip.add(tt("tooltip.tool_tier", tier + 1, data(LensGrindingBenchBlockEntity.DATA_ALLOWED_KINDS)));
+            tooltip.add(tt("tooltip.tool_step", formatUnits(data(LensGrindingBenchBlockEntity.DATA_TARGET_STEP))));
+            if (targetLocked()) {
+                tooltip.add(tt("tooltip.target_locked"));
+            }
+        }
         return tooltip;
+    }
+
+    private List<Component> grindWheelTooltip() {
+        List<Component> tooltip = new ArrayList<>();
+
+        if (outputBlocked()) {
+            tooltip.add(tt("tooltip.output_blocked"));
+        } else if (!hasBlank()) {
+            tooltip.add(tt("tooltip.missing_blank"));
+        } else if (!hasTool()) {
+            tooltip.add(tt("tooltip.missing_tool"));
+        } else if (menu.ready()) {
+            tooltip.add(tt("tooltip.grind_ready"));
+        } else {
+            tooltip.add(tt("tooltip.grind_blocked"));
+        }
+
+        tooltip.add(tt("tooltip.grind_progress", progressPercent()));
+        return tooltip;
+    }
+
+    private void appendMaterialTooltip(List<Component> tooltip) {
+        if (!hasBlank()) {
+            return;
+        }
+
+        LensMaterial material = blankMaterial();
+        tooltip.add(tt(
+                "tooltip.material",
+                Component.translatable(material.translationKey()),
+                material.minFocalLengthText(),
+                material.maxFocalLengthText(),
+                material.transmittancePercent(2)
+        ));
     }
 
     private boolean insideSlot(double mouseX, double mouseY, int x, int y) {
@@ -414,6 +543,24 @@ public class LensGrindingBenchScreen extends SpectralMachineScreen<LensGrindingB
                 y,
                 LensGrindingBenchLayout.KIND_BUTTON_SIZE,
                 LensGrindingBenchLayout.KIND_BUTTON_SIZE
+        );
+    }
+
+    private boolean insideGrindWheel(double mouseX, double mouseY) {
+        double dx = mouseX - leftPos - LensGrindingBenchLayout.GRIND_WHEEL_CENTER_X;
+        double dy = mouseY - topPos - LensGrindingBenchLayout.GRIND_WHEEL_CENTER_Y;
+        int radius = LensGrindingBenchLayout.GRIND_WHEEL_RADIUS + 2;
+        return dx * dx + dy * dy <= radius * radius;
+    }
+
+    private boolean insideGrindButton(double mouseX, double mouseY) {
+        return insideLocal(
+                mouseX,
+                mouseY,
+                LensGrindingBenchLayout.GRIND_BUTTON_X,
+                LensGrindingBenchLayout.GRIND_BUTTON_Y,
+                LensGrindingBenchLayout.GRIND_BUTTON_WIDTH,
+                LensGrindingBenchLayout.GRIND_BUTTON_HEIGHT
         );
     }
 
@@ -443,6 +590,26 @@ public class LensGrindingBenchScreen extends SpectralMachineScreen<LensGrindingB
         return menu.getSlot(LensGrindingBenchBlockEntity.SLOT_OUTPUT).hasItem();
     }
 
+    private boolean targetLocked() {
+        return data(LensGrindingBenchBlockEntity.DATA_TARGET_LOCKED) != 0;
+    }
+
+    private boolean insideTargetControls(double mouseX, double mouseY) {
+        return insideLocal(
+                mouseX,
+                mouseY,
+                LensGrindingBenchLayout.TARGET_ZONE_X,
+                LensGrindingBenchLayout.TARGET_ZONE_Y,
+                LensGrindingBenchLayout.TARGET_ZONE_WIDTH,
+                LensGrindingBenchLayout.TARGET_ZONE_HEIGHT
+        );
+    }
+
+    private LensMaterial blankMaterial() {
+        return LensMaterial.fromBlank(menu.getSlot(LensGrindingBenchBlockEntity.SLOT_BLANK).getItem())
+                .orElse(LensMaterial.ORDINARY);
+    }
+
     private LensKind lensKind() {
         return LensKind.byIndex(data(LensGrindingBenchBlockEntity.DATA_LENS_KIND));
     }
@@ -461,13 +628,14 @@ public class LensGrindingBenchScreen extends SpectralMachineScreen<LensGrindingB
         };
     }
 
-    private String lastResultCode() {
-        int quality = data(LensGrindingBenchBlockEntity.DATA_LAST_QUALITY);
-        return data(LensGrindingBenchBlockEntity.DATA_LAST_RESULT) + "/" + switch (quality) {
-            case 1 -> "C";
-            case 3 -> "P";
-            default -> "N";
-        };
+    private String progressPercent() {
+        int max = Math.max(1, data(LensGrindingBenchBlockEntity.DATA_GRIND_PROGRESS_MAX));
+        int progress = Math.max(0, Math.min(max, data(LensGrindingBenchBlockEntity.DATA_GRIND_PROGRESS)));
+        return Integer.toString(Math.round(progress * 100.0F / max));
+    }
+
+    private static String formatUnits(int value) {
+        return LensProfile.formatUnits(value);
     }
 
     private int data(int index) {
@@ -634,6 +802,62 @@ public class LensGrindingBenchScreen extends SpectralMachineScreen<LensGrindingB
         graphics.pose().popPose();
     }
 
+    private static void drawDisk(GuiGraphics graphics, int centerX, int centerY, int radius, int color) {
+        int radiusSquared = radius * radius;
+
+        for (int dy = -radius; dy <= radius; dy++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                if (dx * dx + dy * dy <= radiusSquared) {
+                    graphics.fill(centerX + dx, centerY + dy, centerX + dx + 1, centerY + dy + 1, color);
+                }
+            }
+        }
+    }
+
+    private static void drawRing(GuiGraphics graphics, int centerX, int centerY, int radius, int thickness, int color) {
+        int outerSquared = radius * radius;
+        int inner = Math.max(0, radius - thickness);
+        int innerSquared = inner * inner;
+
+        for (int dy = -radius; dy <= radius; dy++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                int distanceSquared = dx * dx + dy * dy;
+                if (distanceSquared <= outerSquared && distanceSquared >= innerSquared) {
+                    graphics.fill(centerX + dx, centerY + dy, centerX + dx + 1, centerY + dy + 1, color);
+                }
+            }
+        }
+    }
+
+    private static void drawArcRing(GuiGraphics graphics, int centerX, int centerY, int radius, int thickness, double sweepDegrees, int color) {
+        if (sweepDegrees <= 0.0D) {
+            return;
+        }
+
+        int outerSquared = radius * radius;
+        int inner = Math.max(0, radius - thickness);
+        int innerSquared = inner * inner;
+        double sweep = Math.min(360.0D, sweepDegrees);
+
+        for (int dy = -radius; dy <= radius; dy++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                int distanceSquared = dx * dx + dy * dy;
+                if (distanceSquared > outerSquared || distanceSquared < innerSquared) {
+                    continue;
+                }
+
+                double angle = Math.toDegrees(Math.atan2(dy, dx)) + 90.0D;
+                if (angle < 0.0D) {
+                    angle += 360.0D;
+                }
+
+                if (angle <= sweep) {
+                    graphics.fill(centerX + dx, centerY + dy, centerX + dx + 1, centerY + dy + 1, color);
+                }
+            }
+        }
+    }
+
     private static void slotFrame(GuiGraphics graphics, int x, int y, int color, boolean active) {
         graphics.fill(x, y, x + LensGrindingBenchLayout.SLOT_SIZE, y + LensGrindingBenchLayout.SLOT_SIZE, ThermalSmelterUiSkin.SLOT_BG);
         outline(graphics, x, y, LensGrindingBenchLayout.SLOT_SIZE, LensGrindingBenchLayout.SLOT_SIZE, ThermalSmelterUiSkin.BORDER);
@@ -738,7 +962,8 @@ public class LensGrindingBenchScreen extends SpectralMachineScreen<LensGrindingB
     private enum InteractionWeight {
         PRIMARY(68, 118, 95, 82, 150),
         SECONDARY(38, 84, 66, 52, 128),
-        TERTIARY(18, 46, 38, 0, 94);
+        TERTIARY(18, 46, 38, 0, 94),
+        DISABLED(8, 20, 18, 0, 42);
 
         private final int fillAlpha;
         private final int borderAlpha;

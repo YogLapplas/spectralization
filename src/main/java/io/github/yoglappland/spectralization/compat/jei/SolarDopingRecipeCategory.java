@@ -72,26 +72,10 @@ public final class SolarDopingRecipeCategory implements IRecipeCategory<SolarDop
     public void setRecipe(IRecipeLayoutBuilder builder, SolarDopingRecipe recipe, IFocusGroup focuses) {
         builder.addSlot(RecipeIngredientRole.INPUT, INPUT_X + ITEM_SLOT_INSET, INPUT_Y + ITEM_SLOT_INSET)
                 .setSlotName("input")
-                .addItemStack(new ItemStack(recipe.input()))
-                .addRichTooltipCallback((view, tooltip) -> tooltip.add(tt("tooltip.process")));
-        var outputSlot = builder.addSlot(RecipeIngredientRole.OUTPUT, OUTPUT_X + ITEM_SLOT_INSET, OUTPUT_Y + ITEM_SLOT_INSET)
+                .addItemStack(new ItemStack(recipe.input()));
+        builder.addSlot(RecipeIngredientRole.OUTPUT, OUTPUT_X + ITEM_SLOT_INSET, OUTPUT_Y + ITEM_SLOT_INSET)
                 .setSlotName("output")
                 .addItemStacks(recipe.resultStacks());
-        if (recipe.hasRandomResults()) {
-            outputSlot.addRichTooltipCallback((view, tooltip) -> {
-                tooltip.add(tt("jei.random_outputs"));
-                int totalWeight = recipe.totalResultWeight();
-                for (SolarDopingRecipe.WeightedResult result : recipe.results()) {
-                    tooltip.add(Component.literal(percentText(result.weight() * 100.0 / totalWeight) + " ")
-                            .append(result.resultStack().getHoverName())
-                            .append(Component.literal(" "))
-                            .append(Component.translatable(
-                                    "screen.spectralization.solar_doping_chamber.jei.dimensions",
-                                    dimensionText(result.environments())
-                            )));
-                }
-            });
-        }
         builder.moveRecipeTransferButton(WIDTH - 18, 3);
     }
 
@@ -206,14 +190,6 @@ public final class SolarDopingRecipeCategory implements IRecipeCategory<SolarDop
         }
 
         return String.format(java.util.Locale.ROOT, "%.1f", seconds);
-    }
-
-    private static String percentText(double percent) {
-        if (Math.abs(percent - Math.rint(percent)) < 0.01) {
-            return String.format(java.util.Locale.ROOT, "%.0f%%", percent);
-        }
-
-        return String.format(java.util.Locale.ROOT, "%.1f%%", percent);
     }
 
     private static Component dimensionText(Set<SolarDopingRecipe.DopingEnvironment> environments) {

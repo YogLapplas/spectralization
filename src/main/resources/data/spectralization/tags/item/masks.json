@@ -1,0 +1,9 @@
+{
+  "replace": false,
+  "values": [
+    "#spectralization:masks/generic",
+    "#spectralization:masks/grating",
+    "#spectralization:masks/waveguide",
+    "#spectralization:masks/circuit"
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "spectralization:item/single_mode_fiber_mold"
+  }
+}

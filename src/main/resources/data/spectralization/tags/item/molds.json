@@ -1,0 +1,10 @@
+{
+  "replace": false,
+  "values": [
+    "#spectralization:molds/fiber",
+    "#spectralization:molds/single_mode_fiber",
+    "#spectralization:molds/plate",
+    "#spectralization:molds/wire",
+    "#spectralization:molds/crystal"
+  ]
+}

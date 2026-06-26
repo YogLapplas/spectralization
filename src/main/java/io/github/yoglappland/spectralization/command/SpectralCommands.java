@@ -332,9 +332,9 @@ public final class SpectralCommands {
         }
 
         source.sendSuccess(() -> Component.literal(String.format(
-                "Gave lens tag=%s focal=%d aperture=%d quality=%d",
+                "Gave lens tag=%s focal=%s aperture=%d quality=%d",
                 profile.tag(),
-                profile.focalLength(),
+                profile.focalLengthText(),
                 profile.aperture(),
                 profile.quality()
         )), true);

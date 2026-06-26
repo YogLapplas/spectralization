@@ -5,12 +5,15 @@ import io.github.yoglappland.spectralization.blockentity.BasicLithographyMachine
 import io.github.yoglappland.spectralization.blockentity.SolarDopingChamberBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.ThermalSmelterBlockEntity;
 import io.github.yoglappland.spectralization.client.screen.BasicLithographyMachineScreen;
+import io.github.yoglappland.spectralization.client.screen.FiberDrawingMachineScreen;
 import io.github.yoglappland.spectralization.client.screen.SolarDopingChamberScreen;
 import io.github.yoglappland.spectralization.client.screen.ThermalSmelterScreen;
 import io.github.yoglappland.spectralization.machine.BasicLithographyRecipe;
+import io.github.yoglappland.spectralization.machine.FiberDrawingRecipe;
 import io.github.yoglappland.spectralization.machine.SolarDopingRecipe;
 import io.github.yoglappland.spectralization.machine.ThermalSmelterRecipe;
 import io.github.yoglappland.spectralization.menu.BasicLithographyMachineLayout;
+import io.github.yoglappland.spectralization.menu.FiberDrawingMachineLayout;
 import io.github.yoglappland.spectralization.menu.BasicLithographyMachineMenu;
 import io.github.yoglappland.spectralization.menu.SolarDopingChamberLayout;
 import io.github.yoglappland.spectralization.menu.SolarDopingChamberMenu;
@@ -36,6 +39,8 @@ public final class SpectralJeiPlugin implements IModPlugin {
             RecipeType.create(Spectralization.MODID, "basic_lithography", BasicLithographyRecipe.class);
     public static final RecipeType<SolarDopingRecipe> SOLAR_DOPING =
             RecipeType.create(Spectralization.MODID, "solar_doping", SolarDopingRecipe.class);
+    public static final RecipeType<FiberDrawingRecipe> FIBER_DRAWING =
+            RecipeType.create(Spectralization.MODID, "fiber_drawing", FiberDrawingRecipe.class);
 
     @Override
     public ResourceLocation getPluginUid() {
@@ -47,7 +52,8 @@ public final class SpectralJeiPlugin implements IModPlugin {
         registration.addRecipeCategories(
                 new ThermalSmelterRecipeCategory(registration.getJeiHelpers().getGuiHelper()),
                 new BasicLithographyRecipeCategory(registration.getJeiHelpers().getGuiHelper()),
-                new SolarDopingRecipeCategory(registration.getJeiHelpers().getGuiHelper())
+                new SolarDopingRecipeCategory(registration.getJeiHelpers().getGuiHelper()),
+                new FiberDrawingRecipeCategory(registration.getJeiHelpers().getGuiHelper())
         );
     }
 
@@ -56,6 +62,7 @@ public final class SpectralJeiPlugin implements IModPlugin {
         registration.addRecipes(THERMAL_SMELTER, ThermalSmelterRecipe.recipes());
         registration.addRecipes(BASIC_LITHOGRAPHY, BasicLithographyRecipe.recipes());
         registration.addRecipes(SOLAR_DOPING, SolarDopingRecipe.recipes());
+        registration.addRecipes(FIBER_DRAWING, FiberDrawingRecipe.recipes());
     }
 
     @Override
@@ -64,6 +71,7 @@ public final class SpectralJeiPlugin implements IModPlugin {
         registration.addRecipeCatalyst(new ItemStack(Spectralization.BASIC_LITHOGRAPHY_MACHINE_ITEM.get()), BASIC_LITHOGRAPHY);
         registration.addRecipeCatalyst(new ItemStack(Spectralization.SOLAR_DOPING_CHAMBER_ITEM.get()), SOLAR_DOPING);
         registration.addRecipeCatalyst(new ItemStack(Spectralization.DIMENSION_DOPING_CHAMBER_ITEM.get()), SOLAR_DOPING);
+        registration.addRecipeCatalyst(new ItemStack(Spectralization.FIBER_DRAWING_MACHINE_ITEM.get()), FIBER_DRAWING);
     }
 
     @Override
@@ -115,6 +123,14 @@ public final class SpectralJeiPlugin implements IModPlugin {
                 SolarDopingChamberLayout.RECIPE_CLICK_BOTTOM_WIDTH,
                 SolarDopingChamberLayout.RECIPE_CLICK_BOTTOM_HEIGHT,
                 SOLAR_DOPING
+        );
+        registration.addRecipeClickArea(
+                FiberDrawingMachineScreen.class,
+                FiberDrawingMachineLayout.RECIPE_CLICK_X,
+                FiberDrawingMachineLayout.RECIPE_CLICK_Y,
+                FiberDrawingMachineLayout.RECIPE_CLICK_WIDTH,
+                FiberDrawingMachineLayout.RECIPE_CLICK_HEIGHT,
+                FIBER_DRAWING
         );
     }
 

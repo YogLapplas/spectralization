@@ -4,6 +4,7 @@ import io.github.yoglappland.spectralization.item.PaintBucketItem;
 import io.github.yoglappland.spectralization.item.SurfaceCoatingInteraction;
 import io.github.yoglappland.spectralization.optics.fiber.FiberShearsInteraction;
 import io.github.yoglappland.spectralization.optics.surface.SurfaceKey;
+import io.github.yoglappland.spectralization.storage.HolographicStorageShellInteraction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -41,5 +42,9 @@ public final class SpectralPlayerInteractions {
         );
         event.setCancellationResult(result.consumesAction() ? result : InteractionResult.FAIL);
         event.setCanceled(true);
+    }
+
+    public static void leftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
+        HolographicStorageShellInteraction.leftClickBlock(event);
     }
 }

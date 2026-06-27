@@ -2,6 +2,7 @@
   "replace": false,
   "values": [
     "#c:dusts/phosphor",
+    "#c:dusts/boron",
     "#c:dusts/titanium_dioxide",
     "#c:dusts/alumina",
     "#c:dusts/yttrium_oxide"

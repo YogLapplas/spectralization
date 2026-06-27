@@ -23,13 +23,22 @@ public record FiberDrawingRecipe(
             normalItem("ordinary_fiber", LensMaterial.ORDINARY, Items.GLASS),
             normal("quartz_fiber", LensMaterial.QUARTZ, Spectralization.QUARTZ_GLASS_ITEM),
             singleMode("quartz_single_mode_fiber", LensMaterial.QUARTZ, Spectralization.QUARTZ_GLASS_ITEM),
+            normal("silica_preform_fiber", LensMaterial.QUARTZ, Spectralization.SILICA_PREFORM),
+            singleMode("silica_preform_single_mode_fiber", LensMaterial.QUARTZ, Spectralization.SILICA_PREFORM),
             normal("borosilicate_fiber", LensMaterial.BOROSILICATE, Spectralization.BOROSILICATE_GLASS_ITEM),
             singleMode("borosilicate_single_mode_fiber", LensMaterial.BOROSILICATE, Spectralization.BOROSILICATE_GLASS_ITEM),
+            normal("borosilicate_preform_fiber", LensMaterial.BOROSILICATE, Spectralization.BOROSILICATE_PREFORM),
+            singleMode("borosilicate_preform_single_mode_fiber", LensMaterial.BOROSILICATE, Spectralization.BOROSILICATE_PREFORM),
             normal("crown_fiber", LensMaterial.CROWN, Spectralization.CROWN_GLASS_ITEM),
             singleMode("crown_single_mode_fiber", LensMaterial.CROWN, Spectralization.CROWN_GLASS_ITEM),
+            normal("crown_preform_fiber", LensMaterial.CROWN, Spectralization.CROWN_PREFORM),
+            singleMode("crown_preform_single_mode_fiber", LensMaterial.CROWN, Spectralization.CROWN_PREFORM),
             normal("flint_fiber", LensMaterial.FLINT, Spectralization.FLINT_GLASS_ITEM),
             singleMode("flint_single_mode_fiber", LensMaterial.FLINT, Spectralization.FLINT_GLASS_ITEM),
-            normal("heavy_fiber", LensMaterial.HEAVY, Spectralization.HEAVY_GLASS_ITEM)
+            normal("flint_preform_fiber", LensMaterial.FLINT, Spectralization.FLINT_PREFORM),
+            singleMode("flint_preform_single_mode_fiber", LensMaterial.FLINT, Spectralization.FLINT_PREFORM),
+            normal("heavy_fiber", LensMaterial.HEAVY, Spectralization.HEAVY_GLASS_ITEM),
+            normal("heavy_preform_fiber", LensMaterial.HEAVY, Spectralization.HEAVY_PREFORM)
     );
 
     public FiberDrawingRecipe {

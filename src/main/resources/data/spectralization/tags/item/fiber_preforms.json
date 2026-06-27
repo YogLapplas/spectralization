@@ -1,0 +1,10 @@
+{
+  "replace": false,
+  "values": [
+    "spectralization:silica_preform",
+    "spectralization:borosilicate_preform",
+    "spectralization:crown_preform",
+    "spectralization:flint_preform",
+    "spectralization:heavy_preform"
+  ]
+}

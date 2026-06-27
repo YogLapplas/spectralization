@@ -1,0 +1,8 @@
+{
+  "replace": false,
+  "values": [
+    "spectralization:blank_wafer",
+    "spectralization:coated_wafer",
+    "spectralization:silvered_substrate"
+  ]
+}

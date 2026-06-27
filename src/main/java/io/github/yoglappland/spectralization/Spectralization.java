@@ -139,12 +139,32 @@ public class Spectralization {
             "singular_material",
             () -> new SingularMaterialItem(new Item.Properties())
     );
+    public static final DeferredItem<Item> BLANK_WAFER =
+            ITEMS.registerSimpleItem("blank_wafer", new Item.Properties());
+    public static final DeferredItem<Item> PHOTORESIST =
+            ITEMS.registerSimpleItem("photoresist", new Item.Properties());
+    public static final DeferredItem<Item> COATED_WAFER =
+            ITEMS.registerSimpleItem("coated_wafer", new Item.Properties());
+    public static final DeferredItem<Item> SILVERED_SUBSTRATE =
+            ITEMS.registerSimpleItem("silvered_substrate", new Item.Properties());
+    public static final DeferredItem<Item> HOLOGRAPHIC_MEDIUM =
+            ITEMS.registerSimpleItem("holographic_medium", new Item.Properties());
     public static final DeferredItem<Item> PRIMITIVE_CIRCUIT_BOARD =
             ITEMS.registerSimpleItem("primitive_circuit_board", new Item.Properties());
     public static final DeferredItem<Item> ADVANCED_CIRCUIT_BOARD =
             ITEMS.registerSimpleItem("advanced_circuit_board", new Item.Properties());
     public static final DeferredItem<Item> PRECISION_CIRCUIT_BOARD =
             ITEMS.registerSimpleItem("precision_circuit_board", new Item.Properties());
+    public static final DeferredItem<Item> SILICA_PREFORM =
+            ITEMS.registerSimpleItem("silica_preform", new Item.Properties());
+    public static final DeferredItem<Item> BOROSILICATE_PREFORM =
+            ITEMS.registerSimpleItem("borosilicate_preform", new Item.Properties());
+    public static final DeferredItem<Item> CROWN_PREFORM =
+            ITEMS.registerSimpleItem("crown_preform", new Item.Properties());
+    public static final DeferredItem<Item> FLINT_PREFORM =
+            ITEMS.registerSimpleItem("flint_preform", new Item.Properties());
+    public static final DeferredItem<Item> HEAVY_PREFORM =
+            ITEMS.registerSimpleItem("heavy_preform", new Item.Properties());
     public static final DeferredItem<OpticalFiberCoilItem> OPTICAL_FIBER_COIL = ITEMS.register(
             "optical_fiber_coil",
             () -> new OpticalFiberCoilItem(new Item.Properties().stacksTo(1))
@@ -243,6 +263,10 @@ public class Spectralization {
     public static final DeferredItem<Item> CORUNDUM = ITEMS.registerSimpleItem("corundum", new Item.Properties());
     public static final DeferredItem<Item> ALUMINA_DUST =
             ITEMS.registerSimpleItem("alumina_dust", new Item.Properties());
+    public static final DeferredItem<Item> ALUMINA_CERAMIC_PLATE =
+            ITEMS.registerSimpleItem("alumina_ceramic_plate", new Item.Properties());
+    public static final DeferredItem<Item> BORON_DUST =
+            ITEMS.registerSimpleItem("boron_dust", new Item.Properties());
     public static final DeferredItem<Item> FLUORITE = ITEMS.registerSimpleItem("fluorite", new Item.Properties());
     public static final DeferredItem<Item> ND_FLUORITE_CRYSTAL =
             ITEMS.registerSimpleItem("nd_fluorite_crystal", new Item.Properties());

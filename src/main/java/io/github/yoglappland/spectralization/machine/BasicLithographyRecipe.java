@@ -38,6 +38,18 @@ public record BasicLithographyRecipe(
                     OutputKind.ITEM,
                     120,
                     0.0
+            ),
+            new BasicLithographyRecipe(
+                    List.of(
+                            cost(Spectralization.COATED_WAFER.get(), 1),
+                            cost(Items.REDSTONE, 1),
+                            cost(Items.COPPER_INGOT, 1)
+                    ),
+                    Spectralization.BASIC_MASK.get(),
+                    () -> new ItemStack(Spectralization.PRIMITIVE_CIRCUIT_BOARD.get()),
+                    OutputKind.ITEM,
+                    120,
+                    0.0
             )
     );
 

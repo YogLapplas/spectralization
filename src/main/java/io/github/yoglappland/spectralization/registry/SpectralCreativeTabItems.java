@@ -22,9 +22,19 @@ public final class SpectralCreativeTabItems {
         output.accept(Spectralization.WIRE_MOLD.get());
         output.accept(Spectralization.CRYSTAL_MOLD.get());
         output.accept(SingularMaterialData.PRIMORDIAL.createStack());
+        output.accept(Spectralization.BLANK_WAFER.get());
+        output.accept(Spectralization.PHOTORESIST.get());
+        output.accept(Spectralization.COATED_WAFER.get());
+        output.accept(Spectralization.SILVERED_SUBSTRATE.get());
+        output.accept(Spectralization.HOLOGRAPHIC_MEDIUM.get());
         output.accept(Spectralization.PRIMITIVE_CIRCUIT_BOARD.get());
         output.accept(Spectralization.ADVANCED_CIRCUIT_BOARD.get());
         output.accept(Spectralization.PRECISION_CIRCUIT_BOARD.get());
+        output.accept(Spectralization.SILICA_PREFORM.get());
+        output.accept(Spectralization.BOROSILICATE_PREFORM.get());
+        output.accept(Spectralization.CROWN_PREFORM.get());
+        output.accept(Spectralization.FLINT_PREFORM.get());
+        output.accept(Spectralization.HEAVY_PREFORM.get());
         output.accept(Spectralization.OPTICAL_FIBER_COIL.get());
         output.accept(Spectralization.SINGLE_MODE_FIBER_COIL.get());
         output.accept(Spectralization.PHOSPHOR_DUST.get());
@@ -50,6 +60,8 @@ public final class SpectralCreativeTabItems {
         output.accept(Spectralization.TITANIUM_DIOXIDE_DUST.get());
         output.accept(Spectralization.CORUNDUM.get());
         output.accept(Spectralization.ALUMINA_DUST.get());
+        output.accept(Spectralization.ALUMINA_CERAMIC_PLATE.get());
+        output.accept(Spectralization.BORON_DUST.get());
         output.accept(Spectralization.FLUORITE.get());
         output.accept(Spectralization.ND_FLUORITE_CRYSTAL.get());
         output.accept(Spectralization.YB_FLUORITE_CRYSTAL.get());

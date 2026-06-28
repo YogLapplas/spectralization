@@ -1,0 +1,21 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "key": {
+    "B": {
+      "item": "spectralization:borosilicate_glass"
+    },
+    "S": {
+      "item": "spectralization:holographic_storage_shell"
+    }
+  },
+  "pattern": [
+    "BBB",
+    "BSB",
+    "BBB"
+  ],
+  "result": {
+    "count": 1,
+    "id": "spectralization:stable_holographic_storage_shell"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "D": {
+      "item": "minecraft:black_dye"
+    },
+    "F": {
+      "item": "minecraft:furnace"
+    },
+    "G": {
+      "item": "minecraft:glass"
+    },
+    "I": {
+      "tag": "c:ingots/iron"
+    }
+  },
+  "pattern": [
+    "IFI",
+    "DGD",
+    "IFI"
+  ],
+  "result": {
+    "count": 1,
+    "id": "spectralization:thermal_smelter"
+  }
+}

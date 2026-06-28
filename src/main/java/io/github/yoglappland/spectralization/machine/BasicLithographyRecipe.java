@@ -1,10 +1,10 @@
 package io.github.yoglappland.spectralization.machine;
 
 import io.github.yoglappland.spectralization.Spectralization;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
-import javax.annotation.Nullable;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -12,7 +12,7 @@ import net.minecraft.world.level.ItemLike;
 
 public record BasicLithographyRecipe(
         List<ItemCost> itemCosts,
-        @Nullable Item templateItem,
+        List<Item> templateItems,
         Supplier<ItemStack> result,
         OutputKind outputKind,
         int processTicks,
@@ -21,31 +21,20 @@ public record BasicLithographyRecipe(
     private static final List<BasicLithographyRecipe> RECIPES = List.of(
             new BasicLithographyRecipe(
                     List.of(cost(Items.IRON_INGOT, 1)),
-                    null,
+                    List.of(),
                     () -> new ItemStack(Spectralization.BASIC_MASK.get()),
-                    OutputKind.ITEM,
+                    OutputKind.TEMPLATE,
                     80,
                     0.0
             ),
             new BasicLithographyRecipe(
                     List.of(
-                            cost(Items.IRON_INGOT, 1),
+                            cost(Items.COPPER_INGOT, 1),
                             cost(Items.REDSTONE, 1),
-                            cost(Items.COPPER_INGOT, 1)
+                            cost(Items.SLIME_BALL, 1),
+                            cost(Spectralization.BLANK_WAFER.get(), 1)
                     ),
-                    Spectralization.BASIC_MASK.get(),
-                    () -> new ItemStack(Spectralization.PRIMITIVE_CIRCUIT_BOARD.get()),
-                    OutputKind.ITEM,
-                    120,
-                    0.0
-            ),
-            new BasicLithographyRecipe(
-                    List.of(
-                            cost(Spectralization.COATED_WAFER.get(), 1),
-                            cost(Items.REDSTONE, 1),
-                            cost(Items.COPPER_INGOT, 1)
-                    ),
-                    Spectralization.BASIC_MASK.get(),
+                    List.of(Spectralization.BASIC_MASK.get(), Spectralization.CIRCUIT_MASK.get()),
                     () -> new ItemStack(Spectralization.PRIMITIVE_CIRCUIT_BOARD.get()),
                     OutputKind.ITEM,
                     120,
@@ -55,6 +44,7 @@ public record BasicLithographyRecipe(
 
     public BasicLithographyRecipe {
         itemCosts = List.copyOf(itemCosts);
+        templateItems = List.copyOf(templateItems);
 
         if (processTicks <= 0) {
             throw new IllegalArgumentException("Lithography process ticks must be positive");
@@ -67,10 +57,10 @@ public record BasicLithographyRecipe(
 
     public static Optional<Match> find(ItemStack templateA, ItemStack templateB, List<ItemStack> itemInputs) {
         for (BasicLithographyRecipe recipe : RECIPES) {
-            int templateSlot = recipe.matchingTemplateSlot(templateA, templateB);
+            List<Integer> templateSlots = recipe.matchingTemplateSlots(templateA, templateB);
 
-            if (templateSlot >= -1 && recipe.matchesItemInputs(itemInputs)) {
-                return Optional.of(new Match(recipe, templateSlot));
+            if (templateSlots != null && recipe.matchesItemInputs(itemInputs)) {
+                return Optional.of(new Match(recipe, templateSlots));
             }
         }
 
@@ -95,23 +85,44 @@ public record BasicLithographyRecipe(
     }
 
     public boolean usesTemplate() {
-        return templateItem != null;
+        return !templateItems.isEmpty();
     }
 
-    private int matchingTemplateSlot(ItemStack templateA, ItemStack templateB) {
-        if (templateItem == null) {
-            return templateA.isEmpty() && templateB.isEmpty() ? -1 : -2;
+    private List<Integer> matchingTemplateSlots(ItemStack templateA, ItemStack templateB) {
+        List<ItemStack> stacks = List.of(templateA, templateB);
+
+        if (templateItems.isEmpty()) {
+            return templateA.isEmpty() && templateB.isEmpty() ? List.of() : null;
         }
 
-        if (templateA.is(templateItem)) {
-            return 0;
+        boolean[] used = new boolean[stacks.size()];
+        List<Integer> slots = new ArrayList<>();
+
+        for (Item templateItem : templateItems) {
+            int foundSlot = -1;
+
+            for (int slot = 0; slot < stacks.size(); slot++) {
+                if (!used[slot] && stacks.get(slot).is(templateItem)) {
+                    foundSlot = slot;
+                    break;
+                }
+            }
+
+            if (foundSlot < 0) {
+                return null;
+            }
+
+            used[foundSlot] = true;
+            slots.add(foundSlot);
         }
 
-        if (templateB.is(templateItem)) {
-            return 1;
+        for (int slot = 0; slot < stacks.size(); slot++) {
+            if (!stacks.get(slot).isEmpty() && !used[slot]) {
+                return null;
+            }
         }
 
-        return -2;
+        return List.copyOf(slots);
     }
 
     private boolean matchesItemInputs(List<ItemStack> itemInputs) {
@@ -155,6 +166,9 @@ public record BasicLithographyRecipe(
         }
     }
 
-    public record Match(BasicLithographyRecipe recipe, int templateSlot) {
+    public record Match(BasicLithographyRecipe recipe, List<Integer> templateSlots) {
+        public Match {
+            templateSlots = List.copyOf(templateSlots);
+        }
     }
 }

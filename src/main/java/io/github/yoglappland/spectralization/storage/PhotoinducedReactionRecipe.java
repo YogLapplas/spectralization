@@ -1,5 +1,6 @@
 package io.github.yoglappland.spectralization.storage;
 
+import io.github.yoglappland.spectralization.Spectralization;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -40,6 +41,14 @@ public final class PhotoinducedReactionRecipe {
                     ONE_SECOND_TICKS,
                     () -> List.of(new ItemStack(Items.COAL)),
                     stack -> List.of(new ItemStack(Items.DIAMOND))
+            ),
+            new PhotoinducedReactionRecipe(
+                    "silicon_to_wafer",
+                    stack -> stack.is(Spectralization.SILICON.get()),
+                    10.0,
+                    ONE_SECOND_TICKS,
+                    () -> List.of(new ItemStack(Spectralization.SILICON.get())),
+                    stack -> List.of(new ItemStack(Spectralization.BLANK_WAFER.get()))
             ),
             new PhotoinducedReactionRecipe(
                     "wool_color_shift",

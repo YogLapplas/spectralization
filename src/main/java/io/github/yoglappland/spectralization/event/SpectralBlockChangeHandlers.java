@@ -12,13 +12,27 @@ import io.github.yoglappland.spectralization.optics.fiber.FiberNetworkIndex;
 import io.github.yoglappland.spectralization.optics.surface.SurfaceCoatingData;
 import io.github.yoglappland.spectralization.optics.topology.OpticalNetworkIndex;
 import io.github.yoglappland.spectralization.optics.world.OpticalWorldIndex;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.block.state.BlockState;
 
 public final class SpectralBlockChangeHandlers {
+    private static final int PISTON_RESCAN_DISTANCE = 13;
+    private static final int PISTON_POST_MOVE_RESCAN_TICKS = 4;
+    private static final Map<ResourceKey<Level>, List<PendingPistonRescan>> PENDING_PISTON_RESCANS =
+            new LinkedHashMap<>();
+
     private SpectralBlockChangeHandlers() {
     }
 
@@ -28,7 +42,10 @@ public final class SpectralBlockChangeHandlers {
         }
 
         if (!isFiberRelayOnly(levelAccessor.getBlockState(pos))) {
-            OpticalFieldSources.invalidate(levelAccessor);
+            if (OpticalFieldSources.isScatteringFieldSource(placedBlock)) {
+                markScatteringFieldSourceChanged(levelAccessor, pos);
+            }
+
             OpticalWorldIndex.onBlockPlaced(levelAccessor, pos);
             OpticalTraceCache.rememberSourceState(levelAccessor, pos);
             OpticalTraceCache.markChanged(levelAccessor, pos, OpticalDirtyKind.STRUCTURE);
@@ -55,7 +72,10 @@ public final class SpectralBlockChangeHandlers {
         SurfaceCoatingData.removeAll(playerLevel, pos);
 
         if (!isFiberRelayOnly(state)) {
-            OpticalFieldSources.invalidate(levelAccessor);
+            if (OpticalFieldSources.isScatteringFieldSource(state)) {
+                markScatteringFieldSourceChanged(levelAccessor, pos);
+            }
+
             OpticalWorldIndex.onBlockBroken(levelAccessor, pos);
             OpticalTraceCache.forgetDormantSource(levelAccessor, pos);
             OpticalTraceCache.markChanged(levelAccessor, pos, OpticalDirtyKind.STRUCTURE);
@@ -84,7 +104,131 @@ public final class SpectralBlockChangeHandlers {
         }
     }
 
+    public static void pistonMoved(LevelAccessor levelAccessor, BlockPos pistonPos, Direction direction) {
+        if (!(levelAccessor instanceof ServerLevel serverLevel)) {
+            return;
+        }
+
+        Set<BlockPos> changedPositions = new HashSet<>();
+        changedPositions.add(pistonPos.immutable());
+
+        for (int distance = 1; distance <= PISTON_RESCAN_DISTANCE; distance++) {
+            changedPositions.add(pistonPos.relative(direction, distance).immutable());
+        }
+
+        for (BlockPos pos : changedPositions) {
+            rescanChangedState(serverLevel, pos, "piston moved");
+        }
+
+        PENDING_PISTON_RESCANS.computeIfAbsent(serverLevel.dimension(), ignored -> new ArrayList<>())
+                .add(new PendingPistonRescan(
+                        Set.copyOf(changedPositions),
+                        serverLevel.getGameTime() + 1L,
+                        PISTON_POST_MOVE_RESCAN_TICKS
+                ));
+    }
+
+    public static void processPendingPistonRescans(MinecraftServer server) {
+        if (PENDING_PISTON_RESCANS.isEmpty()) {
+            return;
+        }
+
+        Map<ResourceKey<Level>, List<PendingPistonRescan>> pendingByLevel =
+                new LinkedHashMap<>(PENDING_PISTON_RESCANS);
+        PENDING_PISTON_RESCANS.clear();
+
+        for (Map.Entry<ResourceKey<Level>, List<PendingPistonRescan>> entry : pendingByLevel.entrySet()) {
+            ServerLevel level = server.getLevel(entry.getKey());
+            if (level == null) {
+                continue;
+            }
+
+            List<PendingPistonRescan> deferred = new ArrayList<>();
+            long gameTime = level.getGameTime();
+
+            for (PendingPistonRescan pending : entry.getValue()) {
+                if (pending.nextGameTime() > gameTime) {
+                    deferred.add(pending);
+                    continue;
+                }
+
+                for (BlockPos pos : pending.positions()) {
+                    rescanChangedState(level, pos, "piston settled");
+                }
+
+                if (pending.remainingScans() > 1) {
+                    deferred.add(new PendingPistonRescan(
+                            pending.positions(),
+                            gameTime + 1L,
+                            pending.remainingScans() - 1
+                    ));
+                }
+            }
+
+            if (!deferred.isEmpty()) {
+                PENDING_PISTON_RESCANS.computeIfAbsent(level.dimension(), ignored -> new ArrayList<>())
+                        .addAll(deferred);
+            }
+        }
+    }
+
+    public static void clearPendingPistonRescans() {
+        PENDING_PISTON_RESCANS.clear();
+    }
+
+    public static void clearPendingPistonRescans(LevelAccessor levelAccessor) {
+        if (levelAccessor instanceof Level level) {
+            PENDING_PISTON_RESCANS.remove(level.dimension());
+        }
+    }
+
+    private static void rescanChangedState(ServerLevel level, BlockPos pos, String reason) {
+        SurfaceCoatingData.removeAll(level, pos);
+        markScatteringFieldSourceChanged(level, pos);
+        OpticalWorldIndex.onBlockPlaced(level, pos);
+        OpticalTraceCache.rememberSourceState(level, pos);
+        OpticalTraceCache.markChanged(level, pos, OpticalDirtyKind.STRUCTURE);
+        RubyBlockEntity.refreshNear(level, pos);
+        OpticalTraceCache.requestIntrinsicSourcesNear(level, pos);
+        OpticalNetworkIndex.markDirty(level);
+        FiberNetworkIndex.onBlockPlaced(level, pos);
+
+        BlockState currentState = level.getBlockState(pos);
+        if (HolographicStorageMultiblock.isRelevantChange(level, pos, currentState)) {
+            HolographicStorageMultiblock.scheduleRefresh(level, pos.immutable(), reason);
+        }
+
+        if (!(currentState.getBlock() instanceof CompactMachinePartBlock)
+                && CompactMachineNetworkData.isRelevantPlacement(level, pos, currentState)) {
+            CompactMachineNetworkData.scheduleRefresh(level, pos.immutable(), reason);
+        }
+    }
+
     private static boolean isFiberRelayOnly(BlockState state) {
         return state.getBlock() instanceof FiberRelayBlock;
+    }
+
+    private static void markScatteringFieldSourceChanged(LevelAccessor levelAccessor, BlockPos sourcePos) {
+        OpticalFieldSources.invalidate(levelAccessor);
+
+        boolean markedAffectedPath = false;
+
+        for (BlockPos affectedPos : OpticalFieldSources.affectedPositionsAround(levelAccessor, sourcePos)) {
+            markedAffectedPath |= OpticalTraceCache.markChanged(
+                    levelAccessor,
+                    affectedPos,
+                    OpticalDirtyKind.TOPOLOGY
+            );
+        }
+
+        if (markedAffectedPath) {
+            OpticalNetworkIndex.markDirty(levelAccessor);
+        }
+    }
+
+    private record PendingPistonRescan(Set<BlockPos> positions, long nextGameTime, int remainingScans) {
+        private PendingPistonRescan {
+            positions = Set.copyOf(positions);
+        }
     }
 }

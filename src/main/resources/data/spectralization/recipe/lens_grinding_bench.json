@@ -1,0 +1,30 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "C": {
+      "item": "minecraft:cobblestone"
+    },
+    "G": {
+      "item": "minecraft:grindstone"
+    },
+    "I": {
+      "tag": "c:ingots/iron"
+    },
+    "P": {
+      "item": "minecraft:piston"
+    },
+    "S": {
+      "item": "minecraft:sand"
+    }
+  },
+  "pattern": [
+    "IGI",
+    "CSC",
+    "IPI"
+  ],
+  "result": {
+    "count": 1,
+    "id": "spectralization:lens_grinding_bench"
+  }
+}

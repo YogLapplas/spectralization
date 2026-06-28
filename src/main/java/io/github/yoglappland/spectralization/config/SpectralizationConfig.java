@@ -74,8 +74,8 @@ public final class SpectralizationConfig {
                 .comment("Whether scattering field source blocks affect nearby optical paths.")
                 .define("enabled", true);
         SCATTERING_FIELD_RADIUS = builder
-                .comment("Radius in blocks around a scattering field source. Default 2 means a 5x5x5 field.")
-                .defineInRange("radius", 2, 0, 16);
+                .comment("Radius in blocks around a scattering field source. Default 1 means a 3x3x3 field.")
+                .defineInRange("radius", 1, 0, 16);
         SCATTERING_FIELD_PROPAGATION_FACTOR = builder
                 .comment("Propagation multiplier applied to beams inside a scattering field.")
                 .defineInRange("propagation_factor", 0.82D, 0.0D, 1.0D);

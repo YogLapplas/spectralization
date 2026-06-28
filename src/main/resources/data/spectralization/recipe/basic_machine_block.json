@@ -1,0 +1,21 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "key": {
+    "I": {
+      "tag": "c:ingots/iron"
+    },
+    "S": {
+      "item": "minecraft:stone"
+    }
+  },
+  "pattern": [
+    "ISI",
+    "S S",
+    "ISI"
+  ],
+  "result": {
+    "count": 4,
+    "id": "spectralization:basic_machine_block"
+  }
+}

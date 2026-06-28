@@ -2,9 +2,10 @@ package io.github.yoglappland.spectralization.optics.field;
 
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.optics.OpticalMaterialProfiles;
-import it.unimi.dsi.fastutil.longs.LongSet;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.WeakHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
@@ -34,22 +35,33 @@ public final class OpticalFieldSources {
         return OpticalMaterialProfiles.isScatteringMarker(state);
     }
 
-    public static void addPotentialFieldSourceDependencies(Level level, BlockPos center, LongSet dependencies) {
-        if (!SpectralizationConfig.scatteringFieldEnabled()) {
-            return;
+    public static Set<BlockPos> affectedPositionsAround(LevelAccessor levelAccessor, BlockPos sourcePos) {
+        if (!(levelAccessor instanceof Level level) || !SpectralizationConfig.scatteringFieldEnabled()) {
+            return Set.of();
         }
 
         int radius = SpectralizationConfig.scatteringFieldRadius();
+
+        if (radius <= 0) {
+            return Set.of();
+        }
+
+        Set<BlockPos> affectedPositions = new LinkedHashSet<>();
         BlockPos.MutableBlockPos mutablePos = new BlockPos.MutableBlockPos();
 
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dy = -radius; dy <= radius; dy++) {
                 for (int dz = -radius; dz <= radius; dz++) {
-                    mutablePos.set(center.getX() + dx, center.getY() + dy, center.getZ() + dz);
-                    dependencies.add(mutablePos.asLong());
+                    mutablePos.set(sourcePos.getX() + dx, sourcePos.getY() + dy, sourcePos.getZ() + dz);
+
+                    if (level.isLoaded(mutablePos)) {
+                        affectedPositions.add(mutablePos.immutable());
+                    }
                 }
             }
         }
+
+        return Set.copyOf(affectedPositions);
     }
 
     public static void invalidate(LevelAccessor level) {
@@ -69,6 +81,10 @@ public final class OpticalFieldSources {
     }
 
     private static OpticalFieldInfluence computeInfluence(Level level, BlockPos center) {
+        if (!SpectralizationConfig.scatteringFieldEnabled()) {
+            return OpticalFieldInfluence.NONE;
+        }
+
         int radius = SpectralizationConfig.scatteringFieldRadius();
 
         if (radius <= 0) {

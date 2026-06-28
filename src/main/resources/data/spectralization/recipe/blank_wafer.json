@@ -7,10 +7,12 @@
     }
   },
   "pattern": [
+    "SSS",
+    "S S",
     "SSS"
   ],
   "result": {
-    "count": 6,
+    "count": 4,
     "id": "spectralization:blank_wafer"
   }
 }

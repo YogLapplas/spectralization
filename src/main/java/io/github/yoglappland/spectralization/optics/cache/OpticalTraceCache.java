@@ -27,7 +27,6 @@ import io.github.yoglappland.spectralization.optics.OpticalSpotTracker;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
 import io.github.yoglappland.spectralization.optics.SpotRecord;
-import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
 import io.github.yoglappland.spectralization.optics.fiber.FiberOverloadMonitor;
 import io.github.yoglappland.spectralization.optics.geometry.BeamPathOverlayTracker;
 import io.github.yoglappland.spectralization.optics.pump.OpticalPumpSources;
@@ -1341,20 +1340,19 @@ public final class OpticalTraceCache {
                 ? new ArrayList<>(directReceiverOutputs)
                 : new ArrayList<>();
         dependencies.add(request.sourcePos().asLong());
-        OpticalFieldSources.addPotentialFieldSourceDependencies(level, request.sourcePos(), dependencies);
 
         if (trace != null) {
             for (OpticalTraceStep step : trace.steps()) {
-                addDependency(level, step.pos(), dependencies);
+                addDependency(step.pos(), dependencies);
                 collectReceiverOutput(level, step, receiverOutputs);
             }
 
             for (OpticalTraceTermination termination : trace.terminations()) {
-                addDependency(level, termination.pos(), dependencies);
+                addDependency(termination.pos(), dependencies);
             }
         }
 
-        addGraphDependencies(level, portGraph, dependencies);
+        addGraphDependencies(portGraph, dependencies);
         List<SpotRecord> spotRecords = scalarPowerSolution.reliableForReadout()
                 ? CompiledSpotLayer.sample(level, portGraph, scalarPowerSolution, request.sourceOutput())
                 : List.of();
@@ -1377,20 +1375,19 @@ public final class OpticalTraceCache {
         );
     }
 
-    private static void addDependency(ServerLevel level, BlockPos pos, LongSet dependencies) {
+    private static void addDependency(BlockPos pos, LongSet dependencies) {
         dependencies.add(pos.asLong());
-        OpticalFieldSources.addPotentialFieldSourceDependencies(level, pos, dependencies);
     }
 
-    private static void addGraphDependencies(ServerLevel level, CompiledPortGraph portGraph, LongSet dependencies) {
+    private static void addGraphDependencies(CompiledPortGraph portGraph, LongSet dependencies) {
         Set<PortGraphNode> outgoingNodesWithPropagation = new HashSet<>();
 
         for (PortGraphNode node : portGraph.nodes()) {
-            addDependency(level, node.pos(), dependencies);
+            addDependency(node.pos(), dependencies);
         }
 
         for (PortGraphEdge edge : portGraph.edges()) {
-            addEdgePathDependencies(level, edge.from().pos(), edge.to().pos(), dependencies);
+            addEdgePathDependencies(edge.from().pos(), edge.to().pos(), dependencies);
 
             if (edge.kind() == PortGraphEdgeKind.PROPAGATION && !edge.from().pos().equals(edge.to().pos())) {
                 outgoingNodesWithPropagation.add(edge.from());
@@ -1399,34 +1396,29 @@ public final class OpticalTraceCache {
 
         for (PortGraphNode node : portGraph.nodes()) {
             if (node.waveKind() == PortWaveKind.OUTGOING && !outgoingNodesWithPropagation.contains(node)) {
-                addTerminalRayDependencies(level, node, dependencies);
+                addTerminalRayDependencies(node, dependencies);
             }
         }
     }
 
-    private static void addTerminalRayDependencies(ServerLevel level, PortGraphNode node, LongSet dependencies) {
+    private static void addTerminalRayDependencies(PortGraphNode node, LongSet dependencies) {
         BlockPos.MutableBlockPos cursor = node.pos().mutable();
 
         for (int distance = 1; distance <= BeamPathOverlayTracker.terminalRayBlocks(); distance++) {
             cursor.move(node.side());
-            addDependency(level, cursor, dependencies);
+            addDependency(cursor, dependencies);
         }
     }
 
-    private static void addEdgePathDependencies(
-            ServerLevel level,
-            BlockPos from,
-            BlockPos to,
-            LongSet dependencies
-    ) {
+    private static void addEdgePathDependencies(BlockPos from, BlockPos to, LongSet dependencies) {
         int dx = Integer.compare(to.getX(), from.getX());
         int dy = Integer.compare(to.getY(), from.getY());
         int dz = Integer.compare(to.getZ(), from.getZ());
         int changedAxes = (dx == 0 ? 0 : 1) + (dy == 0 ? 0 : 1) + (dz == 0 ? 0 : 1);
 
         if (changedAxes != 1) {
-            addDependency(level, from, dependencies);
-            addDependency(level, to, dependencies);
+            addDependency(from, dependencies);
+            addDependency(to, dependencies);
             return;
         }
 
@@ -1434,7 +1426,7 @@ public final class OpticalTraceCache {
 
         while (!cursor.equals(to)) {
             cursor.move(dx, dy, dz);
-            addDependency(level, cursor, dependencies);
+            addDependency(cursor, dependencies);
         }
     }
 

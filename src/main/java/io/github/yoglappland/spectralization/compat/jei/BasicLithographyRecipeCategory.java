@@ -83,10 +83,12 @@ public final class BasicLithographyRecipeCategory implements IRecipeCategory<Bas
             index++;
         }
 
-        if (recipe.usesTemplate() && recipe.templateItem() != null) {
-            builder.addSlot(RecipeIngredientRole.INPUT, TEMPLATE_X + ITEM_SLOT_INSET, TEMPLATE_Y + ITEM_SLOT_INSET)
-                    .setSlotName("template")
-                    .addItemStack(new ItemStack(recipe.templateItem()));
+        int templateCount = recipe.templateItems().size();
+        for (int templateIndex = 0; templateIndex < templateCount; templateIndex++) {
+            int x = TEMPLATE_X + templateIndex * (SLOT_SIZE + 2) - (templateCount - 1) * (SLOT_SIZE + 2) / 2;
+            builder.addSlot(RecipeIngredientRole.INPUT, x + ITEM_SLOT_INSET, TEMPLATE_Y + ITEM_SLOT_INSET)
+                    .setSlotName("template_" + templateIndex)
+                    .addItemStack(new ItemStack(recipe.templateItems().get(templateIndex)));
         }
 
         builder.addSlot(RecipeIngredientRole.OUTPUT, OUTPUT_X + ITEM_SLOT_INSET, OUTPUT_Y + ITEM_SLOT_INSET)

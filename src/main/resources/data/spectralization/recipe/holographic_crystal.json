@@ -1,0 +1,21 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "A": {
+      "item": "minecraft:amethyst_block"
+    },
+    "Y": {
+      "item": "spectralization:yag_crystal"
+    }
+  },
+  "pattern": [
+    "AAA",
+    "AYA",
+    "AAA"
+  ],
+  "result": {
+    "count": 1,
+    "id": "spectralization:holographic_crystal"
+  }
+}

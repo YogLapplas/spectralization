@@ -12,6 +12,7 @@ public final class SpectralServerTickTasks {
     }
 
     public static void runPostTick(MinecraftServer server) {
+        SpectralBlockChangeHandlers.processPendingPistonRescans(server);
         OpticalTraceCache.processQueues(server);
         HolographicStorageMultiblock.processPendingRefreshes(server);
         CompactMachineNetworkData.processPendingRefreshes(server);

@@ -9,6 +9,7 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
+import net.neoforged.neoforge.event.level.PistonEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
@@ -23,17 +24,20 @@ public final class SpectralCommonEvents {
     @SubscribeEvent
     public void onServerStarting(ServerStartingEvent event) {
         OpticalRuntimeCaches.clearAll();
+        SpectralBlockChangeHandlers.clearPendingPistonRescans();
     }
 
     @SubscribeEvent
     public void onServerStopped(ServerStoppedEvent event) {
         OpticalRuntimeCaches.clearAll();
+        SpectralBlockChangeHandlers.clearPendingPistonRescans();
         StrawberryMovementController.clearAll();
     }
 
     @SubscribeEvent
     public void onLevelUnload(LevelEvent.Unload event) {
         OpticalRuntimeCaches.clear(event.getLevel());
+        SpectralBlockChangeHandlers.clearPendingPistonRescans(event.getLevel());
     }
 
     @SubscribeEvent
@@ -49,6 +53,11 @@ public final class SpectralCommonEvents {
     @SubscribeEvent
     public void onNeighborNotified(BlockEvent.NeighborNotifyEvent event) {
         SpectralBlockChangeHandlers.neighborNotified(event.getLevel(), event.getPos());
+    }
+
+    @SubscribeEvent
+    public void onPistonMoved(PistonEvent.Post event) {
+        SpectralBlockChangeHandlers.pistonMoved(event.getLevel(), event.getPos(), event.getDirection());
     }
 
     @SubscribeEvent

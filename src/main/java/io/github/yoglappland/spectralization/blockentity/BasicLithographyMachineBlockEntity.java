@@ -360,8 +360,10 @@ public class BasicLithographyMachineBlockEntity extends BlockEntity implements P
 
         consumeItemCosts(recipe);
 
-        if (recipe.usesTemplate() && templateRule == TEMPLATE_RULE_MOVE_USED && match.templateSlot() >= 0) {
-            moveUsedTemplateToOutput(match.templateSlot());
+        if (recipe.usesTemplate() && templateRule == TEMPLATE_RULE_MOVE_USED) {
+            for (int templateSlot : match.templateSlots()) {
+                moveUsedTemplateToOutput(templateSlot);
+            }
         }
 
         insertResult(recipe.resultStack(), resultOutputStart(recipe), resultOutputEnd(recipe));
@@ -415,11 +417,50 @@ public class BasicLithographyMachineBlockEntity extends BlockEntity implements P
             return true;
         }
 
-        if (recipe.usesTemplate() && templateRule == TEMPLATE_RULE_MOVE_USED && match.templateSlot() >= 0) {
-            ItemStack template = items.getStackInSlot(match.templateSlot() == 0 ? SLOT_TEMPLATE_INPUT_A : SLOT_TEMPLATE_INPUT_B);
-            ItemStack moved = template.copy();
-            moved.setCount(1);
-            return acceptedCount(moved, SLOT_TEMPLATE_OUTPUT_A, SLOT_TEMPLATE_OUTPUT_B) < 1;
+        if (recipe.usesTemplate() && templateRule == TEMPLATE_RULE_MOVE_USED) {
+            return movedTemplatesBlocked(match.templateSlots());
+        }
+
+        return false;
+    }
+
+    private boolean movedTemplatesBlocked(List<Integer> relativeTemplateSlots) {
+        List<ItemStack> simulatedOutputs = new java.util.ArrayList<>(List.of(
+                items.getStackInSlot(SLOT_TEMPLATE_OUTPUT_A).copy(),
+                items.getStackInSlot(SLOT_TEMPLATE_OUTPUT_B).copy()
+        ));
+
+        for (int relativeTemplateSlot : relativeTemplateSlots) {
+            ItemStack template = items.getStackInSlot(relativeTemplateSlot == 0 ? SLOT_TEMPLATE_INPUT_A : SLOT_TEMPLATE_INPUT_B);
+
+            if (template.isEmpty()) {
+                continue;
+            }
+
+            ItemStack moved = template.copyWithCount(1);
+
+            if (!insertIntoSimulatedOutputs(simulatedOutputs, moved)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static boolean insertIntoSimulatedOutputs(List<ItemStack> simulatedOutputs, ItemStack stack) {
+        for (int index = 0; index < simulatedOutputs.size(); index++) {
+            ItemStack output = simulatedOutputs.get(index);
+
+            if (output.isEmpty()) {
+                simulatedOutputs.set(index, stack.copy());
+                return true;
+            }
+
+            if (ItemStack.isSameItemSameComponents(output, stack) && output.getCount() < output.getMaxStackSize()) {
+                output.grow(1);
+                simulatedOutputs.set(index, output);
+                return true;
+            }
         }
 
         return false;

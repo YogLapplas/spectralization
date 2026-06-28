@@ -1,0 +1,21 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "key": {
+    "G": {
+      "item": "spectralization:heavy_glass"
+    },
+    "H": {
+      "item": "spectralization:holographic_crystal"
+    }
+  },
+  "pattern": [
+    "HHH",
+    "HGH",
+    "HHH"
+  ],
+  "result": {
+    "count": 1,
+    "id": "spectralization:holographic_storage_shell"
+  }
+}

@@ -20,6 +20,7 @@ import io.github.yoglappland.spectralization.block.HolographicStorageCrystalBloc
 import io.github.yoglappland.spectralization.block.HolographicStorageMainCoreBlock;
 import io.github.yoglappland.spectralization.block.HolographicStorageScreenBlock;
 import io.github.yoglappland.spectralization.block.HolographicStorageShellBlock;
+import io.github.yoglappland.spectralization.block.LedBlock;
 import io.github.yoglappland.spectralization.block.LensGrindingBenchBlock;
 import io.github.yoglappland.spectralization.block.LensHolderBlock;
 import io.github.yoglappland.spectralization.block.MetamaterialDesignTableBlock;
@@ -51,6 +52,7 @@ import io.github.yoglappland.spectralization.network.SpectralNetwork;
 import io.github.yoglappland.spectralization.optics.EnvironmentLightSpectra;
 import io.github.yoglappland.spectralization.optics.surface.SurfaceTreatmentKind;
 import io.github.yoglappland.spectralization.recipe.AdvancedBrushLoadingRecipe;
+import io.github.yoglappland.spectralization.recipe.BasicLithographyMachineCraftingRecipe;
 import io.github.yoglappland.spectralization.recipe.SingularMaterialInfusionRecipe;
 import io.github.yoglappland.spectralization.registry.SpectralCapabilities;
 import io.github.yoglappland.spectralization.registry.SpectralCreativeTabItems;
@@ -104,6 +106,11 @@ public class Spectralization {
                     "singular_material_infusion",
                     () -> new SimpleCraftingRecipeSerializer<>(SingularMaterialInfusionRecipe::new)
             );
+    public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<BasicLithographyMachineCraftingRecipe>>
+            BASIC_LITHOGRAPHY_MACHINE_CRAFTING_SERIALIZER = RECIPE_SERIALIZERS.register(
+                    "basic_lithography_machine_crafting",
+                    () -> new SimpleCraftingRecipeSerializer<>(BasicLithographyMachineCraftingRecipe::new)
+            );
 
     public static final DeferredItem<LensItem> LENS = ITEMS.register(
             "lens",
@@ -141,30 +148,18 @@ public class Spectralization {
     );
     public static final DeferredItem<Item> BLANK_WAFER =
             ITEMS.registerSimpleItem("blank_wafer", new Item.Properties());
-    public static final DeferredItem<Item> PHOTORESIST =
-            ITEMS.registerSimpleItem("photoresist", new Item.Properties());
-    public static final DeferredItem<Item> COATED_WAFER =
-            ITEMS.registerSimpleItem("coated_wafer", new Item.Properties());
-    public static final DeferredItem<Item> SILVERED_SUBSTRATE =
-            ITEMS.registerSimpleItem("silvered_substrate", new Item.Properties());
-    public static final DeferredItem<Item> HOLOGRAPHIC_MEDIUM =
-            ITEMS.registerSimpleItem("holographic_medium", new Item.Properties());
+    public static final DeferredItem<Item> HOLOGRAPHIC_CRYSTAL =
+            ITEMS.registerSimpleItem("holographic_crystal", new Item.Properties());
+    public static final DeferredItem<Item> BASIC_DIODE =
+            ITEMS.registerSimpleItem("basic_diode", new Item.Properties());
+    public static final DeferredItem<Item> BASIC_MACHINE_CORE =
+            ITEMS.registerSimpleItem("basic_machine_core", new Item.Properties());
     public static final DeferredItem<Item> PRIMITIVE_CIRCUIT_BOARD =
             ITEMS.registerSimpleItem("primitive_circuit_board", new Item.Properties());
     public static final DeferredItem<Item> ADVANCED_CIRCUIT_BOARD =
             ITEMS.registerSimpleItem("advanced_circuit_board", new Item.Properties());
     public static final DeferredItem<Item> PRECISION_CIRCUIT_BOARD =
             ITEMS.registerSimpleItem("precision_circuit_board", new Item.Properties());
-    public static final DeferredItem<Item> SILICA_PREFORM =
-            ITEMS.registerSimpleItem("silica_preform", new Item.Properties());
-    public static final DeferredItem<Item> BOROSILICATE_PREFORM =
-            ITEMS.registerSimpleItem("borosilicate_preform", new Item.Properties());
-    public static final DeferredItem<Item> CROWN_PREFORM =
-            ITEMS.registerSimpleItem("crown_preform", new Item.Properties());
-    public static final DeferredItem<Item> FLINT_PREFORM =
-            ITEMS.registerSimpleItem("flint_preform", new Item.Properties());
-    public static final DeferredItem<Item> HEAVY_PREFORM =
-            ITEMS.registerSimpleItem("heavy_preform", new Item.Properties());
     public static final DeferredItem<OpticalFiberCoilItem> OPTICAL_FIBER_COIL = ITEMS.register(
             "optical_fiber_coil",
             () -> new OpticalFiberCoilItem(new Item.Properties().stacksTo(1))
@@ -265,8 +260,6 @@ public class Spectralization {
             ITEMS.registerSimpleItem("alumina_dust", new Item.Properties());
     public static final DeferredItem<Item> ALUMINA_CERAMIC_PLATE =
             ITEMS.registerSimpleItem("alumina_ceramic_plate", new Item.Properties());
-    public static final DeferredItem<Item> BORON_DUST =
-            ITEMS.registerSimpleItem("boron_dust", new Item.Properties());
     public static final DeferredItem<Item> FLUORITE = ITEMS.registerSimpleItem("fluorite", new Item.Properties());
     public static final DeferredItem<Item> ND_FLUORITE_CRYSTAL =
             ITEMS.registerSimpleItem("nd_fluorite_crystal", new Item.Properties());
@@ -739,6 +732,58 @@ public class Spectralization {
 
     public static final DeferredItem<BlockItem> ADVANCED_STRAY_LIGHT_EMITTER_ITEM =
             ITEMS.registerSimpleBlockItem("advanced_stray_light_emitter", ADVANCED_STRAY_LIGHT_EMITTER);
+
+    public static final DeferredBlock<LedBlock> BASIC_LED = BLOCKS.register(
+            "basic_led",
+            () -> new LedBlock(
+                    BlockBehaviour.Properties.of()
+                            .mapColor(MapColor.COLOR_LIGHT_GRAY)
+                            .strength(0.4F, 0.4F)
+                            .sound(SoundType.GLASS)
+                            .lightLevel(state -> 10)
+                            .noOcclusion()
+            )
+    );
+
+    public static final DeferredItem<BlockItem> BASIC_LED_ITEM =
+            ITEMS.registerSimpleBlockItem("basic_led", BASIC_LED);
+
+    public static final DeferredBlock<LedBlock> ADVANCED_LED = BLOCKS.register(
+            "advanced_led",
+            () -> new LedBlock(
+                    BlockBehaviour.Properties.of()
+                            .mapColor(MapColor.COLOR_LIGHT_BLUE)
+                            .strength(0.5F, 0.5F)
+                            .sound(SoundType.GLASS)
+                            .lightLevel(state -> 15)
+                            .noOcclusion()
+            )
+    );
+
+    public static final DeferredItem<BlockItem> ADVANCED_LED_ITEM =
+            ITEMS.registerSimpleBlockItem("advanced_led", ADVANCED_LED);
+
+    public static final DeferredBlock<Block> BASIC_MACHINE_BLOCK = BLOCKS.registerSimpleBlock(
+            "basic_machine_block",
+            BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(2.0F, 6.0F)
+                    .sound(SoundType.METAL)
+    );
+
+    public static final DeferredItem<BlockItem> BASIC_MACHINE_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("basic_machine_block", BASIC_MACHINE_BLOCK);
+
+    public static final DeferredBlock<Block> ADVANCED_MACHINE_BLOCK = BLOCKS.registerSimpleBlock(
+            "advanced_machine_block",
+            BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(2.5F, 6.0F)
+                    .sound(SoundType.METAL)
+    );
+
+    public static final DeferredItem<BlockItem> ADVANCED_MACHINE_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("advanced_machine_block", ADVANCED_MACHINE_BLOCK);
 
     public static final DeferredBlock<RubyBlock> RUBY_BLOCK = BLOCKS.register(
             "ruby_block",

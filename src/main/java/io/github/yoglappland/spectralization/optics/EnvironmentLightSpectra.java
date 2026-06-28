@@ -49,6 +49,11 @@ public final class EnvironmentLightSpectra {
             band(SpectralRegion.VISIBLE, 18.0, 8.0, 0.35, 0, 31, 1),
             band(SpectralRegion.ULTRAVIOLET, 4.0, 3.5, 0.08, 0, 14, 2)
     );
+    private static final SpectrumProfile WHITE_LED = profile(
+            band(SpectralRegion.VISIBLE, 4.5, 2.0, 0.58, 0, 12, 1),
+            band(SpectralRegion.VISIBLE, 16.5, 7.2, 0.78, 4, 30, 1),
+            band(SpectralRegion.VISIBLE, 25.0, 5.4, 0.34, 12, 31, 1)
+    );
     private static final SpectrumProfile WARM_COMBUSTION = profile(
             band(SpectralRegion.THZ, 8.0, 5.5, 0.05, 0, 15, 3),
             band(SpectralRegion.INFRARED, 11.0, 9.0, 0.46, 0, 31, 2),
@@ -348,6 +353,11 @@ public final class EnvironmentLightSpectra {
             return TECHNOLOGY_BLUE;
         }
 
+        if (isSpectralizationBlock(blockId, "basic_led")
+                || isSpectralizationBlock(blockId, "advanced_led")) {
+            return WHITE_LED;
+        }
+
         if (block == Blocks.LAVA || WARM_COMBUSTION_BLOCKS.contains(block)) {
             return WARM_COMBUSTION;
         }
@@ -381,6 +391,10 @@ public final class EnvironmentLightSpectra {
 
     private static boolean isSpectralization(ResourceLocation blockId, String pathPrefix) {
         return "spectralization".equals(blockId.getNamespace()) && blockId.getPath().startsWith(pathPrefix);
+    }
+
+    private static boolean isSpectralizationBlock(ResourceLocation blockId, String path) {
+        return "spectralization".equals(blockId.getNamespace()) && path.equals(blockId.getPath());
     }
 
     private static SpectrumProfile profile(SpectrumBand... bands) {

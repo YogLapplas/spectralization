@@ -5,6 +5,7 @@ import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
 import io.github.yoglappland.spectralization.optics.pump.OpticalPumpSources;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -34,19 +35,15 @@ public class RubyBlockEntity extends BlockEntity {
 
         boolean changed = false;
 
-        for (int dx = -2; dx <= 2; dx++) {
-            for (int dy = -2; dy <= 2; dy++) {
-                for (int dz = -2; dz <= 2; dz++) {
-                    if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) > 2) {
-                        continue;
-                    }
+        if (level.getBlockEntity(center) instanceof RubyBlockEntity ruby) {
+            changed |= ruby.refreshOutput();
+        }
 
-                    BlockPos pos = center.offset(dx, dy, dz);
+        for (Direction direction : Direction.values()) {
+            BlockPos pos = center.relative(direction);
 
-                    if (level.getBlockEntity(pos) instanceof RubyBlockEntity ruby) {
-                        changed |= ruby.refreshOutput();
-                    }
-                }
+            if (level.getBlockEntity(pos) instanceof RubyBlockEntity ruby) {
+                changed |= ruby.refreshOutput();
             }
         }
 

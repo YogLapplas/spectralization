@@ -1,0 +1,24 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "H": {
+      "item": "spectralization:holographic_crystal"
+    },
+    "I": {
+      "tag": "c:ingots/iron"
+    },
+    "S": {
+      "item": "spectralization:silicon"
+    }
+  },
+  "pattern": [
+    "SHS",
+    "H H",
+    "IHI"
+  ],
+  "result": {
+    "count": 1,
+    "id": "spectralization:solar_doping_chamber"
+  }
+}

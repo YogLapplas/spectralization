@@ -1,0 +1,33 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "A": {
+      "item": "spectralization:arsenic_doped_silicon"
+    },
+    "B": {
+      "item": "spectralization:boron_doped_silicon"
+    },
+    "C": {
+      "item": "spectralization:basic_machine_core"
+    },
+    "E": {
+      "item": "spectralization:erbium_doped_silicon"
+    },
+    "H": {
+      "item": "spectralization:holographic_crystal"
+    },
+    "P": {
+      "item": "spectralization:phosphorus_doped_silicon"
+    }
+  },
+  "pattern": [
+    "BHP",
+    "HCH",
+    "AHE"
+  ],
+  "result": {
+    "count": 1,
+    "id": "spectralization:recursive_generator"
+  }
+}

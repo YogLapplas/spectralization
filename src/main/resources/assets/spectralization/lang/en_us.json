@@ -480,7 +480,6 @@
   "jei.spectralization.photoinduced_reaction": "Photoinduced Reaction",
   "jei.spectralization.photoinduced_reaction.power": "Coherent power: %s SP",
   "jei.spectralization.photoinduced_reaction.time": "Exposure time: %s s",
-  "jei.spectralization.photoinduced_reaction.random_output": "Random output color",
   "jei.spectralization.light_source_generator": "Light Source Generation",
   "jei.spectralization.light_source_generator.output": "Output: %s FE/t",
   "jei.spectralization.light_source_generator.duration": "Duration: %s s",
@@ -535,5 +534,9 @@
   "direction.spectralization.west": "West",
   "direction.spectralization.up": "Up",
   "direction.spectralization.down": "Down",
-  "death.attack.spectralization.laser": "%1$s was burned through by a laser"
+  "death.attack.spectralization.laser": "%1$s was burned through by a laser",
+  "jei.spectralization.photoinduced_reaction.probabilities": "Chances:",
+  "jei.spectralization.photoinduced_reaction.probability_line": "%s: %s",
+  "jei.spectralization.photoinduced_reaction.probability_more": "Other %s results: %s",
+  "jei.spectralization.photoinduced_reaction.no_output": "No output"
 }

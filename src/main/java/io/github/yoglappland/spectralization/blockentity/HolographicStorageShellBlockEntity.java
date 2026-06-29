@@ -436,7 +436,7 @@ public class HolographicStorageShellBlockEntity extends BlockEntity implements P
         }
 
         PhotoinducedReactionRecipe recipe = maybeRecipe.get();
-        List<PhotoinducedOutputCandidate> candidates = outputCandidates(recipe.possibleResults(templateStack()));
+        List<PhotoinducedOutputCandidate> candidates = outputCandidates(recipe.weightedResults(templateStack()));
 
         if (committedCoherentPower + LIGHT_EPSILON < recipe.requiredCoherentPower() || candidates.isEmpty()) {
             setPhotoinducedActive(false);
@@ -473,43 +473,96 @@ public class HolographicStorageShellBlockEntity extends BlockEntity implements P
     }
 
     private void completePhotoinducedReaction(Level level, PhotoinducedReactionRecipe recipe) {
-        List<PhotoinducedOutputCandidate> candidates = outputCandidates(recipe.possibleResults(templateStack()));
+        List<PhotoinducedOutputCandidate> candidates = outputCandidates(recipe.weightedResults(templateStack()));
         if (candidates.isEmpty() || extract(1, true).isEmpty()) {
             return;
         }
 
-        PhotoinducedOutputCandidate candidate = candidates.get(level.random.nextInt(candidates.size()));
-        int inserted = candidate.shell().insert(candidate.result(), 1, false);
-        if (inserted <= 0) {
+        PhotoinducedOutputCandidate candidate = chooseWeightedCandidate(candidates, level.random);
+        if (candidate.result().isEmpty()) {
+            extract(1, false);
+            return;
+        }
+
+        if (candidate.shell() == null || candidate.shell().insert(candidate.result(), 1, false) <= 0) {
             return;
         }
 
         extract(1, false);
     }
 
-    private List<PhotoinducedOutputCandidate> outputCandidates(List<ItemStack> results) {
+    private List<PhotoinducedOutputCandidate> outputCandidates(List<PhotoinducedReactionRecipe.WeightedResult> results) {
         if (level == null || results.isEmpty()) {
             return List.of();
         }
 
         List<PhotoinducedOutputCandidate> candidates = new ArrayList<>();
-        for (Direction direction : Direction.values()) {
-            BlockPos outputPos = worldPosition.relative(direction);
-
-            if (!(level.getBlockEntity(outputPos) instanceof HolographicStorageShellBlockEntity shell)
-                    || shell == this
-                    || shell.isLitForPhotoinducedOutput()) {
+        for (PhotoinducedReactionRecipe.WeightedResult result : results) {
+            if (result.stack().isEmpty()) {
+                candidates.add(new PhotoinducedOutputCandidate(null, ItemStack.EMPTY, result.weight()));
                 continue;
             }
 
-            for (ItemStack result : results) {
-                if (shell.insert(result, 1, true) > 0) {
-                    candidates.add(new PhotoinducedOutputCandidate(shell, result.copyWithCount(1)));
+            ItemStack stack = result.stack();
+            List<HolographicStorageShellBlockEntity> shells = validOutputShells(stack);
+            if (shells.isEmpty()) {
+                continue;
+            }
+
+            int baseWeight = result.weight() / shells.size();
+            int remainder = result.weight() % shells.size();
+            for (int index = 0; index < shells.size(); index++) {
+                int weight = baseWeight + (index < remainder ? 1 : 0);
+                if (weight > 0) {
+                    candidates.add(new PhotoinducedOutputCandidate(shells.get(index), stack.copyWithCount(1), weight));
                 }
             }
         }
 
         return candidates;
+    }
+
+    private List<HolographicStorageShellBlockEntity> validOutputShells(ItemStack result) {
+        if (level == null || result.isEmpty()) {
+            return List.of();
+        }
+
+        List<HolographicStorageShellBlockEntity> shells = new ArrayList<>();
+        for (Direction direction : Direction.values()) {
+            BlockPos outputPos = worldPosition.relative(direction);
+
+            if (level.getBlockEntity(outputPos) instanceof HolographicStorageShellBlockEntity shell
+                    && shell != this
+                    && !shell.isLitForPhotoinducedOutput()
+                    && shell.insert(result, 1, true) > 0) {
+                shells.add(shell);
+            }
+        }
+        return shells;
+    }
+
+    private static PhotoinducedOutputCandidate chooseWeightedCandidate(
+            List<PhotoinducedOutputCandidate> candidates,
+            net.minecraft.util.RandomSource random
+    ) {
+        int totalWeight = 0;
+        for (PhotoinducedOutputCandidate candidate : candidates) {
+            totalWeight += Math.max(0, candidate.weight());
+        }
+
+        if (totalWeight <= 0) {
+            return candidates.getFirst();
+        }
+
+        int roll = random.nextInt(totalWeight);
+        for (PhotoinducedOutputCandidate candidate : candidates) {
+            roll -= Math.max(0, candidate.weight());
+            if (roll < 0) {
+                return candidate;
+            }
+        }
+
+        return candidates.getLast();
     }
 
     private void tickChannelEngraving(Level level) {
@@ -774,8 +827,10 @@ public class HolographicStorageShellBlockEntity extends BlockEntity implements P
     }
 
     private record PhotoinducedOutputCandidate(
+            @Nullable
             HolographicStorageShellBlockEntity shell,
-            ItemStack result
+            ItemStack result,
+            int weight
     ) {
     }
 

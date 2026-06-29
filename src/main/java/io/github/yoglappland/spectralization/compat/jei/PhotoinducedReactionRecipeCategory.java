@@ -3,6 +3,8 @@ package io.github.yoglappland.spectralization.compat.jei;
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.client.gui.ThermalSmelterUiSkin;
 import io.github.yoglappland.spectralization.storage.PhotoinducedReactionRecipe;
+import java.util.List;
+import java.util.Locale;
 import mezz.jei.api.gui.builder.IRecipeLayoutBuilder;
 import mezz.jei.api.gui.builder.ITooltipBuilder;
 import mezz.jei.api.gui.drawable.IDrawable;
@@ -32,6 +34,7 @@ public final class PhotoinducedReactionRecipeCategory implements IRecipeCategory
     private static final int REACTION_LINE_WIDTH = 66;
     private static final int REACTION_LINE_HEIGHT = 3;
     private static final int REACTION_LINE_COLOR = 0xFFC8C3B7;
+    private static final int MAX_PROBABILITY_LINES = 10;
 
     private final IDrawable icon;
 
@@ -110,9 +113,7 @@ public final class PhotoinducedReactionRecipeCategory implements IRecipeCategory
                     secondsText(recipe.processTicks())
             ));
 
-            if ("wool_color_shift".equals(recipe.id())) {
-                tooltip.add(Component.translatable("jei.spectralization.photoinduced_reaction.random_output"));
-            }
+            addProbabilityTooltip(tooltip, recipe);
         }
     }
 
@@ -184,5 +185,57 @@ public final class PhotoinducedReactionRecipeCategory implements IRecipeCategory
         return value == Math.rint(value)
                 ? String.valueOf((int) value)
                 : String.format(java.util.Locale.ROOT, "%.2f", value);
+    }
+
+    private static void addProbabilityTooltip(ITooltipBuilder tooltip, PhotoinducedReactionRecipe recipe) {
+        List<PhotoinducedReactionRecipe.ProbabilityEntry> entries = recipe.probabilityEntries();
+        if (entries.size() <= 1) {
+            return;
+        }
+
+        tooltip.add(Component.translatable("jei.spectralization.photoinduced_reaction.probabilities"));
+
+        int hiddenCount = 0;
+        int hiddenWeight = 0;
+        int totalWeight = entries.getFirst().totalWeight();
+        for (int index = 0; index < entries.size(); index++) {
+            PhotoinducedReactionRecipe.ProbabilityEntry entry = entries.get(index);
+            if (index >= MAX_PROBABILITY_LINES) {
+                hiddenCount++;
+                hiddenWeight += entry.weight();
+                continue;
+            }
+
+            tooltip.add(Component.translatable(
+                    "jei.spectralization.photoinduced_reaction.probability_line",
+                    probabilityName(entry),
+                    probabilityText(entry.chancePercent())
+            ));
+        }
+
+        if (hiddenCount > 0) {
+            tooltip.add(Component.translatable(
+                    "jei.spectralization.photoinduced_reaction.probability_more",
+                    hiddenCount,
+                    probabilityText(hiddenWeight * 100.0 / Math.max(1, totalWeight))
+            ));
+        }
+    }
+
+    private static Component probabilityName(PhotoinducedReactionRecipe.ProbabilityEntry entry) {
+        return entry.stack().isEmpty()
+                ? Component.translatable("jei.spectralization.photoinduced_reaction.no_output")
+                : entry.stack().getHoverName();
+    }
+
+    private static String probabilityText(double value) {
+        String text = String.format(Locale.ROOT, "%.3f", value);
+        while (text.contains(".") && text.endsWith("0")) {
+            text = text.substring(0, text.length() - 1);
+        }
+        if (text.endsWith(".")) {
+            text = text.substring(0, text.length() - 1);
+        }
+        return text + "%";
     }
 }

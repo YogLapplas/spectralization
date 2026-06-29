@@ -2,6 +2,7 @@ package io.github.yoglappland.spectralization.client.compact;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.math.Axis;
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.client.ClientHudState;
 import io.github.yoglappland.spectralization.network.CompactMachineAnimationPayload;
@@ -10,10 +11,13 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.block.BlockRenderDispatcher;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -39,6 +43,12 @@ public final class CompactMachineOverlayRenderEvents {
     private static final int PROJECTION_R = 0xFF;
     private static final int PROJECTION_G = 0xD4;
     private static final int PROJECTION_B = 0x64;
+    private static final int FIELD_R = 0x83;
+    private static final int FIELD_G = 0xF7;
+    private static final int FIELD_B = 0xE2;
+    private static final int PHASE_R = 0xFF;
+    private static final int PHASE_G = 0xEC;
+    private static final int PHASE_B = 0x90;
     private static final int TRACK_R = 0xEE;
     private static final int TRACK_G = 0xFF;
     private static final int TRACK_B = 0xD8;
@@ -46,11 +56,14 @@ public final class CompactMachineOverlayRenderEvents {
     private static final double WORK_AREA_EXPANSION = 0.08D / 16.0D;
     private static final int SPARK_COUNT = 56;
     private static final int TRACK_COUNT = 18;
+    private static final int MAX_COLLAPSING_BLOCK_MODELS = 384;
     private static final double ORBITING_SPARK_SIZE_SCALE = 0.76D;
     private static final double INITIAL_ORBIT_SPEED = 0.42D;
     private static final double ACCELERATED_ORBIT_SPEED = 0.519D;
     private static final double COLLAPSE_ORBIT_SPEED = 0.5796D;
     private static final double GOLDEN_ANGLE = 2.399963229728653D;
+    private static final double FIELD_EDGE_HALF_WIDTH = 0.030D;
+    private static final double COMPRESSION_FIELD_EXPANSION = 0.035D;
     private static final ResourceLocation SPARK_TEXTURE =
             ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "textures/effect/spot_core.png");
     private static final ResourceLocation SPARK_HALO_TEXTURE =
@@ -102,19 +115,19 @@ public final class CompactMachineOverlayRenderEvents {
         }
 
         for (ClientCompactMachineAnimationCache.ActiveAnimation animation : animations) {
-            renderCompressionProjection(consumer, pose, animation);
+            renderCompressionProjection(bufferSource, consumer, poseStack, pose, animation);
         }
-        bufferSource.endBatch(RenderType.debugQuads());
+        bufferSource.endBatch();
 
         VertexConsumer haloConsumer = bufferSource.getBuffer(SPARK_HALO_RENDER_TYPE);
         for (ClientCompactMachineAnimationCache.ActiveAnimation animation : animations) {
-            renderCompressionSparks(haloConsumer, pose, animation, true);
+            renderCompressionSparks(haloConsumer, pose, animation, true, cameraPosition);
         }
         bufferSource.endBatch(SPARK_HALO_RENDER_TYPE);
 
         VertexConsumer sparkConsumer = bufferSource.getBuffer(SPARK_RENDER_TYPE);
         for (ClientCompactMachineAnimationCache.ActiveAnimation animation : animations) {
-            renderCompressionSparks(sparkConsumer, pose, animation, false);
+            renderCompressionSparks(sparkConsumer, pose, animation, false, cameraPosition);
         }
         poseStack.popPose();
         bufferSource.endBatch(SPARK_RENDER_TYPE);
@@ -195,7 +208,9 @@ public final class CompactMachineOverlayRenderEvents {
     }
 
     private static void renderCompressionProjection(
+            MultiBufferSource bufferSource,
             VertexConsumer consumer,
+            PoseStack poseStack,
             PoseStack.Pose pose,
             ClientCompactMachineAnimationCache.ActiveAnimation animation
     ) {
@@ -213,9 +228,17 @@ public final class CompactMachineOverlayRenderEvents {
         double centerZ = (minZ + maxZ) * 0.5D;
         double maxExtent = Math.max(maxX - minX, Math.max(maxY - minY, maxZ - minZ));
 
+        renderCompressionField(consumer, pose, animation, minX, minY, minZ, maxX, maxY, maxZ);
+
+        if (age < CompactMachineAnimationPayload.CLEAR_WORK_AREA_AT_TICKS) {
+            renderPhaseSeparation(consumer, pose, animation, centerX, centerY, centerZ);
+        }
+
         if (age >= CompactMachineAnimationPayload.CLEAR_WORK_AREA_AT_TICKS
                 && age < CompactMachineAnimationPayload.MERGE_AT_TICKS) {
-            renderProjectedBlocks(consumer, pose, animation, centerX, centerY, centerZ);
+            int renderedSnapshots = renderCollapsingSnapshotBlocks(bufferSource, poseStack, animation, centerX, centerY, centerZ);
+            double guideAlphaScale = renderedSnapshots > 0 ? 0.22D : 1.0D;
+            renderProjectedBlocks(consumer, pose, animation, centerX, centerY, centerZ, guideAlphaScale);
         }
 
         if (age >= CompactMachineAnimationPayload.MERGE_AT_TICKS) {
@@ -227,7 +250,8 @@ public final class CompactMachineOverlayRenderEvents {
             VertexConsumer consumer,
             PoseStack.Pose pose,
             ClientCompactMachineAnimationCache.ActiveAnimation animation,
-            boolean halo
+            boolean halo,
+            Vec3 cameraPosition
     ) {
         BlockPos min = animation.min();
         BlockPos max = animation.max();
@@ -245,9 +269,9 @@ public final class CompactMachineOverlayRenderEvents {
         double diagonal = diagonal(maxX - minX, maxY - minY, maxZ - minZ);
 
         if (age < CompactMachineAnimationPayload.MERGE_AT_TICKS) {
-            renderOrbitingSparks(consumer, pose, animation, centerX, centerY, centerZ, maxExtent, diagonal, halo);
+            renderOrbitingSparks(consumer, pose, animation, centerX, centerY, centerZ, maxExtent, diagonal, halo, cameraPosition);
         } else {
-            renderFinalSpark(consumer, pose, animation, centerX, centerY, centerZ, diagonal, halo);
+            renderFinalSpark(consumer, pose, animation, centerX, centerY, centerZ, diagonal, halo, cameraPosition);
         }
     }
 
@@ -257,7 +281,8 @@ public final class CompactMachineOverlayRenderEvents {
             ClientCompactMachineAnimationCache.ActiveAnimation animation,
             double originX,
             double originY,
-            double originZ
+            double originZ,
+            double alphaScale
     ) {
         double collapse = collapseProgress(animation.age());
         double scale = Math.max(0.0D, 1.0D - collapse);
@@ -265,7 +290,10 @@ public final class CompactMachineOverlayRenderEvents {
             return;
         }
 
-        int alpha = (int) Math.round(112.0D * scale);
+        int alpha = (int) Math.round(112.0D * scale * alphaScale);
+        if (alpha <= 0) {
+            return;
+        }
         double halfSize = 0.5D * scale;
 
         for (BlockPos block : animation.projectedBlocks()) {
@@ -292,6 +320,239 @@ public final class CompactMachineOverlayRenderEvents {
         }
     }
 
+    private static void renderCompressionField(
+            VertexConsumer consumer,
+            PoseStack.Pose pose,
+            ClientCompactMachineAnimationCache.ActiveAnimation animation,
+            double minX,
+            double minY,
+            double minZ,
+            double maxX,
+            double maxY,
+            double maxZ
+    ) {
+        double wake = smoothRange(animation.age(), 0.0D, 10.0D);
+        double fade = 1.0D - smoothRange(
+                animation.age(),
+                CompactMachineAnimationPayload.MERGE_AT_TICKS,
+                animation.durationTicks()
+        );
+        double pulse = 0.5D + 0.5D * Math.sin(animation.age() * 0.24D);
+        int faceAlpha = (int) Math.round((12.0D + pulse * 18.0D) * wake * fade);
+        int edgeAlpha = (int) Math.round((72.0D + pulse * 56.0D) * wake * fade);
+        double expandedMinX = minX - COMPRESSION_FIELD_EXPANSION;
+        double expandedMinY = minY - COMPRESSION_FIELD_EXPANSION;
+        double expandedMinZ = minZ - COMPRESSION_FIELD_EXPANSION;
+        double expandedMaxX = maxX + COMPRESSION_FIELD_EXPANSION;
+        double expandedMaxY = maxY + COMPRESSION_FIELD_EXPANSION;
+        double expandedMaxZ = maxZ + COMPRESSION_FIELD_EXPANSION;
+
+        if (faceAlpha > 0) {
+            renderFieldFaces(
+                    consumer,
+                    pose,
+                    expandedMinX,
+                    expandedMinY,
+                    expandedMinZ,
+                    expandedMaxX,
+                    expandedMaxY,
+                    expandedMaxZ,
+                    faceAlpha
+            );
+        }
+
+        if (edgeAlpha > 0) {
+            renderFieldEdges(
+                    consumer,
+                    pose,
+                    expandedMinX,
+                    expandedMinY,
+                    expandedMinZ,
+                    expandedMaxX,
+                    expandedMaxY,
+                    expandedMaxZ,
+                    edgeAlpha
+            );
+        }
+
+        if (animation.age() < CompactMachineAnimationPayload.CLEAR_WORK_AREA_AT_TICKS) {
+            double scan = smootherStep(smoothRange(
+                    animation.age(),
+                    4.0D,
+                    CompactMachineAnimationPayload.CLEAR_WORK_AREA_AT_TICKS - 3.0D
+            ));
+            double y = lerp(expandedMinY, expandedMaxY, scan);
+            double scanFade = Math.sin(scan * Math.PI);
+            int scanAlpha = (int) Math.round((42.0D + pulse * 40.0D) * wake * Math.max(0.25D, scanFade));
+            double halfHeight = 0.018D + scanFade * 0.030D;
+            renderCube(
+                    consumer,
+                    pose,
+                    expandedMinX,
+                    y - halfHeight,
+                    expandedMinZ,
+                    expandedMaxX,
+                    y + halfHeight,
+                    expandedMaxZ,
+                    FIELD_R,
+                    FIELD_G,
+                    FIELD_B,
+                    scanAlpha
+            );
+        }
+
+        double flash = 1.0D - smoothRange(
+                Math.abs(animation.age() - CompactMachineAnimationPayload.CLEAR_WORK_AREA_AT_TICKS),
+                0.0D,
+                4.5D
+        );
+        flash = smootherStep(flash);
+        if (flash > 0.0D) {
+            int flashAlpha = (int) Math.round(96.0D * flash);
+            double flashExpansion = COMPRESSION_FIELD_EXPANSION + flash * 0.12D;
+            renderCube(
+                    consumer,
+                    pose,
+                    minX - flashExpansion,
+                    minY - flashExpansion,
+                    minZ - flashExpansion,
+                    maxX + flashExpansion,
+                    maxY + flashExpansion,
+                    maxZ + flashExpansion,
+                    0xFF,
+                    0xFF,
+                    0xF1,
+                    flashAlpha
+            );
+        }
+    }
+
+    private static void renderPhaseSeparation(
+            VertexConsumer consumer,
+            PoseStack.Pose pose,
+            ClientCompactMachineAnimationCache.ActiveAnimation animation,
+            double centerX,
+            double centerY,
+            double centerZ
+    ) {
+        double fieldProgress = smootherStep(smoothRange(
+                animation.age(),
+                10.0D,
+                CompactMachineAnimationPayload.CLEAR_WORK_AREA_AT_TICKS - 2.0D
+        ));
+        if (fieldProgress <= 0.0D) {
+            return;
+        }
+
+        double clearFade = 1.0D - smoothRange(
+                animation.age(),
+                CompactMachineAnimationPayload.CLEAR_WORK_AREA_AT_TICKS - 5.0D,
+                CompactMachineAnimationPayload.CLEAR_WORK_AREA_AT_TICKS
+        ) * 0.35D;
+
+        for (BlockPos block : animation.projectedBlocks()) {
+            double seed = unitHash(animation.corePos().asLong() ^ block.asLong());
+            double blockProgress = smootherStep(smoothRange(
+                    animation.age(),
+                    8.0D + seed * 9.0D,
+                    CompactMachineAnimationPayload.CLEAR_WORK_AREA_AT_TICKS - 2.0D
+            ));
+            if (blockProgress <= 0.0D) {
+                continue;
+            }
+
+            double blockCenterX = block.getX() + 0.5D;
+            double blockCenterY = block.getY() + 0.5D;
+            double blockCenterZ = block.getZ() + 0.5D;
+            double pull = blockProgress * (0.08D + seed * 0.08D);
+            double size = lerp(1.02D, 0.76D, blockProgress);
+            double halfSize = size * 0.5D;
+            double pulse = 0.5D + 0.5D * Math.sin(animation.age() * 0.42D + seed * Math.PI * 2.0D);
+            int alpha = (int) Math.round((18.0D + 54.0D * blockProgress + pulse * 18.0D) * clearFade);
+            double x = lerp(blockCenterX, centerX, pull);
+            double y = lerp(blockCenterY, centerY, pull);
+            double z = lerp(blockCenterZ, centerZ, pull);
+            renderCube(
+                    consumer,
+                    pose,
+                    x - halfSize,
+                    y - halfSize,
+                    z - halfSize,
+                    x + halfSize,
+                    y + halfSize,
+                    z + halfSize,
+                    PHASE_R,
+                    PHASE_G,
+                    PHASE_B,
+                    alpha
+            );
+        }
+    }
+
+    private static int renderCollapsingSnapshotBlocks(
+            MultiBufferSource bufferSource,
+            PoseStack poseStack,
+            ClientCompactMachineAnimationCache.ActiveAnimation animation,
+            double centerX,
+            double centerY,
+            double centerZ
+    ) {
+        if (animation.projectedBlockSnapshots().isEmpty()) {
+            return 0;
+        }
+
+        double collapse = collapseProgress(animation.age());
+        double visibleScale = lerp(0.94D, 0.10D, easeInCubic(collapse));
+        if (visibleScale <= 0.025D) {
+            return 0;
+        }
+
+        BlockRenderDispatcher blockRenderer = Minecraft.getInstance().getBlockRenderer();
+        int rendered = 0;
+
+        for (ClientCompactMachineAnimationCache.ProjectedBlockSnapshot snapshot : animation.projectedBlockSnapshots()) {
+            if (rendered >= MAX_COLLAPSING_BLOCK_MODELS) {
+                break;
+            }
+
+            BlockState state = snapshot.state();
+            if (state.getRenderShape() != RenderShape.MODEL) {
+                continue;
+            }
+
+            BlockPos block = snapshot.pos();
+            long seedBase = animation.corePos().asLong() ^ block.asLong() ^ (rendered * 92821L);
+            double seed = unitHash(seedBase);
+            double seedB = unitHash(seedBase + 31L);
+            double blockCenterX = block.getX() + 0.5D;
+            double blockCenterY = block.getY() + 0.5D;
+            double blockCenterZ = block.getZ() + 0.5D;
+            Vec3 radial = new Vec3(blockCenterX - centerX, blockCenterY - centerY, blockCenterZ - centerZ);
+            if (radial.lengthSqr() < 1.0E-8D) {
+                radial = trackDirection(seedBase, rendered);
+            }
+
+            Vec3 swirl = perpendicular(radial.normalize(), seedB)
+                    .scale(Math.sin(collapse * Math.PI) * (0.08D + seed * 0.18D));
+            double x = lerp(blockCenterX, centerX, collapse) + swirl.x;
+            double y = lerp(blockCenterY, centerY, collapse) + swirl.y;
+            double z = lerp(blockCenterZ, centerZ, collapse) + swirl.z;
+            double turn = Math.sin(collapse * Math.PI) * (18.0D + seed * 54.0D);
+
+            poseStack.pushPose();
+            poseStack.translate(x, y, z);
+            poseStack.mulPose(Axis.YP.rotationDegrees((float) (turn * (seedB > 0.5D ? 1.0D : -1.0D))));
+            poseStack.mulPose(Axis.XP.rotationDegrees((float) (turn * 0.35D)));
+            poseStack.scale((float) visibleScale, (float) visibleScale, (float) visibleScale);
+            poseStack.translate(-0.5D, -0.5D, -0.5D);
+            blockRenderer.renderSingleBlock(state, poseStack, bufferSource, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY);
+            poseStack.popPose();
+            rendered++;
+        }
+
+        return rendered;
+    }
+
     private static void renderOrbitingSparks(
             VertexConsumer consumer,
             PoseStack.Pose pose,
@@ -301,7 +562,8 @@ public final class CompactMachineOverlayRenderEvents {
             double centerZ,
             double maxExtent,
             double diagonal,
-            boolean halo
+            boolean halo,
+            Vec3 cameraPosition
     ) {
         double collapse = collapseProgress(animation.age());
         double radialScale = Math.max(0.0D, 1.0D - collapse);
@@ -332,9 +594,9 @@ public final class CompactMachineOverlayRenderEvents {
             int color = sparkColor(animation.corePos().asLong(), index, animation.age());
 
             if (halo) {
-                renderSpark(consumer, pose, x, y, z, size * 2.35D, alpha, color);
+                renderSpark(consumer, pose, x, y, z, size * 2.35D, alpha, color, cameraPosition);
             } else {
-                renderSpark(consumer, pose, x, y, z, size, alpha, mixWithWhite(color, 0.24D));
+                renderSpark(consumer, pose, x, y, z, size, alpha, mixWithWhite(color, 0.24D), cameraPosition);
             }
         }
     }
@@ -347,7 +609,8 @@ public final class CompactMachineOverlayRenderEvents {
             double centerY,
             double centerZ,
             double diagonal,
-            boolean halo
+            boolean halo,
+            Vec3 cameraPosition
     ) {
         double t = smoothRange(
                 animation.age(),
@@ -359,7 +622,7 @@ public final class CompactMachineOverlayRenderEvents {
 
         if (alpha > 0) {
             double size = halo ? halfSize * 1.85D : halfSize * 0.82D;
-            renderSpark(consumer, pose, centerX, centerY, centerZ, size, alpha, 0xFFFFFF);
+            renderSpark(consumer, pose, centerX, centerY, centerZ, size, alpha, 0xFFFFFF, cameraPosition);
         }
     }
 
@@ -414,6 +677,53 @@ public final class CompactMachineOverlayRenderEvents {
                 previous = next;
             }
         }
+    }
+
+    private static void renderFieldFaces(
+            VertexConsumer consumer,
+            PoseStack.Pose pose,
+            double minX,
+            double minY,
+            double minZ,
+            double maxX,
+            double maxY,
+            double maxZ,
+            int alpha
+    ) {
+        addColoredQuad(consumer, pose, minX, minY, minZ, maxX, minY, minZ, maxX, minY, maxZ, minX, minY, maxZ, FIELD_R, FIELD_G, FIELD_B, alpha);
+        addColoredQuad(consumer, pose, minX, maxY, minZ, minX, maxY, maxZ, maxX, maxY, maxZ, maxX, maxY, minZ, FIELD_R, FIELD_G, FIELD_B, alpha);
+        addColoredQuad(consumer, pose, minX, minY, minZ, minX, minY, maxZ, minX, maxY, maxZ, minX, maxY, minZ, FIELD_R, FIELD_G, FIELD_B, alpha);
+        addColoredQuad(consumer, pose, maxX, minY, minZ, maxX, maxY, minZ, maxX, maxY, maxZ, maxX, minY, maxZ, FIELD_R, FIELD_G, FIELD_B, alpha);
+        addColoredQuad(consumer, pose, minX, minY, minZ, minX, maxY, minZ, maxX, maxY, minZ, maxX, minY, minZ, FIELD_R, FIELD_G, FIELD_B, alpha);
+        addColoredQuad(consumer, pose, minX, minY, maxZ, maxX, minY, maxZ, maxX, maxY, maxZ, minX, maxY, maxZ, FIELD_R, FIELD_G, FIELD_B, alpha);
+    }
+
+    private static void renderFieldEdges(
+            VertexConsumer consumer,
+            PoseStack.Pose pose,
+            double minX,
+            double minY,
+            double minZ,
+            double maxX,
+            double maxY,
+            double maxZ,
+            int alpha
+    ) {
+        double halfWidth = FIELD_EDGE_HALF_WIDTH;
+        renderCube(consumer, pose, minX, minY - halfWidth, minZ - halfWidth, maxX, minY + halfWidth, minZ + halfWidth, FIELD_R, FIELD_G, FIELD_B, alpha);
+        renderCube(consumer, pose, minX, minY - halfWidth, maxZ - halfWidth, maxX, minY + halfWidth, maxZ + halfWidth, FIELD_R, FIELD_G, FIELD_B, alpha);
+        renderCube(consumer, pose, minX, maxY - halfWidth, minZ - halfWidth, maxX, maxY + halfWidth, minZ + halfWidth, FIELD_R, FIELD_G, FIELD_B, alpha);
+        renderCube(consumer, pose, minX, maxY - halfWidth, maxZ - halfWidth, maxX, maxY + halfWidth, maxZ + halfWidth, FIELD_R, FIELD_G, FIELD_B, alpha);
+
+        renderCube(consumer, pose, minX - halfWidth, minY, minZ - halfWidth, minX + halfWidth, maxY, minZ + halfWidth, FIELD_R, FIELD_G, FIELD_B, alpha);
+        renderCube(consumer, pose, minX - halfWidth, minY, maxZ - halfWidth, minX + halfWidth, maxY, maxZ + halfWidth, FIELD_R, FIELD_G, FIELD_B, alpha);
+        renderCube(consumer, pose, maxX - halfWidth, minY, minZ - halfWidth, maxX + halfWidth, maxY, minZ + halfWidth, FIELD_R, FIELD_G, FIELD_B, alpha);
+        renderCube(consumer, pose, maxX - halfWidth, minY, maxZ - halfWidth, maxX + halfWidth, maxY, maxZ + halfWidth, FIELD_R, FIELD_G, FIELD_B, alpha);
+
+        renderCube(consumer, pose, minX - halfWidth, minY - halfWidth, minZ, minX + halfWidth, minY + halfWidth, maxZ, FIELD_R, FIELD_G, FIELD_B, alpha);
+        renderCube(consumer, pose, minX - halfWidth, maxY - halfWidth, minZ, minX + halfWidth, maxY + halfWidth, maxZ, FIELD_R, FIELD_G, FIELD_B, alpha);
+        renderCube(consumer, pose, maxX - halfWidth, minY - halfWidth, minZ, maxX + halfWidth, minY + halfWidth, maxZ, FIELD_R, FIELD_G, FIELD_B, alpha);
+        renderCube(consumer, pose, maxX - halfWidth, maxY - halfWidth, minZ, maxX + halfWidth, maxY + halfWidth, maxZ, FIELD_R, FIELD_G, FIELD_B, alpha);
     }
 
     private static void addWorkFillQuad(
@@ -504,14 +814,49 @@ public final class CompactMachineOverlayRenderEvents {
             double z,
             double halfSize,
             int alpha,
-            int color
+            int color,
+            Vec3 cameraPosition
     ) {
         int red = red(color);
         int green = green(color);
         int blue = blue(color);
-        addTexturedQuad(consumer, pose, x - halfSize, y, z - halfSize, x + halfSize, y, z - halfSize, x + halfSize, y, z + halfSize, x - halfSize, y, z + halfSize, red, green, blue, alpha);
-        addTexturedQuad(consumer, pose, x - halfSize, y - halfSize, z, x + halfSize, y - halfSize, z, x + halfSize, y + halfSize, z, x - halfSize, y + halfSize, z, red, green, blue, alpha);
-        addTexturedQuad(consumer, pose, x, y - halfSize, z - halfSize, x, y + halfSize, z - halfSize, x, y + halfSize, z + halfSize, x, y - halfSize, z + halfSize, red, green, blue, alpha);
+        Vec3 center = new Vec3(x, y, z);
+        Vec3 view = cameraPosition.subtract(center);
+        if (view.lengthSqr() < 1.0E-6D) {
+            view = new Vec3(0.0D, 0.0D, 1.0D);
+        }
+
+        Vec3 forward = view.normalize();
+        Vec3 upReference = Math.abs(forward.y) > 0.96D
+                ? new Vec3(1.0D, 0.0D, 0.0D)
+                : new Vec3(0.0D, 1.0D, 0.0D);
+        Vec3 right = upReference.cross(forward).normalize().scale(halfSize);
+        Vec3 up = forward.cross(right.normalize()).normalize().scale(halfSize);
+
+        Vec3 bottomLeft = center.subtract(right).subtract(up);
+        Vec3 bottomRight = center.add(right).subtract(up);
+        Vec3 topRight = center.add(right).add(up);
+        Vec3 topLeft = center.subtract(right).add(up);
+        addTexturedQuad(
+                consumer,
+                pose,
+                bottomLeft.x,
+                bottomLeft.y,
+                bottomLeft.z,
+                bottomRight.x,
+                bottomRight.y,
+                bottomRight.z,
+                topRight.x,
+                topRight.y,
+                topRight.z,
+                topLeft.x,
+                topLeft.y,
+                topLeft.z,
+                red,
+                green,
+                blue,
+                alpha
+        );
     }
 
     private static void addTexturedQuad(

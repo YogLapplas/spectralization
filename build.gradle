@@ -212,6 +212,8 @@ def metamaterialDesignTableLayoutSourceFile = file('src/main/java/io/github/yogl
 def basicLithographyMachineLayoutSourceFile = file('src/main/java/io/github/yoglappland/spectralization/menu/BasicLithographyMachineLayout.java')
 def basicLithographyMachineScreenSourceFile = file('src/main/java/io/github/yoglappland/spectralization/client/screen/BasicLithographyMachineScreen.java')
 def solarDopingChamberLayoutSourceFile = file('src/main/java/io/github/yoglappland/spectralization/menu/SolarDopingChamberLayout.java')
+def compactMachineCoreScreenSourceFile = file('src/main/java/io/github/yoglappland/spectralization/client/screen/CompactMachineCoreScreen.java')
+def compactMachineCoreMenuSourceFile = file('src/main/java/io/github/yoglappland/spectralization/menu/CompactMachineCoreMenu.java')
 tasks.register('verifyThermalSmelterUiLayout') {
     inputs.file(thermalSmelterLayoutSourceFile)
 
@@ -1793,6 +1795,178 @@ tasks.register('verifyHolographicStorageUiLayout') {
     }
 }
 
+tasks.register('verifyCompactMachineCoreUiLayout') {
+    inputs.files(compactMachineCoreScreenSourceFile, compactMachineCoreMenuSourceFile)
+
+    doLast {
+        def loadConstants = { sourceFile, displayName ->
+            def source = sourceFile.text
+            def constants = [:]
+            def constantsPattern = ~/(?:private|public)\s+static\s+final\s+int\s+([A-Z0-9_]+)\s*=\s*([^;]+);/
+
+            12.times {
+                (source =~ constantsPattern).each { match ->
+                    def name = match[1]
+                    def expression = match[2]
+                    if (!constants.containsKey(name)) {
+                        def resolvedExpression = expression.replaceAll(/\b[A-Z][A-Z0-9_]*\b/) { token ->
+                            def key = token.toString()
+                            constants.containsKey(key) ? constants[key].toString() : key
+                        }
+
+                        if (resolvedExpression ==~ '[0-9+\\-*/ ()]+') {
+                            constants[name] = groovy.util.Eval.me(resolvedExpression) as int
+                        }
+                    }
+                }
+            }
+            [constants: constants, displayName: displayName]
+        }
+
+        def screenConstants = loadConstants(compactMachineCoreScreenSourceFile, 'CompactMachineCoreScreen')
+        def menuConstants = loadConstants(compactMachineCoreMenuSourceFile, 'CompactMachineCoreMenu')
+        def screenValue = { String name ->
+            if (!screenConstants.constants.containsKey(name)) {
+                throw new GradleException("Could not resolve ${screenConstants.displayName} constant '${name}' for UI layout verification.")
+            }
+            screenConstants.constants[name] as int
+        }
+        def menuValue = { String name ->
+            if (!menuConstants.constants.containsKey(name)) {
+                throw new GradleException("Could not resolve ${menuConstants.displayName} constant '${name}' for UI layout verification.")
+            }
+            menuConstants.constants[name] as int
+        }
+        def rect = { String name, int x, int y, int width, int height ->
+            [name: name, x: x, y: y, width: width, height: height]
+        }
+        def overlaps = { a, b ->
+            a.x < b.x + b.width
+                    && a.x + a.width > b.x
+                    && a.y < b.y + b.height
+                    && a.y + a.height > b.y
+        }
+        def assertInside = { outer, inner ->
+            if (inner.x < outer.x
+                    || inner.y < outer.y
+                    || inner.x + inner.width > outer.x + outer.width
+                    || inner.y + inner.height > outer.y + outer.height) {
+                throw new GradleException("Compact machine core UI ${inner.name} must stay inside ${outer.name}.")
+            }
+        }
+        def assertNoOverlap = { String group, areas ->
+            def collisions = []
+            for (int leftIndex = 0; leftIndex < areas.size(); leftIndex++) {
+                for (int rightIndex = leftIndex + 1; rightIndex < areas.size(); rightIndex++) {
+                    if (overlaps(areas[leftIndex], areas[rightIndex])) {
+                        collisions.add("${areas[leftIndex].name}<->${areas[rightIndex].name}")
+                    }
+                }
+            }
+            if (!collisions.isEmpty()) {
+                throw new GradleException("Compact machine core UI ${group} overlap: ${collisions.join(', ')}")
+            }
+        }
+        def assertCenterX = { String name, left, right, int tolerance ->
+            int delta = Math.abs((left.x * 2 + left.width) - (right.x * 2 + right.width))
+            if (delta > tolerance * 2) {
+                throw new GradleException("Compact machine core UI ${name} should share a horizontal centerline.")
+            }
+        }
+
+        int imageWidth = menuValue('IMAGE_WIDTH')
+        int imageHeight = menuValue('IMAGE_HEIGHT')
+        int slotSize = menuValue('SLOT_SIZE')
+        def screen = rect('screen', 0, 0, imageWidth, imageHeight)
+        def machinePanel = rect('machine_panel', screenValue('MACHINE_PANEL_X'), screenValue('MACHINE_PANEL_Y'),
+                screenValue('MACHINE_PANEL_WIDTH'), screenValue('MACHINE_PANEL_HEIGHT'))
+        def machineInventoryDivider = rect('machine_inventory_divider', 8, screenValue('MACHINE_INVENTORY_DIVIDER_Y'),
+                imageWidth - 16, 2)
+        def contentPanel = rect('content_panel', screenValue('CONTENT_PANEL_X'), screenValue('CONTENT_PANEL_Y'),
+                screenValue('CONTENT_PANEL_WIDTH'), screenValue('CONTENT_PANEL_HEIGHT'))
+        def leftDivider = rect('left_divider', screenValue('LEFT_DIVIDER_X'), screenValue('CONTENT_PANEL_Y') + 7,
+                2, screenValue('CONTENT_PANEL_HEIGHT') - 14)
+        def rightDivider = rect('right_divider', screenValue('RIGHT_DIVIDER_X'), screenValue('CONTENT_PANEL_Y') + 7,
+                2, screenValue('CONTENT_PANEL_HEIGHT') - 14)
+        def feBar = rect('fe_bar', screenValue('FE_BAR_X'), screenValue('FE_BAR_Y'),
+                screenValue('FE_BAR_WIDTH'), screenValue('FE_BAR_HEIGHT'))
+        def preview = rect('internal_preview', screenValue('PREVIEW_X'), screenValue('PREVIEW_Y'),
+                screenValue('PREVIEW_WIDTH'), screenValue('PREVIEW_HEIGHT'))
+        def workAreaTag = rect('work_area_tag', screenValue('WORK_AREA_TAG_X'), screenValue('WORK_AREA_TAG_Y'),
+                screenValue('WORK_AREA_TAG_WIDTH'), screenValue('WORK_AREA_TAG_HEIGHT'))
+        def rightRegion = rect('right_region', screenValue('RIGHT_PANEL_X'), screenValue('RIGHT_PANEL_Y'),
+                screenValue('RIGHT_PANEL_WIDTH'), screenValue('RIGHT_PANEL_HEIGHT'))
+        def outputSlot = rect('output_slot_frame', menuValue('OUTPUT_SLOT_FRAME_X'), menuValue('OUTPUT_SLOT_FRAME_Y'),
+                slotSize, slotSize)
+        def compactButton = rect('compact_button', screenValue('COMPACT_BUTTON_X'), screenValue('COMPACT_BUTTON_Y'),
+                screenValue('COMPACT_BUTTON_WIDTH'), screenValue('COMPACT_BUTTON_HEIGHT'))
+        def redstoneTag = rect('redstone_tag', screenValue('REDSTONE_TAG_X'), screenValue('REDSTONE_TAG_Y'),
+                screenValue('REDSTONE_TAG_WIDTH'), screenValue('REDSTONE_TAG_HEIGHT'))
+        def inventoryPanel = rect('player_inventory_panel', menuValue('PLAYER_INVENTORY_X') - 5,
+                menuValue('PLAYER_INVENTORY_Y') - 8, 172, 90)
+        def playerMainSlots = rect('player_main_slots', menuValue('PLAYER_INVENTORY_X'),
+                menuValue('PLAYER_INVENTORY_Y'), slotSize * 9, slotSize * 3)
+        def playerHotbar = rect('player_hotbar', menuValue('PLAYER_INVENTORY_X'),
+                menuValue('PLAYER_INVENTORY_Y') + 58, slotSize * 9, slotSize)
+
+        [machinePanel, contentPanel, machineInventoryDivider, inventoryPanel].each { assertInside(screen, it) }
+        [contentPanel].each { assertInside(machinePanel, it) }
+        [leftDivider, rightDivider, feBar, preview, rightRegion].each {
+            assertInside(contentPanel, it)
+        }
+        [outputSlot, compactButton].each { assertInside(rightRegion, it) }
+        [playerMainSlots, playerHotbar].each { assertInside(inventoryPanel, it) }
+        assertNoOverlap('main content columns', [feBar, preview, rightRegion])
+        assertNoOverlap('right action stack', [outputSlot, compactButton])
+        assertNoOverlap('inventory rows', [playerMainSlots, playerHotbar])
+
+        if (machinePanel.y + machinePanel.height > machineInventoryDivider.y) {
+            throw new GradleException('Compact machine core machine panel must clear the machine/inventory divider.')
+        }
+        if (inventoryPanel.y < machineInventoryDivider.y + machineInventoryDivider.height) {
+            throw new GradleException('Compact machine core player inventory panel must clear the machine/inventory divider.')
+        }
+        if (feBar.x + feBar.width > leftDivider.x
+                || preview.x < leftDivider.x + leftDivider.width
+                || preview.x + preview.width > rightDivider.x
+                || rightRegion.x < rightDivider.x + rightDivider.width) {
+            throw new GradleException('Compact machine core content columns must stay separated by thin dividers.')
+        }
+        if (preview.x * 2 + preview.width != imageWidth) {
+            throw new GradleException('Compact machine core preview must stay centered on the screen centerline.')
+        }
+        if (rightRegion.width > 36 || leftDivider.x - contentPanel.x < 32) {
+            throw new GradleException('Compact machine core FE/sidebar space should grow while the output column stays compact.')
+        }
+        assertCenterX('output slot and compact button', outputSlot, compactButton, 0)
+
+        if (redstoneTag.y < machinePanel.y || redstoneTag.y + redstoneTag.height > machinePanel.y + machinePanel.height) {
+            throw new GradleException('Compact machine core redstone tag must stay vertically attached to the machine panel.')
+        }
+        if (workAreaTag.y < machinePanel.y || workAreaTag.y + workAreaTag.height > machinePanel.y + machinePanel.height) {
+            throw new GradleException('Compact machine core work-area tag must stay vertically attached to the machine panel.')
+        }
+        if (redstoneTag.x + redstoneTag.width > machinePanel.x
+                || workAreaTag.x + workAreaTag.width > machinePanel.x) {
+            throw new GradleException('Compact machine core side tags must hang outside the left edge, not enter the machine panel.')
+        }
+        assertNoOverlap('side tags', [redstoneTag, workAreaTag])
+        if (redstoneTag.x != workAreaTag.x || redstoneTag.width != workAreaTag.width || redstoneTag.height != workAreaTag.height) {
+            throw new GradleException('Compact machine core side tags must share one sidebar grid.')
+        }
+        if (menuValue('OUTPUT_SLOT_X') != menuValue('OUTPUT_SLOT_FRAME_X') + menuValue('ITEM_SLOT_INSET')
+                || menuValue('OUTPUT_SLOT_Y') != menuValue('OUTPUT_SLOT_FRAME_Y') + menuValue('ITEM_SLOT_INSET')
+                || menuValue('PLAYER_INVENTORY_ITEM_X') != menuValue('PLAYER_INVENTORY_X') + menuValue('ITEM_SLOT_INSET')
+                || menuValue('PLAYER_INVENTORY_ITEM_Y') != menuValue('PLAYER_INVENTORY_Y') + menuValue('ITEM_SLOT_INSET')) {
+            throw new GradleException('Compact machine core item slots must stay inset from visible 18px slot frames.')
+        }
+        if (menuValue('PLAYER_INVENTORY_X') * 2 + slotSize * 9 != imageWidth
+                || inventoryPanel.x * 2 + inventoryPanel.width != imageWidth) {
+            throw new GradleException('Compact machine core player inventory slots and backing panel must stay horizontally centered.')
+        }
+    }
+}
+
 tasks.register('verifyMachineContentDropContracts') {
     def blockEntityDir = file('src/main/java/io/github/yoglappland/spectralization/blockentity')
     def blockDir = file('src/main/java/io/github/yoglappland/spectralization/block')
@@ -1846,6 +2020,7 @@ tasks.named('check') {
     dependsOn tasks.named('verifySolarDopingChamberUiLayout')
     dependsOn tasks.named('verifyFiberDrawingMachineUiLayout')
     dependsOn tasks.named('verifyHolographicStorageUiLayout')
+    dependsOn tasks.named('verifyCompactMachineCoreUiLayout')
     dependsOn tasks.named('verifyMachineContentDropContracts')
 }
 

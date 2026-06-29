@@ -2,12 +2,11 @@ package io.github.yoglappland.spectralization.menu;
 
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.blockentity.CompactMachineCoreBlockEntity;
-import io.github.yoglappland.spectralization.compact.CompactedMachineItemData;
 import io.github.yoglappland.spectralization.compact.CompactMachineFrameInfo;
+import io.github.yoglappland.spectralization.compact.CompactedMachineItemData;
 import io.github.yoglappland.spectralization.compact.CompactMachineNetworkData;
 import io.github.yoglappland.spectralization.registry.SpectralMenus;
 import net.minecraft.core.BlockPos;
-import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -23,9 +22,20 @@ import net.neoforged.neoforge.items.SlotItemHandler;
 
 public class CompactMachineCoreMenu extends AbstractContainerMenu {
     public static final int BUTTON_START_COMPACTING = 0;
+    public static final int BUTTON_TOGGLE_REDSTONE_MODE = 1;
     public static final int OUTPUT_SLOT_INDEX = 0;
-    public static final int OUTPUT_SLOT_X = 38;
-    public static final int OUTPUT_SLOT_Y = 58;
+    public static final int IMAGE_WIDTH = 256;
+    public static final int IMAGE_HEIGHT = 232;
+    public static final int SLOT_SIZE = 18;
+    public static final int ITEM_SLOT_INSET = 1;
+    public static final int OUTPUT_SLOT_FRAME_X = 203;
+    public static final int OUTPUT_SLOT_FRAME_Y = 48;
+    public static final int OUTPUT_SLOT_X = OUTPUT_SLOT_FRAME_X + ITEM_SLOT_INSET;
+    public static final int OUTPUT_SLOT_Y = OUTPUT_SLOT_FRAME_Y + ITEM_SLOT_INSET;
+    public static final int PLAYER_INVENTORY_X = 47;
+    public static final int PLAYER_INVENTORY_Y = 140;
+    public static final int PLAYER_INVENTORY_ITEM_X = PLAYER_INVENTORY_X + ITEM_SLOT_INSET;
+    public static final int PLAYER_INVENTORY_ITEM_Y = PLAYER_INVENTORY_Y + ITEM_SLOT_INSET;
 
     private static final int PRESENT = 0;
     private static final int VALID = 1;
@@ -58,6 +68,10 @@ public class CompactMachineCoreMenu extends AbstractContainerMenu {
     private static final int PAYLOAD_BLOCKS = 28;
     private static final int PAYLOAD_TYPES = 29;
     private static final int DATA_COUNT = 30;
+    private static final int PLAYER_INVENTORY_START = 1;
+    private static final int PLAYER_INVENTORY_END = PLAYER_INVENTORY_START + 27;
+    private static final int HOTBAR_START = PLAYER_INVENTORY_END;
+    private static final int HOTBAR_END = HOTBAR_START + 9;
 
     private final ContainerData data;
     private final ContainerData coreData;
@@ -115,6 +129,7 @@ public class CompactMachineCoreMenu extends AbstractContainerMenu {
                 return false;
             }
         });
+        addPlayerInventory(inventory, PLAYER_INVENTORY_ITEM_X, PLAYER_INVENTORY_ITEM_Y);
         addDataSlots(data);
         addDataSlots(coreData);
     }
@@ -211,10 +226,21 @@ public class CompactMachineCoreMenu extends AbstractContainerMenu {
         return coreData.get(CompactMachineCoreBlockEntity.DATA_COMPACTING) != 0;
     }
 
+    public boolean redstonePulseMode() {
+        return CompactMachineCoreBlockEntity.RedstoneStartMode.byOrdinal(
+                coreData.get(CompactMachineCoreBlockEntity.DATA_REDSTONE_MODE)
+        ) == CompactMachineCoreBlockEntity.RedstoneStartMode.PULSE;
+    }
+
     @Override
     public boolean clickMenuButton(Player player, int id) {
         if (id == BUTTON_START_COMPACTING) {
             return startCompacting(player);
+        }
+
+        if (id == BUTTON_TOGGLE_REDSTONE_MODE && core != null) {
+            core.cycleRedstoneStartMode();
+            return true;
         }
 
         return false;
@@ -235,20 +261,33 @@ public class CompactMachineCoreMenu extends AbstractContainerMenu {
 
     @Override
     public ItemStack quickMoveStack(Player player, int index) {
-        if (index != OUTPUT_SLOT_INDEX) {
+        Slot slot = slots.get(index);
+        if (!slot.hasItem()) {
             return ItemStack.EMPTY;
         }
 
-        ItemStack stack = outputItems.getStackInSlot(CompactMachineCoreBlockEntity.SLOT_OUTPUT);
-        if (stack.isEmpty()) {
-            return ItemStack.EMPTY;
-        }
-
+        ItemStack stack = slot.getItem();
         ItemStack copy = stack.copy();
-        if (!player.level().isClientSide) {
-            player.getInventory().placeItemBackInInventory(copy.copy());
+
+        if (index == OUTPUT_SLOT_INDEX) {
+            if (!moveItemStackTo(stack, PLAYER_INVENTORY_START, HOTBAR_END, true)) {
+                return ItemStack.EMPTY;
+            }
+        } else if (index >= PLAYER_INVENTORY_START && index < PLAYER_INVENTORY_END) {
+            if (!moveItemStackTo(stack, HOTBAR_START, HOTBAR_END, false)) {
+                return ItemStack.EMPTY;
+            }
+        } else if (index >= HOTBAR_START && index < HOTBAR_END
+                && !moveItemStackTo(stack, PLAYER_INVENTORY_START, PLAYER_INVENTORY_END, false)) {
+            return ItemStack.EMPTY;
         }
-        outputItems.setStackInSlot(CompactMachineCoreBlockEntity.SLOT_OUTPUT, ItemStack.EMPTY);
+
+        if (stack.isEmpty()) {
+            slot.set(ItemStack.EMPTY);
+        } else {
+            slot.setChanged();
+        }
+
         return copy;
     }
 
@@ -281,40 +320,28 @@ public class CompactMachineCoreMenu extends AbstractContainerMenu {
     }
 
     private boolean startCompacting(Player player) {
-        if (level == null || core == null || core.isCompacting() || !core.outputEmpty()) {
+        if (level == null || core == null) {
             return false;
         }
 
-        CompactMachineFrameInfo info = CompactMachineNetworkData.frameInfoAt(level, corePos);
-        if (!info.valid() || info.workSizeX() <= 0 || info.workSizeY() <= 0 || info.workSizeZ() <= 0) {
-            Spectralization.LOGGER.warn(
-                    "Compact machine start rejected in {} at {}: present={}, valid={}, reason={}, shell={}x{}x{}, work={}x{}x{}, frame_parts={}, io={}, payload={} type(s) {}",
-                    level.dimension().location(),
-                    corePos,
-                    info.present(),
-                    info.valid(),
-                    info.reason(),
-                    info.sizeX(),
-                    info.sizeY(),
-                    info.sizeZ(),
-                    info.workSizeX(),
-                    info.workSizeY(),
-                    info.workSizeZ(),
-                    info.framePartCount(),
-                    info.ioPortCount(),
-                    info.payloadBlockCount(),
-                    info.payloadTypeCount()
-            );
-            player.displayClientMessage(Component.translatable("screen.spectralization.compact_machine_core.compact_not_ready"), false);
-            return false;
+        return core.tryStartCompacting(level, player, "button");
+    }
+
+    private void addPlayerInventory(Inventory inventory, int left, int top) {
+        for (int row = 0; row < 3; row++) {
+            for (int column = 0; column < 9; column++) {
+                addSlot(new Slot(
+                        inventory,
+                        column + row * 9 + 9,
+                        left + column * SLOT_SIZE,
+                        top + row * SLOT_SIZE
+                ));
+            }
         }
 
-        if (!core.startCompacting(level, info)) {
-            return false;
+        for (int column = 0; column < 9; column++) {
+            addSlot(new Slot(inventory, column, left + column * SLOT_SIZE, top + 58));
         }
-
-        player.displayClientMessage(Component.translatable("screen.spectralization.compact_machine_core.compact_started"), false);
-        return true;
     }
 
     private static final class LiveData implements ContainerData {

@@ -548,6 +548,23 @@ public class Spectralization {
     public static final DeferredItem<BlockItem> COMPACT_MACHINE_LIGHT_IO_PORT_ITEM =
             ITEMS.registerSimpleBlockItem("compact_machine_light_io_port", COMPACT_MACHINE_LIGHT_IO_PORT);
 
+    public static final DeferredBlock<Block> COMPACT_MACHINE_BLOCK = BLOCKS.registerSimpleBlock(
+            "compact_machine_block",
+            BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(3.0F, 9.0F)
+                    .sound(SoundType.METAL)
+    );
+    public static final DeferredItem<BlockItem> COMPACT_MACHINE_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("compact_machine_block", COMPACT_MACHINE_BLOCK);
+
+    public static final DeferredBlock<TransparentBlock> COMPACT_MACHINE_GLASS = glassBlock(
+            "compact_machine_glass",
+            MapColor.COLOR_LIGHT_BLUE
+    );
+    public static final DeferredItem<BlockItem> COMPACT_MACHINE_GLASS_ITEM =
+            ITEMS.registerSimpleBlockItem("compact_machine_glass", COMPACT_MACHINE_GLASS);
+
     public static final DeferredBlock<CompactedMachineBlock> COMPACTED_MACHINE = BLOCKS.register(
             "compacted_machine",
             () -> new CompactedMachineBlock(BlockBehaviour.Properties.of()

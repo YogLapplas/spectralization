@@ -21,6 +21,8 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.inventory.ContainerData;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -36,7 +38,8 @@ public class CompactMachineCoreBlockEntity extends BlockEntity implements DropsC
     public static final int DATA_COMPACTING = 0;
     public static final int DATA_PROGRESS = 1;
     public static final int DATA_DURATION = 2;
-    public static final int DATA_COUNT = 3;
+    public static final int DATA_REDSTONE_MODE = 3;
+    public static final int DATA_COUNT = 4;
 
     private static final String OUTPUT_ITEMS_TAG = "output_items";
     private static final String PENDING_RESULT_TAG = "pending_result";
@@ -44,6 +47,8 @@ public class CompactMachineCoreBlockEntity extends BlockEntity implements DropsC
     private static final String PENDING_MAX_TAG = "pending_work_max";
     private static final String PENDING_AGE_TAG = "pending_age";
     private static final String PENDING_CLEARED_TAG = "pending_cleared";
+    private static final String REDSTONE_MODE_TAG = "redstone_mode";
+    private static final String LAST_REDSTONE_POWERED_TAG = "last_redstone_powered";
 
     private final ItemStackHandler outputItems = new ItemStackHandler(SLOT_COUNT) {
         @Override
@@ -63,6 +68,7 @@ public class CompactMachineCoreBlockEntity extends BlockEntity implements DropsC
                 case DATA_COMPACTING -> isCompacting() ? 1 : 0;
                 case DATA_PROGRESS -> compactingAge;
                 case DATA_DURATION -> CompactMachineAnimationPayload.DEFAULT_DURATION_TICKS;
+                case DATA_REDSTONE_MODE -> redstoneStartMode.ordinal();
                 default -> 0;
             };
         }
@@ -82,6 +88,8 @@ public class CompactMachineCoreBlockEntity extends BlockEntity implements DropsC
     private BlockPos pendingWorkMax = BlockPos.ZERO;
     private int compactingAge = 0;
     private boolean workAreaCleared = false;
+    private RedstoneStartMode redstoneStartMode = RedstoneStartMode.IGNORED;
+    private boolean lastRedstonePowered = false;
 
     public CompactMachineCoreBlockEntity(BlockPos pos, BlockState blockState) {
         super(SpectralBlockEntities.COMPACT_MACHINE_CORE.get(), pos, blockState);
@@ -147,6 +155,79 @@ public class CompactMachineCoreBlockEntity extends BlockEntity implements DropsC
                 .field("clear_at_tick", CompactMachineAnimationPayload.CLEAR_WORK_AREA_AT_TICKS)
                 .write();
         return true;
+    }
+
+    public boolean tryStartCompacting(ServerLevel level, @Nullable Player player, String trigger) {
+        if (isCompacting() || !outputEmpty()) {
+            return false;
+        }
+
+        CompactMachineFrameInfo info = CompactMachineNetworkData.frameInfoAt(level, worldPosition);
+        if (!info.valid() || info.workSizeX() <= 0 || info.workSizeY() <= 0 || info.workSizeZ() <= 0) {
+            Spectralization.LOGGER.warn(
+                    "Compact machine start rejected in {} at {}: trigger={}, present={}, valid={}, reason={}, shell={}x{}x{}, work={}x{}x{}, frame_parts={}, io={}, payload={} type(s) {}",
+                    level.dimension().location(),
+                    worldPosition,
+                    trigger,
+                    info.present(),
+                    info.valid(),
+                    info.reason(),
+                    info.sizeX(),
+                    info.sizeY(),
+                    info.sizeZ(),
+                    info.workSizeX(),
+                    info.workSizeY(),
+                    info.workSizeZ(),
+                    info.framePartCount(),
+                    info.ioPortCount(),
+                    info.payloadBlockCount(),
+                    info.payloadTypeCount()
+            );
+            if (player != null) {
+                player.displayClientMessage(Component.translatable("screen.spectralization.compact_machine_core.compact_not_ready"), false);
+            }
+            return false;
+        }
+
+        if (!startCompacting(level, info)) {
+            return false;
+        }
+
+        if (player != null) {
+            player.displayClientMessage(Component.translatable("screen.spectralization.compact_machine_core.compact_started"), false);
+        }
+        SpectralDiagnostics.event(level, SpectralDiagnostics.Subsystem.COMPACT_MACHINE, "compression_triggered")
+                .pos("core", worldPosition)
+                .field("trigger", trigger)
+                .field("redstone_mode", redstoneStartMode.id())
+                .write();
+        return true;
+    }
+
+    public RedstoneStartMode redstoneStartMode() {
+        return redstoneStartMode;
+    }
+
+    public void cycleRedstoneStartMode() {
+        redstoneStartMode = redstoneStartMode == RedstoneStartMode.IGNORED
+                ? RedstoneStartMode.PULSE
+                : RedstoneStartMode.IGNORED;
+        if (level != null) {
+            lastRedstonePowered = level.hasNeighborSignal(worldPosition);
+        }
+        setChanged();
+        logRedstoneModeChanged();
+    }
+
+    public void updateRedstoneSignal(ServerLevel level) {
+        boolean powered = level.hasNeighborSignal(worldPosition);
+        boolean risingEdge = powered && !lastRedstonePowered;
+        lastRedstonePowered = powered;
+
+        if (risingEdge && redstoneStartMode == RedstoneStartMode.PULSE) {
+            tryStartCompacting(level, null, "redstone_pulse");
+        }
+        setChanged();
     }
 
     public void dropContents(Level level, BlockPos pos) {
@@ -280,6 +361,8 @@ public class CompactMachineCoreBlockEntity extends BlockEntity implements DropsC
         pendingWorkMax = readPos(tag.getCompound(PENDING_MAX_TAG));
         compactingAge = Math.max(0, tag.getInt(PENDING_AGE_TAG));
         workAreaCleared = tag.getBoolean(PENDING_CLEARED_TAG);
+        redstoneStartMode = RedstoneStartMode.byId(tag.getString(REDSTONE_MODE_TAG));
+        lastRedstonePowered = tag.getBoolean(LAST_REDSTONE_POWERED_TAG);
 
         if (pendingResult.isEmpty()) {
             compactingAge = 0;
@@ -298,6 +381,19 @@ public class CompactMachineCoreBlockEntity extends BlockEntity implements DropsC
         tag.put(PENDING_MAX_TAG, writePos(pendingWorkMax));
         tag.putInt(PENDING_AGE_TAG, compactingAge);
         tag.putBoolean(PENDING_CLEARED_TAG, workAreaCleared);
+        tag.putString(REDSTONE_MODE_TAG, redstoneStartMode.id());
+        tag.putBoolean(LAST_REDSTONE_POWERED_TAG, lastRedstonePowered);
+    }
+
+    private void logRedstoneModeChanged() {
+        if (level == null || level.isClientSide) {
+            return;
+        }
+
+        SpectralDiagnostics.transition(level, SpectralDiagnostics.Subsystem.COMPACT_MACHINE, "redstone_start_mode_changed")
+                .pos("core", worldPosition)
+                .field("redstone_mode", redstoneStartMode.id())
+                .write();
     }
 
     private static CompoundTag writePos(BlockPos pos) {
@@ -314,5 +410,29 @@ public class CompactMachineCoreBlockEntity extends BlockEntity implements DropsC
         }
 
         return new BlockPos(tag.getInt("x"), tag.getInt("y"), tag.getInt("z"));
+    }
+
+    public enum RedstoneStartMode {
+        IGNORED,
+        PULSE;
+
+        public String id() {
+            return name().toLowerCase(java.util.Locale.ROOT);
+        }
+
+        public static RedstoneStartMode byOrdinal(int ordinal) {
+            RedstoneStartMode[] values = values();
+            return ordinal >= 0 && ordinal < values.length ? values[ordinal] : IGNORED;
+        }
+
+        public static RedstoneStartMode byId(String id) {
+            for (RedstoneStartMode mode : values()) {
+                if (mode.id().equals(id)) {
+                    return mode;
+                }
+            }
+
+            return IGNORED;
+        }
     }
 }

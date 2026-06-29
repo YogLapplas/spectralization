@@ -17,22 +17,22 @@ import java.util.Locale;
 
 public class RecursiveGeneratorScreen extends SpectralMachineScreen<RecursiveGeneratorMenu> {
     private static final int[] LAYER_COLORS = {
-            0xFFF3C766,
-            0xFFEFA044,
-            0xFFE66F3D,
-            0xFFD94B4F,
-            0xFFB64E74,
-            0xFF845CA8,
-            0xFF516FAF,
-            0xFF3A7C83,
-            0xFF4C946E,
-            0xFF77A85D,
-            0xFFB8B04B,
-            0xFFD49255,
-            0xFFC96D65,
-            0xFFA65F93,
-            0xFF6E69B6,
-            0xFF4A8DAE
+            0xFF4C7A55,
+            0xFF437765,
+            0xFF40727E,
+            0xFF466B8D,
+            0xFF536396,
+            0xFF675C96,
+            0xFF7F558E,
+            0xFF974F82,
+            0xFFAE4E73,
+            0xFFC15163,
+            0xFFCD6557,
+            0xFFD77951,
+            0xFFDD8D4F,
+            0xFFE4A154,
+            0xFFEAB45E,
+            0xFFEFC567
     };
 
     public RecursiveGeneratorScreen(RecursiveGeneratorMenu menu, Inventory playerInventory, Component title) {

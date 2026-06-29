@@ -13,6 +13,7 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.EntityBlock;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -59,6 +60,22 @@ public class CompactMachineCoreBlock extends CompactMachinePartBlock implements 
 
         return (tickerLevel, pos, tickerState, blockEntity) ->
                 CompactMachineCoreBlockEntity.tick(tickerLevel, pos, (CompactMachineCoreBlockEntity) blockEntity);
+    }
+
+    @Override
+    protected void neighborChanged(
+            BlockState state,
+            Level level,
+            BlockPos pos,
+            Block neighborBlock,
+            BlockPos neighborPos,
+            boolean movedByPiston
+    ) {
+        super.neighborChanged(state, level, pos, neighborBlock, neighborPos, movedByPiston);
+        if (!level.isClientSide && level instanceof net.minecraft.server.level.ServerLevel serverLevel
+                && level.getBlockEntity(pos) instanceof CompactMachineCoreBlockEntity core) {
+            core.updateRedstoneSignal(serverLevel);
+        }
     }
 
     @Override

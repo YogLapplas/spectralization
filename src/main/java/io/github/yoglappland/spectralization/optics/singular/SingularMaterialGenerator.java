@@ -6,10 +6,12 @@ import java.util.List;
 import java.util.Locale;
 
 public final class SingularMaterialGenerator {
-    public static final int SIZE = 32;
+    public static final int SIZE = 16;
     public static final int PIXELS = SIZE * SIZE;
-    public static final int FRAME_COUNT = 8;
+    public static final int FRAME_COUNT = 16;
 
+    private static final int SOURCE_SIZE = 32;
+    private static final int SOURCE_PIXELS = SOURCE_SIZE * SOURCE_SIZE;
     private static final long SOURCE_HASH_SALT = 0xA4093822299F31D0L;
     private static final long FALLBACK_WORLD_SALT = 0x082EFA98EC4E6C89L;
     private static final double TAU = Math.PI * 2.0;
@@ -50,17 +52,91 @@ public final class SingularMaterialGenerator {
                 (int) Math.floor(unit(seed, 3) * 360.0),
                 24 + (int) (unit(seed, 4) * 72.0)
         );
-        boolean[] solid = new boolean[PIXELS];
-        for (int index = 0; index < PIXELS; index++) {
-            solid[index] = state.shape().mask()[index] != 0;
+        boolean[] sourceSolid = new boolean[SOURCE_PIXELS];
+        for (int index = 0; index < SOURCE_PIXELS; index++) {
+            sourceSolid[index] = state.shape().mask()[index] != 0;
         }
+        boolean[] solid = downsampleSolid(sourceSolid);
 
         Visual[] frames = new Visual[FRAME_COUNT];
         for (int frame = 0; frame < FRAME_COUNT; frame++) {
             double phase = frame / (double) FRAME_COUNT * TAU;
-            frames[frame] = new Visual(seed, traits, renderFrame(state, phase), solid);
+            frames[frame] = new Visual(seed, traits, downsampleArgb(renderFrame(state, phase)), solid);
         }
         return new VisualStrip(seed, traits, frames, solid);
+    }
+
+    private static boolean[] downsampleSolid(boolean[] source) {
+        boolean[] output = new boolean[PIXELS];
+        for (int y = 1; y < SIZE - 1; y++) {
+            int sourceY0 = sourceSpanStart(y);
+            int sourceY1 = sourceSpanEnd(y);
+            for (int x = 1; x < SIZE - 1; x++) {
+                int sourceX0 = sourceSpanStart(x);
+                int sourceX1 = sourceSpanEnd(x);
+                boolean solid = false;
+                for (int sy = sourceY0; sy <= sourceY1 && !solid; sy++) {
+                    for (int sx = sourceX0; sx <= sourceX1; sx++) {
+                        if (source[sy * SOURCE_SIZE + sx]) {
+                            solid = true;
+                            break;
+                        }
+                    }
+                }
+                output[y * SIZE + x] = solid;
+            }
+        }
+        return output;
+    }
+
+    private static int[] downsampleArgb(int[] source) {
+        int[] output = new int[PIXELS];
+        for (int y = 1; y < SIZE - 1; y++) {
+            int sourceY0 = sourceSpanStart(y);
+            int sourceY1 = sourceSpanEnd(y);
+            for (int x = 1; x < SIZE - 1; x++) {
+                int sourceX0 = sourceSpanStart(x);
+                int sourceX1 = sourceSpanEnd(x);
+                double redSum = 0.0;
+                double greenSum = 0.0;
+                double blueSum = 0.0;
+                double alphaSum = 0.0;
+                int samples = 0;
+                for (int sy = sourceY0; sy <= sourceY1; sy++) {
+                    for (int sx = sourceX0; sx <= sourceX1; sx++) {
+                        int color = source[sy * SOURCE_SIZE + sx];
+                        double alpha = alpha(color) / 255.0;
+                        redSum += red(color) * alpha;
+                        greenSum += green(color) * alpha;
+                        blueSum += blue(color) * alpha;
+                        alphaSum += alpha;
+                        samples++;
+                    }
+                }
+                if (alphaSum <= 0.0001) {
+                    continue;
+                }
+                int alpha = clampChannel((int) Math.round(alphaSum / samples * 255.0));
+                int red = clampChannel((int) Math.round(redSum / alphaSum));
+                int green = clampChannel((int) Math.round(greenSum / alphaSum));
+                int blue = clampChannel((int) Math.round(blueSum / alphaSum));
+                output[y * SIZE + x] = (alpha << 24) | rgb(red, green, blue);
+            }
+        }
+        return output;
+    }
+
+    private static int sourceSpanStart(int outputCoordinate) {
+        int activeSource = SOURCE_SIZE - 2;
+        int activeOutput = SIZE - 2;
+        return 1 + (outputCoordinate - 1) * activeSource / activeOutput;
+    }
+
+    private static int sourceSpanEnd(int outputCoordinate) {
+        int activeSource = SOURCE_SIZE - 2;
+        int activeOutput = SIZE - 2;
+        int end = 1 + outputCoordinate * activeSource / activeOutput - 1;
+        return clampInt(end, sourceSpanStart(outputCoordinate), SOURCE_SIZE - 2);
     }
 
     private static State createState(long seed) {
@@ -74,21 +150,21 @@ public final class SingularMaterialGenerator {
         double organicWeight = lerp(0.32, 0.58, rng.next());
         double facetAngle = (Integer.toUnsignedLong(hash >>> 8) / 16777215.0) * TAU;
         Fields fields = new Fields(
-                new double[PIXELS],
-                new double[PIXELS],
-                new double[PIXELS],
-                new double[PIXELS],
-                new double[PIXELS],
-                new double[PIXELS],
+                new double[SOURCE_PIXELS],
+                new double[SOURCE_PIXELS],
+                new double[SOURCE_PIXELS],
+                new double[SOURCE_PIXELS],
+                new double[SOURCE_PIXELS],
+                new double[SOURCE_PIXELS],
                 shape.ownerMap().clone(),
-                new byte[PIXELS],
-                new byte[PIXELS],
-                new byte[PIXELS]
+                new byte[SOURCE_PIXELS],
+                new byte[SOURCE_PIXELS],
+                new byte[SOURCE_PIXELS]
         );
 
-        for (int y = 0; y < SIZE; y++) {
-            for (int x = 0; x < SIZE; x++) {
-                int index = y * SIZE + x;
+        for (int y = 0; y < SOURCE_SIZE; y++) {
+            for (int x = 0; x < SOURCE_SIZE; x++) {
+                int index = y * SOURCE_SIZE + x;
                 double nx = (x + 0.5 - 16.0) / 16.0;
                 double ny = (y + 0.5 - 16.0) / 16.0;
                 int owner = shape.ownerMap()[index] & 0xFF;
@@ -164,13 +240,13 @@ public final class SingularMaterialGenerator {
                 fields.halo()[index] = (byte) (isOuterBorder(x, y) || shape.mask()[index] != 0 ? 0 : edgeDistance(shape.mask(), x, y, 2));
                 if (shape.mask()[index] != 0 && owner > 0) {
                     int left = x > 0 ? shape.ownerMap()[index - 1] & 0xFF : owner;
-                    int right = x < SIZE - 1 ? shape.ownerMap()[index + 1] & 0xFF : owner;
-                    int up = y > 0 ? shape.ownerMap()[index - SIZE] & 0xFF : owner;
-                    int down = y < SIZE - 1 ? shape.ownerMap()[index + SIZE] & 0xFF : owner;
-                    int upLeft = x > 0 && y > 0 ? shape.ownerMap()[index - SIZE - 1] & 0xFF : owner;
-                    int upRight = x < SIZE - 1 && y > 0 ? shape.ownerMap()[index - SIZE + 1] & 0xFF : owner;
-                    int downLeft = x > 0 && y < SIZE - 1 ? shape.ownerMap()[index + SIZE - 1] & 0xFF : owner;
-                    int downRight = x < SIZE - 1 && y < SIZE - 1 ? shape.ownerMap()[index + SIZE + 1] & 0xFF : owner;
+                    int right = x < SOURCE_SIZE - 1 ? shape.ownerMap()[index + 1] & 0xFF : owner;
+                    int up = y > 0 ? shape.ownerMap()[index - SOURCE_SIZE] & 0xFF : owner;
+                    int down = y < SOURCE_SIZE - 1 ? shape.ownerMap()[index + SOURCE_SIZE] & 0xFF : owner;
+                    int upLeft = x > 0 && y > 0 ? shape.ownerMap()[index - SOURCE_SIZE - 1] & 0xFF : owner;
+                    int upRight = x < SOURCE_SIZE - 1 && y > 0 ? shape.ownerMap()[index - SOURCE_SIZE + 1] & 0xFF : owner;
+                    int downLeft = x > 0 && y < SOURCE_SIZE - 1 ? shape.ownerMap()[index + SOURCE_SIZE - 1] & 0xFF : owner;
+                    int downRight = x < SOURCE_SIZE - 1 && y < SOURCE_SIZE - 1 ? shape.ownerMap()[index + SOURCE_SIZE + 1] & 0xFF : owner;
                     fields.seam()[index] = (byte) (
                             (left != 0 && left != owner) || (right != 0 && right != owner)
                                     || (up != 0 && up != owner) || (down != 0 && down != owner)
@@ -190,7 +266,7 @@ public final class SingularMaterialGenerator {
     }
 
     private static int[] renderFrame(State state, double timePhase) {
-        int[] argb = new int[PIXELS];
+        int[] argb = new int[SOURCE_PIXELS];
         byte[] mask = state.shape().mask();
         double[] turing = state.turing();
         Palette palette = state.palette();
@@ -199,9 +275,9 @@ public final class SingularMaterialGenerator {
         List<Element> elements = state.shape().elements();
         Mode mode = state.shape().type() == Family.CELESTIAL_BODY || state.defaultMode() != Mode.ORBIT ? state.defaultMode() : Mode.DRIFT;
 
-        for (int y = 0; y < SIZE; y++) {
-            for (int x = 0; x < SIZE; x++) {
-                int index = y * SIZE + x;
+        for (int y = 0; y < SOURCE_SIZE; y++) {
+            for (int x = 0; x < SOURCE_SIZE; x++) {
+                int index = y * SOURCE_SIZE + x;
                 if (isOuterBorder(x, y)) {
                     continue;
                 }
@@ -427,7 +503,7 @@ public final class SingularMaterialGenerator {
     }
 
     private static Shape buildAberrantBranchShape(int seed, Rng rng) {
-        double[] field = new double[PIXELS];
+        double[] field = new double[SOURCE_PIXELS];
         int clusters = 2 + (int) Math.floor(rng.next() * 4.0);
         double baseAngle = rng.next() * TAU;
 
@@ -450,16 +526,16 @@ public final class SingularMaterialGenerator {
                     double t = stepIndex / Math.max(1.0, steps - 1.0);
                     heading += lerp(-0.42, 0.42, rng.next()) + Math.sin(t * TAU + cluster) * curl;
                     double step = lerp(1.15, 2.15, rng.next()) * lerp(1.0, 0.65, t);
-                    px = clamp(px + Math.cos(heading) * step, 2.5, SIZE - 2.5);
-                    py = clamp(py + Math.sin(heading) * step, 2.5, SIZE - 2.5);
+                    px = clamp(px + Math.cos(heading) * step, 2.5, SOURCE_SIZE - 2.5);
+                    py = clamp(py + Math.sin(heading) * step, 2.5, SOURCE_SIZE - 2.5);
                     double radius = lerp(2.2, 0.78, t) * lerp(0.78, 1.18, rng.next());
                     stampEllipse(field, px, py, radius * 1.12, radius * 0.78, heading, lerp(0.74, 1.16, rng.next()));
                     if (rng.next() < 0.22 && t > 0.22) {
                         double branchHeading = heading + (rng.next() < 0.5 ? -1.0 : 1.0) * lerp(0.75, 1.35, rng.next());
                         stampEllipse(
                                 field,
-                                clamp(px + Math.cos(branchHeading) * lerp(1.8, 3.6, rng.next()), 2.5, SIZE - 2.5),
-                                clamp(py + Math.sin(branchHeading) * lerp(1.8, 3.6, rng.next()), 2.5, SIZE - 2.5),
+                                clamp(px + Math.cos(branchHeading) * lerp(1.8, 3.6, rng.next()), 2.5, SOURCE_SIZE - 2.5),
+                                clamp(py + Math.sin(branchHeading) * lerp(1.8, 3.6, rng.next()), 2.5, SOURCE_SIZE - 2.5),
                                 radius * 0.75,
                                 radius * 0.55,
                                 branchHeading,
@@ -470,12 +546,12 @@ public final class SingularMaterialGenerator {
             }
         }
 
-        byte[] mask = new byte[PIXELS];
-        byte[] next = new byte[PIXELS];
+        byte[] mask = new byte[SOURCE_PIXELS];
+        byte[] next = new byte[SOURCE_PIXELS];
         double threshold = lerp(0.43, 0.66, rng.next());
-        for (int y = 0; y < SIZE; y++) {
-            for (int x = 0; x < SIZE; x++) {
-                int index = y * SIZE + x;
+        for (int y = 0; y < SOURCE_SIZE; y++) {
+            for (int x = 0; x < SOURCE_SIZE; x++) {
+                int index = y * SOURCE_SIZE + x;
                 double nx = (x + 0.5 - 16.0) / 16.0;
                 double ny = (y + 0.5 - 16.0) / 16.0;
                 double grain = fbm((x + 0.5) * 0.18, (y + 0.5) * 0.18, seed ^ 0x9E51, 4);
@@ -485,22 +561,22 @@ public final class SingularMaterialGenerator {
             }
         }
         for (int pass = 0; pass < 2; pass++) {
-            for (int y = 0; y < SIZE; y++) {
-                for (int x = 0; x < SIZE; x++) {
-                    int index = y * SIZE + x;
+            for (int y = 0; y < SOURCE_SIZE; y++) {
+                for (int x = 0; x < SOURCE_SIZE; x++) {
+                    int index = y * SOURCE_SIZE + x;
                     int n = countNeighbors(mask, x, y);
                     next[index] = (byte) (mask[index] != 0 ? (n >= 2 ? 1 : 0) : (n >= 6 ? 1 : 0));
                 }
             }
-            System.arraycopy(next, 0, mask, 0, PIXELS);
+            System.arraycopy(next, 0, mask, 0, SOURCE_PIXELS);
         }
 
-        byte[] ownerMap = new byte[PIXELS];
+        byte[] ownerMap = new byte[SOURCE_PIXELS];
         fillOwnerFromMask(mask, ownerMap, 1);
         keepComponents(mask, ownerMap, 7, 9);
         if (visiblePixels(mask) < 210) {
             stampEllipse(field, 16.0, 16.0, 7.4, 5.6, rng.next() * TAU, 1.1);
-            for (int index = 0; index < PIXELS; index++) {
+            for (int index = 0; index < SOURCE_PIXELS; index++) {
                 if (field[index] > threshold) {
                     mask[index] = 1;
                 }
@@ -514,7 +590,7 @@ public final class SingularMaterialGenerator {
     }
 
     private static Shape buildBiomassShape(int seed, Rng rng) {
-        double[] field = new double[PIXELS];
+        double[] field = new double[SOURCE_PIXELS];
         double stretchX = lerp(0.78, 1.13, rng.next());
         double stretchY = lerp(0.78, 1.13, rng.next());
         int lobes = 4 + (int) Math.floor(rng.next() * 4.0);
@@ -523,8 +599,8 @@ public final class SingularMaterialGenerator {
         double cohesion = lerp(0.64, 0.82, rng.next());
         double branchiness = lerp(0.18, 0.42, rng.next());
 
-        for (int y = 0; y < SIZE; y++) {
-            for (int x = 0; x < SIZE; x++) {
+        for (int y = 0; y < SOURCE_SIZE; y++) {
+            for (int x = 0; x < SOURCE_SIZE; x++) {
                 double nx = (x + 0.5 - 16.0) / 16.0;
                 double ny = (y + 0.5 - 16.0) / 16.0;
                 double angle = Math.atan2(ny, nx);
@@ -532,7 +608,7 @@ public final class SingularMaterialGenerator {
                 double outlineNoise = fbm(Math.cos(angle) * 1.9 + 3.5, Math.sin(angle) * 1.9 - 1.5, seed ^ 0x51A7, 4);
                 double wave = Math.sin(angle * lobes + phaseA) * 0.07 + Math.sin(angle * (lobes + 3) + phaseB) * 0.035;
                 double boundary = cohesion + wave + (outlineNoise - 0.5) * 0.17;
-                int index = y * SIZE + x;
+                int index = y * SOURCE_SIZE + x;
                 field[index] += (boundary - r) * 1.9;
                 field[index] += (fbm((nx + 1.8) * 1.7, (ny + 1.2) * 1.7, seed ^ 0x91FA, 4) - 0.5) * 0.34;
             }
@@ -557,47 +633,47 @@ public final class SingularMaterialGenerator {
         double[] sorted = field.clone();
         Arrays.sort(sorted);
         int target = (int) Math.round(lerp(340.0, 510.0, rng.next()));
-        double threshold = sorted[clampInt(PIXELS - 1 - target, 0, PIXELS - 1)];
-        byte[] mask = new byte[PIXELS];
-        byte[] next = new byte[PIXELS];
-        for (int index = 0; index < PIXELS; index++) {
+        double threshold = sorted[clampInt(SOURCE_PIXELS - 1 - target, 0, SOURCE_PIXELS - 1)];
+        byte[] mask = new byte[SOURCE_PIXELS];
+        byte[] next = new byte[SOURCE_PIXELS];
+        for (int index = 0; index < SOURCE_PIXELS; index++) {
             mask[index] = (byte) (field[index] >= threshold ? 1 : 0);
         }
         for (int pass = 0; pass < 2; pass++) {
-            for (int y = 0; y < SIZE; y++) {
-                for (int x = 0; x < SIZE; x++) {
-                    int index = y * SIZE + x;
+            for (int y = 0; y < SOURCE_SIZE; y++) {
+                for (int x = 0; x < SOURCE_SIZE; x++) {
+                    int index = y * SOURCE_SIZE + x;
                     int n = countNeighbors(mask, x, y);
                     next[index] = (byte) (mask[index] != 0 ? (n >= 3 ? 1 : 0) : (n >= 6 ? 1 : 0));
                 }
             }
-            System.arraycopy(next, 0, mask, 0, PIXELS);
+            System.arraycopy(next, 0, mask, 0, SOURCE_PIXELS);
         }
         clearOuterBorder(mask);
         List<int[]> components = keepHybridComponents(mask);
         if (components.isEmpty() || visiblePixels(mask) < 240) {
-            for (int y = 0; y < SIZE; y++) {
-                for (int x = 0; x < SIZE; x++) {
+            for (int y = 0; y < SOURCE_SIZE; y++) {
+                for (int x = 0; x < SOURCE_SIZE; x++) {
                     double nx = (x + 0.5 - 16.0) / 16.0;
                     double ny = (y + 0.5 - 16.0) / 16.0;
                     if (nx * nx + ny * ny < 0.48) {
-                        mask[y * SIZE + x] = 1;
+                        mask[y * SOURCE_SIZE + x] = 1;
                     }
                 }
             }
             clearOuterBorder(mask);
             keepHybridComponents(mask);
         }
-        byte[] ownerMap = new byte[PIXELS];
+        byte[] ownerMap = new byte[SOURCE_PIXELS];
         fillOwnerFromMask(mask, ownerMap, 1);
         List<Element> elements = List.of(makeFlowSpec("biomass", 16.0, 16.0, 10.5, 10.5, rng.next() * TAU, rng, "living"));
         return new Shape(Family.LIVING_BIOMASS, mask, ownerMap, elements);
     }
 
     private static Shape buildCrystalClusterShape(int seed, Rng rng) {
-        byte[] mask = new byte[PIXELS];
-        byte[] ownerMap = new byte[PIXELS];
-        double[] depthMap = new double[PIXELS];
+        byte[] mask = new byte[SOURCE_PIXELS];
+        byte[] ownerMap = new byte[SOURCE_PIXELS];
+        double[] depthMap = new double[SOURCE_PIXELS];
         Arrays.fill(depthMap, -999.0);
         List<Element> crystals = new ArrayList<>();
         double rotationStep = Math.PI / 12.0;
@@ -672,9 +748,9 @@ public final class SingularMaterialGenerator {
     }
 
     private static Shape buildCelestialShape(int seed, Rng rng) {
-        byte[] mask = new byte[PIXELS];
-        byte[] ownerMap = new byte[PIXELS];
-        double[] depthMap = new double[PIXELS];
+        byte[] mask = new byte[SOURCE_PIXELS];
+        byte[] ownerMap = new byte[SOURCE_PIXELS];
+        double[] depthMap = new double[SOURCE_PIXELS];
         Arrays.fill(depthMap, -999.0);
         List<Element> bodies = new ArrayList<>();
         List<Hole> holes = new ArrayList<>();
@@ -850,13 +926,13 @@ public final class SingularMaterialGenerator {
 
     private static void addCrystalClusterBody(byte[] mask, byte[] ownerMap, double[] depthMap, Element crystal, int id) {
         int reach = (int) Math.ceil(Math.max(crystal.rx(), crystal.ry()) * 1.18 + 2.0);
-        int minX = clampInt((int) Math.floor(crystal.cx() - reach), 1, SIZE - 2);
-        int maxX = clampInt((int) Math.ceil(crystal.cx() + reach), 1, SIZE - 2);
-        int minY = clampInt((int) Math.floor(crystal.cy() - reach), 1, SIZE - 2);
-        int maxY = clampInt((int) Math.ceil(crystal.cy() + reach), 1, SIZE - 2);
+        int minX = clampInt((int) Math.floor(crystal.cx() - reach), 1, SOURCE_SIZE - 2);
+        int maxX = clampInt((int) Math.ceil(crystal.cx() + reach), 1, SOURCE_SIZE - 2);
+        int minY = clampInt((int) Math.floor(crystal.cy() - reach), 1, SOURCE_SIZE - 2);
+        int maxY = clampInt((int) Math.ceil(crystal.cy() + reach), 1, SOURCE_SIZE - 2);
         for (int y = minY; y <= maxY; y++) {
             for (int x = minX; x <= maxX; x++) {
-                int index = y * SIZE + x;
+                int index = y * SOURCE_SIZE + x;
                 double d = crystalSignedDistance(x, y, crystal);
                 if (d < -0.015) {
                     continue;
@@ -898,9 +974,9 @@ public final class SingularMaterialGenerator {
             double cutRy = lerp(0.8, 1.3, rng.next());
             double cos = Math.cos(cutRot);
             double sin = Math.sin(cutRot);
-            for (int y = 1; y < SIZE - 1; y++) {
-                for (int x = 1; x < SIZE - 1; x++) {
-                    int index = y * SIZE + x;
+            for (int y = 1; y < SOURCE_SIZE - 1; y++) {
+                for (int x = 1; x < SOURCE_SIZE - 1; x++) {
+                    int index = y * SOURCE_SIZE + x;
                     if (mask[index] == 0) {
                         continue;
                     }
@@ -959,13 +1035,13 @@ public final class SingularMaterialGenerator {
 
     private static void addCelestialBody(byte[] mask, byte[] ownerMap, double[] depthMap, Element body, int id, int seed) {
         int reach = (int) Math.ceil(Math.max(body.rx(), body.ry()) * 1.25 + 2.0);
-        int minX = clampInt((int) Math.floor(body.cx() - reach), 1, SIZE - 2);
-        int maxX = clampInt((int) Math.ceil(body.cx() + reach), 1, SIZE - 2);
-        int minY = clampInt((int) Math.floor(body.cy() - reach), 1, SIZE - 2);
-        int maxY = clampInt((int) Math.ceil(body.cy() + reach), 1, SIZE - 2);
+        int minX = clampInt((int) Math.floor(body.cx() - reach), 1, SOURCE_SIZE - 2);
+        int maxX = clampInt((int) Math.ceil(body.cx() + reach), 1, SOURCE_SIZE - 2);
+        int minY = clampInt((int) Math.floor(body.cy() - reach), 1, SOURCE_SIZE - 2);
+        int maxY = clampInt((int) Math.ceil(body.cy() + reach), 1, SOURCE_SIZE - 2);
         for (int y = minY; y <= maxY; y++) {
             for (int x = minX; x <= maxX; x++) {
-                int index = y * SIZE + x;
+                int index = y * SOURCE_SIZE + x;
                 double strength = celestialStrength(body, x, y, seed);
                 if (strength <= 0.03) {
                     continue;
@@ -982,13 +1058,13 @@ public final class SingularMaterialGenerator {
     private static void carveCelestialHole(byte[] mask, byte[] ownerMap, Hole hole) {
         double cos = Math.cos(hole.rotation());
         double sin = Math.sin(hole.rotation());
-        int minX = clampInt((int) Math.floor(hole.cx() - hole.rx() - 1.0), 1, SIZE - 2);
-        int maxX = clampInt((int) Math.ceil(hole.cx() + hole.rx() + 1.0), 1, SIZE - 2);
-        int minY = clampInt((int) Math.floor(hole.cy() - hole.ry() - 1.0), 1, SIZE - 2);
-        int maxY = clampInt((int) Math.ceil(hole.cy() + hole.ry() + 1.0), 1, SIZE - 2);
+        int minX = clampInt((int) Math.floor(hole.cx() - hole.rx() - 1.0), 1, SOURCE_SIZE - 2);
+        int maxX = clampInt((int) Math.ceil(hole.cx() + hole.rx() + 1.0), 1, SOURCE_SIZE - 2);
+        int minY = clampInt((int) Math.floor(hole.cy() - hole.ry() - 1.0), 1, SOURCE_SIZE - 2);
+        int maxY = clampInt((int) Math.ceil(hole.cy() + hole.ry() + 1.0), 1, SOURCE_SIZE - 2);
         for (int y = minY; y <= maxY; y++) {
             for (int x = minX; x <= maxX; x++) {
-                int index = y * SIZE + x;
+                int index = y * SOURCE_SIZE + x;
                 if (mask[index] == 0) {
                     continue;
                 }
@@ -1005,10 +1081,10 @@ public final class SingularMaterialGenerator {
     }
 
     private static double[] buildTuring(int seed, Rng rng, byte[] mask) {
-        double[] a = new double[PIXELS];
-        double[] b = new double[PIXELS];
-        double[] nextA = new double[PIXELS];
-        double[] nextB = new double[PIXELS];
+        double[] a = new double[SOURCE_PIXELS];
+        double[] b = new double[SOURCE_PIXELS];
+        double[] nextA = new double[SOURCE_PIXELS];
+        double[] nextB = new double[SOURCE_PIXELS];
         double feed = lerp(0.032, 0.048, rng.next());
         double kill = lerp(0.057, 0.064, rng.next());
         int iterations = 52 + (int) Math.floor(rng.next() * 34.0);
@@ -1018,9 +1094,9 @@ public final class SingularMaterialGenerator {
         double freq = lerp(5.5, 9.5, rng.next());
         double startPhase = rng.next() * TAU;
 
-        for (int y = 0; y < SIZE; y++) {
-            for (int x = 0; x < SIZE; x++) {
-                int index = y * SIZE + x;
+        for (int y = 0; y < SOURCE_SIZE; y++) {
+            for (int x = 0; x < SOURCE_SIZE; x++) {
+                int index = y * SOURCE_SIZE + x;
                 a[index] = 1.0;
                 b[index] = 0.0;
                 if (mask[index] == 0) {
@@ -1037,9 +1113,9 @@ public final class SingularMaterialGenerator {
         }
 
         for (int iteration = 0; iteration < iterations; iteration++) {
-            for (int y = 0; y < SIZE; y++) {
-                for (int x = 0; x < SIZE; x++) {
-                    int index = y * SIZE + x;
+            for (int y = 0; y < SOURCE_SIZE; y++) {
+                for (int x = 0; x < SOURCE_SIZE; x++) {
+                    int index = y * SOURCE_SIZE + x;
                     if (mask[index] == 0) {
                         nextA[index] = 1.0;
                         nextB[index] = 0.0;
@@ -1072,7 +1148,7 @@ public final class SingularMaterialGenerator {
 
         double min = 1.0;
         double max = 0.0;
-        for (int index = 0; index < PIXELS; index++) {
+        for (int index = 0; index < SOURCE_PIXELS; index++) {
             if (mask[index] == 0) {
                 continue;
             }
@@ -1080,17 +1156,17 @@ public final class SingularMaterialGenerator {
             max = Math.max(max, b[index]);
         }
         double span = Math.max(0.0001, max - min);
-        for (int index = 0; index < PIXELS; index++) {
+        for (int index = 0; index < SOURCE_PIXELS; index++) {
             b[index] = mask[index] != 0 ? clamp((b[index] - min) / span, 0.0, 1.0) : 0.0;
         }
         return b;
     }
 
     private static double sample(double[] values, byte[] mask, int x, int y, double fallback) {
-        if (x < 0 || y < 0 || x >= SIZE || y >= SIZE) {
+        if (x < 0 || y < 0 || x >= SOURCE_SIZE || y >= SOURCE_SIZE) {
             return fallback;
         }
-        int index = y * SIZE + x;
+        int index = y * SOURCE_SIZE + x;
         return mask[index] != 0 ? values[index] : fallback;
     }
 
@@ -1161,10 +1237,10 @@ public final class SingularMaterialGenerator {
         double cos = Math.cos(angle);
         double sin = Math.sin(angle);
         int reach = (int) Math.ceil(Math.max(rx, ry) + 2.0);
-        int minX = clampInt((int) Math.floor(cx - reach), 0, SIZE - 1);
-        int maxX = clampInt((int) Math.ceil(cx + reach), 0, SIZE - 1);
-        int minY = clampInt((int) Math.floor(cy - reach), 0, SIZE - 1);
-        int maxY = clampInt((int) Math.ceil(cy + reach), 0, SIZE - 1);
+        int minX = clampInt((int) Math.floor(cx - reach), 0, SOURCE_SIZE - 1);
+        int maxX = clampInt((int) Math.ceil(cx + reach), 0, SOURCE_SIZE - 1);
+        int minY = clampInt((int) Math.floor(cy - reach), 0, SOURCE_SIZE - 1);
+        int maxY = clampInt((int) Math.ceil(cy + reach), 0, SOURCE_SIZE - 1);
         for (int y = minY; y <= maxY; y++) {
             for (int x = minX; x <= maxX; x++) {
                 double dx = x + 0.5 - cx;
@@ -1175,7 +1251,7 @@ public final class SingularMaterialGenerator {
                 if (d > 1.35) {
                     continue;
                 }
-                field[y * SIZE + x] += (1.0 - smoothstep(0.12, 1.35, d)) * strength;
+                field[y * SOURCE_SIZE + x] += (1.0 - smoothstep(0.12, 1.35, d)) * strength;
             }
         }
     }
@@ -1197,10 +1273,10 @@ public final class SingularMaterialGenerator {
                 }
                 int nx = x + ox;
                 int ny = y + oy;
-                if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) {
+                if (nx < 0 || ny < 0 || nx >= SOURCE_SIZE || ny >= SOURCE_SIZE) {
                     continue;
                 }
-                if (mask[ny * SIZE + nx] != 0) {
+                if (mask[ny * SOURCE_SIZE + nx] != 0) {
                     count++;
                 }
             }
@@ -1217,10 +1293,10 @@ public final class SingularMaterialGenerator {
                     }
                     int nx = x + ox;
                     int ny = y + oy;
-                    if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) {
+                    if (nx < 0 || ny < 0 || nx >= SOURCE_SIZE || ny >= SOURCE_SIZE) {
                         continue;
                     }
-                    if (mask[ny * SIZE + nx] != 0) {
+                    if (mask[ny * SOURCE_SIZE + nx] != 0) {
                         return r;
                     }
                 }
@@ -1234,11 +1310,11 @@ public final class SingularMaterialGenerator {
     }
 
     private static void clearOuterBorder(byte[] mask, byte[] ownerMap) {
-        for (int index = 0; index < SIZE; index++) {
+        for (int index = 0; index < SOURCE_SIZE; index++) {
             int top = index;
-            int bottom = (SIZE - 1) * SIZE + index;
-            int left = index * SIZE;
-            int right = index * SIZE + SIZE - 1;
+            int bottom = (SOURCE_SIZE - 1) * SOURCE_SIZE + index;
+            int left = index * SOURCE_SIZE;
+            int right = index * SOURCE_SIZE + SOURCE_SIZE - 1;
             mask[top] = 0;
             mask[bottom] = 0;
             mask[left] = 0;
@@ -1253,14 +1329,14 @@ public final class SingularMaterialGenerator {
     }
 
     private static List<int[]> componentsOf(byte[] mask) {
-        byte[] seen = new byte[PIXELS];
-        int[] stack = new int[PIXELS];
+        byte[] seen = new byte[SOURCE_PIXELS];
+        int[] stack = new int[SOURCE_PIXELS];
         List<int[]> components = new ArrayList<>();
-        for (int start = 0; start < PIXELS; start++) {
+        for (int start = 0; start < SOURCE_PIXELS; start++) {
             if (mask[start] == 0 || seen[start] != 0) {
                 continue;
             }
-            int[] component = new int[PIXELS];
+            int[] component = new int[SOURCE_PIXELS];
             int componentSize = 0;
             int stackSize = 0;
             stack[stackSize++] = start;
@@ -1268,12 +1344,12 @@ public final class SingularMaterialGenerator {
             while (stackSize > 0) {
                 int index = stack[--stackSize];
                 component[componentSize++] = index;
-                int x = index % SIZE;
-                int y = index / SIZE;
+                int x = index % SOURCE_SIZE;
+                int y = index / SOURCE_SIZE;
                 int left = x == 0 ? -1 : index - 1;
-                int right = x == SIZE - 1 ? -1 : index + 1;
-                int up = y == 0 ? -1 : index - SIZE;
-                int down = y == SIZE - 1 ? -1 : index + SIZE;
+                int right = x == SOURCE_SIZE - 1 ? -1 : index + 1;
+                int up = y == 0 ? -1 : index - SOURCE_SIZE;
+                int down = y == SOURCE_SIZE - 1 ? -1 : index + SOURCE_SIZE;
                 stackSize = pushNeighbor(mask, seen, stack, stackSize, left);
                 stackSize = pushNeighbor(mask, seen, stack, stackSize, right);
                 stackSize = pushNeighbor(mask, seen, stack, stackSize, up);
@@ -1301,7 +1377,7 @@ public final class SingularMaterialGenerator {
         List<int[]> keep = new ArrayList<>();
         int[] main = components.get(0);
         keep.add(main);
-        byte[] mainSet = new byte[PIXELS];
+        byte[] mainSet = new byte[SOURCE_PIXELS];
         for (int index : main) {
             mainSet[index] = 1;
         }
@@ -1313,8 +1389,8 @@ public final class SingularMaterialGenerator {
             }
             boolean close = false;
             for (int pixel : component) {
-                int x = pixel % SIZE;
-                int y = pixel / SIZE;
+                int x = pixel % SOURCE_SIZE;
+                int y = pixel / SOURCE_SIZE;
                 if (edgeDistance(mainSet, x, y, 5) > 0) {
                     close = true;
                     break;
@@ -1340,13 +1416,13 @@ public final class SingularMaterialGenerator {
                 .filter(component -> component.length >= minSize)
                 .limit(maxComponents)
                 .toList();
-        byte[] keep = new byte[PIXELS];
+        byte[] keep = new byte[SOURCE_PIXELS];
         for (int[] component : components) {
             for (int index : component) {
                 keep[index] = 1;
             }
         }
-        for (int index = 0; index < PIXELS; index++) {
+        for (int index = 0; index < SOURCE_PIXELS; index++) {
             mask[index] = keep[index];
             if (mask[index] == 0) {
                 ownerMap[index] = 0;
@@ -1360,13 +1436,13 @@ public final class SingularMaterialGenerator {
                 .filter(component -> component.length >= minSize)
                 .limit(maxComponents)
                 .toList();
-        byte[] keep = new byte[PIXELS];
+        byte[] keep = new byte[SOURCE_PIXELS];
         for (int[] component : components) {
             for (int index : component) {
                 keep[index] = 1;
             }
         }
-        for (int index = 0; index < PIXELS; index++) {
+        for (int index = 0; index < SOURCE_PIXELS; index++) {
             mask[index] = keep[index];
             if (mask[index] == 0) {
                 ownerMap[index] = 0;
@@ -1376,23 +1452,23 @@ public final class SingularMaterialGenerator {
     }
 
     private static void fillOwnerFromMask(byte[] mask, byte[] ownerMap, int owner) {
-        for (int index = 0; index < PIXELS; index++) {
+        for (int index = 0; index < SOURCE_PIXELS; index++) {
             ownerMap[index] = (byte) (mask[index] != 0 ? owner : 0);
         }
     }
 
     private static void removeIsolatedPixels(byte[] mask, byte[] ownerMap) {
         byte[] next = mask.clone();
-        for (int y = 1; y < SIZE - 1; y++) {
-            for (int x = 1; x < SIZE - 1; x++) {
-                int index = y * SIZE + x;
+        for (int y = 1; y < SOURCE_SIZE - 1; y++) {
+            for (int x = 1; x < SOURCE_SIZE - 1; x++) {
+                int index = y * SOURCE_SIZE + x;
                 if (mask[index] != 0 && countNeighbors(mask, x, y) <= 1) {
                     next[index] = 0;
                 }
             }
         }
-        System.arraycopy(next, 0, mask, 0, PIXELS);
-        for (int index = 0; index < PIXELS; index++) {
+        System.arraycopy(next, 0, mask, 0, SOURCE_PIXELS);
+        for (int index = 0; index < SOURCE_PIXELS; index++) {
             if (mask[index] == 0) {
                 ownerMap[index] = 0;
             }
@@ -1539,7 +1615,7 @@ public final class SingularMaterialGenerator {
     }
 
     private static boolean isOuterBorder(int x, int y) {
-        return x == 0 || y == 0 || x == SIZE - 1 || y == SIZE - 1;
+        return x == 0 || y == 0 || x == SOURCE_SIZE - 1 || y == SOURCE_SIZE - 1;
     }
 
     private static int rgb(int red, int green, int blue) {

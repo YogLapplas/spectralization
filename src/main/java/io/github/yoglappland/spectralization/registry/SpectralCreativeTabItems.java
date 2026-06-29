@@ -96,6 +96,8 @@ public final class SpectralCreativeTabItems {
         output.accept(Spectralization.COMPACT_MACHINE_ANCHOR_ITEM.get());
         output.accept(Spectralization.COMPACT_MACHINE_CORE_ITEM.get());
         output.accept(Spectralization.COMPACT_MACHINE_LIGHT_IO_PORT_ITEM.get());
+        output.accept(Spectralization.COMPACT_MACHINE_BLOCK_ITEM.get());
+        output.accept(Spectralization.COMPACT_MACHINE_GLASS_ITEM.get());
         output.accept(Spectralization.COMPACTED_MACHINE_ITEM.get());
         output.accept(Spectralization.MIRROR_ITEM.get());
         output.accept(Spectralization.DYNAMIC_MIRROR_ITEM.get());

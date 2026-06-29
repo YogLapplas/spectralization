@@ -74,38 +74,27 @@ public record RecursiveGeneratorState(int[] remaining, int energy) {
 
     public static RecursiveGeneratorState promotedFrom(RecursiveGeneratorState inner, int existingEnergy) {
         int[] next = new int[MAX_LAYERS];
-        int highestLayer = inner.highestRemainingLayer();
-        int newLayer = highestLayer + 1;
-        int sourceOffset = 0;
-        if (newLayer >= MAX_LAYERS) {
-            newLayer = MAX_LAYERS - 1;
-            sourceOffset = 1;
+        int count = 0;
+        for (int layer = 0; layer < MAX_LAYERS; layer++) {
+            int aged = inner.remaining[layer] - RECURSION_AGE_TICKS;
+            if (aged > 0) {
+                next[count++] = aged;
+            }
         }
-        for (int layer = 0; layer < newLayer; layer++) {
-            int sourceLayer = layer + sourceOffset;
-            next[layer] = Math.max(0, inner.remaining[sourceLayer] - RECURSION_AGE_TICKS);
+
+        if (count >= MAX_LAYERS) {
+            System.arraycopy(next, 1, next, 0, MAX_LAYERS - 1);
+            next[MAX_LAYERS - 1] = 0;
+            count = MAX_LAYERS - 1;
         }
-        next[newLayer] = Math.max(0, OUTER_DURATION_TICKS[newLayer] - RECURSION_AGE_TICKS);
+
+        next[count] = Math.max(0, OUTER_DURATION_TICKS[count] - RECURSION_AGE_TICKS);
         int combinedEnergy = clampEnergy(existingEnergy + inner.energy);
         return new RecursiveGeneratorState(next, combinedEnergy);
     }
 
     public static int expectedPromotedActiveLayerCount(RecursiveGeneratorState inner) {
-        int highestLayer = inner.highestRemainingLayer();
-        int newLayer = highestLayer + 1;
-        int sourceOffset = 0;
-        if (newLayer >= MAX_LAYERS) {
-            newLayer = MAX_LAYERS - 1;
-            sourceOffset = 1;
-        }
-
-        int count = OUTER_DURATION_TICKS[newLayer] > RECURSION_AGE_TICKS ? 1 : 0;
-        for (int layer = 0; layer < newLayer; layer++) {
-            if (inner.remaining[layer + sourceOffset] > RECURSION_AGE_TICKS) {
-                count++;
-            }
-        }
-        return count;
+        return promotedFrom(inner, 0).activeLayerCount();
     }
 
     public boolean hasState() {
@@ -178,8 +167,12 @@ public record RecursiveGeneratorState(int[] remaining, int energy) {
         if (source == null) {
             return out;
         }
+        int count = 0;
         for (int i = 0; i < Math.min(source.length, MAX_LAYERS); i++) {
-            out[i] = Math.max(0, source[i]);
+            int value = Math.max(0, source[i]);
+            if (value > 0) {
+                out[count++] = value;
+            }
         }
         return out;
     }

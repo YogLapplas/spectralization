@@ -5,6 +5,9 @@ import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.state.BlockState;
 
 public final class ClientCompactMachineAnimationCache {
     private static final int MAX_ACTIVE_ANIMATIONS = 16;
@@ -21,6 +24,10 @@ public final class ClientCompactMachineAnimationCache {
 
         clearIfLevelChanged(minecraft.level);
         long startTick = minecraft.level.getGameTime();
+        List<ProjectedBlockSnapshot> projectedBlockSnapshots = captureProjectedBlockSnapshots(
+                minecraft.level,
+                payload.projectedBlocks()
+        );
         List<Animation> updated = new ArrayList<>(animations.size() + 1);
 
         for (Animation animation : animations) {
@@ -35,7 +42,8 @@ public final class ClientCompactMachineAnimationCache {
                 payload.max(),
                 startTick,
                 payload.durationTicks(),
-                payload.projectedBlocks()
+                payload.projectedBlocks(),
+                projectedBlockSnapshots
         ));
 
         if (updated.size() > MAX_ACTIVE_ANIMATIONS) {
@@ -87,6 +95,21 @@ public final class ClientCompactMachineAnimationCache {
         lastLevel = level;
     }
 
+    private static List<ProjectedBlockSnapshot> captureProjectedBlockSnapshots(Level level, List<BlockPos> projectedBlocks) {
+        List<ProjectedBlockSnapshot> snapshots = new ArrayList<>(projectedBlocks.size());
+
+        for (BlockPos block : projectedBlocks) {
+            BlockState state = level.getBlockState(block);
+            if (state.isAir() || state.getRenderShape() != RenderShape.MODEL) {
+                continue;
+            }
+
+            snapshots.add(new ProjectedBlockSnapshot(block, state));
+        }
+
+        return List.copyOf(snapshots);
+    }
+
     public record ActiveAnimation(
             BlockPos corePos,
             BlockPos min,
@@ -96,7 +119,8 @@ public final class ClientCompactMachineAnimationCache {
             double rawProgress,
             double progress,
             double pulse,
-            List<BlockPos> projectedBlocks
+            List<BlockPos> projectedBlocks,
+            List<ProjectedBlockSnapshot> projectedBlockSnapshots
     ) {
         public ActiveAnimation {
             corePos = corePos.immutable();
@@ -108,6 +132,13 @@ public final class ClientCompactMachineAnimationCache {
             rawProgress = clamp(rawProgress);
             pulse = clamp(pulse);
             projectedBlocks = projectedBlocks.stream().map(BlockPos::immutable).toList();
+            projectedBlockSnapshots = List.copyOf(projectedBlockSnapshots);
+        }
+    }
+
+    public record ProjectedBlockSnapshot(BlockPos pos, BlockState state) {
+        public ProjectedBlockSnapshot {
+            pos = pos.immutable();
         }
     }
 
@@ -117,10 +148,12 @@ public final class ClientCompactMachineAnimationCache {
             BlockPos max,
             long startTick,
             int durationTicks,
-            List<BlockPos> projectedBlocks
+            List<BlockPos> projectedBlocks,
+            List<ProjectedBlockSnapshot> projectedBlockSnapshots
     ) {
         private Animation {
             projectedBlocks = List.copyOf(projectedBlocks);
+            projectedBlockSnapshots = List.copyOf(projectedBlockSnapshots);
         }
 
         private ActiveAnimation active(double age) {
@@ -136,7 +169,8 @@ public final class ClientCompactMachineAnimationCache {
                     rawProgress,
                     easedProgress,
                     Math.max(0.0D, pulse),
-                    projectedBlocks
+                    projectedBlocks,
+                    projectedBlockSnapshots
             );
         }
     }

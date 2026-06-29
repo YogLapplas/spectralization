@@ -23,7 +23,7 @@ public final class SingularMaterialItemRenderer extends BlockEntityWithoutLevelR
     );
     private static final float BACK_Z = 7.55F / 16.0F;
     private static final float FRONT_Z = 8.45F / 16.0F;
-    private static final long TICKS_PER_FRAME = 3L;
+    private static final long TICKS_PER_FRAME = 1L;
 
     private static SingularMaterialItemRenderer instance;
     private final Map<Long, SingularMaterialGenerator.VisualStrip> visualCache = new HashMap<>();

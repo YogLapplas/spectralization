@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "active=false": {
+      "model": "spectralization:block/light_source_generator"
+    },
+    "active=true": {
+      "model": "spectralization:block/light_source_generator"
+    }
+  }
+}

@@ -11,8 +11,10 @@ import io.github.yoglappland.spectralization.menu.FiberLaserMenu;
 import io.github.yoglappland.spectralization.menu.HolographicStorageCoreMenu;
 import io.github.yoglappland.spectralization.menu.HolographicStorageMenu;
 import io.github.yoglappland.spectralization.menu.LensGrindingBenchMenu;
+import io.github.yoglappland.spectralization.menu.LightSourceGeneratorMenu;
 import io.github.yoglappland.spectralization.menu.MetamaterialDesignTableMenu;
 import io.github.yoglappland.spectralization.menu.PhotothermalGeneratorMenu;
+import io.github.yoglappland.spectralization.menu.RecursiveGeneratorMenu;
 import io.github.yoglappland.spectralization.menu.SolarDopingChamberMenu;
 import io.github.yoglappland.spectralization.menu.SpectrometerMenu;
 import io.github.yoglappland.spectralization.menu.ThermalSmelterMenu;
@@ -43,6 +45,14 @@ public final class SpectralMenus {
     public static final DeferredHolder<MenuType<?>, MenuType<PhotothermalGeneratorMenu>> PHOTOTHERMAL_GENERATOR =
             MENU_TYPES.register("photothermal_generator", () ->
                     new MenuType<>(PhotothermalGeneratorMenu::new, FeatureFlags.DEFAULT_FLAGS));
+
+    public static final DeferredHolder<MenuType<?>, MenuType<LightSourceGeneratorMenu>> LIGHT_SOURCE_GENERATOR =
+            MENU_TYPES.register("light_source_generator", () ->
+                    new MenuType<>(LightSourceGeneratorMenu::new, FeatureFlags.DEFAULT_FLAGS));
+
+    public static final DeferredHolder<MenuType<?>, MenuType<RecursiveGeneratorMenu>> RECURSIVE_GENERATOR =
+            MENU_TYPES.register("recursive_generator", () ->
+                    new MenuType<>(RecursiveGeneratorMenu::new, FeatureFlags.DEFAULT_FLAGS));
 
     public static final DeferredHolder<MenuType<?>, MenuType<ThermalSmelterMenu>> THERMAL_SMELTER =
             MENU_TYPES.register("thermal_smelter", () ->

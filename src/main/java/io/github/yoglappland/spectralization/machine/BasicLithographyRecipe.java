@@ -22,6 +22,34 @@ public record BasicLithographyRecipe(
             new BasicLithographyRecipe(
                     List.of(cost(Items.IRON_INGOT, 1)),
                     List.of(),
+                    () -> new ItemStack(Spectralization.GRATING_MASK.get()),
+                    OutputKind.TEMPLATE,
+                    80,
+                    0.0
+            ),
+            new BasicLithographyRecipe(
+                    List.of(cost(Spectralization.SILICON.get(), 1)),
+                    List.of(),
+                    () -> new ItemStack(Spectralization.WAVEGUIDE_MASK.get()),
+                    OutputKind.TEMPLATE,
+                    80,
+                    0.0
+            ),
+            new BasicLithographyRecipe(
+                    List.of(
+                            cost(Items.IRON_INGOT, 1),
+                            cost(Items.COPPER_INGOT, 1),
+                            cost(Items.GOLD_INGOT, 1)
+                    ),
+                    List.of(Spectralization.GRATING_MASK.get(), Spectralization.WAVEGUIDE_MASK.get()),
+                    () -> new ItemStack(Spectralization.CIRCUIT_MASK.get()),
+                    OutputKind.TEMPLATE,
+                    120,
+                    0.0
+            ),
+            new BasicLithographyRecipe(
+                    List.of(cost(Spectralization.CIRCUIT_MASK.get(), 1)),
+                    List.of(Spectralization.GRATING_MASK.get(), Spectralization.WAVEGUIDE_MASK.get()),
                     () -> new ItemStack(Spectralization.BASIC_MASK.get()),
                     OutputKind.TEMPLATE,
                     80,

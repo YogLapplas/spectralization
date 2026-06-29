@@ -24,7 +24,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.items.ItemStackHandler;
 
-public class ThermalSmelterBlockEntity extends BlockEntity implements PhotothermalReceiver {
+public class ThermalSmelterBlockEntity extends BlockEntity implements PhotothermalReceiver, DropsContentsOnRemove {
     public static final int SLOT_INPUT = 0;
     public static final int SLOT_ADDITIVE = 1;
     public static final int SLOT_OUTPUT = 2;
@@ -190,13 +190,7 @@ public class ThermalSmelterBlockEntity extends BlockEntity implements Phototherm
     }
 
     public void dropContents(Level level, BlockPos pos) {
-        for (int slot = 0; slot < SLOT_COUNT; slot++) {
-            ItemStack stack = items.getStackInSlot(slot);
-
-            if (!stack.isEmpty()) {
-                Block.popResource(level, pos, stack);
-            }
-        }
+        MachineContentsDropper.dropItemHandler(level, pos, items);
     }
 
     private void tickOpticalSample(Level level) {

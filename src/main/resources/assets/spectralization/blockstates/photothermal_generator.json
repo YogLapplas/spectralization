@@ -1,6 +1,9 @@
 {
   "variants": {
-    "": {
+    "active=false": {
+      "model": "spectralization:block/photothermal_generator"
+    },
+    "active=true": {
       "model": "spectralization:block/photothermal_generator"
     }
   }

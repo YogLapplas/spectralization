@@ -274,7 +274,7 @@ public final class OpticalMaterialProfiles {
         if (state.getBlock() == Spectralization.RUBY_BLOCK.get()
                 && level != null
                 && pos != null
-                && OpticalPumpSources.adjacentPumpRate(level, pos) > 0) {
+                && OpticalPumpSources.effectiveAdjacentPumpRate(level, pos, state) > 0) {
             return RUBY_PUMPED;
         }
 
@@ -308,7 +308,7 @@ public final class OpticalMaterialProfiles {
             return 1.0;
         }
 
-        int pumpRate = OpticalPumpSources.adjacentPumpRate(level, pos);
+        int pumpRate = OpticalPumpSources.effectiveAdjacentPumpRate(level, pos, state);
 
         if (pumpRate <= 0) {
             return 1.0;
@@ -348,7 +348,7 @@ public final class OpticalMaterialProfiles {
             return 0.0;
         }
 
-        int pumpRate = OpticalPumpSources.adjacentPumpRate(level, pos);
+        int pumpRate = OpticalPumpSources.effectiveAdjacentPumpRate(level, pos, state);
 
         if (pumpRate <= 0) {
             return 0.0;

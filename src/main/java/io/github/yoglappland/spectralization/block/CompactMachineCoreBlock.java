@@ -1,5 +1,6 @@
 package io.github.yoglappland.spectralization.block;
 
+import io.github.yoglappland.spectralization.blockentity.MachineContentsDropper;
 import io.github.yoglappland.spectralization.blockentity.CompactMachineCoreBlockEntity;
 import io.github.yoglappland.spectralization.compact.CompactMachinePartKind;
 import io.github.yoglappland.spectralization.menu.CompactMachineCoreMenu;
@@ -62,10 +63,7 @@ public class CompactMachineCoreBlock extends CompactMachinePartBlock implements 
 
     @Override
     protected void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean movedByPiston) {
-        if (!state.is(newState.getBlock()) && level.getBlockEntity(pos) instanceof CompactMachineCoreBlockEntity core) {
-            core.dropContents(level, pos);
-        }
-
+        MachineContentsDropper.dropFromBlockEntity(state, level, pos, newState);
         super.onRemove(state, level, pos, newState, movedByPiston);
     }
 }

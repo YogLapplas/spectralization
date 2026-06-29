@@ -421,7 +421,7 @@ public final class CompactedMachineItemData {
             }
 
             rubyBlocks++;
-            int pumpRate = OpticalPumpSources.adjacentPumpRate(level, immutablePos);
+            int pumpRate = OpticalPumpSources.effectiveAdjacentPumpRate(level, immutablePos, state);
             if (pumpRate > 0) {
                 pumpedRubyBlocks++;
             }

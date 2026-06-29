@@ -1,13 +1,15 @@
 package io.github.yoglappland.spectralization.optics.pump;
 
+import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.tag.SpectralBlockTags;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
 public final class OpticalPumpSources {
-    public static final int MAGMA_BLOCK_PUMP_RATE = 1;
+    public static final int RUBY_PUMP_CAP = 5;
 
     public static int adjacentPumpRate(Level level, BlockPos pos) {
         if (level == null || pos == null) {
@@ -24,16 +26,32 @@ public final class OpticalPumpSources {
         return pumpRate;
     }
 
+    public static int effectiveAdjacentPumpRate(Level level, BlockPos pos, BlockState gainMediumState) {
+        int rawPumpRate = adjacentPumpRate(level, pos);
+
+        if (gainMediumState != null && gainMediumState.getBlock() == Spectralization.RUBY_BLOCK.get()) {
+            return Math.min(RUBY_PUMP_CAP, rawPumpRate);
+        }
+
+        return rawPumpRate;
+    }
+
     public static int pumpRateFor(Level level, BlockPos pos, BlockState state) {
-        if (level == null || pos == null) {
+        if (level == null || pos == null || !level.isLoaded(pos)) {
             return 0;
         }
 
-        return state.is(SpectralBlockTags.PUMP_SOURCE) ? MAGMA_BLOCK_PUMP_RATE : 0;
+        BlockEntity blockEntity = level.getBlockEntity(pos);
+
+        if (blockEntity instanceof OpticalPumpSource pumpSource) {
+            return Math.max(0, pumpSource.pumpAmount());
+        }
+
+        return 0;
     }
 
     public static boolean isPumpSource(Level level, BlockPos pos, BlockState state) {
-        return pumpRateFor(level, pos, state) > 0;
+        return state != null && state.is(SpectralBlockTags.PUMP_SOURCE);
     }
 
     private OpticalPumpSources() {

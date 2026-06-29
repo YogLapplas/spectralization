@@ -106,8 +106,9 @@ public final class SpectralCreativeTabItems {
         output.accept(Spectralization.PASS_THROUGH_SENSOR_ITEM.get());
         output.accept(Spectralization.BEAM_PROFILER_ITEM.get());
         output.accept(Spectralization.SPECTROMETER_ITEM.get());
-        output.accept(Spectralization.PHOTONIC_GRADIENT_GENERATOR_ITEM.get());
+        output.accept(Spectralization.LIGHT_SOURCE_GENERATOR_ITEM.get());
         output.accept(Spectralization.PHOTOTHERMAL_GENERATOR_ITEM.get());
+        output.accept(Spectralization.RECURSIVE_GENERATOR_ITEM.get());
         output.accept(Spectralization.THERMAL_SMELTER_ITEM.get());
         output.accept(Spectralization.BASIC_MACHINE_BLOCK_ITEM.get());
         output.accept(Spectralization.ADVANCED_MACHINE_BLOCK_ITEM.get());
@@ -115,6 +116,8 @@ public final class SpectralCreativeTabItems {
         output.accept(Spectralization.ADVANCED_STRAY_LIGHT_EMITTER_ITEM.get());
         output.accept(Spectralization.BASIC_LED_ITEM.get());
         output.accept(Spectralization.ADVANCED_LED_ITEM.get());
+        output.accept(Spectralization.AUTO_CAPACITOR_ITEM.get());
+        output.accept(Spectralization.PUMP_MAGMA_BLOCK_ITEM.get());
         output.accept(Spectralization.RUBY_BLOCK_ITEM.get());
         output.accept(Spectralization.SILVER_BLOCK_ITEM.get());
         output.accept(Spectralization.SILVER_GLASS_ITEM.get());

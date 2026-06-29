@@ -21,7 +21,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.items.ItemStackHandler;
 import org.jetbrains.annotations.Nullable;
 
-public class MetamaterialDesignTableBlockEntity extends BlockEntity {
+public class MetamaterialDesignTableBlockEntity extends BlockEntity implements DropsContentsOnRemove {
     public static final int MODE_STANDARD = 0;
     public static final int MODE_CUSTOM = 1;
 
@@ -153,13 +153,7 @@ public class MetamaterialDesignTableBlockEntity extends BlockEntity {
     }
 
     public void dropContents(Level level, BlockPos pos) {
-        for (int slot = 0; slot < SLOT_COUNT; slot++) {
-            ItemStack stack = items.getStackInSlot(slot);
-
-            if (!stack.isEmpty()) {
-                Block.popResource(level, pos, stack);
-            }
-        }
+        MachineContentsDropper.dropItemHandler(level, pos, items);
     }
 
     public static boolean isDesignMaterial(ItemStack stack) {

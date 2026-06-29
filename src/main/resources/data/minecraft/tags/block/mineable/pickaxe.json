@@ -17,6 +17,10 @@
     "spectralization:raw_silver_block",
     "spectralization:rutile_block",
     "spectralization:corundum_block",
-    "spectralization:fluorite_block"
+    "spectralization:fluorite_block",
+    "spectralization:light_source_generator",
+    "spectralization:recursive_generator",
+    "spectralization:auto_capacitor",
+    "spectralization:pump_magma_block"
   ]
 }

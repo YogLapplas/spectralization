@@ -10,12 +10,17 @@ public final class SpectralCapabilities {
     public static void register(RegisterCapabilitiesEvent event) {
         event.registerBlockEntity(
                 Capabilities.EnergyStorage.BLOCK,
-                SpectralBlockEntities.PHOTONIC_GRADIENT_GENERATOR.get(),
+                SpectralBlockEntities.LIGHT_SOURCE_GENERATOR.get(),
                 (generator, side) -> generator.getEnergyStorage(side)
         );
         event.registerBlockEntity(
                 Capabilities.EnergyStorage.BLOCK,
                 SpectralBlockEntities.PHOTOTHERMAL_GENERATOR.get(),
+                (generator, side) -> generator.getEnergyStorage(side)
+        );
+        event.registerBlockEntity(
+                Capabilities.EnergyStorage.BLOCK,
+                SpectralBlockEntities.RECURSIVE_GENERATOR.get(),
                 (generator, side) -> generator.getEnergyStorage(side)
         );
         event.registerBlockEntity(
@@ -37,6 +42,21 @@ public final class SpectralCapabilities {
                 Capabilities.EnergyStorage.BLOCK,
                 SpectralBlockEntities.FIBER_LASER.get(),
                 (laser, side) -> laser.getEnergyStorage(side)
+        );
+        event.registerBlockEntity(
+                Capabilities.EnergyStorage.BLOCK,
+                SpectralBlockEntities.AUTO_CAPACITOR.get(),
+                (capacitor, side) -> capacitor.getEnergyStorage(side)
+        );
+        event.registerBlockEntity(
+                Capabilities.EnergyStorage.BLOCK,
+                SpectralBlockEntities.PUMP_MAGMA_BLOCK.get(),
+                (pump, side) -> pump.getEnergyStorage(side)
+        );
+        event.registerBlockEntity(
+                Capabilities.ItemHandler.BLOCK,
+                SpectralBlockEntities.LIGHT_SOURCE_GENERATOR.get(),
+                (generator, side) -> generator.getSourceItems(side)
         );
         event.registerBlockEntity(
                 Capabilities.ItemHandler.BLOCK,

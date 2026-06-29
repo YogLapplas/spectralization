@@ -13,6 +13,7 @@ public final class SpectralItemTags {
     public static final TagKey<Item> OPTICAL_PLATE = item("optical_plate");
     public static final TagKey<Item> PAINT_BUCKET = item("paint_bucket");
     public static final TagKey<Item> STRAY_LIGHT_SOURCE = item("stray_light_source");
+    public static final TagKey<Item> LIGHT_SOURCE_GENERATOR_FUEL = item("light_source_generator_fuel");
     public static final TagKey<Item> PUMP_SOURCE = item("pump_source");
     public static final TagKey<Item> LASER_GAIN_MEDIUM = item("laser_gain_medium");
     public static final TagKey<Item> HIGH_REFLECTANCE_MATERIAL = item("high_reflectance_material");

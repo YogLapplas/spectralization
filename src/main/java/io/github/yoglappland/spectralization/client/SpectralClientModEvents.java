@@ -3,10 +3,13 @@ package io.github.yoglappland.spectralization.client;
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.client.model.CompactedMachineDynamicModel;
 import io.github.yoglappland.spectralization.client.model.MetamaterialTemplateDynamicModel;
+import io.github.yoglappland.spectralization.client.model.RecursiveGeneratorItemDynamicModel;
 import io.github.yoglappland.spectralization.client.model.SingularMaterialDynamicModel;
 import io.github.yoglappland.spectralization.client.renderer.LensHolderRenderer;
+import io.github.yoglappland.spectralization.client.renderer.LightSourceGeneratorRenderer;
 import io.github.yoglappland.spectralization.client.renderer.MetamaterialDesignTableRenderer;
 import io.github.yoglappland.spectralization.client.renderer.MetamaterialTemplateItemRenderer;
+import io.github.yoglappland.spectralization.client.renderer.RecursiveGeneratorItemRenderer;
 import io.github.yoglappland.spectralization.client.renderer.SolarDopingChamberRenderer;
 import io.github.yoglappland.spectralization.client.renderer.SingularMaterialItemRenderer;
 import io.github.yoglappland.spectralization.client.screen.BasicLithographyMachineScreen;
@@ -21,8 +24,10 @@ import io.github.yoglappland.spectralization.client.screen.FiberLaserScreen;
 import io.github.yoglappland.spectralization.client.screen.HolographicStorageCoreScreen;
 import io.github.yoglappland.spectralization.client.screen.HolographicStorageScreen;
 import io.github.yoglappland.spectralization.client.screen.LensGrindingBenchScreen;
+import io.github.yoglappland.spectralization.client.screen.LightSourceGeneratorScreen;
 import io.github.yoglappland.spectralization.client.screen.MetamaterialDesignTableScreen;
 import io.github.yoglappland.spectralization.client.screen.PhotothermalGeneratorScreen;
+import io.github.yoglappland.spectralization.client.screen.RecursiveGeneratorScreen;
 import io.github.yoglappland.spectralization.client.screen.SolarDopingChamberScreen;
 import io.github.yoglappland.spectralization.client.screen.SpectrometerScreen;
 import io.github.yoglappland.spectralization.client.screen.ThermalSmelterScreen;
@@ -62,6 +67,10 @@ public final class SpectralClientModEvents {
                 SpectralBlockEntities.HOLOGRAPHIC_STORAGE_SHELL.get(),
                 HolographicStorageShellRenderer::new
         );
+        event.registerBlockEntityRenderer(
+                SpectralBlockEntities.LIGHT_SOURCE_GENERATOR.get(),
+                LightSourceGeneratorRenderer::new
+        );
     }
 
     @SubscribeEvent
@@ -74,6 +83,7 @@ public final class SpectralClientModEvents {
     static void modifyBakingResult(ModelEvent.ModifyBakingResult event) {
         CompactedMachineDynamicModel.modifyBakingResult(event);
         MetamaterialTemplateDynamicModel.modifyBakingResult(event);
+        RecursiveGeneratorItemDynamicModel.modifyBakingResult(event);
         SingularMaterialDynamicModel.modifyBakingResult(event);
     }
 
@@ -98,6 +108,15 @@ public final class SpectralClientModEvents {
                 },
                 Spectralization.SINGULAR_MATERIAL.get()
         );
+        event.registerItem(
+                new IClientItemExtensions() {
+                    @Override
+                    public BlockEntityWithoutLevelRenderer getCustomRenderer() {
+                        return RecursiveGeneratorItemRenderer.instance();
+                    }
+                },
+                Spectralization.RECURSIVE_GENERATOR_ITEM.get()
+        );
     }
 
     @SubscribeEvent
@@ -106,6 +125,8 @@ public final class SpectralClientModEvents {
         event.register(SpectralMenus.COATING_BRUSH.get(), CoatingBrushScreen::new);
         event.register(SpectralMenus.SPECTROMETER.get(), SpectrometerScreen::new);
         event.register(SpectralMenus.PHOTOTHERMAL_GENERATOR.get(), PhotothermalGeneratorScreen::new);
+        event.register(SpectralMenus.LIGHT_SOURCE_GENERATOR.get(), LightSourceGeneratorScreen::new);
+        event.register(SpectralMenus.RECURSIVE_GENERATOR.get(), RecursiveGeneratorScreen::new);
         event.register(SpectralMenus.THERMAL_SMELTER.get(), ThermalSmelterScreen::new);
         event.register(SpectralMenus.LENS_GRINDING_BENCH.get(), LensGrindingBenchScreen::new);
         event.register(SpectralMenus.METAMATERIAL_DESIGN_TABLE.get(), MetamaterialDesignTableScreen::new);

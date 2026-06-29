@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization.block;
 
 import io.github.yoglappland.spectralization.blockentity.MetamaterialDesignTableBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.MachineContentsDropper;
 import io.github.yoglappland.spectralization.menu.MetamaterialDesignTableMenu;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
@@ -45,10 +46,7 @@ public class MetamaterialDesignTableBlock extends Block implements EntityBlock {
 
     @Override
     protected void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean movedByPiston) {
-        if (!state.is(newState.getBlock()) && level.getBlockEntity(pos) instanceof MetamaterialDesignTableBlockEntity table) {
-            table.dropContents(level, pos);
-        }
-
+        MachineContentsDropper.dropFromBlockEntity(state, level, pos, newState);
         super.onRemove(state, level, pos, newState, movedByPiston);
     }
 

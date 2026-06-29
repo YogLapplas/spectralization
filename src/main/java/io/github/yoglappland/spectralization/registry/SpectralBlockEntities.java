@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization.registry;
 
 import io.github.yoglappland.spectralization.Spectralization;
+import io.github.yoglappland.spectralization.blockentity.AutoCapacitorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.BasicLithographyMachineBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.BeamProfilerBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.CmosSensorBlockEntity;
@@ -20,6 +21,8 @@ import io.github.yoglappland.spectralization.blockentity.MetamaterialDesignTable
 import io.github.yoglappland.spectralization.blockentity.PassThroughSensorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.PhotonicGradientGeneratorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.PhotothermalGeneratorBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.PumpMagmaBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.RecursiveGeneratorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.RubyBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.SolarDopingChamberBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.SpectrometerBlockEntity;
@@ -87,6 +90,20 @@ public final class SpectralBlockEntities {
             BLOCK_ENTITY_TYPES.register("fiber_laser", () ->
                     BlockEntityType.Builder.of(FiberLaserBlockEntity::new, Spectralization.FIBER_LASER.get()).build(null));
 
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<AutoCapacitorBlockEntity>> AUTO_CAPACITOR =
+            BLOCK_ENTITY_TYPES.register("auto_capacitor", () ->
+                    BlockEntityType.Builder.of(
+                            AutoCapacitorBlockEntity::new,
+                            Spectralization.AUTO_CAPACITOR.get()
+                    ).build(null));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<PumpMagmaBlockEntity>> PUMP_MAGMA_BLOCK =
+            BLOCK_ENTITY_TYPES.register("pump_magma_block", () ->
+                    BlockEntityType.Builder.of(
+                            PumpMagmaBlockEntity::new,
+                            Spectralization.PUMP_MAGMA_BLOCK.get()
+                    ).build(null));
+
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<HolographicStorageCrystalBlockEntity>> HOLOGRAPHIC_STORAGE_CRYSTAL =
             BLOCK_ENTITY_TYPES.register("holographic_storage_crystal", () ->
                     BlockEntityType.Builder.of(
@@ -147,13 +164,17 @@ public final class SpectralBlockEntities {
             BLOCK_ENTITY_TYPES.register("ruby_block", () ->
                     BlockEntityType.Builder.of(RubyBlockEntity::new, Spectralization.RUBY_BLOCK.get()).build(null));
 
-    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<PhotonicGradientGeneratorBlockEntity>> PHOTONIC_GRADIENT_GENERATOR =
-            BLOCK_ENTITY_TYPES.register("photonic_gradient_generator", () ->
-                    BlockEntityType.Builder.of(PhotonicGradientGeneratorBlockEntity::new, Spectralization.PHOTONIC_GRADIENT_GENERATOR.get()).build(null));
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<PhotonicGradientGeneratorBlockEntity>> LIGHT_SOURCE_GENERATOR =
+            BLOCK_ENTITY_TYPES.register("light_source_generator", () ->
+                    BlockEntityType.Builder.of(PhotonicGradientGeneratorBlockEntity::new, Spectralization.LIGHT_SOURCE_GENERATOR.get()).build(null));
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<PhotothermalGeneratorBlockEntity>> PHOTOTHERMAL_GENERATOR =
             BLOCK_ENTITY_TYPES.register("photothermal_generator", () ->
                     BlockEntityType.Builder.of(PhotothermalGeneratorBlockEntity::new, Spectralization.PHOTOTHERMAL_GENERATOR.get()).build(null));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<RecursiveGeneratorBlockEntity>> RECURSIVE_GENERATOR =
+            BLOCK_ENTITY_TYPES.register("recursive_generator", () ->
+                    BlockEntityType.Builder.of(RecursiveGeneratorBlockEntity::new, Spectralization.RECURSIVE_GENERATOR.get()).build(null));
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<ThermalSmelterBlockEntity>> THERMAL_SMELTER =
             BLOCK_ENTITY_TYPES.register("thermal_smelter", () ->

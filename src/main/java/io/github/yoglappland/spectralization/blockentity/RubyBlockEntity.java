@@ -12,7 +12,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
 public class RubyBlockEntity extends BlockEntity {
-    private int lastPumpRate = Integer.MIN_VALUE;
+    private int lastEffectivePumpRate = Integer.MIN_VALUE;
 
     public RubyBlockEntity(BlockPos pos, BlockState blockState) {
         super(SpectralBlockEntities.RUBY_BLOCK.get(), pos, blockState);
@@ -55,10 +55,14 @@ public class RubyBlockEntity extends BlockEntity {
             return false;
         }
 
-        int pumpRate = OpticalPumpSources.adjacentPumpRate(this.level, this.worldPosition);
+        int pumpRate = OpticalPumpSources.effectiveAdjacentPumpRate(
+                this.level,
+                this.worldPosition,
+                this.getBlockState()
+        );
 
-        if (pumpRate != this.lastPumpRate) {
-            this.lastPumpRate = pumpRate;
+        if (pumpRate != this.lastEffectivePumpRate) {
+            this.lastEffectivePumpRate = pumpRate;
             this.setChanged();
             OpticalTraceCache.markChanged(this.level, this.worldPosition, OpticalDirtyKind.PARAMETER);
             return true;

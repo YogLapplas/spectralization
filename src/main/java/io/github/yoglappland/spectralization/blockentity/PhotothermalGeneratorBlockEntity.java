@@ -1,5 +1,6 @@
 package io.github.yoglappland.spectralization.blockentity;
 
+import io.github.yoglappland.spectralization.block.PhotothermalGeneratorBlock;
 import io.github.yoglappland.spectralization.energy.SpectralEnergyStorage;
 import io.github.yoglappland.spectralization.heat.PhotothermalAbsorberProfile;
 import io.github.yoglappland.spectralization.heat.PhotothermalCouplingModel;
@@ -16,23 +17,25 @@ import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.energy.IEnergyStorage;
 import net.neoforged.neoforge.items.ItemStackHandler;
 
-public class PhotothermalGeneratorBlockEntity extends BlockEntity implements PhotothermalReceiver {
+public class PhotothermalGeneratorBlockEntity extends BlockEntity implements PhotothermalReceiver, DropsContentsOnRemove {
     public static final int DATA_ENERGY = 0;
     public static final int DATA_CAPACITY = 1;
     public static final int DATA_BURN_REMAINING = 2;
     public static final int DATA_BURN_DURATION = 3;
     public static final int DATA_OUTPUT = 4;
     public static final int DATA_FUEL_COUNT = 5;
-    public static final int DATA_COUNT = 6;
+    public static final int DATA_OPTICAL_POWER_CENTISP = 6;
+    public static final int DATA_COUNT = 7;
     public static final int CAPACITY = 10_000;
 
-    private static final int BASE_FE_PER_TICK = 10;
+    public static final int BASE_FE_PER_TICK = 10;
     private static final int MAX_OUTPUT = 256;
     private static final long SAMPLE_HOLD_TICKS = 1L;
     private static final double FULL_OPTICAL_BOOST_POWER = 20.0;
@@ -96,6 +99,7 @@ public class PhotothermalGeneratorBlockEntity extends BlockEntity implements Pho
         generator.tickOpticalSample(level);
         generator.tickFuelCycle();
         generator.pushEnergy(level, pos);
+        generator.setActive(level, pos, generator.isGenerating());
     }
 
     public static boolean isFuel(ItemStack stack) {
@@ -149,12 +153,16 @@ public class PhotothermalGeneratorBlockEntity extends BlockEntity implements Pho
 
     @Nullable
     public IEnergyStorage getEnergyStorage(@Nullable Direction side) {
-        return side == null || side == Direction.UP ? energy : null;
+        return energy;
     }
 
     @Nullable
     public ItemStackHandler getFuelItems(@Nullable Direction side) {
         return side == null || side == Direction.SOUTH ? fuelItems : null;
+    }
+
+    public void dropContents(Level level, BlockPos pos) {
+        MachineContentsDropper.dropItemHandler(level, pos, fuelItems);
     }
 
     private void tickOpticalSample(Level level) {
@@ -172,7 +180,8 @@ public class PhotothermalGeneratorBlockEntity extends BlockEntity implements Pho
     }
 
     private void commitCoupling(PhotothermalCouplingResult coupling) {
-        if (Math.abs(committedCoupling.heatPower() - coupling.heatPower()) > 1.0E-6
+        if (Math.abs(committedCoupling.inputPower() - coupling.inputPower()) > 1.0E-6
+                || Math.abs(committedCoupling.heatPower() - coupling.heatPower()) > 1.0E-6
                 || Math.abs(committedCoupling.totalEfficiency() - coupling.totalEfficiency()) > 1.0E-6) {
             committedCoupling = coupling;
             setChanged();
@@ -241,17 +250,48 @@ public class PhotothermalGeneratorBlockEntity extends BlockEntity implements Pho
     }
 
     private void pushEnergy(Level level, BlockPos pos) {
-        IEnergyStorage target = level.getCapability(Capabilities.EnergyStorage.BLOCK, pos.above(), Direction.DOWN);
-
-        if (target == null || energy.getEnergyStored() <= 0) {
+        if (energy.getEnergyStored() <= 0) {
             return;
         }
 
-        int extracted = energy.extractEnergy(MAX_OUTPUT, true);
-        int accepted = target.receiveEnergy(extracted, false);
+        int remaining = Math.min(MAX_OUTPUT, energy.getEnergyStored());
+        for (Direction direction : Direction.values()) {
+            if (remaining <= 0) {
+                return;
+            }
 
-        if (accepted > 0) {
-            energy.extractEnergy(accepted, false);
+            IEnergyStorage target = level.getCapability(
+                    Capabilities.EnergyStorage.BLOCK,
+                    pos.relative(direction),
+                    direction.getOpposite()
+            );
+
+            if (target == null) {
+                continue;
+            }
+
+            int extracted = energy.extractEnergy(remaining, true);
+            int accepted = target.receiveEnergy(extracted, false);
+
+            if (accepted > 0) {
+                energy.extractEnergy(accepted, false);
+                remaining -= accepted;
+            }
+        }
+    }
+
+    private boolean isGenerating() {
+        return burnTicksRemaining > 0.0
+                && baseBurnDuration > 0
+                && energy.getEnergyStored() < energy.getMaxEnergyStored();
+    }
+
+    private void setActive(Level level, BlockPos pos, boolean active) {
+        BlockState state = level.getBlockState(pos);
+
+        if (state.getBlock() instanceof PhotothermalGeneratorBlock
+                && state.getValue(PhotothermalGeneratorBlock.ACTIVE) != active) {
+            level.setBlock(pos, state.setValue(PhotothermalGeneratorBlock.ACTIVE, active), Block.UPDATE_CLIENTS);
         }
     }
 
@@ -265,6 +305,7 @@ public class PhotothermalGeneratorBlockEntity extends BlockEntity implements Pho
             case DATA_BURN_DURATION -> (int) Math.ceil(baseBurnDuration * burnDurationMultiplier);
             case DATA_OUTPUT -> burnTicksRemaining > 0.0 ? (int) Math.round(BASE_FE_PER_TICK * currentOutputMultiplier()) : 0;
             case DATA_FUEL_COUNT -> fuelItems.getStackInSlot(0).getCount();
+            case DATA_OPTICAL_POWER_CENTISP -> (int) Math.round(Math.min(FULL_OPTICAL_BOOST_POWER, committedCoupling.inputPower()) * 100.0);
             default -> 0;
         };
     }
@@ -280,7 +321,7 @@ public class PhotothermalGeneratorBlockEntity extends BlockEntity implements Pho
     }
 
     private double opticalBoostProgress() {
-        return Math.max(0.0, Math.min(1.0, committedCoupling.heatPower() / FULL_OPTICAL_BOOST_POWER));
+        return Math.max(0.0, Math.min(1.0, committedCoupling.inputPower() / FULL_OPTICAL_BOOST_POWER));
     }
 
     @Override
@@ -305,7 +346,7 @@ public class PhotothermalGeneratorBlockEntity extends BlockEntity implements Pho
         tag.putDouble(BURN_REMAINING_TAG, burnTicksRemaining);
         tag.putInt(BURN_DURATION_TAG, baseBurnDuration);
         tag.putDouble(GENERATION_REMAINDER_TAG, generationRemainder);
-        tag.putDouble(OPTICAL_POWER_TAG, committedCoupling.heatPower());
+        tag.putDouble(OPTICAL_POWER_TAG, committedCoupling.inputPower());
     }
 
     private static PhotothermalCouplingResult combine(

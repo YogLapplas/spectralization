@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization;
 
 import com.mojang.logging.LogUtils;
+import io.github.yoglappland.spectralization.block.AutoCapacitorBlock;
 import io.github.yoglappland.spectralization.block.BeamProfilerBlock;
 import io.github.yoglappland.spectralization.block.BeamSplitterBlock;
 import io.github.yoglappland.spectralization.block.BasicLithographyMachineBlock;
@@ -28,6 +29,8 @@ import io.github.yoglappland.spectralization.block.MirrorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
 import io.github.yoglappland.spectralization.block.PhotonicGradientGeneratorBlock;
 import io.github.yoglappland.spectralization.block.PhotothermalGeneratorBlock;
+import io.github.yoglappland.spectralization.block.PumpMagmaBlock;
+import io.github.yoglappland.spectralization.block.RecursiveGeneratorBlock;
 import io.github.yoglappland.spectralization.block.RubyBlock;
 import io.github.yoglappland.spectralization.block.SilverGlassBlock;
 import io.github.yoglappland.spectralization.block.SolarDopingChamberBlock;
@@ -45,6 +48,7 @@ import io.github.yoglappland.spectralization.item.MetamaterialTemplateItem;
 import io.github.yoglappland.spectralization.item.OpticalFiberCoilItem;
 import io.github.yoglappland.spectralization.item.PaintBucketItem;
 import io.github.yoglappland.spectralization.item.PhosphorTubeItem;
+import io.github.yoglappland.spectralization.item.RecursiveGeneratorBlockItem;
 import io.github.yoglappland.spectralization.item.SandpaperItem;
 import io.github.yoglappland.spectralization.item.SingularMaterialItem;
 import io.github.yoglappland.spectralization.item.StrawberryRodItem;
@@ -667,17 +671,18 @@ public class Spectralization {
     public static final DeferredItem<BlockItem> SPECTROMETER_ITEM =
             ITEMS.registerSimpleBlockItem("spectrometer", SPECTROMETER);
 
-    public static final DeferredBlock<PhotonicGradientGeneratorBlock> PHOTONIC_GRADIENT_GENERATOR = BLOCKS.register(
-            "photonic_gradient_generator",
+    public static final DeferredBlock<PhotonicGradientGeneratorBlock> LIGHT_SOURCE_GENERATOR = BLOCKS.register(
+            "light_source_generator",
             () -> new PhotonicGradientGeneratorBlock(BlockBehaviour.Properties.of()
                     .mapColor(MapColor.METAL)
                     .strength(2.0F, 6.0F)
                     .sound(SoundType.METAL)
+                    .lightLevel(state -> state.getValue(PhotonicGradientGeneratorBlock.ACTIVE) ? 10 : 0)
                     .noOcclusion())
     );
 
-    public static final DeferredItem<BlockItem> PHOTONIC_GRADIENT_GENERATOR_ITEM =
-            ITEMS.registerSimpleBlockItem("photonic_gradient_generator", PHOTONIC_GRADIENT_GENERATOR);
+    public static final DeferredItem<BlockItem> LIGHT_SOURCE_GENERATOR_ITEM =
+            ITEMS.registerSimpleBlockItem("light_source_generator", LIGHT_SOURCE_GENERATOR);
 
     public static final DeferredBlock<PhotothermalGeneratorBlock> PHOTOTHERMAL_GENERATOR = BLOCKS.register(
             "photothermal_generator",
@@ -685,11 +690,27 @@ public class Spectralization {
                     .mapColor(MapColor.METAL)
                     .strength(2.0F, 6.0F)
                     .sound(SoundType.METAL)
+                    .lightLevel(state -> state.getValue(PhotothermalGeneratorBlock.ACTIVE) ? 10 : 0)
                     .noOcclusion())
     );
 
     public static final DeferredItem<BlockItem> PHOTOTHERMAL_GENERATOR_ITEM =
             ITEMS.registerSimpleBlockItem("photothermal_generator", PHOTOTHERMAL_GENERATOR);
+
+    public static final DeferredBlock<RecursiveGeneratorBlock> RECURSIVE_GENERATOR = BLOCKS.register(
+            "recursive_generator",
+            () -> new RecursiveGeneratorBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(2.0F, 6.0F)
+                    .sound(SoundType.METAL)
+                    .lightLevel(state -> state.getValue(RecursiveGeneratorBlock.ACTIVE) ? 10 : 0)
+                    .noOcclusion())
+    );
+
+    public static final DeferredItem<RecursiveGeneratorBlockItem> RECURSIVE_GENERATOR_ITEM = ITEMS.register(
+            "recursive_generator",
+            () -> new RecursiveGeneratorBlockItem(RECURSIVE_GENERATOR.get(), new Item.Properties())
+    );
 
     public static final DeferredBlock<ThermalSmelterBlock> THERMAL_SMELTER = BLOCKS.register(
             "thermal_smelter",
@@ -762,6 +783,37 @@ public class Spectralization {
 
     public static final DeferredItem<BlockItem> ADVANCED_LED_ITEM =
             ITEMS.registerSimpleBlockItem("advanced_led", ADVANCED_LED);
+
+    public static final DeferredBlock<AutoCapacitorBlock> AUTO_CAPACITOR = BLOCKS.register(
+            "auto_capacitor",
+            () -> new AutoCapacitorBlock(
+                    BlockBehaviour.Properties.of()
+                            .mapColor(MapColor.METAL)
+                            .strength(2.0F, 6.0F)
+                            .sound(SoundType.METAL)
+                            .noOcclusion()
+                            .isRedstoneConductor((state, level, pos) -> false)
+                            .isSuffocating((state, level, pos) -> false)
+                            .isViewBlocking((state, level, pos) -> false)
+            )
+    );
+
+    public static final DeferredItem<BlockItem> AUTO_CAPACITOR_ITEM =
+            ITEMS.registerSimpleBlockItem("auto_capacitor", AUTO_CAPACITOR);
+
+    public static final DeferredBlock<PumpMagmaBlock> PUMP_MAGMA_BLOCK = BLOCKS.register(
+            "pump_magma_block",
+            () -> new PumpMagmaBlock(
+                    BlockBehaviour.Properties.of()
+                            .mapColor(MapColor.COLOR_ORANGE)
+                            .strength(1.5F, 6.0F)
+                            .sound(SoundType.STONE)
+                            .lightLevel(state -> state.getValue(PumpMagmaBlock.ACTIVE) ? 10 : 0)
+            )
+    );
+
+    public static final DeferredItem<BlockItem> PUMP_MAGMA_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("pump_magma_block", PUMP_MAGMA_BLOCK);
 
     public static final DeferredBlock<Block> BASIC_MACHINE_BLOCK = BLOCKS.registerSimpleBlock(
             "basic_machine_block",

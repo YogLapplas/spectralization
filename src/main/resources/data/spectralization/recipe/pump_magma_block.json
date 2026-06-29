@@ -1,0 +1,21 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "redstone",
+  "key": {
+    "I": {
+      "tag": "c:ingots/iron"
+    },
+    "M": {
+      "item": "minecraft:magma_block"
+    }
+  },
+  "pattern": [
+    "IMI",
+    "MMM",
+    "IMI"
+  ],
+  "result": {
+    "count": 1,
+    "id": "spectralization:pump_magma_block"
+  }
+}

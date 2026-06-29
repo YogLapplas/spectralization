@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization.block;
 
 import io.github.yoglappland.spectralization.blockentity.BasicLithographyMachineBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.MachineContentsDropper;
 import io.github.yoglappland.spectralization.diagnostics.SpectralDiagnostics;
 import io.github.yoglappland.spectralization.heat.PhotothermalReceiverBlock;
 import io.github.yoglappland.spectralization.menu.BasicLithographyMachineMenu;
@@ -98,9 +99,9 @@ public class BasicLithographyMachineBlock extends Block implements EntityBlock, 
                     .pos("machine", pos)
                     .field("replacement", newState.getBlock())
                     .write();
-            machine.dropContents(level, pos);
         }
 
+        MachineContentsDropper.dropFromBlockEntity(state, level, pos, newState);
         super.onRemove(state, level, pos, newState, movedByPiston);
     }
 

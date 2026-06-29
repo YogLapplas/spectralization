@@ -29,7 +29,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.items.ItemStackHandler;
 
-public class CompactMachineCoreBlockEntity extends BlockEntity {
+public class CompactMachineCoreBlockEntity extends BlockEntity implements DropsContentsOnRemove {
     public static final int SLOT_OUTPUT = 0;
     public static final int SLOT_COUNT = 1;
 

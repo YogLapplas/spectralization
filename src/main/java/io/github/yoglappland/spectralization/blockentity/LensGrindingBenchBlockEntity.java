@@ -19,7 +19,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.items.ItemStackHandler;
 
-public class LensGrindingBenchBlockEntity extends BlockEntity {
+public class LensGrindingBenchBlockEntity extends BlockEntity implements DropsContentsOnRemove {
     public static final int SLOT_BLANK = 0;
     public static final int SLOT_TOOL = 1;
     public static final int SLOT_REFERENCE = 2;
@@ -166,13 +166,7 @@ public class LensGrindingBenchBlockEntity extends BlockEntity {
     }
 
     public void dropContents(Level level, BlockPos pos) {
-        for (int slot = 0; slot < SLOT_COUNT; slot++) {
-            ItemStack stack = items.getStackInSlot(slot);
-
-            if (!stack.isEmpty()) {
-                Block.popResource(level, pos, stack);
-            }
-        }
+        MachineContentsDropper.dropItemHandler(level, pos, items);
     }
 
     public static boolean isBlank(ItemStack stack) {

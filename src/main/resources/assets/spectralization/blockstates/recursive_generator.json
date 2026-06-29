@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "active=false": {
+      "model": "spectralization:block/recursive_generator"
+    },
+    "active=true": {
+      "model": "spectralization:block/recursive_generator"
+    }
+  }
+}

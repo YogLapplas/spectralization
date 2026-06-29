@@ -1,5 +1,6 @@
 package io.github.yoglappland.spectralization.block;
 
+import io.github.yoglappland.spectralization.blockentity.MachineContentsDropper;
 import io.github.yoglappland.spectralization.blockentity.PhotothermalGeneratorBlockEntity;
 import io.github.yoglappland.spectralization.heat.PhotothermalReceiverBlock;
 import io.github.yoglappland.spectralization.menu.PhotothermalGeneratorMenu;
@@ -8,6 +9,7 @@ import io.github.yoglappland.spectralization.optics.CompiledOpticalNetwork;
 import io.github.yoglappland.spectralization.optics.OpticalReceiver;
 import io.github.yoglappland.spectralization.optics.OpticalResult;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
+import java.util.Set;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -23,15 +25,19 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
 public class PhotothermalGeneratorBlock extends Block implements EntityBlock, OpticalReceiver, PhotothermalReceiverBlock {
+    public static final BooleanProperty ACTIVE = BooleanProperty.create("active");
     private static final VoxelShape SHAPE = Block.box(0.0, 0.0, 0.0, 16.0, 16.0, 16.0);
 
     public PhotothermalGeneratorBlock(Properties properties) {
         super(properties);
+        registerDefaultState(stateDefinition.any().setValue(ACTIVE, false));
     }
 
     @Override
@@ -83,12 +89,28 @@ public class PhotothermalGeneratorBlock extends Block implements EntityBlock, Op
         return SHAPE;
     }
 
+    @Override
+    protected void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean movedByPiston) {
+        MachineContentsDropper.dropFromBlockEntity(state, level, pos, newState);
+        super.onRemove(state, level, pos, newState, movedByPiston);
+    }
+
     public static Direction getReceivingSide(BlockState state) {
-        return Direction.NORTH;
+        return Direction.EAST;
     }
 
     @Override
     public Direction photothermalReceivingSide(BlockState state) {
         return getReceivingSide(state);
+    }
+
+    @Override
+    public Set<Direction> photothermalReceivingSides(BlockState state) {
+        return Set.of(Direction.EAST, Direction.WEST);
+    }
+
+    @Override
+    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+        builder.add(ACTIVE);
     }
 }

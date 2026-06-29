@@ -53,6 +53,7 @@ import io.github.yoglappland.spectralization.optics.surface.SurfaceKey;
 import io.github.yoglappland.spectralization.optics.validation.OpticalTraceValidator;
 import io.github.yoglappland.spectralization.optics.world.OpticalDormantSourceData;
 import io.github.yoglappland.spectralization.optics.world.OpticalWorldIndex;
+import io.github.yoglappland.spectralization.tag.SpectralBlockTags;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.ints.IntSet;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
@@ -3483,7 +3484,8 @@ public final class OpticalTraceCache {
                 return false;
             }
 
-            return state.getBlock() instanceof OpticalElement;
+            return state.getBlock() instanceof OpticalElement
+                    || state.is(SpectralBlockTags.LASER_GAIN_MEDIUM);
         }
 
         private boolean markPumpSourceDataIfChanged(ServerLevel level, BlockPos pos) {

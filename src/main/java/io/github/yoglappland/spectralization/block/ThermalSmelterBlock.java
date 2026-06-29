@@ -2,6 +2,7 @@ package io.github.yoglappland.spectralization.block;
 
 import com.lowdragmc.lowdraglib2.gui.factory.BlockUIMenuType;
 import com.lowdragmc.lowdraglib2.gui.ui.ModularUI;
+import io.github.yoglappland.spectralization.blockentity.MachineContentsDropper;
 import io.github.yoglappland.spectralization.blockentity.ThermalSmelterBlockEntity;
 import io.github.yoglappland.spectralization.compat.ldlib2.ThermalSmelterLdLibUi;
 import io.github.yoglappland.spectralization.heat.PhotothermalReceiverBlock;
@@ -132,11 +133,7 @@ public class ThermalSmelterBlock extends Block implements EntityBlock, OpticalRe
 
     @Override
     protected void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean movedByPiston) {
-        if (!state.is(newState.getBlock()) && !level.isClientSide
-                && level.getBlockEntity(pos) instanceof ThermalSmelterBlockEntity smelter) {
-            smelter.dropContents(level, pos);
-        }
-
+        MachineContentsDropper.dropFromBlockEntity(state, level, pos, newState);
         super.onRemove(state, level, pos, newState, movedByPiston);
     }
 

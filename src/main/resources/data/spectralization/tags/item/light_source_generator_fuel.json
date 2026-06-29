@@ -1,0 +1,20 @@
+{
+  "replace": false,
+  "values": [
+    "minecraft:torch",
+    "minecraft:soul_torch",
+    "minecraft:redstone_torch",
+    "minecraft:lantern",
+    "minecraft:soul_lantern",
+    "minecraft:glowstone",
+    "minecraft:shroomlight",
+    "minecraft:sea_lantern",
+    "minecraft:end_rod",
+    "minecraft:jack_o_lantern",
+    "minecraft:ochre_froglight",
+    "minecraft:verdant_froglight",
+    "minecraft:pearlescent_froglight",
+    "spectralization:basic_led",
+    "spectralization:advanced_led"
+  ]
+}

@@ -32,7 +32,7 @@ import net.neoforged.neoforge.energy.IEnergyStorage;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.ItemStackHandler;
 
-public class BasicLithographyMachineBlockEntity extends BlockEntity implements PhotothermalReceiver {
+public class BasicLithographyMachineBlockEntity extends BlockEntity implements PhotothermalReceiver, DropsContentsOnRemove {
     public static final int SLOT_TEMPLATE_INPUT_A = 0;
     public static final int SLOT_TEMPLATE_INPUT_B = 1;
     public static final int SLOT_ITEM_INPUT_0 = 2;
@@ -242,13 +242,7 @@ public class BasicLithographyMachineBlockEntity extends BlockEntity implements P
                 .field("non_empty_slots", nonEmptySlotCount())
                 .write();
 
-        for (int slot = 0; slot < SLOT_COUNT; slot++) {
-            ItemStack stack = items.getStackInSlot(slot);
-
-            if (!stack.isEmpty()) {
-                Block.popResource(level, pos, stack);
-            }
-        }
+        MachineContentsDropper.dropItemHandler(level, pos, items);
     }
 
     public static boolean isTemplate(ItemStack stack) {

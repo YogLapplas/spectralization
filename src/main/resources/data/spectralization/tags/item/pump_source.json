@@ -1,6 +1,6 @@
 {
   "replace": false,
   "values": [
-    "minecraft:magma_block"
+    "spectralization:pump_magma_block"
   ]
 }

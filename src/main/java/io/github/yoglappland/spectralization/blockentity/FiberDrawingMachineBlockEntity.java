@@ -23,7 +23,7 @@ import net.neoforged.neoforge.energy.IEnergyStorage;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.ItemStackHandler;
 
-public class FiberDrawingMachineBlockEntity extends BlockEntity {
+public class FiberDrawingMachineBlockEntity extends BlockEntity implements DropsContentsOnRemove {
     public static final int SLOT_MATERIAL_INPUT = 0;
     public static final int SLOT_OUTPUT = 1;
     public static final int SLOT_MOLD_INPUT = 2;
@@ -143,13 +143,7 @@ public class FiberDrawingMachineBlockEntity extends BlockEntity {
     }
 
     public void dropContents(Level level, BlockPos pos) {
-        for (int slot = 0; slot < SLOT_COUNT; slot++) {
-            ItemStack stack = items.getStackInSlot(slot);
-
-            if (!stack.isEmpty()) {
-                Block.popResource(level, pos, stack);
-            }
-        }
+        MachineContentsDropper.dropItemHandler(level, pos, items);
     }
 
     public static boolean isDrawableMaterial(ItemStack stack) {

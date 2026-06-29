@@ -1793,6 +1793,51 @@ tasks.register('verifyHolographicStorageUiLayout') {
     }
 }
 
+tasks.register('verifyMachineContentDropContracts') {
+    def blockEntityDir = file('src/main/java/io/github/yoglappland/spectralization/blockentity')
+    def blockDir = file('src/main/java/io/github/yoglappland/spectralization/block')
+    inputs.dir(blockEntityDir)
+    inputs.dir(blockDir)
+
+    doLast {
+        def blockEntityRoot = blockEntityDir.toPath()
+        def blockRoot = blockDir.toPath()
+        def blockEntitySources
+        java.nio.file.Files.walk(blockEntityRoot).withCloseable { paths ->
+            blockEntitySources = paths
+                    .filter { path -> java.nio.file.Files.isRegularFile(path) }
+                    .filter { path -> path.fileName.toString().endsWith('BlockEntity.java') }
+                    .map { path -> path.toFile() }
+                    .toList()
+        }
+        def blockEntitiesWithItemHandlers = blockEntitySources.findAll { sourceFile ->
+            sourceFile.text.contains('ItemStackHandler')
+        }
+
+        def missingDropInterface = blockEntitiesWithItemHandlers.findAll { sourceFile ->
+            !(sourceFile.text =~ /implements[^{]+DropsContentsOnRemove/).find()
+        }
+        if (!missingDropInterface.isEmpty()) {
+            throw new GradleException(
+                    "Block entities with ItemStackHandler must implement DropsContentsOnRemove: "
+                            + missingDropInterface.collect { it.name }.join(', ')
+            )
+        }
+
+        def missingBlockDropper = blockEntitiesWithItemHandlers.findAll { sourceFile ->
+            def blockName = sourceFile.name.replace('BlockEntity.java', 'Block.java')
+            def blockFile = blockRoot.resolve(blockName).toFile()
+            !blockFile.exists() || !blockFile.text.contains('MachineContentsDropper.dropFromBlockEntity')
+        }
+        if (!missingBlockDropper.isEmpty()) {
+            throw new GradleException(
+                    "Blocks for item-holding block entities must call MachineContentsDropper.dropFromBlockEntity: "
+                            + missingBlockDropper.collect { it.name }.join(', ')
+            )
+        }
+    }
+}
+
 tasks.named('check') {
     dependsOn tasks.named('verifyThermalSmelterUiLayout')
     dependsOn tasks.named('verifyLensGrindingBenchUiLayout')
@@ -1801,6 +1846,7 @@ tasks.named('check') {
     dependsOn tasks.named('verifySolarDopingChamberUiLayout')
     dependsOn tasks.named('verifyFiberDrawingMachineUiLayout')
     dependsOn tasks.named('verifyHolographicStorageUiLayout')
+    dependsOn tasks.named('verifyMachineContentDropContracts')
 }
 
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.

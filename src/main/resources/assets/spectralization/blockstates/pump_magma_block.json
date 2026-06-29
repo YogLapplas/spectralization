@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "active=false": {
+      "model": "spectralization:block/pump_magma_block"
+    },
+    "active=true": {
+      "model": "spectralization:block/activated_pump_magma_block"
+    }
+  }
+}

@@ -93,12 +93,12 @@ public final class SpectralCreativeTabItems {
         output.accept(Spectralization.HOLOGRAPHIC_STORAGE_CRYSTAL_ITEM.get());
         output.accept(Spectralization.HOLOGRAPHIC_STORAGE_MAIN_CORE_ITEM.get());
         output.accept(Spectralization.HOLOGRAPHIC_STORAGE_SCREEN_ITEM.get());
-        output.accept(Spectralization.COMPACT_MACHINE_ANCHOR_ITEM.get());
-        output.accept(Spectralization.COMPACT_MACHINE_CORE_ITEM.get());
-        output.accept(Spectralization.COMPACT_MACHINE_LIGHT_IO_PORT_ITEM.get());
-        output.accept(Spectralization.COMPACT_MACHINE_BLOCK_ITEM.get());
-        output.accept(Spectralization.COMPACT_MACHINE_GLASS_ITEM.get());
-        output.accept(Spectralization.COMPACTED_MACHINE_ITEM.get());
+        output.accept(Spectralization.MICROLIZER_ANCHOR_ITEM.get());
+        output.accept(Spectralization.MICROLIZER_CORE_ITEM.get());
+        output.accept(Spectralization.MICROLIZER_LIGHT_IO_PORT_ITEM.get());
+        output.accept(Spectralization.MICROLIZER_BLOCK_ITEM.get());
+        output.accept(Spectralization.MICROLIZER_GLASS_ITEM.get());
+        output.accept(Spectralization.MICROLIZED_MACHINE_ITEM.get());
         output.accept(Spectralization.MIRROR_ITEM.get());
         output.accept(Spectralization.DYNAMIC_MIRROR_ITEM.get());
         output.accept(Spectralization.BEAM_SPLITTER_ITEM.get());

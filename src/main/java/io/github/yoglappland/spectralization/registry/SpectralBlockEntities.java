@@ -5,8 +5,8 @@ import io.github.yoglappland.spectralization.blockentity.AutoCapacitorBlockEntit
 import io.github.yoglappland.spectralization.blockentity.BasicLithographyMachineBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.BeamProfilerBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.CmosSensorBlockEntity;
-import io.github.yoglappland.spectralization.blockentity.CompactMachineCoreBlockEntity;
-import io.github.yoglappland.spectralization.blockentity.CompactedMachineBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.MicrolizerCoreBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.MicrolizedMachineBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.CreativeLightSourceBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.FiberDrawingMachineBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.FiberLaserBlockEntity;
@@ -126,18 +126,18 @@ public final class SpectralBlockEntities {
                             Spectralization.HOLOGRAPHIC_STORAGE_MAIN_CORE.get()
                     ).build(null));
 
-    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<CompactedMachineBlockEntity>> COMPACTED_MACHINE =
-            BLOCK_ENTITY_TYPES.register("compacted_machine", () ->
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<MicrolizedMachineBlockEntity>> MICROLIZED_MACHINE =
+            BLOCK_ENTITY_TYPES.register("microlized_machine", () ->
                     BlockEntityType.Builder.of(
-                            CompactedMachineBlockEntity::new,
-                            Spectralization.COMPACTED_MACHINE.get()
+                            MicrolizedMachineBlockEntity::new,
+                            Spectralization.MICROLIZED_MACHINE.get()
                     ).build(null));
 
-    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<CompactMachineCoreBlockEntity>> COMPACT_MACHINE_CORE =
-            BLOCK_ENTITY_TYPES.register("compact_machine_core", () ->
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<MicrolizerCoreBlockEntity>> MICROLIZER_CORE =
+            BLOCK_ENTITY_TYPES.register("microlizer_core", () ->
                     BlockEntityType.Builder.of(
-                            CompactMachineCoreBlockEntity::new,
-                            Spectralization.COMPACT_MACHINE_CORE.get()
+                            MicrolizerCoreBlockEntity::new,
+                            Spectralization.MICROLIZER_CORE.get()
                     ).build(null));
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<CreativeLightSourceBlockEntity>> CREATIVE_LIGHT_SOURCE =

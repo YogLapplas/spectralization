@@ -212,8 +212,8 @@ def metamaterialDesignTableLayoutSourceFile = file('src/main/java/io/github/yogl
 def basicLithographyMachineLayoutSourceFile = file('src/main/java/io/github/yoglappland/spectralization/menu/BasicLithographyMachineLayout.java')
 def basicLithographyMachineScreenSourceFile = file('src/main/java/io/github/yoglappland/spectralization/client/screen/BasicLithographyMachineScreen.java')
 def solarDopingChamberLayoutSourceFile = file('src/main/java/io/github/yoglappland/spectralization/menu/SolarDopingChamberLayout.java')
-def compactMachineCoreScreenSourceFile = file('src/main/java/io/github/yoglappland/spectralization/client/screen/CompactMachineCoreScreen.java')
-def compactMachineCoreMenuSourceFile = file('src/main/java/io/github/yoglappland/spectralization/menu/CompactMachineCoreMenu.java')
+def microlizerCoreScreenSourceFile = file('src/main/java/io/github/yoglappland/spectralization/client/screen/MicrolizerCoreScreen.java')
+def microlizerCoreMenuSourceFile = file('src/main/java/io/github/yoglappland/spectralization/menu/MicrolizerCoreMenu.java')
 tasks.register('verifyThermalSmelterUiLayout') {
     inputs.file(thermalSmelterLayoutSourceFile)
 
@@ -1795,8 +1795,8 @@ tasks.register('verifyHolographicStorageUiLayout') {
     }
 }
 
-tasks.register('verifyCompactMachineCoreUiLayout') {
-    inputs.files(compactMachineCoreScreenSourceFile, compactMachineCoreMenuSourceFile)
+tasks.register('verifyMicrolizerCoreUiLayout') {
+    inputs.files(microlizerCoreScreenSourceFile, microlizerCoreMenuSourceFile)
 
     doLast {
         def loadConstants = { sourceFile, displayName ->
@@ -1823,8 +1823,8 @@ tasks.register('verifyCompactMachineCoreUiLayout') {
             [constants: constants, displayName: displayName]
         }
 
-        def screenConstants = loadConstants(compactMachineCoreScreenSourceFile, 'CompactMachineCoreScreen')
-        def menuConstants = loadConstants(compactMachineCoreMenuSourceFile, 'CompactMachineCoreMenu')
+        def screenConstants = loadConstants(microlizerCoreScreenSourceFile, 'MicrolizerCoreScreen')
+        def menuConstants = loadConstants(microlizerCoreMenuSourceFile, 'MicrolizerCoreMenu')
         def screenValue = { String name ->
             if (!screenConstants.constants.containsKey(name)) {
                 throw new GradleException("Could not resolve ${screenConstants.displayName} constant '${name}' for UI layout verification.")
@@ -1851,7 +1851,7 @@ tasks.register('verifyCompactMachineCoreUiLayout') {
                     || inner.y < outer.y
                     || inner.x + inner.width > outer.x + outer.width
                     || inner.y + inner.height > outer.y + outer.height) {
-                throw new GradleException("Compact machine core UI ${inner.name} must stay inside ${outer.name}.")
+                throw new GradleException("Microlizer core UI ${inner.name} must stay inside ${outer.name}.")
             }
         }
         def assertNoOverlap = { String group, areas ->
@@ -1864,13 +1864,13 @@ tasks.register('verifyCompactMachineCoreUiLayout') {
                 }
             }
             if (!collisions.isEmpty()) {
-                throw new GradleException("Compact machine core UI ${group} overlap: ${collisions.join(', ')}")
+                throw new GradleException("Microlizer core UI ${group} overlap: ${collisions.join(', ')}")
             }
         }
         def assertCenterX = { String name, left, right, int tolerance ->
             int delta = Math.abs((left.x * 2 + left.width) - (right.x * 2 + right.width))
             if (delta > tolerance * 2) {
-                throw new GradleException("Compact machine core UI ${name} should share a horizontal centerline.")
+                throw new GradleException("Microlizer core UI ${name} should share a horizontal centerline.")
             }
         }
 
@@ -1898,8 +1898,8 @@ tasks.register('verifyCompactMachineCoreUiLayout') {
                 screenValue('RIGHT_PANEL_WIDTH'), screenValue('RIGHT_PANEL_HEIGHT'))
         def outputSlot = rect('output_slot_frame', menuValue('OUTPUT_SLOT_FRAME_X'), menuValue('OUTPUT_SLOT_FRAME_Y'),
                 slotSize, slotSize)
-        def compactButton = rect('compact_button', screenValue('COMPACT_BUTTON_X'), screenValue('COMPACT_BUTTON_Y'),
-                screenValue('COMPACT_BUTTON_WIDTH'), screenValue('COMPACT_BUTTON_HEIGHT'))
+        def microlizeButton = rect('microlize_button', screenValue('MICROLIZE_BUTTON_X'), screenValue('MICROLIZE_BUTTON_Y'),
+                screenValue('MICROLIZE_BUTTON_WIDTH'), screenValue('MICROLIZE_BUTTON_HEIGHT'))
         def redstoneTag = rect('redstone_tag', screenValue('REDSTONE_TAG_X'), screenValue('REDSTONE_TAG_Y'),
                 screenValue('REDSTONE_TAG_WIDTH'), screenValue('REDSTONE_TAG_HEIGHT'))
         def inventoryPanel = rect('player_inventory_panel', menuValue('PLAYER_INVENTORY_X') - 5,
@@ -1914,55 +1914,55 @@ tasks.register('verifyCompactMachineCoreUiLayout') {
         [leftDivider, rightDivider, feBar, preview, rightRegion].each {
             assertInside(contentPanel, it)
         }
-        [outputSlot, compactButton].each { assertInside(rightRegion, it) }
+        [outputSlot, microlizeButton].each { assertInside(rightRegion, it) }
         [playerMainSlots, playerHotbar].each { assertInside(inventoryPanel, it) }
         assertNoOverlap('main content columns', [feBar, preview, rightRegion])
-        assertNoOverlap('right action stack', [outputSlot, compactButton])
+        assertNoOverlap('right action stack', [outputSlot, microlizeButton])
         assertNoOverlap('inventory rows', [playerMainSlots, playerHotbar])
 
         if (machinePanel.y + machinePanel.height > machineInventoryDivider.y) {
-            throw new GradleException('Compact machine core machine panel must clear the machine/inventory divider.')
+            throw new GradleException('Microlizer core machine panel must clear the machine/inventory divider.')
         }
         if (inventoryPanel.y < machineInventoryDivider.y + machineInventoryDivider.height) {
-            throw new GradleException('Compact machine core player inventory panel must clear the machine/inventory divider.')
+            throw new GradleException('Microlizer core player inventory panel must clear the machine/inventory divider.')
         }
         if (feBar.x + feBar.width > leftDivider.x
                 || preview.x < leftDivider.x + leftDivider.width
                 || preview.x + preview.width > rightDivider.x
                 || rightRegion.x < rightDivider.x + rightDivider.width) {
-            throw new GradleException('Compact machine core content columns must stay separated by thin dividers.')
+            throw new GradleException('Microlizer core content columns must stay separated by thin dividers.')
         }
         if (preview.x * 2 + preview.width != imageWidth) {
-            throw new GradleException('Compact machine core preview must stay centered on the screen centerline.')
+            throw new GradleException('Microlizer core preview must stay centered on the screen centerline.')
         }
         if (rightRegion.width > 36 || leftDivider.x - contentPanel.x < 32) {
-            throw new GradleException('Compact machine core FE/sidebar space should grow while the output column stays compact.')
+            throw new GradleException('Microlizer core FE/sidebar space should grow while the output column stays narrow.')
         }
-        assertCenterX('output slot and compact button', outputSlot, compactButton, 0)
+        assertCenterX('output slot and microlize button', outputSlot, microlizeButton, 0)
 
         if (redstoneTag.y < machinePanel.y || redstoneTag.y + redstoneTag.height > machinePanel.y + machinePanel.height) {
-            throw new GradleException('Compact machine core redstone tag must stay vertically attached to the machine panel.')
+            throw new GradleException('Microlizer core redstone tag must stay vertically attached to the machine panel.')
         }
         if (workAreaTag.y < machinePanel.y || workAreaTag.y + workAreaTag.height > machinePanel.y + machinePanel.height) {
-            throw new GradleException('Compact machine core work-area tag must stay vertically attached to the machine panel.')
+            throw new GradleException('Microlizer core work-area tag must stay vertically attached to the machine panel.')
         }
         if (redstoneTag.x + redstoneTag.width > machinePanel.x
                 || workAreaTag.x + workAreaTag.width > machinePanel.x) {
-            throw new GradleException('Compact machine core side tags must hang outside the left edge, not enter the machine panel.')
+            throw new GradleException('Microlizer core side tags must hang outside the left edge, not enter the machine panel.')
         }
         assertNoOverlap('side tags', [redstoneTag, workAreaTag])
         if (redstoneTag.x != workAreaTag.x || redstoneTag.width != workAreaTag.width || redstoneTag.height != workAreaTag.height) {
-            throw new GradleException('Compact machine core side tags must share one sidebar grid.')
+            throw new GradleException('Microlizer core side tags must share one sidebar grid.')
         }
         if (menuValue('OUTPUT_SLOT_X') != menuValue('OUTPUT_SLOT_FRAME_X') + menuValue('ITEM_SLOT_INSET')
                 || menuValue('OUTPUT_SLOT_Y') != menuValue('OUTPUT_SLOT_FRAME_Y') + menuValue('ITEM_SLOT_INSET')
                 || menuValue('PLAYER_INVENTORY_ITEM_X') != menuValue('PLAYER_INVENTORY_X') + menuValue('ITEM_SLOT_INSET')
                 || menuValue('PLAYER_INVENTORY_ITEM_Y') != menuValue('PLAYER_INVENTORY_Y') + menuValue('ITEM_SLOT_INSET')) {
-            throw new GradleException('Compact machine core item slots must stay inset from visible 18px slot frames.')
+            throw new GradleException('Microlizer core item slots must stay inset from visible 18px slot frames.')
         }
         if (menuValue('PLAYER_INVENTORY_X') * 2 + slotSize * 9 != imageWidth
                 || inventoryPanel.x * 2 + inventoryPanel.width != imageWidth) {
-            throw new GradleException('Compact machine core player inventory slots and backing panel must stay horizontally centered.')
+            throw new GradleException('Microlizer core player inventory slots and backing panel must stay horizontally centered.')
         }
     }
 }
@@ -2020,7 +2020,7 @@ tasks.named('check') {
     dependsOn tasks.named('verifySolarDopingChamberUiLayout')
     dependsOn tasks.named('verifyFiberDrawingMachineUiLayout')
     dependsOn tasks.named('verifyHolographicStorageUiLayout')
-    dependsOn tasks.named('verifyCompactMachineCoreUiLayout')
+    dependsOn tasks.named('verifyMicrolizerCoreUiLayout')
     dependsOn tasks.named('verifyMachineContentDropContracts')
 }
 

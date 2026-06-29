@@ -3,9 +3,9 @@ package io.github.yoglappland.spectralization.client;
 import com.mojang.blaze3d.platform.InputConstants;
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.client.beam.ClientBeamPathCache;
-import io.github.yoglappland.spectralization.client.compact.ClientCompactMachineAnimationCache;
-import io.github.yoglappland.spectralization.client.compact.ClientCompactMachineOverlayCache;
-import io.github.yoglappland.spectralization.client.compact.ClientCompactMachineWorkAreaOverlayCache;
+import io.github.yoglappland.spectralization.client.microlizer.ClientMicrolizerAnimationCache;
+import io.github.yoglappland.spectralization.client.microlizer.ClientMicrolizerOverlayCache;
+import io.github.yoglappland.spectralization.client.microlizer.ClientMicrolizerWorkAreaOverlayCache;
 import io.github.yoglappland.spectralization.client.hud.SpectralHudEditScreen;
 import io.github.yoglappland.spectralization.client.networkoverlay.ClientNetworkOverlayCache;
 import io.github.yoglappland.spectralization.client.spot.ClientSpotCache;
@@ -70,9 +70,9 @@ public final class ClientHudState {
         ClientSpotCache.clear();
         ClientNetworkOverlayCache.clear();
         ClientSurfaceInspectionCache.clear();
-        ClientCompactMachineOverlayCache.clear();
-        ClientCompactMachineAnimationCache.clear();
-        ClientCompactMachineWorkAreaOverlayCache.clear();
+        ClientMicrolizerOverlayCache.clear();
+        ClientMicrolizerAnimationCache.clear();
+        ClientMicrolizerWorkAreaOverlayCache.clear();
     }
 
     @EventBusSubscriber(modid = Spectralization.MODID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)

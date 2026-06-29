@@ -1,7 +1,7 @@
 package io.github.yoglappland.spectralization.client;
 
 import io.github.yoglappland.spectralization.Spectralization;
-import io.github.yoglappland.spectralization.client.model.CompactedMachineDynamicModel;
+import io.github.yoglappland.spectralization.client.model.MicrolizedMachineDynamicModel;
 import io.github.yoglappland.spectralization.client.model.MetamaterialTemplateDynamicModel;
 import io.github.yoglappland.spectralization.client.model.RecursiveGeneratorItemDynamicModel;
 import io.github.yoglappland.spectralization.client.model.SingularMaterialDynamicModel;
@@ -16,8 +16,8 @@ import io.github.yoglappland.spectralization.client.screen.BasicLithographyMachi
 import io.github.yoglappland.spectralization.client.renderer.BasicLithographyMachineRenderer;
 import io.github.yoglappland.spectralization.client.renderer.HolographicStorageShellRenderer;
 import io.github.yoglappland.spectralization.client.screen.CoatingBrushScreen;
-import io.github.yoglappland.spectralization.client.screen.CompactMachineCoreScreen;
-import io.github.yoglappland.spectralization.client.screen.CompactedMachineScreen;
+import io.github.yoglappland.spectralization.client.screen.MicrolizerCoreScreen;
+import io.github.yoglappland.spectralization.client.screen.MicrolizedMachineScreen;
 import io.github.yoglappland.spectralization.client.screen.CreativeLightSourceScreen;
 import io.github.yoglappland.spectralization.client.screen.FiberDrawingMachineScreen;
 import io.github.yoglappland.spectralization.client.screen.FiberLaserScreen;
@@ -75,13 +75,13 @@ public final class SpectralClientModEvents {
 
     @SubscribeEvent
     static void registerAdditionalModels(ModelEvent.RegisterAdditional event) {
-        CompactedMachineDynamicModel.registerAdditionalModels(event);
+        MicrolizedMachineDynamicModel.registerAdditionalModels(event);
         HolographicStorageShellRenderer.registerAdditionalModels(event);
     }
 
     @SubscribeEvent
     static void modifyBakingResult(ModelEvent.ModifyBakingResult event) {
-        CompactedMachineDynamicModel.modifyBakingResult(event);
+        MicrolizedMachineDynamicModel.modifyBakingResult(event);
         MetamaterialTemplateDynamicModel.modifyBakingResult(event);
         RecursiveGeneratorItemDynamicModel.modifyBakingResult(event);
         SingularMaterialDynamicModel.modifyBakingResult(event);
@@ -136,7 +136,7 @@ public final class SpectralClientModEvents {
         event.register(SpectralMenus.FIBER_LASER.get(), FiberLaserScreen::new);
         event.register(SpectralMenus.HOLOGRAPHIC_STORAGE.get(), HolographicStorageScreen::new);
         event.register(SpectralMenus.HOLOGRAPHIC_STORAGE_CORE.get(), HolographicStorageCoreScreen::new);
-        event.register(SpectralMenus.COMPACT_MACHINE_CORE.get(), CompactMachineCoreScreen::new);
-        event.register(SpectralMenus.COMPACTED_MACHINE.get(), CompactedMachineScreen::new);
+        event.register(SpectralMenus.MICROLIZER_CORE.get(), MicrolizerCoreScreen::new);
+        event.register(SpectralMenus.MICROLIZED_MACHINE.get(), MicrolizedMachineScreen::new);
     }
 }

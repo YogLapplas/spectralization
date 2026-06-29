@@ -1,8 +1,8 @@
 package io.github.yoglappland.spectralization.network;
 
 import io.github.yoglappland.spectralization.client.beam.ClientBeamPathPayloadHandler;
-import io.github.yoglappland.spectralization.client.compact.ClientCompactMachineAnimationPayloadHandler;
-import io.github.yoglappland.spectralization.client.compact.ClientCompactMachineOverlayPayloadHandler;
+import io.github.yoglappland.spectralization.client.microlizer.ClientMicrolizerAnimationPayloadHandler;
+import io.github.yoglappland.spectralization.client.microlizer.ClientMicrolizerOverlayPayloadHandler;
 import io.github.yoglappland.spectralization.client.networkoverlay.ClientNetworkOverlayPayloadHandler;
 import io.github.yoglappland.spectralization.client.storage.ClientHolographicStoragePayloadHandler;
 import io.github.yoglappland.spectralization.client.surface.ClientSurfaceInspectionPayloadHandler;
@@ -63,15 +63,15 @@ public final class SpectralNetwork {
         );
 
         registrar.playToClient(
-                CompactMachineOverlayPayload.TYPE,
-                CompactMachineOverlayPayload.STREAM_CODEC,
-                (payload, context) -> context.enqueueWork(() -> handleCompactMachineOverlay(payload))
+                MicrolizerOverlayPayload.TYPE,
+                MicrolizerOverlayPayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> handleMicrolizerOverlay(payload))
         );
 
         registrar.playToClient(
-                CompactMachineAnimationPayload.TYPE,
-                CompactMachineAnimationPayload.STREAM_CODEC,
-                (payload, context) -> context.enqueueWork(() -> handleCompactMachineAnimation(payload))
+                MicrolizerAnimationPayload.TYPE,
+                MicrolizerAnimationPayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> handleMicrolizerAnimation(payload))
         );
 
         registrar.playToServer(
@@ -141,15 +141,15 @@ public final class SpectralNetwork {
         }
     }
 
-    private static void handleCompactMachineOverlay(CompactMachineOverlayPayload payload) {
+    private static void handleMicrolizerOverlay(MicrolizerOverlayPayload payload) {
         if (FMLEnvironment.dist == Dist.CLIENT) {
-            ClientCompactMachineOverlayPayloadHandler.handle(payload);
+            ClientMicrolizerOverlayPayloadHandler.handle(payload);
         }
     }
 
-    private static void handleCompactMachineAnimation(CompactMachineAnimationPayload payload) {
+    private static void handleMicrolizerAnimation(MicrolizerAnimationPayload payload) {
         if (FMLEnvironment.dist == Dist.CLIENT) {
-            ClientCompactMachineAnimationPayloadHandler.handle(payload);
+            ClientMicrolizerAnimationPayloadHandler.handle(payload);
         }
     }
 

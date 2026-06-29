@@ -32,7 +32,7 @@
 
 1. 在 `latest.log` 确认是否有崩溃、异常栈或资源加载失败。
 2. 在 `diagnostics_*.log` 找 bug 发生时间附近的 `severity=anomaly`。
-3. 如果没有 anomaly，按 `subsystem` 找最近事件，例如 `fiber`、`compact_machine`、`holographic_storage` 或 `optical`。
+3. 如果没有 anomaly，按 `subsystem` 找最近事件，例如 `fiber`、`microlizer`、`holographic_storage` 或 `optical`。
 4. 看事件是否包含 `geometry_changed`、`topology_changed`、`optical_dirty` 或 `fiber_dirty`。
 5. 如果涉及光学结果，看 `optical_compiler_*.log` 的摘要：网络规模、source total、receiver total、solver plan 和 reliable 状态。
 6. 摘要不够时，再开启 `optical_compiler.debug_log_verbose=true` 收集一次短样本。
@@ -51,7 +51,7 @@ time=2026-06-15T00:00:00Z severity=event subsystem=fiber event=connection_added 
 | --- | --- |
 | `time` | 真实时间，用于和文件时间、崩溃报告对齐。 |
 | `severity` | `event` 是普通事件，`transition` 是状态边界变化，`anomaly` 是应优先检查的异常。 |
-| `subsystem` | 事件所属系统，例如 `fiber`、`compact_machine`、`holographic_storage`、`optical`。 |
+| `subsystem` | 事件所属系统，例如 `fiber`、`microlizer`、`holographic_storage`、`optical`。 |
 | `event` | 具体事件名。 |
 | `dim` | 维度。 |
 | `tick` | 游戏时间，用来和 `latest.log` 或光学日志对齐。 |
@@ -70,7 +70,7 @@ time=2026-06-15T00:00:00Z severity=event subsystem=fiber event=connection_added 
 - 从稳定 snapshot 编译 port graph。
 - DAG 网络的标量传播。
 - 固定输入下的频谱、颜色和 profile 汇总。
-- compacted_machine 物品内静态快照的读取。
+- microlized_machine 物品内静态快照的读取。
 - 只读 UI 的文本格式化。
 
 如果这些看起来错了，通常先查更早的输入：
@@ -185,7 +185,7 @@ readout_reliable=true
 
 阅读顺序：
 
-1. 在 `diagnostics_*.log` 找最近的 `fiber`、`compact_machine` 或 `optical` 事件。
+1. 在 `diagnostics_*.log` 找最近的 `fiber`、`microlizer` 或 `optical` 事件。
 2. 确认结构变化后有 `optical_dirty=true`。
 3. 在 `optical_compiler_*.log` 对比 source total 和 receiver total。
 4. 确认混合后的颜色是否来自统一的 `SpectralColorMap` / 频率合并函数。
@@ -229,20 +229,20 @@ readout_reliable=true
 
 重点事件：
 
-- `compact_machine network_refresh`
-- `compact_machine anchor_connection_added`
-- `compact_machine anchor_connection_removed`
-- `compact_machine compression_started`
-- `compact_machine work_area_cleared`
-- `compact_machine compression_finished`
+- `microlizer network_refresh`
+- `microlizer anchor_connection_added`
+- `microlizer anchor_connection_removed`
+- `microlizer microlizing_started`
+- `microlizer work_area_cleared`
+- `microlizer microlizing_finished`
 
 排查步骤：
 
 1. 先看 `network_refresh`，确认框架连接数量、valid frame 和 error state 是否合理。
 2. 如果 anchor 不可见或无法破坏，查最近的 `anchor_connection_added` / `anchor_connection_removed`。
-3. 如果压缩结果错误，查 `compression_started` 的工作区范围和 `payload_blocks`。
+3. 如果微缩结果错误，查 `microlizing_started` 的工作区范围和 `payload_blocks`。
 4. 如果压缩后光路错误，查 `work_area_cleared` 附近是否标记 `optical_dirty=true`。
-5. 如果旋转后光路不更新，查 compacted_machine 的 block update 是否诱导相关光学网络 dirty。
+5. 如果旋转后光路不更新，查 microlized_machine 的 block update 是否诱导相关光学网络 dirty。
 
 `work_area_cleared` 是世界中方块真正被删除的时刻。压缩后才出现的问题，优先查这个 tick 附近。
 

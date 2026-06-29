@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "error=false": {
+      "model": "spectralization:block/microlizer_core"
+    },
+    "error=true": {
+      "model": "spectralization:block/microlizer_core"
+    }
+  }
+}

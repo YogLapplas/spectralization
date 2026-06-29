@@ -1,0 +1,10 @@
+{
+  "replace": false,
+  "values": [
+    "spectralization:microlizer_anchor",
+    "spectralization:microlizer_core",
+    "spectralization:microlizer_light_io_port",
+    "spectralization:microlizer_block",
+    "spectralization:microlizer_glass"
+  ]
+}

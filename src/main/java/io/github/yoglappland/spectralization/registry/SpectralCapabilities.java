@@ -95,7 +95,7 @@ public final class SpectralCapabilities {
         );
         event.registerBlockEntity(
                 Capabilities.ItemHandler.BLOCK,
-                SpectralBlockEntities.COMPACT_MACHINE_CORE.get(),
+                SpectralBlockEntities.MICROLIZER_CORE.get(),
                 (core, side) -> core.getOutputItems(side)
         );
     }

@@ -27,7 +27,7 @@ public final class SpectralDiagnostics {
     private static final String DIAGNOSTICS_LOG_RELATIVE_PATH =
             "logs/spectralization/" + DIAGNOSTICS_LOG_FILE_NAME;
     private static final String HEADER = "# If you are reading this log, read docs/LOGGING.md first.\n"
-            + "# 如果你正在阅读这个日志，请先参考 docs/LOGGING.md。\n"
+            + "# 如果你正在阅读这个日志，请先参�?docs/LOGGING.md。\n"
             + "# Logs are organized around Spectralization's geometry -> topology -> data pipeline.\n\n";
 
     public static Event event(Level level, String subsystem, String event) {
@@ -43,7 +43,7 @@ public final class SpectralDiagnostics {
     }
 
     public static final class Subsystem {
-        public static final String COMPACT_MACHINE = "compact_machine";
+        public static final String MICROLIZER = "microlizer";
         public static final String FIBER = "fiber";
         public static final String HOLOGRAPHIC_STORAGE = "holographic_storage";
         public static final String LITHOGRAPHY = "lithography";

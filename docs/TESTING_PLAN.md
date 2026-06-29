@@ -209,7 +209,7 @@ debug_log_verbose = false
 
 适用场景：
 
-- 修改 anchor/core/io_port、框架认证、工作区、压缩、compacted_machine、旋转、面贴图、预览或动画。
+- 修改 anchor/core/io_port、框架认证、工作区、压缩、microlized_machine、旋转、面贴图、预览或动画。
 
 基础场景：
 
@@ -218,11 +218,11 @@ debug_log_verbose = false
 3. 框架内没有且仅有一个 core 时，确认系统 valid。
 4. 多 core 或无 core，确认 error。
 5. 点击 core UI 的工作区显示按钮，确认区域显示不闪烁。
-6. 在输出槽启动压缩，确认工作区清空并输出 compacted_machine。
+6. 在输出槽启动压缩，确认工作区清空并输出 microlized_machine。
 7. 右键输出槽，确认能看到压缩内容摘要。
-8. 放置 compacted_machine，旋转它，确认光学 IO 方向立即更新。
+8. 放置 microlized_machine，旋转它，确认光学 IO 方向立即更新。
 9. 修改面颜色，确认外观立即刷新且不诱导光学网络变化。
-10. 打开 compacted_machine UI，确认结构预览和 N 标记正确。
+10. 打开 microlized_machine UI，确认结构预览和 N 标记正确。
 
 光学场景：
 
@@ -242,12 +242,12 @@ debug_log_verbose = false
 
 关键日志事件：
 
-- `compact_machine network_refresh`
-- `compact_machine anchor_connection_added`
-- `compact_machine anchor_connection_removed`
-- `compact_machine compression_started`
-- `compact_machine work_area_cleared`
-- `compact_machine compression_finished`
+- `microlizer network_refresh`
+- `microlizer anchor_connection_added`
+- `microlizer anchor_connection_removed`
+- `microlizer microlizing_started`
+- `microlizer work_area_cleared`
+- `microlizer microlizing_finished`
 
 ## 9. 渲染和性能测试
 

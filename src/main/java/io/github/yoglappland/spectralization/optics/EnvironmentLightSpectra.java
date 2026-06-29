@@ -349,7 +349,7 @@ public final class EnvironmentLightSpectra {
             return TECHNOLOGY_CYAN;
         }
 
-        if (isSpectralization(blockId, "compact_machine_")) {
+        if (isSpectralization(blockId, "microlizer_")) {
             return TECHNOLOGY_BLUE;
         }
 

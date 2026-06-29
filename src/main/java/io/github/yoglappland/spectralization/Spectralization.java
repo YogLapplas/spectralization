@@ -6,10 +6,10 @@ import io.github.yoglappland.spectralization.block.BeamProfilerBlock;
 import io.github.yoglappland.spectralization.block.BeamSplitterBlock;
 import io.github.yoglappland.spectralization.block.BasicLithographyMachineBlock;
 import io.github.yoglappland.spectralization.block.CmosSensorBlock;
-import io.github.yoglappland.spectralization.block.CompactMachineAnchorBlock;
-import io.github.yoglappland.spectralization.block.CompactMachineCoreBlock;
-import io.github.yoglappland.spectralization.block.CompactMachineLightIoPortBlock;
-import io.github.yoglappland.spectralization.block.CompactedMachineBlock;
+import io.github.yoglappland.spectralization.block.MicrolizerAnchorBlock;
+import io.github.yoglappland.spectralization.block.MicrolizerCoreBlock;
+import io.github.yoglappland.spectralization.block.MicrolizerLightIoPortBlock;
+import io.github.yoglappland.spectralization.block.MicrolizedMachineBlock;
 import io.github.yoglappland.spectralization.block.CreativeLightSourceBlock;
 import io.github.yoglappland.spectralization.block.DynamicBeamSplitterBlock;
 import io.github.yoglappland.spectralization.block.DynamicMirrorBlock;
@@ -516,64 +516,64 @@ public class Spectralization {
     public static final DeferredItem<BlockItem> HOLOGRAPHIC_STORAGE_SCREEN_ITEM =
             ITEMS.registerSimpleBlockItem("holographic_storage_screen", HOLOGRAPHIC_STORAGE_SCREEN);
 
-    public static final DeferredBlock<CompactMachineAnchorBlock> COMPACT_MACHINE_ANCHOR = BLOCKS.register(
-            "compact_machine_anchor",
-            () -> new CompactMachineAnchorBlock(BlockBehaviour.Properties.of()
+    public static final DeferredBlock<MicrolizerAnchorBlock> MICROLIZER_ANCHOR = BLOCKS.register(
+            "microlizer_anchor",
+            () -> new MicrolizerAnchorBlock(BlockBehaviour.Properties.of()
                     .mapColor(MapColor.COLOR_LIGHT_BLUE)
                     .strength(3.0F, 9.0F)
                     .sound(SoundType.METAL)
                     .lightLevel(state -> 15))
     );
-    public static final DeferredItem<BlockItem> COMPACT_MACHINE_ANCHOR_ITEM =
-            ITEMS.registerSimpleBlockItem("compact_machine_anchor", COMPACT_MACHINE_ANCHOR);
+    public static final DeferredItem<BlockItem> MICROLIZER_ANCHOR_ITEM =
+            ITEMS.registerSimpleBlockItem("microlizer_anchor", MICROLIZER_ANCHOR);
 
-    public static final DeferredBlock<CompactMachineCoreBlock> COMPACT_MACHINE_CORE = BLOCKS.register(
-            "compact_machine_core",
-            () -> new CompactMachineCoreBlock(BlockBehaviour.Properties.of()
+    public static final DeferredBlock<MicrolizerCoreBlock> MICROLIZER_CORE = BLOCKS.register(
+            "microlizer_core",
+            () -> new MicrolizerCoreBlock(BlockBehaviour.Properties.of()
                     .mapColor(MapColor.COLOR_LIGHT_BLUE)
                     .strength(4.0F, 12.0F)
                     .sound(SoundType.METAL)
                     .lightLevel(state -> 15))
     );
-    public static final DeferredItem<BlockItem> COMPACT_MACHINE_CORE_ITEM =
-            ITEMS.registerSimpleBlockItem("compact_machine_core", COMPACT_MACHINE_CORE);
+    public static final DeferredItem<BlockItem> MICROLIZER_CORE_ITEM =
+            ITEMS.registerSimpleBlockItem("microlizer_core", MICROLIZER_CORE);
 
-    public static final DeferredBlock<CompactMachineLightIoPortBlock> COMPACT_MACHINE_LIGHT_IO_PORT = BLOCKS.register(
-            "compact_machine_light_io_port",
-            () -> new CompactMachineLightIoPortBlock(BlockBehaviour.Properties.of()
+    public static final DeferredBlock<MicrolizerLightIoPortBlock> MICROLIZER_LIGHT_IO_PORT = BLOCKS.register(
+            "microlizer_light_io_port",
+            () -> new MicrolizerLightIoPortBlock(BlockBehaviour.Properties.of()
                     .mapColor(MapColor.COLOR_LIGHT_BLUE)
                     .strength(3.0F, 9.0F)
                     .sound(SoundType.METAL))
     );
-    public static final DeferredItem<BlockItem> COMPACT_MACHINE_LIGHT_IO_PORT_ITEM =
-            ITEMS.registerSimpleBlockItem("compact_machine_light_io_port", COMPACT_MACHINE_LIGHT_IO_PORT);
+    public static final DeferredItem<BlockItem> MICROLIZER_LIGHT_IO_PORT_ITEM =
+            ITEMS.registerSimpleBlockItem("microlizer_light_io_port", MICROLIZER_LIGHT_IO_PORT);
 
-    public static final DeferredBlock<Block> COMPACT_MACHINE_BLOCK = BLOCKS.registerSimpleBlock(
-            "compact_machine_block",
+    public static final DeferredBlock<Block> MICROLIZER_BLOCK = BLOCKS.registerSimpleBlock(
+            "microlizer_block",
             BlockBehaviour.Properties.of()
                     .mapColor(MapColor.METAL)
                     .strength(3.0F, 9.0F)
                     .sound(SoundType.METAL)
     );
-    public static final DeferredItem<BlockItem> COMPACT_MACHINE_BLOCK_ITEM =
-            ITEMS.registerSimpleBlockItem("compact_machine_block", COMPACT_MACHINE_BLOCK);
+    public static final DeferredItem<BlockItem> MICROLIZER_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("microlizer_block", MICROLIZER_BLOCK);
 
-    public static final DeferredBlock<TransparentBlock> COMPACT_MACHINE_GLASS = glassBlock(
-            "compact_machine_glass",
+    public static final DeferredBlock<TransparentBlock> MICROLIZER_GLASS = glassBlock(
+            "microlizer_glass",
             MapColor.COLOR_LIGHT_BLUE
     );
-    public static final DeferredItem<BlockItem> COMPACT_MACHINE_GLASS_ITEM =
-            ITEMS.registerSimpleBlockItem("compact_machine_glass", COMPACT_MACHINE_GLASS);
+    public static final DeferredItem<BlockItem> MICROLIZER_GLASS_ITEM =
+            ITEMS.registerSimpleBlockItem("microlizer_glass", MICROLIZER_GLASS);
 
-    public static final DeferredBlock<CompactedMachineBlock> COMPACTED_MACHINE = BLOCKS.register(
-            "compacted_machine",
-            () -> new CompactedMachineBlock(BlockBehaviour.Properties.of()
+    public static final DeferredBlock<MicrolizedMachineBlock> MICROLIZED_MACHINE = BLOCKS.register(
+            "microlized_machine",
+            () -> new MicrolizedMachineBlock(BlockBehaviour.Properties.of()
                     .mapColor(MapColor.COLOR_LIGHT_BLUE)
                     .strength(4.0F, 12.0F)
                     .sound(SoundType.METAL))
     );
-    public static final DeferredItem<BlockItem> COMPACTED_MACHINE_ITEM =
-            ITEMS.registerSimpleBlockItem("compacted_machine", COMPACTED_MACHINE);
+    public static final DeferredItem<BlockItem> MICROLIZED_MACHINE_ITEM =
+            ITEMS.registerSimpleBlockItem("microlized_machine", MICROLIZED_MACHINE);
 
     public static final DeferredBlock<MirrorBlock> MIRROR = BLOCKS.register(
             "mirror",

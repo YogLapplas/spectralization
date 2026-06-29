@@ -1,10 +1,10 @@
 package io.github.yoglappland.spectralization.event;
 
-import io.github.yoglappland.spectralization.block.CompactMachinePartBlock;
+import io.github.yoglappland.spectralization.block.MicrolizerPartBlock;
 import io.github.yoglappland.spectralization.block.FiberRelayBlock;
 import io.github.yoglappland.spectralization.block.HolographicStorageMultiblock;
 import io.github.yoglappland.spectralization.blockentity.RubyBlockEntity;
-import io.github.yoglappland.spectralization.compact.CompactMachineNetworkData;
+import io.github.yoglappland.spectralization.microlizer.MicrolizerNetworkData;
 import io.github.yoglappland.spectralization.optics.cache.OpticalDirtyKind;
 import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
@@ -61,9 +61,9 @@ public final class SpectralBlockChangeHandlers {
         }
         if (levelAccessor instanceof ServerLevel serverLevel) {
             BlockState placedState = serverLevel.getBlockState(pos);
-            if (!(placedState.getBlock() instanceof CompactMachinePartBlock)
-                    && CompactMachineNetworkData.isRelevantPlacement(serverLevel, pos, placedState)) {
-                CompactMachineNetworkData.refreshNear(serverLevel, pos.immutable(), "block placed");
+            if (!(placedState.getBlock() instanceof MicrolizerPartBlock)
+                    && MicrolizerNetworkData.isRelevantPlacement(serverLevel, pos, placedState)) {
+                MicrolizerNetworkData.refreshNear(serverLevel, pos.immutable(), "block placed");
             }
         }
     }
@@ -89,9 +89,9 @@ public final class SpectralBlockChangeHandlers {
             HolographicStorageMultiblock.scheduleRefresh(level, pos.immutable(), "block broken");
         }
         if (levelAccessor instanceof ServerLevel serverLevel
-                && !(state.getBlock() instanceof CompactMachinePartBlock)
-                && CompactMachineNetworkData.isRelevantRemoval(serverLevel, pos, state)) {
-            CompactMachineNetworkData.scheduleRefresh(serverLevel, pos.immutable(), "block broken");
+                && !(state.getBlock() instanceof MicrolizerPartBlock)
+                && MicrolizerNetworkData.isRelevantRemoval(serverLevel, pos, state)) {
+            MicrolizerNetworkData.scheduleRefresh(serverLevel, pos.immutable(), "block broken");
         }
     }
 
@@ -198,9 +198,9 @@ public final class SpectralBlockChangeHandlers {
             HolographicStorageMultiblock.scheduleRefresh(level, pos.immutable(), reason);
         }
 
-        if (!(currentState.getBlock() instanceof CompactMachinePartBlock)
-                && CompactMachineNetworkData.isRelevantPlacement(level, pos, currentState)) {
-            CompactMachineNetworkData.scheduleRefresh(level, pos.immutable(), reason);
+        if (!(currentState.getBlock() instanceof MicrolizerPartBlock)
+                && MicrolizerNetworkData.isRelevantPlacement(level, pos, currentState)) {
+            MicrolizerNetworkData.scheduleRefresh(level, pos.immutable(), reason);
         }
     }
 

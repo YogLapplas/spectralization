@@ -286,7 +286,7 @@ Terminology must be stable. Chinese documents may use Chinese terms, but code id
 | 读数 | readout | 传感器、机器、HUD 或 UI 读取的导出结果。 |
 | 散杂光 | diffuse light | 模组设定中的非相干或散杂通道。 |
 | 相干光 | coherent light | 可进入相干增益、干涉或未来信号系统的通道。 |
-| 微缩机器 | compact machine | 压缩后的结构和它的世界方块。 |
+| 微缩机器 | microlizer | 压缩后的结构和它的世界方块。 |
 | 全息存储 | holographic storage | 全息矩阵、核心、水晶和 screen 构成的存储系统。 |
 
 ## 12. Markdown 规则 / Markdown rules

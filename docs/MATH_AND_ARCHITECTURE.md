@@ -622,7 +622,7 @@ envelope 传播，也不在光纤内部追踪多半径模式。
 internal optical network
 -> boundary IO ports
 -> macro transfer map
--> compacted_machine block
+-> microlized_machine block
 ```
 
 外部世界只看到压缩后的方块和它的面到面响应。内部保留快照、端口图和可展示数据。旋转会改变实际光线 IO 方向，因此必须诱导相关光学网络 dirty。

@@ -4,6 +4,7 @@ import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.microlizer.MicrolizerAnimationPublisher;
 import io.github.yoglappland.spectralization.microlizer.MicrolizerFrameInfo;
 import io.github.yoglappland.spectralization.microlizer.MicrolizerNetworkData;
+import io.github.yoglappland.spectralization.microlizer.MicrolizerShapeRecipes;
 import io.github.yoglappland.spectralization.microlizer.MicrolizedMachineItemData;
 import io.github.yoglappland.spectralization.diagnostics.SpectralDiagnostics;
 import io.github.yoglappland.spectralization.network.MicrolizerAnimationPayload;
@@ -14,9 +15,11 @@ import io.github.yoglappland.spectralization.optics.fiber.FiberNetworkIndex;
 import io.github.yoglappland.spectralization.optics.topology.OpticalNetworkIndex;
 import io.github.yoglappland.spectralization.optics.world.OpticalWorldIndex;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
+import java.util.Optional;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
@@ -131,26 +134,48 @@ public class MicrolizerCoreBlockEntity extends BlockEntity implements DropsConte
             return false;
         }
 
-        pendingResult = MicrolizedMachineItemData.createStack(level, info.min(), info.max(), info.workMin(), info.workMax());
+        Optional<MicrolizerShapeRecipes.Match> shapeMatch =
+                MicrolizerShapeRecipes.findMatch(level, info.workMin(), info.workMax());
+        pendingResult = shapeMatch
+                .map(MicrolizerShapeRecipes.Match::result)
+                .orElseGet(() -> MicrolizedMachineItemData.createCompressionResultStack(
+                        level,
+                        info.min(),
+                        info.max(),
+                        info.workMin(),
+                        info.workMax()
+                ));
         pendingWorkMin = info.workMin().immutable();
         pendingWorkMax = info.workMax().immutable();
         microlizingAge = 0;
         workAreaCleared = false;
         MicrolizerAnimationPublisher.publishStart(level, worldPosition, pendingWorkMin, pendingWorkMax);
         setChanged();
+        String shapeRecipeId = shapeMatch.map(match -> match.id().toString()).orElse("none");
+        String resultId = BuiltInRegistries.ITEM.getKey(pendingResult.getItem()).toString();
+        int cumulativeBlockCount = shapeMatch.isPresent()
+                ? -1
+                : MicrolizedMachineItemData.cumulativeBlockCount(level, info.workMin(), info.workMax());
         Spectralization.LOGGER.info(
-                "Microlizer animation started in {} at {}: work_area {}..{}, payload {} block(s)",
+                "Microlizer animation started in {} at {}: work_area {}..{}, payload {} block(s), cumulative {}, result {}, shape_recipe {}",
                 level.dimension().location(),
                 worldPosition,
                 pendingWorkMin,
                 pendingWorkMax,
-                info.payloadBlockCount()
+                info.payloadBlockCount(),
+                cumulativeBlockCount,
+                resultId,
+                shapeRecipeId
         );
         SpectralDiagnostics.event(level, SpectralDiagnostics.Subsystem.MICROLIZER, "microlizing_started")
                 .pos("core", worldPosition)
                 .pos("work_min", pendingWorkMin)
                 .pos("work_max", pendingWorkMax)
                 .field("payload_blocks", info.payloadBlockCount())
+                .field("cumulative_blocks", cumulativeBlockCount)
+                .field("shape_recipe", shapeRecipeId)
+                .field("shape_y_rotation_quarters", shapeMatch.map(MicrolizerShapeRecipes.Match::yRotationQuarterTurns).orElse(-1))
+                .field("result", resultId)
                 .field("duration_ticks", MicrolizerAnimationPayload.DEFAULT_DURATION_TICKS)
                 .field("clear_at_tick", MicrolizerAnimationPayload.CLEAR_WORK_AREA_AT_TICKS)
                 .write();

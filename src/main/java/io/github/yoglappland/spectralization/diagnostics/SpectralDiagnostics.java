@@ -27,7 +27,7 @@ public final class SpectralDiagnostics {
     private static final String DIAGNOSTICS_LOG_RELATIVE_PATH =
             "logs/spectralization/" + DIAGNOSTICS_LOG_FILE_NAME;
     private static final String HEADER = "# If you are reading this log, read docs/LOGGING.md first.\n"
-            + "# 如果你正在阅读这个日志，请先参�?docs/LOGGING.md。\n"
+            + "# \u5982\u679c\u4f60\u6b63\u5728\u9605\u8bfb\u8fd9\u4e2a\u65e5\u5fd7\uff0c\u8bf7\u5148\u53c2\u9605 docs/LOGGING.md\u3002\n"
             + "# Logs are organized around Spectralization's geometry -> topology -> data pipeline.\n\n";
 
     public static Event event(Level level, String subsystem, String event) {

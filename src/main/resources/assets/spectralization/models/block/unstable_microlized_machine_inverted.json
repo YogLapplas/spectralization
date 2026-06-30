@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/cube_all",
+  "textures": {
+    "all": "spectralization:block/unstable_microlized_machine_inverted"
+  }
+}

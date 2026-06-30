@@ -99,6 +99,7 @@ public final class SpectralCreativeTabItems {
         output.accept(Spectralization.MICROLIZER_BLOCK_ITEM.get());
         output.accept(Spectralization.MICROLIZER_GLASS_ITEM.get());
         output.accept(Spectralization.MICROLIZED_MACHINE_ITEM.get());
+        output.accept(Spectralization.UNSTABLE_MICROLIZED_MACHINE_ITEM.get());
         output.accept(Spectralization.MIRROR_ITEM.get());
         output.accept(Spectralization.DYNAMIC_MIRROR_ITEM.get());
         output.accept(Spectralization.BEAM_SPLITTER_ITEM.get());

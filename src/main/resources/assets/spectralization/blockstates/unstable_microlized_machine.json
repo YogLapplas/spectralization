@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "spectralization:block/unstable_microlized_machine"
+    }
+  }
+}

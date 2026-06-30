@@ -5,6 +5,7 @@ import io.github.yoglappland.spectralization.client.model.MicrolizedMachineDynam
 import io.github.yoglappland.spectralization.client.model.MetamaterialTemplateDynamicModel;
 import io.github.yoglappland.spectralization.client.model.RecursiveGeneratorItemDynamicModel;
 import io.github.yoglappland.spectralization.client.model.SingularMaterialDynamicModel;
+import io.github.yoglappland.spectralization.client.model.UnstableMicrolizedMachineItemDynamicModel;
 import io.github.yoglappland.spectralization.client.renderer.LensHolderRenderer;
 import io.github.yoglappland.spectralization.client.renderer.LightSourceGeneratorRenderer;
 import io.github.yoglappland.spectralization.client.renderer.MetamaterialDesignTableRenderer;
@@ -12,6 +13,7 @@ import io.github.yoglappland.spectralization.client.renderer.MetamaterialTemplat
 import io.github.yoglappland.spectralization.client.renderer.RecursiveGeneratorItemRenderer;
 import io.github.yoglappland.spectralization.client.renderer.SolarDopingChamberRenderer;
 import io.github.yoglappland.spectralization.client.renderer.SingularMaterialItemRenderer;
+import io.github.yoglappland.spectralization.client.renderer.UnstableMicrolizedMachineItemRenderer;
 import io.github.yoglappland.spectralization.client.screen.BasicLithographyMachineScreen;
 import io.github.yoglappland.spectralization.client.renderer.BasicLithographyMachineRenderer;
 import io.github.yoglappland.spectralization.client.renderer.HolographicStorageShellRenderer;
@@ -77,6 +79,7 @@ public final class SpectralClientModEvents {
     static void registerAdditionalModels(ModelEvent.RegisterAdditional event) {
         MicrolizedMachineDynamicModel.registerAdditionalModels(event);
         HolographicStorageShellRenderer.registerAdditionalModels(event);
+        UnstableMicrolizedMachineItemRenderer.registerAdditionalModels(event);
     }
 
     @SubscribeEvent
@@ -85,6 +88,7 @@ public final class SpectralClientModEvents {
         MetamaterialTemplateDynamicModel.modifyBakingResult(event);
         RecursiveGeneratorItemDynamicModel.modifyBakingResult(event);
         SingularMaterialDynamicModel.modifyBakingResult(event);
+        UnstableMicrolizedMachineItemDynamicModel.modifyBakingResult(event);
     }
 
     @SubscribeEvent
@@ -116,6 +120,15 @@ public final class SpectralClientModEvents {
                     }
                 },
                 Spectralization.RECURSIVE_GENERATOR_ITEM.get()
+        );
+        event.registerItem(
+                new IClientItemExtensions() {
+                    @Override
+                    public BlockEntityWithoutLevelRenderer getCustomRenderer() {
+                        return UnstableMicrolizedMachineItemRenderer.instance();
+                    }
+                },
+                Spectralization.UNSTABLE_MICROLIZED_MACHINE_ITEM.get()
         );
     }
 

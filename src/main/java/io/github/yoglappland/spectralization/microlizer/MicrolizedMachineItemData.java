@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization.microlizer;
 
 import io.github.yoglappland.spectralization.Spectralization;
+import io.github.yoglappland.spectralization.blockentity.MicrolizedMachineBlockEntity;
 import io.github.yoglappland.spectralization.optics.BeamEnvelope;
 import io.github.yoglappland.spectralization.optics.BeamModel;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
@@ -52,6 +53,7 @@ public final class MicrolizedMachineItemData {
     private static final String TRANSFERS_KEY = "transfers";
     private static final String SOURCES_KEY = "sources";
     private static final String BLOCKS_KEY = "blocks";
+    private static final String CUMULATIVE_BLOCK_COUNT_KEY = "cumulative_block_count";
     private static final String FACING_KEY = "facing";
     private static final String FACE_COLORS_KEY = "face_colors";
     private static final String FACE_KEY = "face";
@@ -83,8 +85,35 @@ public final class MicrolizedMachineItemData {
     private static final String MODE_M_KEY = "mode_m";
     private static final String MODE_N_KEY = "mode_n";
     private static final int VERSION = 1;
+    public static final int UNSTABLE_BLOCK_THRESHOLD = 1000;
+
+    public static ItemStack createCompressionResultStack(
+            ServerLevel level,
+            BlockPos frameMin,
+            BlockPos frameMax,
+            BlockPos workMin,
+            BlockPos workMax
+    ) {
+        int cumulativeBlockCount = cumulativeBlockCount(level, workMin, workMax);
+        if (cumulativeBlockCount > UNSTABLE_BLOCK_THRESHOLD) {
+            return new ItemStack(Spectralization.UNSTABLE_MICROLIZED_MACHINE.get());
+        }
+
+        return createStack(level, frameMin, frameMax, workMin, workMax, cumulativeBlockCount);
+    }
 
     public static ItemStack createStack(ServerLevel level, BlockPos frameMin, BlockPos frameMax, BlockPos workMin, BlockPos workMax) {
+        return createStack(level, frameMin, frameMax, workMin, workMax, cumulativeBlockCount(level, workMin, workMax));
+    }
+
+    private static ItemStack createStack(
+            ServerLevel level,
+            BlockPos frameMin,
+            BlockPos frameMax,
+            BlockPos workMin,
+            BlockPos workMax,
+            int cumulativeBlockCount
+    ) {
         ItemStack stack = new ItemStack(Spectralization.MICROLIZED_MACHINE.get());
         CompoundTag data = new CompoundTag();
         ListTag blocks = new ListTag();
@@ -103,6 +132,7 @@ public final class MicrolizedMachineItemData {
         data.putInt(SIZE_X_KEY, workMax.getX() - workMin.getX() + 1);
         data.putInt(SIZE_Y_KEY, workMax.getY() - workMin.getY() + 1);
         data.putInt(SIZE_Z_KEY, workMax.getZ() - workMin.getZ() + 1);
+        data.putInt(CUMULATIVE_BLOCK_COUNT_KEY, Math.max(0, cumulativeBlockCount));
         data.put(IO_FACES_KEY, writeIoFaces(ports));
         data.put(IO_PORTS_KEY, writeIoPorts(level, ports, workMin));
         data.put(TRANSFERS_KEY, writeTransfers(transfers));
@@ -211,6 +241,14 @@ public final class MicrolizedMachineItemData {
 
     public static int blockCount(CompoundTag data) {
         return data.getList(BLOCKS_KEY, Tag.TAG_COMPOUND).size();
+    }
+
+    public static int cumulativeBlockCount(CompoundTag data) {
+        if (data.contains(CUMULATIVE_BLOCK_COUNT_KEY, Tag.TAG_INT)) {
+            return Math.max(0, data.getInt(CUMULATIVE_BLOCK_COUNT_KEY));
+        }
+
+        return blockCount(data);
     }
 
     public static int blockTypeCount(CompoundTag data) {
@@ -406,6 +444,30 @@ public final class MicrolizedMachineItemData {
                 || data.contains(BLOCKS_KEY, Tag.TAG_LIST)
                 || data.contains(TRANSFERS_KEY, Tag.TAG_LIST)
                 || data.contains(SOURCES_KEY, Tag.TAG_LIST);
+    }
+
+    public static int cumulativeBlockCount(ServerLevel level, BlockPos workMin, BlockPos workMax) {
+        int count = 0;
+
+        for (BlockPos pos : BlockPos.betweenClosed(workMin, workMax)) {
+            BlockState state = level.getBlockState(pos);
+            if (state.isAir()) {
+                continue;
+            }
+
+            count += cumulativeBlockContribution(level, pos, state);
+        }
+
+        return count;
+    }
+
+    private static int cumulativeBlockContribution(ServerLevel level, BlockPos pos, BlockState state) {
+        if (state.is(Spectralization.MICROLIZED_MACHINE.get())
+                && level.getBlockEntity(pos) instanceof MicrolizedMachineBlockEntity microlizedMachine) {
+            return Math.max(1, cumulativeBlockCount(microlizedMachine.microlizedData()));
+        }
+
+        return 1;
     }
 
     private static RubyPayloadStats rubyPayloadStats(ServerLevel level, BlockPos workMin, BlockPos workMax) {

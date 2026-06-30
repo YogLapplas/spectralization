@@ -52,6 +52,7 @@ import io.github.yoglappland.spectralization.item.RecursiveGeneratorBlockItem;
 import io.github.yoglappland.spectralization.item.SandpaperItem;
 import io.github.yoglappland.spectralization.item.SingularMaterialItem;
 import io.github.yoglappland.spectralization.item.StrawberryRodItem;
+import io.github.yoglappland.spectralization.item.UnstableMicrolizedMachineItem;
 import io.github.yoglappland.spectralization.network.SpectralNetwork;
 import io.github.yoglappland.spectralization.optics.EnvironmentLightSpectra;
 import io.github.yoglappland.spectralization.optics.surface.SurfaceTreatmentKind;
@@ -574,6 +575,18 @@ public class Spectralization {
     );
     public static final DeferredItem<BlockItem> MICROLIZED_MACHINE_ITEM =
             ITEMS.registerSimpleBlockItem("microlized_machine", MICROLIZED_MACHINE);
+
+    public static final DeferredBlock<Block> UNSTABLE_MICROLIZED_MACHINE = BLOCKS.registerSimpleBlock(
+            "unstable_microlized_machine",
+            BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_BLACK)
+                    .strength(4.0F, 12.0F)
+                    .sound(SoundType.METAL)
+    );
+    public static final DeferredItem<UnstableMicrolizedMachineItem> UNSTABLE_MICROLIZED_MACHINE_ITEM = ITEMS.register(
+            "unstable_microlized_machine",
+            () -> new UnstableMicrolizedMachineItem(UNSTABLE_MICROLIZED_MACHINE.get(), new Item.Properties())
+    );
 
     public static final DeferredBlock<MirrorBlock> MIRROR = BLOCKS.register(
             "mirror",

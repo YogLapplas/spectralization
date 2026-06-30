@@ -1,11 +1,14 @@
 package io.github.yoglappland.spectralization.event;
 
 import io.github.yoglappland.spectralization.command.SpectralCommands;
+import io.github.yoglappland.spectralization.diagnostics.SpectralDiagnostics;
+import io.github.yoglappland.spectralization.item.UnstableMicrolizedMachineItem;
 import io.github.yoglappland.spectralization.movement.StrawberryMovementController;
 import io.github.yoglappland.spectralization.optics.cache.OpticalRuntimeCaches;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
@@ -68,6 +71,22 @@ public final class SpectralCommonEvents {
     @SubscribeEvent
     public void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
         SpectralPlayerInteractions.leftClickBlock(event);
+    }
+
+    @SubscribeEvent
+    public void onLivingDamagePost(LivingDamageEvent.Post event) {
+        if (!(event.getEntity() instanceof ServerPlayer player) || event.getNewDamage() <= 0.0F) {
+            return;
+        }
+
+        if (UnstableMicrolizedMachineItem.detonateOneFromInventory(player)) {
+            SpectralDiagnostics.event(player.level(), SpectralDiagnostics.Subsystem.MICROLIZER, "unstable_microlized_machine_detonated")
+                    .pos("player", player.blockPosition())
+                    .field("damage_source", event.getSource().typeHolder().unwrapKey().map(key -> key.location().toString()).orElse("unknown"))
+                    .field("damage", event.getNewDamage())
+                    .field("explosion_power", 4.0F)
+                    .write();
+        }
     }
 
     @SubscribeEvent

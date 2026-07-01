@@ -11,6 +11,7 @@ import io.github.yoglappland.spectralization.block.MicrolizerCoreBlock;
 import io.github.yoglappland.spectralization.block.MicrolizerLightIoPortBlock;
 import io.github.yoglappland.spectralization.block.MicrolizedMachineBlock;
 import io.github.yoglappland.spectralization.block.CreativeLightSourceBlock;
+import io.github.yoglappland.spectralization.block.DiodeLaserBlock;
 import io.github.yoglappland.spectralization.block.DynamicBeamSplitterBlock;
 import io.github.yoglappland.spectralization.block.DynamicMirrorBlock;
 import io.github.yoglappland.spectralization.block.FiberDrawingMachineBlock;
@@ -21,6 +22,7 @@ import io.github.yoglappland.spectralization.block.HolographicStorageCrystalBloc
 import io.github.yoglappland.spectralization.block.HolographicStorageMainCoreBlock;
 import io.github.yoglappland.spectralization.block.HolographicStorageScreenBlock;
 import io.github.yoglappland.spectralization.block.HolographicStorageShellBlock;
+import io.github.yoglappland.spectralization.block.HorizontalFacingBlock;
 import io.github.yoglappland.spectralization.block.LedBlock;
 import io.github.yoglappland.spectralization.block.LensGrindingBenchBlock;
 import io.github.yoglappland.spectralization.block.LensHolderBlock;
@@ -159,6 +161,8 @@ public class Spectralization {
             ITEMS.registerSimpleItem("basic_diode", new Item.Properties());
     public static final DeferredItem<Item> BASIC_MACHINE_CORE =
             ITEMS.registerSimpleItem("basic_machine_core", new Item.Properties());
+    public static final DeferredItem<Item> ADVANCED_MACHINE_CORE =
+            ITEMS.registerSimpleItem("advanced_machine_core", new Item.Properties());
     public static final DeferredItem<Item> PRIMITIVE_CIRCUIT_BOARD =
             ITEMS.registerSimpleItem("primitive_circuit_board", new Item.Properties());
     public static final DeferredItem<Item> ADVANCED_CIRCUIT_BOARD =
@@ -649,6 +653,32 @@ public class Spectralization {
     public static final DeferredItem<BlockItem> CREATIVE_LIGHT_SOURCE_ITEM =
             ITEMS.registerSimpleBlockItem("creative_light_source", CREATIVE_LIGHT_SOURCE);
 
+    public static final DeferredBlock<DiodeLaserBlock> BASIC_DIODE_LASER = BLOCKS.register(
+            "basic_diode_laser",
+            () -> new DiodeLaserBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(0.6F, 1.2F)
+                    .sound(SoundType.METAL)
+                    .lightLevel(state -> 4)
+                    .noOcclusion(), 0.08D)
+    );
+
+    public static final DeferredItem<BlockItem> BASIC_DIODE_LASER_ITEM =
+            ITEMS.registerSimpleBlockItem("basic_diode_laser", BASIC_DIODE_LASER);
+
+    public static final DeferredBlock<DiodeLaserBlock> ADVANCED_DIODE_LASER = BLOCKS.register(
+            "advanced_diode_laser",
+            () -> new DiodeLaserBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(0.8F, 1.5F)
+                    .sound(SoundType.METAL)
+                    .lightLevel(state -> 6)
+                    .noOcclusion(), 0.18D)
+    );
+
+    public static final DeferredItem<BlockItem> ADVANCED_DIODE_LASER_ITEM =
+            ITEMS.registerSimpleBlockItem("advanced_diode_laser", ADVANCED_DIODE_LASER);
+
     public static final DeferredBlock<CmosSensorBlock> CMOS_SENSOR = BLOCKS.register(
             "cmos_sensor",
             () -> new CmosSensorBlock(BlockBehaviour.Properties.of()
@@ -845,27 +875,39 @@ public class Spectralization {
     public static final DeferredItem<BlockItem> PUMP_MAGMA_BLOCK_ITEM =
             ITEMS.registerSimpleBlockItem("pump_magma_block", PUMP_MAGMA_BLOCK);
 
-    public static final DeferredBlock<Block> BASIC_MACHINE_BLOCK = BLOCKS.registerSimpleBlock(
+    public static final DeferredBlock<HorizontalFacingBlock> BASIC_MACHINE_BLOCK = BLOCKS.register(
             "basic_machine_block",
-            BlockBehaviour.Properties.of()
+            () -> new HorizontalFacingBlock(BlockBehaviour.Properties.of()
                     .mapColor(MapColor.METAL)
                     .strength(2.0F, 6.0F)
-                    .sound(SoundType.METAL)
+                    .sound(SoundType.METAL))
     );
 
     public static final DeferredItem<BlockItem> BASIC_MACHINE_BLOCK_ITEM =
             ITEMS.registerSimpleBlockItem("basic_machine_block", BASIC_MACHINE_BLOCK);
 
-    public static final DeferredBlock<Block> ADVANCED_MACHINE_BLOCK = BLOCKS.registerSimpleBlock(
+    public static final DeferredBlock<HorizontalFacingBlock> ADVANCED_MACHINE_BLOCK = BLOCKS.register(
             "advanced_machine_block",
-            BlockBehaviour.Properties.of()
+            () -> new HorizontalFacingBlock(BlockBehaviour.Properties.of()
                     .mapColor(MapColor.METAL)
                     .strength(2.5F, 6.0F)
-                    .sound(SoundType.METAL)
+                    .sound(SoundType.METAL))
     );
 
     public static final DeferredItem<BlockItem> ADVANCED_MACHINE_BLOCK_ITEM =
             ITEMS.registerSimpleBlockItem("advanced_machine_block", ADVANCED_MACHINE_BLOCK);
+
+    public static final DeferredBlock<HorizontalFacingBlock> CRYSTAL_CULTIVATOR = BLOCKS.register(
+            "crystal_cultivator",
+            () -> new HorizontalFacingBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(2.5F, 6.0F)
+                    .sound(SoundType.METAL)
+                    .noOcclusion())
+    );
+
+    public static final DeferredItem<BlockItem> CRYSTAL_CULTIVATOR_ITEM =
+            ITEMS.registerSimpleBlockItem("crystal_cultivator", CRYSTAL_CULTIVATOR);
 
     public static final DeferredBlock<RubyBlock> RUBY_BLOCK = BLOCKS.register(
             "ruby_block",
@@ -958,6 +1000,11 @@ public class Spectralization {
     public static final DeferredItem<BlockItem> RAW_SILVER_BLOCK_ITEM =
             ITEMS.registerSimpleBlockItem("raw_silver_block", RAW_SILVER_BLOCK);
 
+    public static final DeferredBlock<Block> TITANIUM_DIOXIDE_BLOCK =
+            storageBlock("titanium_dioxide_block", MapColor.COLOR_LIGHT_GRAY, SoundType.STONE);
+    public static final DeferredItem<BlockItem> TITANIUM_DIOXIDE_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("titanium_dioxide_block", TITANIUM_DIOXIDE_BLOCK);
+
     public static final DeferredBlock<Block> RUTILE_ORE = oreBlock("rutile_ore", MapColor.STONE, 3.0F);
     public static final DeferredItem<BlockItem> RUTILE_ORE_ITEM =
             ITEMS.registerSimpleBlockItem("rutile_ore", RUTILE_ORE);
@@ -999,14 +1046,94 @@ public class Spectralization {
             storageBlock("rutile_block", MapColor.COLOR_BROWN, SoundType.STONE);
     public static final DeferredItem<BlockItem> RUTILE_BLOCK_ITEM =
             ITEMS.registerSimpleBlockItem("rutile_block", RUTILE_BLOCK);
-    public static final DeferredBlock<Block> CORUNDUM_BLOCK =
-            storageBlock("corundum_block", MapColor.COLOR_LIGHT_BLUE, SoundType.AMETHYST);
+    public static final DeferredBlock<TransparentBlock> CORUNDUM_BLOCK =
+            transparentStorageBlock("corundum_block", MapColor.COLOR_LIGHT_BLUE, SoundType.AMETHYST);
     public static final DeferredItem<BlockItem> CORUNDUM_BLOCK_ITEM =
             ITEMS.registerSimpleBlockItem("corundum_block", CORUNDUM_BLOCK);
-    public static final DeferredBlock<Block> FLUORITE_BLOCK =
-            storageBlock("fluorite_block", MapColor.COLOR_PURPLE, SoundType.AMETHYST);
+    public static final DeferredBlock<TransparentBlock> FLUORITE_BLOCK =
+            transparentStorageBlock("fluorite_block", MapColor.COLOR_PURPLE, SoundType.AMETHYST);
     public static final DeferredItem<BlockItem> FLUORITE_BLOCK_ITEM =
             ITEMS.registerSimpleBlockItem("fluorite_block", FLUORITE_BLOCK);
+    public static final DeferredBlock<TransparentBlock> ND_FLUORITE_CRYSTAL_BLOCK =
+            transparentStorageBlock("nd_fluorite_crystal_block", MapColor.COLOR_PURPLE, SoundType.AMETHYST);
+    public static final DeferredItem<BlockItem> ND_FLUORITE_CRYSTAL_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("nd_fluorite_crystal_block", ND_FLUORITE_CRYSTAL_BLOCK);
+    public static final DeferredBlock<TransparentBlock> YB_FLUORITE_CRYSTAL_BLOCK =
+            transparentStorageBlock("yb_fluorite_crystal_block", MapColor.COLOR_PURPLE, SoundType.AMETHYST);
+    public static final DeferredItem<BlockItem> YB_FLUORITE_CRYSTAL_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("yb_fluorite_crystal_block", YB_FLUORITE_CRYSTAL_BLOCK);
+    public static final DeferredBlock<TransparentBlock> ER_FLUORITE_CRYSTAL_BLOCK =
+            transparentStorageBlock("er_fluorite_crystal_block", MapColor.COLOR_PURPLE, SoundType.AMETHYST);
+    public static final DeferredItem<BlockItem> ER_FLUORITE_CRYSTAL_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("er_fluorite_crystal_block", ER_FLUORITE_CRYSTAL_BLOCK);
+    public static final DeferredBlock<TransparentBlock> CE_FLUORITE_CRYSTAL_BLOCK =
+            transparentStorageBlock("ce_fluorite_crystal_block", MapColor.COLOR_PURPLE, SoundType.AMETHYST);
+    public static final DeferredItem<BlockItem> CE_FLUORITE_CRYSTAL_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("ce_fluorite_crystal_block", CE_FLUORITE_CRYSTAL_BLOCK);
+    public static final DeferredBlock<Block> YTTRIUM_OXIDE_BLOCK =
+            storageBlock("yttrium_oxide_block", MapColor.COLOR_LIGHT_GRAY, SoundType.STONE);
+    public static final DeferredItem<BlockItem> YTTRIUM_OXIDE_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("yttrium_oxide_block", YTTRIUM_OXIDE_BLOCK);
+    public static final DeferredBlock<TransparentBlock> YAG_CRYSTAL_BLOCK =
+            transparentStorageBlock("yag_crystal_block", MapColor.SAND, SoundType.AMETHYST);
+    public static final DeferredItem<BlockItem> YAG_CRYSTAL_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("yag_crystal_block", YAG_CRYSTAL_BLOCK);
+    public static final DeferredBlock<TransparentBlock> ND_YAG_CRYSTAL_BLOCK =
+            transparentStorageBlock("nd_yag_crystal_block", MapColor.SAND, SoundType.AMETHYST);
+    public static final DeferredItem<BlockItem> ND_YAG_CRYSTAL_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("nd_yag_crystal_block", ND_YAG_CRYSTAL_BLOCK);
+    public static final DeferredBlock<TransparentBlock> YB_YAG_CRYSTAL_BLOCK =
+            transparentStorageBlock("yb_yag_crystal_block", MapColor.SAND, SoundType.AMETHYST);
+    public static final DeferredItem<BlockItem> YB_YAG_CRYSTAL_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("yb_yag_crystal_block", YB_YAG_CRYSTAL_BLOCK);
+    public static final DeferredBlock<TransparentBlock> ER_YAG_CRYSTAL_BLOCK =
+            transparentStorageBlock("er_yag_crystal_block", MapColor.SAND, SoundType.AMETHYST);
+    public static final DeferredItem<BlockItem> ER_YAG_CRYSTAL_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("er_yag_crystal_block", ER_YAG_CRYSTAL_BLOCK);
+    public static final DeferredBlock<TransparentBlock> CE_YAG_CRYSTAL_BLOCK =
+            transparentStorageBlock("ce_yag_crystal_block", MapColor.SAND, SoundType.AMETHYST);
+    public static final DeferredItem<BlockItem> CE_YAG_CRYSTAL_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("ce_yag_crystal_block", CE_YAG_CRYSTAL_BLOCK);
+    public static final DeferredBlock<Block> SILICON_BLOCK =
+            storageBlock("silicon_block", MapColor.COLOR_LIGHT_GRAY, SoundType.STONE);
+    public static final DeferredItem<BlockItem> SILICON_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("silicon_block", SILICON_BLOCK);
+    public static final DeferredBlock<Block> BORON_DOPED_SILICON_BLOCK =
+            storageBlock("boron_doped_silicon_block", MapColor.COLOR_LIGHT_GRAY, SoundType.STONE);
+    public static final DeferredItem<BlockItem> BORON_DOPED_SILICON_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("boron_doped_silicon_block", BORON_DOPED_SILICON_BLOCK);
+    public static final DeferredBlock<Block> PHOSPHORUS_DOPED_SILICON_BLOCK =
+            storageBlock("phosphorus_doped_silicon_block", MapColor.COLOR_LIGHT_GRAY, SoundType.STONE);
+    public static final DeferredItem<BlockItem> PHOSPHORUS_DOPED_SILICON_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("phosphorus_doped_silicon_block", PHOSPHORUS_DOPED_SILICON_BLOCK);
+    public static final DeferredBlock<Block> ARSENIC_DOPED_SILICON_BLOCK =
+            storageBlock("arsenic_doped_silicon_block", MapColor.COLOR_LIGHT_GRAY, SoundType.STONE);
+    public static final DeferredItem<BlockItem> ARSENIC_DOPED_SILICON_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("arsenic_doped_silicon_block", ARSENIC_DOPED_SILICON_BLOCK);
+    public static final DeferredBlock<Block> ERBIUM_DOPED_SILICON_BLOCK =
+            storageBlock("erbium_doped_silicon_block", MapColor.COLOR_LIGHT_GRAY, SoundType.STONE);
+    public static final DeferredItem<BlockItem> ERBIUM_DOPED_SILICON_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("erbium_doped_silicon_block", ERBIUM_DOPED_SILICON_BLOCK);
+    public static final DeferredBlock<TransparentBlock> SILICA_BLOCK =
+            transparentStorageBlock("silica_block", MapColor.COLOR_LIGHT_BLUE, SoundType.GLASS);
+    public static final DeferredItem<BlockItem> SILICA_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("silica_block", SILICA_BLOCK);
+    public static final DeferredBlock<TransparentBlock> ND_DOPED_SILICA_BLOCK =
+            transparentStorageBlock("nd_doped_silica_block", MapColor.COLOR_LIGHT_BLUE, SoundType.GLASS);
+    public static final DeferredItem<BlockItem> ND_DOPED_SILICA_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("nd_doped_silica_block", ND_DOPED_SILICA_BLOCK);
+    public static final DeferredBlock<TransparentBlock> YB_DOPED_SILICA_BLOCK =
+            transparentStorageBlock("yb_doped_silica_block", MapColor.COLOR_LIGHT_BLUE, SoundType.GLASS);
+    public static final DeferredItem<BlockItem> YB_DOPED_SILICA_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("yb_doped_silica_block", YB_DOPED_SILICA_BLOCK);
+    public static final DeferredBlock<TransparentBlock> ER_DOPED_SILICA_BLOCK =
+            transparentStorageBlock("er_doped_silica_block", MapColor.COLOR_LIGHT_BLUE, SoundType.GLASS);
+    public static final DeferredItem<BlockItem> ER_DOPED_SILICA_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("er_doped_silica_block", ER_DOPED_SILICA_BLOCK);
+    public static final DeferredBlock<TransparentBlock> CE_DOPED_SILICA_BLOCK =
+            transparentStorageBlock("ce_doped_silica_block", MapColor.COLOR_LIGHT_BLUE, SoundType.GLASS);
+    public static final DeferredItem<BlockItem> CE_DOPED_SILICA_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("ce_doped_silica_block", CE_DOPED_SILICA_BLOCK);
 
     public static final DeferredHolder<CreativeModeTab, CreativeModeTab> SPECTRALIZATION_TAB =
             CREATIVE_MODE_TABS.register("spectralization", () -> CreativeModeTab.builder()
@@ -1035,6 +1162,27 @@ public class Spectralization {
                         .strength(3.0F, 6.0F)
                         .requiresCorrectToolForDrops()
                         .sound(soundType)
+        );
+    }
+
+    private static DeferredBlock<TransparentBlock> transparentStorageBlock(
+            String name,
+            MapColor mapColor,
+            SoundType soundType
+    ) {
+        return BLOCKS.register(
+                name,
+                () -> new TransparentBlock(
+                        BlockBehaviour.Properties.of()
+                                .mapColor(mapColor)
+                                .strength(3.0F, 6.0F)
+                                .requiresCorrectToolForDrops()
+                                .sound(soundType)
+                                .noOcclusion()
+                                .isRedstoneConductor((state, level, pos) -> false)
+                                .isSuffocating((state, level, pos) -> false)
+                                .isViewBlocking((state, level, pos) -> false)
+                )
         );
     }
 

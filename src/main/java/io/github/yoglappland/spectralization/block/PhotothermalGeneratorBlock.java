@@ -20,7 +20,6 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -31,13 +30,15 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
-public class PhotothermalGeneratorBlock extends Block implements EntityBlock, OpticalReceiver, PhotothermalReceiverBlock {
+public class PhotothermalGeneratorBlock extends HorizontalFacingEntityBlock implements OpticalReceiver, PhotothermalReceiverBlock {
     public static final BooleanProperty ACTIVE = BooleanProperty.create("active");
     private static final VoxelShape SHAPE = Block.box(0.0, 0.0, 0.0, 16.0, 16.0, 16.0);
 
     public PhotothermalGeneratorBlock(Properties properties) {
         super(properties);
-        registerDefaultState(stateDefinition.any().setValue(ACTIVE, false));
+        registerDefaultState(stateDefinition.any()
+                .setValue(FACING, Direction.NORTH)
+                .setValue(ACTIVE, false));
     }
 
     @Override
@@ -96,7 +97,7 @@ public class PhotothermalGeneratorBlock extends Block implements EntityBlock, Op
     }
 
     public static Direction getReceivingSide(BlockState state) {
-        return Direction.EAST;
+        return localToWorld(state, Direction.EAST);
     }
 
     @Override
@@ -106,11 +107,12 @@ public class PhotothermalGeneratorBlock extends Block implements EntityBlock, Op
 
     @Override
     public Set<Direction> photothermalReceivingSides(BlockState state) {
-        return Set.of(Direction.EAST, Direction.WEST);
+        return Set.of(localToWorld(state, Direction.EAST), localToWorld(state, Direction.WEST));
     }
 
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+        super.createBlockStateDefinition(builder);
         builder.add(ACTIVE);
     }
 }

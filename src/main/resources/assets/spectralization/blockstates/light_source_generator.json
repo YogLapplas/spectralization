@@ -1,10 +1,39 @@
 {
-  "variants": {
-    "active=false": {
-      "model": "spectralization:block/light_source_generator"
-    },
-    "active=true": {
-      "model": "spectralization:block/light_source_generator"
+  "multipart": [
+    {
+      "when": {
+        "facing": "north"
+      },
+      "apply": {
+        "model": "spectralization:block/light_source_generator"
     }
-  }
+    },
+    {
+      "when": {
+        "facing": "east"
+      },
+      "apply": {
+        "model": "spectralization:block/light_source_generator",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "facing": "south"
+      },
+      "apply": {
+        "model": "spectralization:block/light_source_generator",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "facing": "west"
+      },
+      "apply": {
+        "model": "spectralization:block/light_source_generator",
+        "y": 270
+      }
+    }
+  ]
 }

@@ -5,9 +5,9 @@ import io.github.yoglappland.spectralization.blockentity.RubyBlockEntity;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -15,12 +15,14 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
 
-public class PumpMagmaBlock extends Block implements EntityBlock {
+public class PumpMagmaBlock extends HorizontalFacingEntityBlock {
     public static final BooleanProperty ACTIVE = BooleanProperty.create("active");
 
     public PumpMagmaBlock(Properties properties) {
         super(properties);
-        registerDefaultState(stateDefinition.any().setValue(ACTIVE, false));
+        registerDefaultState(stateDefinition.any()
+                .setValue(FACING, Direction.NORTH)
+                .setValue(ACTIVE, false));
     }
 
     @Nullable
@@ -76,6 +78,7 @@ public class PumpMagmaBlock extends Block implements EntityBlock {
 
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+        super.createBlockStateDefinition(builder);
         builder.add(ACTIVE);
     }
 }

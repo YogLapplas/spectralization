@@ -26,6 +26,7 @@ public final class SpectralCreativeTabItems {
         output.accept(Spectralization.HOLOGRAPHIC_CRYSTAL.get());
         output.accept(Spectralization.BASIC_DIODE.get());
         output.accept(Spectralization.BASIC_MACHINE_CORE.get());
+        output.accept(Spectralization.ADVANCED_MACHINE_CORE.get());
         output.accept(Spectralization.PRIMITIVE_CIRCUIT_BOARD.get());
         output.accept(Spectralization.ADVANCED_CIRCUIT_BOARD.get());
         output.accept(Spectralization.PRECISION_CIRCUIT_BOARD.get());
@@ -105,6 +106,8 @@ public final class SpectralCreativeTabItems {
         output.accept(Spectralization.BEAM_SPLITTER_ITEM.get());
         output.accept(Spectralization.DYNAMIC_BEAM_SPLITTER_ITEM.get());
         output.accept(Spectralization.CREATIVE_LIGHT_SOURCE_ITEM.get());
+        output.accept(Spectralization.BASIC_DIODE_LASER_ITEM.get());
+        output.accept(Spectralization.ADVANCED_DIODE_LASER_ITEM.get());
         output.accept(Spectralization.CMOS_SENSOR_ITEM.get());
         output.accept(Spectralization.PASS_THROUGH_SENSOR_ITEM.get());
         output.accept(Spectralization.BEAM_PROFILER_ITEM.get());
@@ -115,6 +118,7 @@ public final class SpectralCreativeTabItems {
         output.accept(Spectralization.THERMAL_SMELTER_ITEM.get());
         output.accept(Spectralization.BASIC_MACHINE_BLOCK_ITEM.get());
         output.accept(Spectralization.ADVANCED_MACHINE_BLOCK_ITEM.get());
+        output.accept(Spectralization.CRYSTAL_CULTIVATOR_ITEM.get());
         output.accept(Spectralization.STRAY_LIGHT_EMITTER_ITEM.get());
         output.accept(Spectralization.ADVANCED_STRAY_LIGHT_EMITTER_ITEM.get());
         output.accept(Spectralization.BASIC_LED_ITEM.get());
@@ -145,7 +149,28 @@ public final class SpectralCreativeTabItems {
         output.accept(Spectralization.DEEPSLATE_XENOTIME_ORE_ITEM.get());
         output.accept(Spectralization.RUBY_BEARING_CORUNDUM_ORE_ITEM.get());
         output.accept(Spectralization.RUTILE_BLOCK_ITEM.get());
+        output.accept(Spectralization.TITANIUM_DIOXIDE_BLOCK_ITEM.get());
         output.accept(Spectralization.CORUNDUM_BLOCK_ITEM.get());
         output.accept(Spectralization.FLUORITE_BLOCK_ITEM.get());
+        output.accept(Spectralization.ND_FLUORITE_CRYSTAL_BLOCK_ITEM.get());
+        output.accept(Spectralization.YB_FLUORITE_CRYSTAL_BLOCK_ITEM.get());
+        output.accept(Spectralization.ER_FLUORITE_CRYSTAL_BLOCK_ITEM.get());
+        output.accept(Spectralization.CE_FLUORITE_CRYSTAL_BLOCK_ITEM.get());
+        output.accept(Spectralization.YTTRIUM_OXIDE_BLOCK_ITEM.get());
+        output.accept(Spectralization.YAG_CRYSTAL_BLOCK_ITEM.get());
+        output.accept(Spectralization.ND_YAG_CRYSTAL_BLOCK_ITEM.get());
+        output.accept(Spectralization.YB_YAG_CRYSTAL_BLOCK_ITEM.get());
+        output.accept(Spectralization.ER_YAG_CRYSTAL_BLOCK_ITEM.get());
+        output.accept(Spectralization.CE_YAG_CRYSTAL_BLOCK_ITEM.get());
+        output.accept(Spectralization.SILICON_BLOCK_ITEM.get());
+        output.accept(Spectralization.BORON_DOPED_SILICON_BLOCK_ITEM.get());
+        output.accept(Spectralization.PHOSPHORUS_DOPED_SILICON_BLOCK_ITEM.get());
+        output.accept(Spectralization.ARSENIC_DOPED_SILICON_BLOCK_ITEM.get());
+        output.accept(Spectralization.ERBIUM_DOPED_SILICON_BLOCK_ITEM.get());
+        output.accept(Spectralization.SILICA_BLOCK_ITEM.get());
+        output.accept(Spectralization.ND_DOPED_SILICA_BLOCK_ITEM.get());
+        output.accept(Spectralization.YB_DOPED_SILICA_BLOCK_ITEM.get());
+        output.accept(Spectralization.ER_DOPED_SILICA_BLOCK_ITEM.get());
+        output.accept(Spectralization.CE_DOPED_SILICA_BLOCK_ITEM.get());
     }
 }

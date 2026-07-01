@@ -1,10 +1,82 @@
 {
-  "variants": {
-    "active=false": {
-      "model": "spectralization:block/pump_magma_block"
+  "multipart": [
+    {
+      "when": {
+        "active": "false",
+        "facing": "north"
+      },
+      "apply": {
+        "model": "spectralization:block/pump_magma_block"
+      }
     },
-    "active=true": {
-      "model": "spectralization:block/activated_pump_magma_block"
+    {
+      "when": {
+        "active": "false",
+        "facing": "east"
+      },
+      "apply": {
+        "model": "spectralization:block/pump_magma_block",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "active": "false",
+        "facing": "south"
+      },
+      "apply": {
+        "model": "spectralization:block/pump_magma_block",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "active": "false",
+        "facing": "west"
+      },
+      "apply": {
+        "model": "spectralization:block/pump_magma_block",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "active": "true",
+        "facing": "north"
+      },
+      "apply": {
+        "model": "spectralization:block/activated_pump_magma_block"
+      }
+    },
+    {
+      "when": {
+        "active": "true",
+        "facing": "east"
+      },
+      "apply": {
+        "model": "spectralization:block/activated_pump_magma_block",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "active": "true",
+        "facing": "south"
+      },
+      "apply": {
+        "model": "spectralization:block/activated_pump_magma_block",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "active": "true",
+        "facing": "west"
+      },
+      "apply": {
+        "model": "spectralization:block/activated_pump_magma_block",
+        "y": 270
+      }
     }
-  }
+  ]
 }

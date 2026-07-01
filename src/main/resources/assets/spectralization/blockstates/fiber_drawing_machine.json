@@ -1,7 +1,19 @@
 {
   "variants": {
-    "": {
+    "facing=north": {
       "model": "spectralization:block/fiber_drawing_machine"
+    },
+    "facing=east": {
+      "model": "spectralization:block/fiber_drawing_machine",
+      "y": 90
+    },
+    "facing=south": {
+      "model": "spectralization:block/fiber_drawing_machine",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "spectralization:block/fiber_drawing_machine",
+      "y": 270
     }
   }
 }

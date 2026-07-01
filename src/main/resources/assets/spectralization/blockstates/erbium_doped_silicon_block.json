@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "spectralization:block/erbium_doped_silicon_block"
+    }
+  }
+}

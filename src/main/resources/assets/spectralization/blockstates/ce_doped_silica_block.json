@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "spectralization:block/ce_doped_silica_block"
+    }
+  }
+}

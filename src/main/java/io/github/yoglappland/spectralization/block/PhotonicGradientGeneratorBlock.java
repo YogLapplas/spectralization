@@ -6,13 +6,13 @@ import io.github.yoglappland.spectralization.menu.LightSourceGeneratorMenu;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -21,12 +21,14 @@ import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.phys.BlockHitResult;
 
-public class PhotonicGradientGeneratorBlock extends Block implements EntityBlock {
+public class PhotonicGradientGeneratorBlock extends HorizontalFacingEntityBlock {
     public static final BooleanProperty ACTIVE = BooleanProperty.create("active");
 
     public PhotonicGradientGeneratorBlock(Properties properties) {
         super(properties);
-        registerDefaultState(stateDefinition.any().setValue(ACTIVE, false));
+        registerDefaultState(stateDefinition.any()
+                .setValue(FACING, Direction.NORTH)
+                .setValue(ACTIVE, false));
     }
 
     @Override
@@ -66,6 +68,7 @@ public class PhotonicGradientGeneratorBlock extends Block implements EntityBlock
 
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+        super.createBlockStateDefinition(builder);
         builder.add(ACTIVE);
     }
 }

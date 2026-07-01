@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "spectralization:block/phosphorus_doped_silicon_block"
+    }
+  }
+}

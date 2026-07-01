@@ -109,6 +109,10 @@ public class FiberLaserBlockEntity extends BlockEntity {
         return scheduledGainX1000() / 1000.0D;
     }
 
+    public static double maximumScheduledCoherentBaseGain() {
+        return gainX1000ForEnergy(MAX_ENERGY_PER_TICK) / 1000.0D;
+    }
+
     public int energyStored() {
         return energy.getEnergyStored();
     }

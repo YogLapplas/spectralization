@@ -293,6 +293,17 @@ public final class OpticalMaterialProfiles {
         return scheduledCoherentBaseGainFor(level, pos, state, FrequencyKey.DEBUG_VISIBLE);
     }
 
+    public static double rubyMaximumEffectiveSinglePassGain() {
+        return Math.min(
+                RUBY_MAX_SCHEDULED_GAIN,
+                1.0 + RUBY_SCHEDULED_GAIN_PER_PUMP_RATE * OpticalPumpSources.RUBY_PUMP_CAP
+        );
+    }
+
+    public static double rubyScheduledGainUpperLimit() {
+        return RUBY_MAX_SCHEDULED_GAIN;
+    }
+
     public static double scheduledCoherentBaseGainFor(Level level, BlockPos pos, BlockState state, FrequencyKey frequency) {
         if (state.is(Spectralization.FIBER_LASER.get())) {
             if (level != null

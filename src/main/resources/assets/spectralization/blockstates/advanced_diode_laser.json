@@ -1,0 +1,19 @@
+{
+  "variants": {
+    "facing=north": {
+      "model": "spectralization:block/advanced_diode_laser",
+      "y": 180
+    },
+    "facing=east": {
+      "model": "spectralization:block/advanced_diode_laser",
+      "y": 270
+    },
+    "facing=south": {
+      "model": "spectralization:block/advanced_diode_laser"
+    },
+    "facing=west": {
+      "model": "spectralization:block/advanced_diode_laser",
+      "y": 90
+    }
+  }
+}

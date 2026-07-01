@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "spectralization:block/silicon_block"
+    }
+  }
+}

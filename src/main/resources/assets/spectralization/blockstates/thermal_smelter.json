@@ -1,7 +1,19 @@
 {
   "variants": {
-    "": {
+    "facing=north": {
       "model": "spectralization:block/thermal_smelter"
+    },
+    "facing=east": {
+      "model": "spectralization:block/thermal_smelter",
+      "y": 90
+    },
+    "facing=south": {
+      "model": "spectralization:block/thermal_smelter",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "spectralization:block/thermal_smelter",
+      "y": 270
     }
   }
 }

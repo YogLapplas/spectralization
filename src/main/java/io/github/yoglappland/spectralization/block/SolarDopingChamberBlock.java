@@ -7,6 +7,7 @@ import io.github.yoglappland.spectralization.menu.SolarDopingChamberMenu;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.SimpleMenuProvider;
@@ -14,7 +15,6 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -26,7 +26,7 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
-public class SolarDopingChamberBlock extends Block implements EntityBlock {
+public class SolarDopingChamberBlock extends HorizontalFacingEntityBlock {
     public static final BooleanProperty ACTIVE = BooleanProperty.create("active");
 
     private static final VoxelShape BASE = Block.box(0.0, 0.0, 0.0, 16.0, 7.0, 16.0);
@@ -48,7 +48,9 @@ public class SolarDopingChamberBlock extends Block implements EntityBlock {
         super(properties);
         this.subsystem = subsystem;
         this.containerKey = containerKey;
-        registerDefaultState(stateDefinition.any().setValue(ACTIVE, false));
+        registerDefaultState(stateDefinition.any()
+                .setValue(FACING, Direction.NORTH)
+                .setValue(ACTIVE, false));
     }
 
     @Nullable
@@ -102,6 +104,7 @@ public class SolarDopingChamberBlock extends Block implements EntityBlock {
 
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+        super.createBlockStateDefinition(builder);
         builder.add(ACTIVE);
     }
 

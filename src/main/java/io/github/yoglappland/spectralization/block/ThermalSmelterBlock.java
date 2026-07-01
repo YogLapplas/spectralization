@@ -27,7 +27,6 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -37,7 +36,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
-public class ThermalSmelterBlock extends Block implements EntityBlock, OpticalReceiver, PhotothermalReceiverBlock, BlockUIMenuType.BlockUI {
+public class ThermalSmelterBlock extends HorizontalFacingEntityBlock implements OpticalReceiver, PhotothermalReceiverBlock, BlockUIMenuType.BlockUI {
     public static final Direction PHOTOTHERMAL_INPUT_SIDE = Direction.WEST;
     public static final Direction SECONDARY_PHOTOTHERMAL_INPUT_SIDE = Direction.EAST;
     public static final Direction ITEM_PORT_SIDE = Direction.SOUTH;
@@ -149,12 +148,16 @@ public class ThermalSmelterBlock extends Block implements EntityBlock, OpticalRe
 
     @Override
     public Direction photothermalReceivingSide(BlockState state) {
-        return PHOTOTHERMAL_INPUT_SIDE;
+        return localToWorld(state, PHOTOTHERMAL_INPUT_SIDE);
     }
 
     @Override
     public Set<Direction> photothermalReceivingSides(BlockState state) {
-        return Set.of(PHOTOTHERMAL_INPUT_SIDE, SECONDARY_PHOTOTHERMAL_INPUT_SIDE);
+        return Set.of(localToWorld(state, PHOTOTHERMAL_INPUT_SIDE), localToWorld(state, SECONDARY_PHOTOTHERMAL_INPUT_SIDE));
+    }
+
+    public static Direction itemPortSide(BlockState state) {
+        return localToWorld(state, ITEM_PORT_SIDE);
     }
 
     @Override

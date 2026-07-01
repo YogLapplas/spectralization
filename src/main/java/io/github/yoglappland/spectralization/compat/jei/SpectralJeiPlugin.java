@@ -63,6 +63,8 @@ public final class SpectralJeiPlugin implements IModPlugin {
             RecipeType.create(Spectralization.MODID, "light_source_generator", LightSourceGeneratorFuelRecipe.class);
     public static final RecipeType<PhotothermalGeneratorFuelRecipe> PHOTOTHERMAL_GENERATOR =
             RecipeType.create(Spectralization.MODID, "photothermal_generator", PhotothermalGeneratorFuelRecipe.class);
+    public static final RecipeType<LaserDeviceRecipe> LASER =
+            RecipeType.create(Spectralization.MODID, "laser", LaserDeviceRecipe.class);
 
     @Override
     public ResourceLocation getPluginUid() {
@@ -78,7 +80,8 @@ public final class SpectralJeiPlugin implements IModPlugin {
                 new FiberDrawingRecipeCategory(registration.getJeiHelpers().getGuiHelper()),
                 new PhotoinducedReactionRecipeCategory(registration.getJeiHelpers().getGuiHelper()),
                 new LightSourceGeneratorFuelRecipeCategory(registration.getJeiHelpers().getGuiHelper()),
-                new PhotothermalGeneratorFuelRecipeCategory(registration.getJeiHelpers().getGuiHelper())
+                new PhotothermalGeneratorFuelRecipeCategory(registration.getJeiHelpers().getGuiHelper()),
+                new LaserDeviceRecipeCategory(registration.getJeiHelpers().getGuiHelper())
         );
     }
 
@@ -91,6 +94,7 @@ public final class SpectralJeiPlugin implements IModPlugin {
         registration.addRecipes(PHOTOINDUCED_REACTION, PhotoinducedReactionRecipe.recipes());
         registration.addRecipes(LIGHT_SOURCE_GENERATOR, LightSourceGeneratorFuelRecipe.recipes());
         registration.addRecipes(PHOTOTHERMAL_GENERATOR, PhotothermalGeneratorFuelRecipe.recipes());
+        registration.addRecipes(LASER, LaserDeviceRecipe.recipes());
         registration.addRecipes(RecipeTypes.CRAFTING, List.of(basicLithographyMachineCraftingDisplay(registration)));
     }
 
@@ -104,6 +108,8 @@ public final class SpectralJeiPlugin implements IModPlugin {
         registration.addRecipeCatalyst(new ItemStack(Spectralization.HOLOGRAPHIC_STORAGE_SHELL_ITEM.get()), PHOTOINDUCED_REACTION);
         registration.addRecipeCatalyst(new ItemStack(Spectralization.LIGHT_SOURCE_GENERATOR_ITEM.get()), LIGHT_SOURCE_GENERATOR);
         registration.addRecipeCatalyst(new ItemStack(Spectralization.PHOTOTHERMAL_GENERATOR_ITEM.get()), PHOTOTHERMAL_GENERATOR);
+        registration.addRecipeCatalyst(new ItemStack(Spectralization.RUBY_BLOCK_ITEM.get()), LASER);
+        registration.addRecipeCatalyst(new ItemStack(Spectralization.FIBER_LASER_ITEM.get()), LASER);
     }
 
     @Override

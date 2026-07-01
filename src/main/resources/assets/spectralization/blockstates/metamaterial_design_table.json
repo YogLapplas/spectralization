@@ -1,13 +1,73 @@
 {
   "multipart": [
     {
+      "when": {
+        "facing": "north"
+      },
       "apply": {
         "model": "spectralization:block/metamaterial_design_table"
       }
     },
     {
+      "when": {
+        "facing": "east"
+      },
+      "apply": {
+        "model": "spectralization:block/metamaterial_design_table",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "facing": "south"
+      },
+      "apply": {
+        "model": "spectralization:block/metamaterial_design_table",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "facing": "west"
+      },
+      "apply": {
+        "model": "spectralization:block/metamaterial_design_table",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "facing": "north"
+      },
       "apply": {
         "model": "spectralization:block/metamaterial_design_table_glass"
+      }
+    },
+    {
+      "when": {
+        "facing": "east"
+      },
+      "apply": {
+        "model": "spectralization:block/metamaterial_design_table_glass",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "facing": "south"
+      },
+      "apply": {
+        "model": "spectralization:block/metamaterial_design_table_glass",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "facing": "west"
+      },
+      "apply": {
+        "model": "spectralization:block/metamaterial_design_table_glass",
+        "y": 270
       }
     }
   ]

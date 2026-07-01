@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "spectralization:block/boron_doped_silicon_block"
+    }
+  }
+}

@@ -1,13 +1,73 @@
 {
   "multipart": [
     {
+      "when": {
+        "facing": "north"
+      },
       "apply": {
         "model": "spectralization:block/solar_doping_chamber"
       }
     },
     {
+      "when": {
+        "facing": "east"
+      },
+      "apply": {
+        "model": "spectralization:block/solar_doping_chamber",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "facing": "south"
+      },
+      "apply": {
+        "model": "spectralization:block/solar_doping_chamber",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "facing": "west"
+      },
+      "apply": {
+        "model": "spectralization:block/solar_doping_chamber",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "facing": "north"
+      },
       "apply": {
         "model": "spectralization:block/solar_doping_chamber_core"
+      }
+    },
+    {
+      "when": {
+        "facing": "east"
+      },
+      "apply": {
+        "model": "spectralization:block/solar_doping_chamber_core",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "facing": "south"
+      },
+      "apply": {
+        "model": "spectralization:block/solar_doping_chamber_core",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "facing": "west"
+      },
+      "apply": {
+        "model": "spectralization:block/solar_doping_chamber_core",
+        "y": 270
       }
     }
   ]

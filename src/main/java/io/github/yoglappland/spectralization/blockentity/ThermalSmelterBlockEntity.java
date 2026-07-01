@@ -116,7 +116,7 @@ public class ThermalSmelterBlockEntity extends BlockEntity implements Phototherm
 
     @Nullable
     public ItemStackHandler getItems(@Nullable Direction side) {
-        return side == null || side == ThermalSmelterBlock.ITEM_PORT_SIDE ? items : null;
+        return side == null || side == ThermalSmelterBlock.itemPortSide(getBlockState()) ? items : null;
     }
 
     public ContainerData createDataAccess() {

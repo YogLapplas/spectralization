@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/cube_all",
+  "textures": {
+    "all": "spectralization:block/phosphorus_doped_silicon_block"
+  }
+}

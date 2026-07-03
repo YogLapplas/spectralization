@@ -3,6 +3,7 @@ package io.github.yoglappland.spectralization.optics.compiler.gain;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledPortGraph;
 import io.github.yoglappland.spectralization.optics.compiler.PortGraphEdge;
 import io.github.yoglappland.spectralization.optics.FrequencyKey;
+import io.github.yoglappland.spectralization.optics.compiler.SaturatingEdgeGain;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -11,8 +12,8 @@ import java.util.Map;
 final class GainGraphRewriter {
     static CompiledPortGraph applyEffectiveGains(
             CompiledPortGraph graph,
-            Map<Integer, Double> effectiveGainsByEdgeId,
-            Map<Integer, GainSpectralScope> spectralScopesByEdgeId
+            Map<Integer, GainSource> gainSourcesByEdgeId,
+            Map<Integer, Double> effectiveGainsByEdgeId
     ) {
         if (!hasActiveScheduledGain(effectiveGainsByEdgeId)) {
             return graph;
@@ -22,6 +23,7 @@ final class GainGraphRewriter {
 
         for (PortGraphEdge edge : graph.edges()) {
             double gain = effectiveGainsByEdgeId.getOrDefault(edge.id(), 1.0);
+            GainSource source = gainSourcesByEdgeId.getOrDefault(edge.id(), GainSource.passive());
 
             if (gain <= 1.0 + GainSourceCollector.MIN_GAIN_DELTA) {
                 edges.add(edge);
@@ -35,14 +37,10 @@ final class GainGraphRewriter {
                     edge.to(),
                     edge.distance(),
                     edge.sampleInputPower(),
-                    edge.sampleOutputPower() * gain,
+                    edge.sampleOutputPower(),
                     edge.sampleFrequency(),
-                    scaledFrequencyGains(
-                            edge.sampleGainByFrequency(),
-                            edge.sampleFrequency(),
-                            spectralScopesByEdgeId.getOrDefault(edge.id(), GainSpectralScope.SAMPLE_FREQUENCY),
-                            gain
-                    )
+                    scaledFrequencyGains(edge, source),
+                    saturatingFrequencyGains(edge, source)
             ));
         }
 
@@ -68,34 +66,72 @@ final class GainGraphRewriter {
         return false;
     }
 
-    private static Map<FrequencyKey, Double> scaledFrequencyGains(
-            Map<FrequencyKey, Double> gains,
-            FrequencyKey targetFrequency,
-            GainSpectralScope spectralScope,
-            double factor
-    ) {
-        if (gains.isEmpty()) {
+    private static Map<FrequencyKey, Double> scaledFrequencyGains(PortGraphEdge edge, GainSource source) {
+        Map<FrequencyKey, Double> scaled = new HashMap<>();
+
+        for (Map.Entry<FrequencyKey, Double> entry : edge.sampleGainByFrequency().entrySet()) {
+            FrequencyKey frequency = entry.getKey();
+            double activeGain = source.baseGainFor(frequency);
+            double gain = activeGain > 1.0D + GainSourceCollector.MIN_GAIN_DELTA
+                    ? entry.getValue() * activeGain
+                    : entry.getValue();
+            scaled.put(frequency, gain);
+        }
+
+        for (Map.Entry<FrequencyKey, Double> entry : source.baseGainByFrequency().entrySet()) {
+            FrequencyKey frequency = entry.getKey();
+            double activeGain = entry.getValue();
+
+            if (activeGain <= 1.0D + GainSourceCollector.MIN_GAIN_DELTA || scaled.containsKey(frequency)) {
+                continue;
+            }
+
+            scaled.put(frequency, edge.sampleGainFor(frequency) * activeGain);
+        }
+
+        if (scaled.isEmpty()) {
             return Map.of();
         }
 
-        Map<FrequencyKey, Double> scaled = new HashMap<>();
-
-        for (Map.Entry<FrequencyKey, Double> entry : gains.entrySet()) {
-            double gain = shouldScaleFrequency(entry.getKey(), targetFrequency, spectralScope)
-                    ? entry.getValue() * factor
-                    : entry.getValue();
-            scaled.put(entry.getKey(), gain);
-        }
-
-        return scaled;
+        return Map.copyOf(scaled);
     }
 
-    private static boolean shouldScaleFrequency(
-            FrequencyKey frequency,
-            FrequencyKey targetFrequency,
-            GainSpectralScope spectralScope
+    private static Map<FrequencyKey, SaturatingEdgeGain> saturatingFrequencyGains(
+            PortGraphEdge edge,
+            GainSource source
     ) {
-        return spectralScope == GainSpectralScope.ALL_PRESENT_FREQUENCIES || frequency.equals(targetFrequency);
+        if (source.saturatedExtraOutput() <= 0.0D) {
+            return Map.of();
+        }
+
+        Map<FrequencyKey, SaturatingEdgeGain> gains = new HashMap<>();
+        Map<FrequencyKey, Double> frequencies = new HashMap<>(edge.sampleGainByFrequency());
+
+        for (FrequencyKey frequency : source.baseGainByFrequency().keySet()) {
+            frequencies.putIfAbsent(frequency, edge.sampleGainFor(frequency));
+        }
+
+        if (frequencies.isEmpty()) {
+            frequencies.put(edge.sampleFrequency(), edge.sampleGainFor(edge.sampleFrequency()));
+        }
+
+        for (Map.Entry<FrequencyKey, Double> entry : frequencies.entrySet()) {
+            FrequencyKey frequency = entry.getKey();
+            double activeGain = source.baseGainFor(frequency);
+            double saturatedExtraOutput = source.saturatedExtraOutputFor(frequency);
+
+            if (saturatedExtraOutput <= 0.0D || activeGain <= 1.0D + GainSourceCollector.MIN_GAIN_DELTA) {
+                continue;
+            }
+
+            double passiveGain = Math.max(0.0D, entry.getValue());
+
+            if (passiveGain > 0.0D) {
+                gains.put(frequency, new SaturatingEdgeGain(passiveGain, saturatedExtraOutput));
+            }
+        }
+
+        return gains.isEmpty() ? Map.of() : Map.copyOf(gains);
     }
 
     private GainGraphRewriter() {

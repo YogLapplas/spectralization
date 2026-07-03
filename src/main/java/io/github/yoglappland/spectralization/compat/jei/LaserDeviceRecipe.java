@@ -18,7 +18,7 @@ public record LaserDeviceRecipe(
                         new ItemStack(Spectralization.RUBY_BLOCK_ITEM.get()),
                         OpticalMaterialProfiles.rubyMaximumEffectiveSinglePassGain(),
                         OpticalMaterialProfiles.rubyScheduledGainUpperLimit(),
-                        Double.NaN
+                        OpticalMaterialProfiles.rubyHandlingLimit()
                 ),
                 new LaserDeviceRecipe(
                         new ItemStack(Spectralization.FIBER_LASER_ITEM.get()),

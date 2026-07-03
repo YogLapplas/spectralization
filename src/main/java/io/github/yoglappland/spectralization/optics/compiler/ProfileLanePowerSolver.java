@@ -34,6 +34,8 @@ public final class ProfileLanePowerSolver {
     private static final double RESIDUAL_EPSILON = 1.0E-6;
     private static final double RELATIVE_RESIDUAL_EPSILON = 1.0E-7;
     private static final double MAX_TOTAL_POWER = 1.0E12;
+    private static final int MAX_SATURATING_SCC_ACTIVE_SET_ITERATIONS = 64;
+    private static final int MAX_SATURATING_SCC_RELAXATION_ITERATIONS = 16384;
 
     public static ScalarPowerSolution solve(
             Level level,
@@ -52,6 +54,7 @@ public final class ProfileLanePowerSolver {
         }
 
         FiniteProfileSystem system = buildFiniteProfileSystem(level, graph, sources);
+        ProfileSolverDiagnostics diagnostics = diagnosticsFor(system);
 
         if (system.overflow() || system.states().isEmpty()) {
             return solveProfileCollapsedExact(level, graph, sources, solverPlan, true, system.overflow());
@@ -86,7 +89,8 @@ public final class ProfileLanePowerSolver {
                 system.readoutProjections(),
                 solveResult.powers(),
                 false,
-                false
+                false,
+                diagnostics
         );
     }
 
@@ -99,15 +103,16 @@ public final class ProfileLanePowerSolver {
             boolean overflow
     ) {
         FiniteProfileSystem system = buildProfileCollapsedSystem(level, graph, sources);
+        ProfileSolverDiagnostics diagnostics = diagnosticsFor(system);
 
         if (system.states().isEmpty()) {
-            return unstableSolution(ScalarSolverKind.PROFILE_COLLAPSED_EXACT, solverPlan, fallback, overflow);
+            return unstableSolution(ScalarSolverKind.PROFILE_COLLAPSED_EXACT, solverPlan, fallback, overflow, diagnostics);
         }
 
         ExactSolveResult solveResult = solveFiniteSystem(system);
 
         if (!solveResult.solved()) {
-            return unstableSolution(ScalarSolverKind.PROFILE_COLLAPSED_EXACT, solverPlan, fallback, overflow);
+            return unstableSolution(ScalarSolverKind.PROFILE_COLLAPSED_EXACT, solverPlan, fallback, overflow, diagnostics);
         }
 
         double residual = residual(system, solveResult.powers());
@@ -133,7 +138,8 @@ public final class ProfileLanePowerSolver {
                 system.readoutProjections(),
                 solveResult.powers(),
                 fallback,
-                overflow
+                overflow,
+                diagnostics
         );
     }
 
@@ -190,7 +196,12 @@ public final class ProfileLanePowerSolver {
                 Integer to = stateIds.get(new ProfileStateKey(edge.to(), lane));
 
                 if (from != null && to != null) {
-                    transitions.add(new ProfileTransition(from, to, gain));
+                    transitions.add(new ProfileTransition(
+                            from,
+                            to,
+                            gain,
+                            saturatingTransitionFor(edge, lane, 1.0D, profileGain)
+                    ));
                 }
             }
         }
@@ -218,6 +229,31 @@ public final class ProfileLanePowerSolver {
                 profileTransitionSignature(level, graph, edge, lane)
         );
         return BeamGeometryOps.clamp01(transfer.gain());
+    }
+
+    private static SaturatingProfileTransition saturatingTransitionFor(
+            PortGraphEdge edge,
+            SpectralPowerLane lane,
+            double prefixGain,
+            double profileGain
+    ) {
+        SaturatingEdgeGain saturation = edge.saturatingGainFor(lane.frequency());
+
+        if (saturation == null || saturation.extraOutput() <= 0.0D) {
+            return null;
+        }
+
+        double linearGain = prefixGain * saturation.linearGain() * profileGain;
+        double extraOutput = saturation.extraOutput() * profileGain;
+
+        if (!Double.isFinite(linearGain)
+                || !Double.isFinite(extraOutput)
+                || linearGain < 0.0D
+                || extraOutput <= 0.0D) {
+            return null;
+        }
+
+        return new SaturatingProfileTransition(linearGain, extraOutput);
     }
 
     private static FiniteProfileSystem buildFiniteProfileSystem(
@@ -259,7 +295,7 @@ public final class ProfileLanePowerSolver {
             }
 
             for (ProfileTransition transition : sccGraph.outgoingTransitionsByScc().get(sccId)) {
-                rhs[transition.to()] += powers[transition.from()] * transition.gain();
+                rhs[transition.to()] += transition.outputFor(powers[transition.from()]);
                 int targetSccId = sccGraph.sccIdByState()[transition.to()];
                 pendingIncoming[targetSccId]--;
 
@@ -293,6 +329,10 @@ public final class ProfileLanePowerSolver {
 
         if (states.size() > MAX_EXACT_SCC_STATES) {
             return false;
+        }
+
+        if (hasSaturatingTransition(internalTransitions)) {
+            return solveSaturatingScc(sccGraph, sccId, rhs, powers);
         }
 
         Map<Integer, Integer> localIdByState = new HashMap<>();
@@ -331,6 +371,349 @@ public final class ProfileLanePowerSolver {
         }
 
         return true;
+    }
+
+    private static boolean solveSaturatingScc(
+            StateSccGraph sccGraph,
+            int sccId,
+            double[] rhs,
+            double[] powers
+    ) {
+        List<Integer> states = sccGraph.sccs().get(sccId);
+        List<ProfileTransition> internalTransitions = sccGraph.internalTransitionsByScc().get(sccId);
+
+        if (states.size() > MAX_EXACT_SCC_STATES) {
+            return false;
+        }
+
+        Map<Integer, Integer> localIdByState = new HashMap<>();
+        for (int localId = 0; localId < states.size(); localId++) {
+            localIdByState.put(states.get(localId), localId);
+        }
+
+        List<LocalProfileTransition> localTransitions = new ArrayList<>(internalTransitions.size());
+
+        for (ProfileTransition transition : internalTransitions) {
+            Integer fromLocalId = localIdByState.get(transition.from());
+            Integer toLocalId = localIdByState.get(transition.to());
+
+            if (fromLocalId == null || toLocalId == null) {
+                return false;
+            }
+
+            localTransitions.add(new LocalProfileTransition(fromLocalId, toLocalId, transition));
+        }
+
+        int n = states.size();
+
+        for (int localId = 0; localId < n; localId++) {
+            double source = rhs[states.get(localId)];
+
+            if (!Double.isFinite(source) || source < -RESIDUAL_EPSILON) {
+                return false;
+            }
+        }
+
+        boolean[] saturatedBranches = new boolean[localTransitions.size()];
+
+        for (int index = 0; index < localTransitions.size(); index++) {
+            LocalProfileTransition localTransition = localTransitions.get(index);
+            double sourceInput = Math.max(0.0D, rhs[states.get(localTransition.from())]);
+            saturatedBranches[index] = localTransition.transition().saturatedBranchSelected(sourceInput);
+        }
+
+        for (int iteration = 0; iteration < MAX_SATURATING_SCC_ACTIVE_SET_ITERATIONS; iteration++) {
+            AffineSccSolveResult result = solveSaturatingAffineBranch(states, localTransitions, saturatedBranches, rhs);
+
+            if (!result.solved()) {
+                return solveSaturatingSccByRelaxation(states, localTransitions, rhs, powers);
+            }
+
+            double[] solution = result.solution();
+            boolean branchChanged = false;
+
+            for (int index = 0; index < localTransitions.size(); index++) {
+                LocalProfileTransition localTransition = localTransitions.get(index);
+                ProfileTransition transition = localTransition.transition();
+
+                if (!transition.saturating()) {
+                    continue;
+                }
+
+                double input = Math.max(0.0D, solution[localTransition.from()]);
+                boolean shouldSaturate = transition.saturatedBranchSelected(input);
+
+                if (saturatedBranches[index] != shouldSaturate) {
+                    saturatedBranches[index] = shouldSaturate;
+                    branchChanged = true;
+                }
+            }
+
+            if (branchChanged) {
+                continue;
+            }
+
+            double residual = localResidual(states, localTransitions, rhs, solution);
+            double totalPower = totalPower(solution);
+
+            if (!Double.isFinite(residual)
+                    || !Double.isFinite(totalPower)
+                    || totalPower > MAX_TOTAL_POWER
+                    || hasMeaningfulNegativePower(solution)) {
+                return false;
+            }
+
+            if (residual <= RESIDUAL_EPSILON
+                    || residual <= RELATIVE_RESIDUAL_EPSILON * Math.max(1.0D, totalPower)) {
+                for (int localId = 0; localId < n; localId++) {
+                    powers[states.get(localId)] = Math.max(0.0D, solution[localId]);
+                }
+
+                return true;
+            }
+
+            return solveSaturatingSccByRelaxation(states, localTransitions, rhs, powers);
+        }
+
+        return solveSaturatingSccByRelaxation(states, localTransitions, rhs, powers);
+    }
+
+    private static AffineSccSolveResult solveSaturatingAffineBranch(
+            List<Integer> states,
+            List<LocalProfileTransition> localTransitions,
+            boolean[] saturatedBranches,
+            double[] rhs
+    ) {
+        int n = states.size();
+        double[][] matrix = new double[n][n + 1];
+
+        for (int localId = 0; localId < n; localId++) {
+            matrix[localId][localId] = 1.0D;
+            matrix[localId][n] = Math.max(0.0D, rhs[states.get(localId)]);
+        }
+
+        for (int index = 0; index < localTransitions.size(); index++) {
+            LocalProfileTransition localTransition = localTransitions.get(index);
+            ProfileTransition transition = localTransition.transition();
+            boolean saturatedBranch = transition.saturating() && saturatedBranches[index];
+
+            matrix[localTransition.to()][localTransition.from()] -= transition.branchSlope(saturatedBranch);
+            matrix[localTransition.to()][n] += transition.branchIntercept(saturatedBranch);
+        }
+
+        LinearSolveResult linearSolve = solveLinearSystem(matrix, n);
+
+        if (!linearSolve.solved() || hasNonFinitePower(linearSolve.solution())) {
+            return AffineSccSolveResult.unsolved();
+        }
+
+        double[] solution = linearSolve.solution();
+
+        if (hasMeaningfulNegativePower(solution)) {
+            return AffineSccSolveResult.unsolved();
+        }
+
+        clampTinyNegativePowers(solution);
+        return AffineSccSolveResult.solved(solution);
+    }
+
+    private static boolean solveSaturatingSccByRelaxation(
+            List<Integer> states,
+            List<LocalProfileTransition> localTransitions,
+            double[] rhs,
+            double[] powers
+    ) {
+        int n = states.size();
+        double[] current = new double[n];
+        double[] next = new double[n];
+
+        for (int localId = 0; localId < n; localId++) {
+            current[localId] = Math.max(0.0D, rhs[states.get(localId)]);
+        }
+
+        for (int iteration = 0; iteration < MAX_SATURATING_SCC_RELAXATION_ITERATIONS; iteration++) {
+            for (int localId = 0; localId < n; localId++) {
+                next[localId] = Math.max(0.0D, rhs[states.get(localId)]);
+            }
+
+            for (LocalProfileTransition localTransition : localTransitions) {
+                double output = localTransition.transition().outputFor(current[localTransition.from()]);
+
+                if (!Double.isFinite(output) || output < -RESIDUAL_EPSILON) {
+                    return false;
+                }
+
+                next[localTransition.to()] += Math.max(0.0D, output);
+            }
+
+            double residual = 0.0D;
+            double totalPower = 0.0D;
+
+            for (int localId = 0; localId < n; localId++) {
+                if (!Double.isFinite(next[localId])) {
+                    return false;
+                }
+
+                residual = Math.max(residual, Math.abs(next[localId] - current[localId]));
+                totalPower += Math.max(0.0D, next[localId]);
+            }
+
+            double[] swap = current;
+            current = next;
+            next = swap;
+
+            if (totalPower > MAX_TOTAL_POWER) {
+                return false;
+            }
+
+            if (iteration >= 16 && iteration % 64 == 63) {
+                AffineSccSolveResult accelerated = solveSaturatingAffineBranch(
+                        states,
+                        localTransitions,
+                        branchSelectionsFromProbe(localTransitions, current),
+                        rhs
+                );
+
+                if (accelerated.solved()
+                        && branchesConsistent(localTransitions, accelerated.solution())
+                        && localResidual(states, localTransitions, rhs, accelerated.solution()) <= RESIDUAL_EPSILON) {
+                    for (int localId = 0; localId < n; localId++) {
+                        powers[states.get(localId)] = Math.max(0.0D, accelerated.solution()[localId]);
+                    }
+
+                    return true;
+                }
+            }
+
+            if (residual <= RESIDUAL_EPSILON
+                    || residual <= RELATIVE_RESIDUAL_EPSILON * Math.max(1.0D, totalPower)) {
+                for (int localId = 0; localId < n; localId++) {
+                    powers[states.get(localId)] = current[localId];
+                }
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static boolean[] branchSelectionsFromProbe(
+            List<LocalProfileTransition> localTransitions,
+            double[] probe
+    ) {
+        boolean[] saturatedBranches = new boolean[localTransitions.size()];
+
+        for (int index = 0; index < localTransitions.size(); index++) {
+            LocalProfileTransition localTransition = localTransitions.get(index);
+            double input = Math.max(0.0D, probe[localTransition.from()]);
+            saturatedBranches[index] = localTransition.transition().saturatedBranchSelected(input);
+        }
+
+        return saturatedBranches;
+    }
+
+    private static boolean branchesConsistent(
+            List<LocalProfileTransition> localTransitions,
+            double[] solution
+    ) {
+        for (LocalProfileTransition localTransition : localTransitions) {
+            ProfileTransition transition = localTransition.transition();
+
+            if (!transition.saturating()) {
+                continue;
+            }
+
+            double input = Math.max(0.0D, solution[localTransition.from()]);
+            boolean saturated = transition.saturatedBranchSelected(input);
+            double branchOutput = transition.branchSlope(saturated) * input
+                    + transition.branchIntercept(saturated);
+
+            if (Math.abs(branchOutput - transition.outputFor(input)) > RESIDUAL_EPSILON) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static double localResidual(
+            List<Integer> states,
+            List<LocalProfileTransition> localTransitions,
+            double[] rhs,
+            double[] solution
+    ) {
+        double[] reconstructed = new double[states.size()];
+
+        for (int localId = 0; localId < states.size(); localId++) {
+            reconstructed[localId] = Math.max(0.0D, rhs[states.get(localId)]);
+        }
+
+        for (LocalProfileTransition localTransition : localTransitions) {
+            reconstructed[localTransition.to()] += localTransition.transition().outputFor(solution[localTransition.from()]);
+        }
+
+        double residual = 0.0D;
+
+        for (int localId = 0; localId < states.size(); localId++) {
+            residual = Math.max(residual, Math.abs(reconstructed[localId] - Math.max(0.0D, solution[localId])));
+        }
+
+        return residual;
+    }
+
+    private static boolean hasSaturatingTransition(List<ProfileTransition> transitions) {
+        for (ProfileTransition transition : transitions) {
+            if (transition.saturating()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static ProfileSolverDiagnostics diagnosticsFor(FiniteProfileSystem system) {
+        if (system.states().isEmpty()) {
+            return ProfileSolverDiagnostics.none();
+        }
+
+        StateSccGraph sccGraph = StateSccGraph.build(system.states().size(), system.transitions());
+        int saturatingTransitions = 0;
+        int internalSaturatingTransitions = 0;
+        int saturatingSccs = 0;
+        int maxSaturatingSccStates = 0;
+
+        for (ProfileTransition transition : system.transitions()) {
+            if (transition.saturating()) {
+                saturatingTransitions++;
+            }
+        }
+
+        for (int sccId = 0; sccId < sccGraph.sccs().size(); sccId++) {
+            int sccInternalSaturatingTransitions = 0;
+
+            for (ProfileTransition transition : sccGraph.internalTransitionsByScc().get(sccId)) {
+                if (transition.saturating()) {
+                    sccInternalSaturatingTransitions++;
+                }
+            }
+
+            if (sccInternalSaturatingTransitions > 0) {
+                saturatingSccs++;
+                internalSaturatingTransitions += sccInternalSaturatingTransitions;
+                maxSaturatingSccStates = Math.max(maxSaturatingSccStates, sccGraph.sccs().get(sccId).size());
+            }
+        }
+
+        return new ProfileSolverDiagnostics(
+                system.states().size(),
+                system.transitions().size(),
+                system.readoutProjections().size(),
+                saturatingTransitions,
+                internalSaturatingTransitions,
+                saturatingSccs,
+                maxSaturatingSccStates
+        );
     }
 
     private static LinearSolveResult solveLinearSystem(double[][] matrix, int size) {
@@ -562,7 +945,7 @@ public final class ProfileLanePowerSolver {
         double[] reconstructed = system.source().clone();
 
         for (ProfileTransition transition : system.transitions()) {
-            reconstructed[transition.to()] += powers[transition.from()] * transition.gain();
+            reconstructed[transition.to()] += transition.outputFor(powers[transition.from()]);
         }
 
         double residual = 0.0D;
@@ -618,7 +1001,8 @@ public final class ProfileLanePowerSolver {
             ScalarSolverKind solverKind,
             ScalarSolverPlan solverPlan,
             boolean fallback,
-            boolean overflow
+            boolean overflow,
+            ProfileSolverDiagnostics diagnostics
     ) {
         return new ScalarPowerSolution(
                 solverKind,
@@ -634,7 +1018,8 @@ public final class ProfileLanePowerSolver {
                 Map.of(),
                 List.of(),
                 fallback,
-                overflow
+                overflow,
+                diagnostics
         );
     }
 
@@ -649,7 +1034,8 @@ public final class ProfileLanePowerSolver {
             List<ProfileReadoutProjection> readoutProjections,
             double[] powers,
             boolean fallback,
-            boolean overflow
+            boolean overflow,
+            ProfileSolverDiagnostics diagnostics
     ) {
         Map<PortGraphNode, Double> powerByNode = new HashMap<>();
         Map<PortGraphNode, Double> coherentPowerByNode = new HashMap<>();
@@ -715,7 +1101,8 @@ public final class ProfileLanePowerSolver {
                 powerByLane,
                 List.of(),
                 fallback,
-                overflow
+                overflow,
+                diagnostics
         );
     }
 
@@ -784,7 +1171,7 @@ public final class ProfileLanePowerSolver {
                         ));
                     }
 
-                    transitions.add(new ProfileTransition(stateId, outputStateId, path.gain()));
+                    transitions.add(new ProfileTransition(stateId, outputStateId, path.gain(), path.saturation()));
                 }
             }
 
@@ -863,12 +1250,19 @@ public final class ProfileLanePowerSolver {
                 }
 
                 BeamProfileTransfer transfer = transitionFor(edge, lane);
-                double stepGain = baseGain * transfer.gain();
+                double profileGain = transfer.gain();
+                double stepGain = baseGain * profileGain;
 
                 if (stepGain <= 0.0D) {
                     return stopOrBlock(startState, previousNode, lane, accumulatedGain, readouts);
                 }
 
+                SaturatingProfileTransition saturation = saturatingTransitionFor(
+                        edge,
+                        lane,
+                        accumulatedGain,
+                        profileGain
+                );
                 accumulatedGain *= stepGain;
 
                 if (!Double.isFinite(accumulatedGain) || accumulatedGain <= 0.0D) {
@@ -881,6 +1275,16 @@ public final class ProfileLanePowerSolver {
 
                 lane = lane.withProfile(transfer.outputProfile());
                 PortGraphNode currentNode = edge.to();
+
+                if (saturation != null) {
+                    return new FoldedProfilePath(
+                            currentNode,
+                            lane,
+                            accumulatedGain,
+                            List.copyOf(readouts),
+                            saturation
+                    );
+                }
 
                 if (shouldStopFold(startNode, currentNode)) {
                     return new FoldedProfilePath(currentNode, lane, accumulatedGain, List.copyOf(readouts));
@@ -948,7 +1352,11 @@ public final class ProfileLanePowerSolver {
         }
     }
 
-    private record ProfileTransition(int from, int to, double gain) {
+    private record ProfileTransition(int from, int to, double gain, SaturatingProfileTransition saturation) {
+        private ProfileTransition(int from, int to, double gain) {
+            this(from, to, gain, null);
+        }
+
         private ProfileTransition {
             if (from < 0 || to < 0) {
                 throw new IllegalArgumentException("Profile transition state ids must be non-negative");
@@ -957,6 +1365,83 @@ public final class ProfileLanePowerSolver {
             if (!Double.isFinite(gain) || gain <= 0.0D) {
                 throw new IllegalArgumentException("Profile transition gain must be finite and positive");
             }
+        }
+
+        private boolean saturating() {
+            return saturation != null;
+        }
+
+        private double outputFor(double inputPower) {
+            if (inputPower <= 0.0D) {
+                return 0.0D;
+            }
+
+            double unsaturatedOutput = inputPower * gain;
+
+            if (saturation == null) {
+                return unsaturatedOutput;
+            }
+
+            double saturatedOutput = inputPower * saturation.linearGain() + saturation.extraOutput();
+            return Math.min(unsaturatedOutput, saturatedOutput);
+        }
+
+        private boolean saturatedBranchSelected(double inputPower) {
+            if (saturation == null || inputPower <= 0.0D) {
+                return false;
+            }
+
+            double unsaturatedOutput = inputPower * gain;
+            double saturatedOutput = inputPower * saturation.linearGain() + saturation.extraOutput();
+            return saturatedOutput <= unsaturatedOutput + RESIDUAL_EPSILON;
+        }
+
+        private double branchSlope(boolean saturatedBranch) {
+            if (saturation != null && saturatedBranch) {
+                return saturation.linearGain();
+            }
+
+            return gain;
+        }
+
+        private double branchIntercept(boolean saturatedBranch) {
+            if (saturation != null && saturatedBranch) {
+                return saturation.extraOutput();
+            }
+
+            return 0.0D;
+        }
+    }
+
+    private record SaturatingProfileTransition(double linearGain, double extraOutput) {
+        private SaturatingProfileTransition {
+            if (!Double.isFinite(linearGain) || linearGain < 0.0D) {
+                throw new IllegalArgumentException("Saturating profile transition linear gain must be finite and non-negative");
+            }
+
+            if (!Double.isFinite(extraOutput) || extraOutput <= 0.0D) {
+                throw new IllegalArgumentException("Saturating profile transition extra output must be finite and positive");
+            }
+        }
+    }
+
+    private record LocalProfileTransition(int from, int to, ProfileTransition transition) {
+        private LocalProfileTransition {
+            if (from < 0 || to < 0) {
+                throw new IllegalArgumentException("Local profile transition ids must be non-negative");
+            }
+
+            Objects.requireNonNull(transition, "transition");
+        }
+    }
+
+    private record AffineSccSolveResult(boolean solved, double[] solution) {
+        private static AffineSccSolveResult solved(double[] solution) {
+            return new AffineSccSolveResult(true, solution);
+        }
+
+        private static AffineSccSolveResult unsolved() {
+            return new AffineSccSolveResult(false, new double[0]);
         }
     }
 
@@ -990,8 +1475,18 @@ public final class ProfileLanePowerSolver {
             PortGraphNode outputNode,
             SpectralPowerLane outputLane,
             double gain,
-            List<ProfileReadoutStep> readouts
+            List<ProfileReadoutStep> readouts,
+            SaturatingProfileTransition saturation
     ) {
+        private FoldedProfilePath(
+                PortGraphNode outputNode,
+                SpectralPowerLane outputLane,
+                double gain,
+                List<ProfileReadoutStep> readouts
+        ) {
+            this(outputNode, outputLane, gain, readouts, null);
+        }
+
         private static FoldedProfilePath blocked(PortGraphNode outputNode, SpectralPowerLane outputLane) {
             return new FoldedProfilePath(outputNode, outputLane, 0.0D, List.of());
         }

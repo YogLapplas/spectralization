@@ -1,7 +1,6 @@
 package io.github.yoglappland.spectralization.microlizer;
 
 import io.github.yoglappland.spectralization.Spectralization;
-import io.github.yoglappland.spectralization.block.RubyBlock;
 import io.github.yoglappland.spectralization.optics.BeamEnvelope;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
 import io.github.yoglappland.spectralization.optics.CoherenceKind;
@@ -321,7 +320,6 @@ public final class MicrolizerOpticalTransferCompiler {
         }
 
         List<PlaneWaveComponent> components = new ArrayList<>();
-        double rubyLineSeedPower = 0.0D;
         boolean changed = false;
 
         for (PlaneWaveComponent component : outputBeam.components()) {
@@ -336,33 +334,24 @@ public final class MicrolizerOpticalTransferCompiler {
                 );
 
                 if (gain != 1.0D) {
-                    power *= gain;
+                    double passivePower = power;
+                    double extraOutput = OpticalMaterialProfiles.saturatedCoherentExtraOutputFor(
+                            level,
+                            pos,
+                            blockState,
+                            component.frequency()
+                    );
+                    double unsaturatedPower = passivePower * gain;
+                    power = extraOutput > 0.0D
+                            ? Math.min(unsaturatedPower, passivePower + extraOutput)
+                            : unsaturatedPower;
                     changed = true;
                 }
-            } else if (component.frequency().equals(RubyBlock.RUBY_LINE)) {
-                rubyLineSeedPower += component.power();
             }
 
             if (power > 0.0D) {
                 components.add(component.withPower(power).withDirection(outputDirection));
             }
-        }
-
-        double coherentEmission = OpticalMaterialProfiles.saturatedCoherentEmissionFor(
-                level,
-                pos,
-                blockState,
-                rubyLineSeedPower
-        );
-
-        if (coherentEmission >= MIN_POWER) {
-            components.add(new PlaneWaveComponent(
-                    RubyBlock.RUBY_LINE,
-                    coherentEmission,
-                    outputDirection,
-                    CoherenceKind.COHERENT
-            ));
-            changed = true;
         }
 
         if (!changed) {

@@ -143,7 +143,7 @@ debug_log_verbose = true
 | `authority=debug_oracle` | 调试 oracle，例如 observed trace。 |
 | `authority=legacy_compare` | 旧路径对照日志，用于发现语义漂移。 |
 | `solver=PROFILE_STATE_EXACT` | 无反馈或有限 profile 状态图的精确求解。 |
-| `solver=PROFILE_COLLAPSED_EXACT` | 反馈图使用“多等效”折叠后的精确线性求解。 |
+| `solver=PROFILE_COLLAPSED_EXACT` | 反馈图使用“多等效”折叠后的精确求解；含饱和边时是分段仿射求解。 |
 | `profile_mode=state_exact` | profile key 参与有限状态传播。 |
 | `profile_mode=collapsed_equivalence` | profile 敏感损耗已经乘入矩阵边权，反馈主求解不再展开 profile。 |
 | `profile_mode=collapsed_due_to_overflow` | 无反馈 profile-state 图过大，降级到 collapsed 求解。 |
@@ -152,7 +152,7 @@ debug_log_verbose = true
 | `profile_fallback=true` | 本次结果不是首选 profile-state 求解路径。 |
 | `readout_reliable=true` | 机器、传感器和可视化可以使用该次读数。 |
 | `readout_reliable=false` | 读数处于过渡或失败状态，不应作为新结果判断。 |
-| `residual` | 线性求解残差；应接近 0。 |
+| `residual` | 线性分支或饱和分支的求解残差；应接近 0。 |
 
 反馈结构的正常样子通常是：
 

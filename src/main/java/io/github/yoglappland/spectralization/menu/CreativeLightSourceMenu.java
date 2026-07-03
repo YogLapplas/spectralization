@@ -90,6 +90,10 @@ public class CreativeLightSourceMenu extends AbstractContainerMenu {
     }
 
     public boolean setSpectrumWeight(int bin, int weight) {
+        return setSpectrumWeight(bin, weight, false);
+    }
+
+    public boolean setSpectrumWeight(int bin, int weight, boolean exclusive) {
         if (source == null || source.isRemoved()) {
             return false;
         }
@@ -98,7 +102,15 @@ public class CreativeLightSourceMenu extends AbstractContainerMenu {
             return false;
         }
 
-        data.set(CreativeLightSourceBlockEntity.DATA_SPECTRUM_START + bin, weight);
+        return source.setSpectrumWeight(bin, weight, exclusive);
+    }
+
+    public boolean setPowerCenti(int powerCenti) {
+        if (source == null || source.isRemoved()) {
+            return false;
+        }
+
+        data.set(CreativeLightSourceBlockEntity.DATA_POWER, powerCenti);
         return true;
     }
 

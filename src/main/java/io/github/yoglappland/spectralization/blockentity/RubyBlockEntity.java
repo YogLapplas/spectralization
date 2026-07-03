@@ -1,8 +1,9 @@
 package io.github.yoglappland.spectralization.blockentity;
 
+import io.github.yoglappland.spectralization.block.RubyBlock;
+import io.github.yoglappland.spectralization.optics.OpticalMaterialProfiles;
 import io.github.yoglappland.spectralization.optics.cache.OpticalDirtyKind;
 import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
-import io.github.yoglappland.spectralization.optics.pump.OpticalPumpSources;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -12,7 +13,10 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
 public class RubyBlockEntity extends BlockEntity {
-    private int lastEffectivePumpRate = Integer.MIN_VALUE;
+    private static final double PARAMETER_EPSILON = 1.0E-6;
+
+    private double lastScheduledGain = Double.NaN;
+    private double lastSeedPowerPerDirection = Double.NaN;
 
     public RubyBlockEntity(BlockPos pos, BlockState blockState) {
         super(SpectralBlockEntities.RUBY_BLOCK.get(), pos, blockState);
@@ -24,7 +28,8 @@ public class RubyBlockEntity extends BlockEntity {
         refreshOutput();
 
         if (this.level != null && !this.level.isClientSide) {
-            OpticalTraceCache.requestIntrinsicSourcesNear(this.level, this.worldPosition);
+            OpticalTraceCache.rememberSourceState(this.level, this.worldPosition);
+            OpticalTraceCache.requestIntrinsicSourceAt(this.level, this.worldPosition);
         }
     }
 
@@ -55,19 +60,37 @@ public class RubyBlockEntity extends BlockEntity {
             return false;
         }
 
-        int pumpRate = OpticalPumpSources.effectiveAdjacentPumpRate(
+        BlockState state = this.getBlockState();
+        double scheduledGain = OpticalMaterialProfiles.scheduledCoherentBaseGainFor(
                 this.level,
                 this.worldPosition,
-                this.getBlockState()
+                state,
+                RubyBlock.RUBY_LINE
+        );
+        double seedPowerPerDirection = OpticalMaterialProfiles.rubyExcitedCoherentSeedPowerPerDirection(
+                this.level,
+                this.worldPosition,
+                state
         );
 
-        if (pumpRate != this.lastEffectivePumpRate) {
-            this.lastEffectivePumpRate = pumpRate;
+        if (!closeEnough(scheduledGain, this.lastScheduledGain)
+                || !closeEnough(seedPowerPerDirection, this.lastSeedPowerPerDirection)) {
+            this.lastScheduledGain = scheduledGain;
+            this.lastSeedPowerPerDirection = seedPowerPerDirection;
             this.setChanged();
             OpticalTraceCache.markChanged(this.level, this.worldPosition, OpticalDirtyKind.PARAMETER);
+            OpticalTraceCache.markChanged(this.level, this.worldPosition, OpticalDirtyKind.SOURCE);
+            OpticalTraceCache.rememberSourceState(this.level, this.worldPosition);
+            OpticalTraceCache.requestIntrinsicSourceAt(this.level, this.worldPosition);
             return true;
         }
 
         return false;
+    }
+
+    private static boolean closeEnough(double left, double right) {
+        return Double.isFinite(left)
+                && Double.isFinite(right)
+                && Math.abs(left - right) <= PARAMETER_EPSILON;
     }
 }

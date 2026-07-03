@@ -9,7 +9,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
 public final class OpticalPumpSources {
-    public static final int RUBY_PUMP_CAP = 5;
+    public static final int RUBY_PUMP_CAP = 4;
 
     public static int adjacentPumpRate(Level level, BlockPos pos) {
         if (level == null || pos == null) {

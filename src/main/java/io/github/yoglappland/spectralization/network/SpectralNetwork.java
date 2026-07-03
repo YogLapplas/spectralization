@@ -87,6 +87,12 @@ public final class SpectralNetwork {
         );
 
         registrar.playToServer(
+                CreativeLightPowerPayload.TYPE,
+                CreativeLightPowerPayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> handleCreativeLightPower(payload, context.player()))
+        );
+
+        registrar.playToServer(
                 HolographicStorageActionPayload.TYPE,
                 HolographicStorageActionPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleHolographicStorageAction(payload, context.player()))
@@ -192,7 +198,18 @@ public final class SpectralNetwork {
             return;
         }
 
-        menu.setSpectrumWeight(payload.bin(), payload.weight());
+        menu.setSpectrumWeight(payload.bin(), payload.weight(), payload.exclusive());
+    }
+
+    private static void handleCreativeLightPower(
+            CreativeLightPowerPayload payload,
+            net.minecraft.world.entity.player.Player player
+    ) {
+        if (!(player.containerMenu instanceof CreativeLightSourceMenu menu) || menu.containerId != payload.containerId()) {
+            return;
+        }
+
+        menu.setPowerCenti(payload.powerCenti());
     }
 
     private static void handleHolographicStorageAction(

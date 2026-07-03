@@ -2,7 +2,7 @@
 
 本文档记录当前光学求解架构的数学模型、程序边界和 review 检查点。它面向未来维护者和 peer review，不是玩家手册。
 
-本文档以 2026-06-23 的实现为准，重点解释从 profile-state 求解转向“多等效”求解后的规则。
+本文档以 2026-07-03 的实现为准，重点解释从 profile-state 求解转向“多等效”求解，并把主动增益改为材料饱和定律后的规则。
 
 ## 1. 目标
 
@@ -18,8 +18,8 @@ Spectralization 的光学系统必须满足四个工程目标：
 ```text
 world blocks
 -> port graph
--> gain scheduling
--> finite linear solve
+-> material gain / saturation rewrite
+-> finite piecewise-affine solve
 -> readout / visualization / machine output
 ```
 
@@ -47,7 +47,7 @@ C. migration residue
 ```text
 world
 -> port graph
--> effective edge gains
+-> material gain/saturation rewrite
 -> power solve
 -> readout
 ```
@@ -81,7 +81,7 @@ x = T x + s
 - `T` 是由传播、分束、反射、透镜、光纤、微缩机器边界等局部 transfer 拼出的矩阵。
 - `s` 是光源注入。
 
-程序可以用线性代数方法解这个系统。即使未来用 GMRES 或其他迭代线性代数库，那也是线性方程数值实现，不是玩法语义上的反馈迭代。当前实现优先使用精确 SCC/稀疏线性求解。
+没有主动饱和边时，程序可以用线性代数方法解这个系统。即使未来用 GMRES 或其他迭代线性代数库，那也是线性方程数值实现，不是玩法语义上的反馈逐 tick 迭代。存在主动饱和边时，求解器把每组饱和分支视为一个仿射线性系统，并检查分支自洽。
 
 ### 2.2 多等效
 
@@ -192,7 +192,7 @@ transition gain = edge sample gain * equivalent profile-sensitive loss
 profile itself is not repeatedly transformed around the feedback loop
 ```
 
-这个 solver 仍然是精确线性求解，不是迭代近似。
+没有饱和边时，这个 solver 是精确线性求解；有饱和边时，它是有限分段仿射求解。两者都不是逐 tick 追光近似。
 
 它保留 `powerByLane`，让 beam profiler、machine readout 和 envelope layer 还能读取频率、相干性和代表性 profile。
 
@@ -432,7 +432,7 @@ parallel_fiber_same_endpoint:
 
 review 光学求解改动时，优先检查：
 
-1. 是否把新的非线性过程写进主 feedback solve。
+1. 是否把新的非线性过程限定为材料局部定律、输出端读数或显式等效损耗。
 2. 是否让机器输出效率反向污染光学网络。
 3. 是否在反馈图里重新展开 profileKey。
 4. 是否有 `gain > 1` 的被动边。

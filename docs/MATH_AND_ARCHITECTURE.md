@@ -395,66 +395,58 @@ readout / recipe 层，不能把效率结果再写回光学网络。
 无论底层使用哪种数值实现，玩法语义都不应退回“每 tick 追光直到看起来收敛”。
 线性方程数值迭代可以作为实现手段；非线性反馈迭代不是主模型。
 
-## 7. 反馈增益调度
+## 7. 主动增益、饱和与烧毁
 
-主动增益进入反馈腔时，直接求解可能遇到：
+主动增益不再用全局稳定性估计或反馈预调度稳定化。这个项目的游戏公理是：增益介质本身是材料，材料给出局部定律；全局光学网络只负责把这些局部定律组合起来。
 
-```text
-rho(T_feedback) >= 1
-```
-
-这表示线性系统进入无限放大区，不是普通数值误差。处理原则是：求解前先把增益调度成稳定线性系统。
-
-流程：
+红宝石这类固体激光介质在图里表现为局部透射边：
 
 ```text
-port graph
--> feedback SCC
--> gain source discovery
--> participation analysis
--> source cap
--> effective gain softcap
--> spectral radius check
--> scheduled graph
--> solver
+passive edge: O = I * P
+active edge:  O = min(I * P * G, I * P + P * S * (1 - 1 / G))
 ```
+
+其中：
+
+- `P` 是被动传输，包括材料透射、传播损耗和 profile 等效损耗。
+- `G` 是材料单程增益，由泵浦和材料响应决定。
+- `S` 是材料饱和功率，属于材料性质，不是系统功率预算。
+
+当一条边没有进入饱和分支时，它是普通线性增益；进入饱和分支后，它变成仿射边。反馈 SCC 因此不是“稳定线性系统”，而是有限分段仿射系统：每组饱和分支固定后解一次线性方程，再检查分支是否自洽。
 
 当前代码对应：
 
-- `StableFeedbackGainScheduler`
+- `MaterialGainScheduler`
 - `GainSourceCollector`
-- `GainParticipationAnalyzer`
-- `EffectiveGainSoftcap`
-- `SpectralRadiusEstimator`
 - `GainGraphRewriter`
+- `SaturatingEdgeGain`
+- `ProfileLanePowerSolver`
+- `GainMediumOverloadMonitor`
 
-### 7.1 参与权重
+### 7.1 泵浦与内部种子
 
-每个增益源有两个权重：
-
-- 材料权重：材料本身适合承担多少增益。
-- 图参与权重：它位于多少强反馈路径上。
-
-直觉：位于低损耗闭合腔主路径上的红宝石，比旁路上的红宝石更应该获得有效增益预算。
-
-### 7.2 Softcap
-
-有效增益使用软上限函数族。它的渐近行为是：
+泵浦只改变单程增益，不产生种子光，也不改变相干转换效率。红宝石目前按连续红宝石域统计有效泵浦密度：
 
 ```text
-小信号: y ~= x
-大信号: y -> hardcap
+PU_density = total adjacent effective pump / connected ruby block count
+G = 1 + k * min(PU_density, PU_cap)
 ```
 
-规则：
+萤石暂时作为“荧光激发源”原型：它不直接向世界发射可用激光，而是让相邻红宝石成为六向相干红宝石线种子源。这样固体激光器的种子光从腔内生成，玩家需要在红宝石周围平衡泵浦方块和激发方块。
 
-- softcap 只改变额外增益，不给无增益路径凭空加能量。
-- 每个增益源根据参与权重得到 source cap。
-- 调度后仍要估计谱半径。
-- 如果仍越过硬稳定阈值，继续收缩 extra log gain。
-- 如果无法稳定，系统进入 overdriven 或 unreliable，而不是输出无限功率。
+### 7.2 烧毁是负反馈
 
-这套方法让玩家造出的腔不会因为稍微过强就完全不可用，同时也为热失控、镀膜烧蚀和光学击穿预留稳定性余量。
+饱和保证输出有限，但不负责保护方块。求解完成后，过载监控按材料吸收计算负载：
+
+```text
+absorbed_load = sum(incoming_power_at_material_ports * A_frequency)
+```
+
+如果负载超过材料承载上限，方块直接烧毁并诱导光学网络更新。烧毁不是额外的稳定性调度，而是光束破坏方块规则的自然延伸。
+
+### 7.3 玩家可理解性
+
+连续腔应当大体满足“更多红宝石、更好泵浦、更好镜子给出更强输出”的直觉。分段腔允许更反直觉的涌现：插入空气、改变间距或多放一块红宝石可能让反馈结构改变，从而输出大幅上升或下降。这不是 bug，而是知识墙；它必须被数值压在早期可接受范围内，并在后期作为优化空间保留。
 
 ## 8. 调度、缓存与可靠性
 
@@ -668,7 +660,7 @@ internal optical network
 - 事件如何诱导 geometry / topology / data dirty。
 - 网络如何被识别。
 - solver plan 如何选择。
-- 反馈增益如何被调度。
+- 主动增益、饱和分支和过载烧毁如何进入求解。
 - readout 何时 reliable / unreliable。
 - 光纤、微缩机器和全息存储如何诱导光学网络变化。
 

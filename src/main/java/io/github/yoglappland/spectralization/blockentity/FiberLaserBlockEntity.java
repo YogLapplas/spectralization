@@ -36,6 +36,7 @@ public class FiberLaserBlockEntity extends BlockEntity {
     public static final int ENERGY_CAPACITY = 320000;
     public static final int MAX_ENERGY_INPUT = 32000;
     public static final double GAIN_MATERIAL_WEIGHT = 4.0D;
+    private static final double ENERGY_PER_SATURATED_EXTRA_OUTPUT = 64.0D;
 
     private static final String ENERGY_PER_TICK_TAG = "EnergyPerTick";
     private static final String ENERGY_TAG = "Energy";
@@ -109,8 +110,16 @@ public class FiberLaserBlockEntity extends BlockEntity {
         return scheduledGainX1000() / 1000.0D;
     }
 
+    public double saturatedCoherentExtraOutput() {
+        return scheduledEnergyPerTick() / ENERGY_PER_SATURATED_EXTRA_OUTPUT;
+    }
+
     public static double maximumScheduledCoherentBaseGain() {
         return gainX1000ForEnergy(MAX_ENERGY_PER_TICK) / 1000.0D;
+    }
+
+    public static double maximumSaturatedCoherentExtraOutput() {
+        return MAX_ENERGY_PER_TICK / ENERGY_PER_SATURATED_EXTRA_OUTPUT;
     }
 
     public int energyStored() {

@@ -5,6 +5,10 @@ import io.github.yoglappland.spectralization.optics.BeamPacket;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalNetwork;
 import io.github.yoglappland.spectralization.optics.OpticalReceiver;
 import io.github.yoglappland.spectralization.optics.OpticalResult;
+import io.github.yoglappland.spectralization.optics.cache.OpticalDirtyKind;
+import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
+import io.github.yoglappland.spectralization.optics.topology.OpticalNetworkIndex;
+import io.github.yoglappland.spectralization.optics.world.OpticalWorldIndex;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
@@ -115,6 +119,7 @@ public class BeamProfilerBlock extends Block implements EntityBlock, OpticalRece
             BlockPos neighborPos
     ) {
         if (direction == state.getValue(FACING) && !state.canSurvive(level, pos)) {
+            markUnsupportedRemoval(level, pos);
             return Blocks.AIR.defaultBlockState();
         }
 
@@ -143,6 +148,13 @@ public class BeamProfilerBlock extends Block implements EntityBlock, OpticalRece
 
     public static Direction getReceivingSide(BlockState state) {
         return state.getValue(FACING).getOpposite();
+    }
+
+    private static void markUnsupportedRemoval(LevelAccessor level, BlockPos pos) {
+        OpticalWorldIndex.onBlockBroken(level, pos);
+        OpticalTraceCache.markChanged(level, pos, OpticalDirtyKind.STRUCTURE);
+        OpticalTraceCache.requestIntrinsicSourcesNear(level, pos);
+        OpticalNetworkIndex.markDirty(level);
     }
 
     private static VoxelShape getShapeForFront(Direction front) {

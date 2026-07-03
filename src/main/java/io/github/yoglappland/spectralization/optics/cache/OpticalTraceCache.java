@@ -4,7 +4,6 @@ import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.block.BeamProfilerBlock;
 import io.github.yoglappland.spectralization.block.CmosSensorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
-import io.github.yoglappland.spectralization.block.RubyBlock;
 import io.github.yoglappland.spectralization.block.SpectrometerBlock;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.heat.PhotothermalReceiverBlock;
@@ -15,7 +14,6 @@ import io.github.yoglappland.spectralization.optics.FrequencyKey;
 import io.github.yoglappland.spectralization.optics.IntrinsicOpticalSources;
 import io.github.yoglappland.spectralization.optics.OpticalPort;
 import io.github.yoglappland.spectralization.optics.OpticalElement;
-import io.github.yoglappland.spectralization.optics.OpticalMaterialProfiles;
 import io.github.yoglappland.spectralization.optics.OpticalPathTracer;
 import io.github.yoglappland.spectralization.optics.OpticalSource;
 import io.github.yoglappland.spectralization.optics.PlaneWaveComponent;
@@ -23,6 +21,7 @@ import io.github.yoglappland.spectralization.optics.OpticalTraceStep;
 import io.github.yoglappland.spectralization.optics.OpticalTraceTermination;
 import io.github.yoglappland.spectralization.optics.OpticalTraceTerminationReason;
 import io.github.yoglappland.spectralization.optics.BeamEnvelope;
+import io.github.yoglappland.spectralization.optics.GainMediumOverloadMonitor;
 import io.github.yoglappland.spectralization.optics.OpticalSpotTracker;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
@@ -94,8 +93,7 @@ public final class OpticalTraceCache {
     private static final long HUD_OVERLAY_SEND_INTERVAL_TICKS = 2L;
     private static final long HUD_OVERLAY_REFRESH_INTERVAL_TICKS = 80L;
     private static final int DORMANT_SOURCE_WAKE_BUDGET_PER_TICK = 64;
-    private static final int MAX_RUBY_DERIVED_COHERENT_SOURCES = 96;
-    private static final double RUBY_DERIVED_COHERENT_SOURCE_MIN_POWER = 1.0E-6D;
+    private static final double POSITIVE_SOURCE_MIN_POWER = 1.0E-6D;
     private static final int SPECTRAL_LANE_PARALLEL_MIN_LANES = 2;
     private static final int SPECTRAL_LANE_PARALLEL_MIN_WORK = 32;
     private static final Comparator<SourceTraceKey> SOURCE_TRACE_KEY_COMPARATOR = Comparator
@@ -103,16 +101,6 @@ public final class OpticalTraceCache {
             .thenComparingInt(key -> key.sourcePos().getY())
             .thenComparingInt(key -> key.sourcePos().getZ())
             .thenComparingInt(key -> key.direction().ordinal());
-    private static final Comparator<RubyModeKey> RUBY_MODE_KEY_COMPARATOR = Comparator
-            .comparingInt((RubyModeKey key) -> key.pos().getX())
-            .thenComparingInt(key -> key.pos().getY())
-            .thenComparingInt(key -> key.pos().getZ())
-            .thenComparingInt(key -> key.direction().ordinal());
-    private static final Comparator<RubyCoherentSource> RUBY_COHERENT_SOURCE_COMPARATOR = Comparator
-            .comparingInt((RubyCoherentSource source) -> source.pos().getX())
-            .thenComparingInt(source -> source.pos().getY())
-            .thenComparingInt(source -> source.pos().getZ())
-            .thenComparingInt(source -> source.direction().ordinal());
 
     public static void requestOrApply(Level level, BlockPos sourcePos, OutputBeam sourceOutput) {
         if (level.isClientSide || !(level instanceof ServerLevel serverLevel) || sourceOutput.beam().isEmpty()) {
@@ -436,6 +424,11 @@ public final class OpticalTraceCache {
                 );
             }
 
+            if (GainMediumOverloadMonitor.burnOverloadedGainMedia(level, directGraph, scalarPowerSolution)) {
+                cache.invalidateTopologyCompilationCaches();
+                continue;
+            }
+
             if (handleFiberOverload(level, cache, request, existingTrace, directGraph, scalarPowerSolution)) {
                 continue;
             }
@@ -620,7 +613,7 @@ public final class OpticalTraceCache {
             processedNetworkIds.addAll(processFastSystemRefreshes(level, cache, fastSystemRefreshNetworkIds, deadlineNanos));
         }
 
-        if (processed == 0 && !deferredDirectWork) {
+        if (!deferredDirectWork && (processed == 0 || cache.pendingRequests.isEmpty())) {
             processedNetworkIds.addAll(processPendingSystemRebuilds(level, cache, deadlineNanos));
         }
 
@@ -660,6 +653,11 @@ public final class OpticalTraceCache {
 
         Integer networkId = cache.pollPendingSystemRebuildNetworkId();
         if (networkId == null) {
+            return rebuiltNetworkIds;
+        }
+
+        if (cache.hasQueuedRefreshForSystemNetwork(networkId)) {
+            cache.enqueueSystemRebuild(networkId);
             return rebuiltNetworkIds;
         }
 
@@ -704,6 +702,10 @@ public final class OpticalTraceCache {
             }
 
             if (!cache.isSystemRebuildPending(networkId)) {
+                continue;
+            }
+
+            if (cache.hasQueuedRefreshForSystemNetwork(networkId)) {
                 continue;
             }
 
@@ -855,54 +857,118 @@ public final class OpticalTraceCache {
         }
         publishCompiledSpotLayer(level, networkId, cachedTrace, false);
 
-        if (heldSystem != null && cache.markSystemApplied(heldSystem.systemId(), level.getGameTime())) {
-            cache.applySystemOutputs(level, heldSystem, false, readoutStep);
-            logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, heldSystem,
-                    modePrefix + "_held_system", false, readoutStep);
-            return false;
-        }
-
         if (heldSystem != null) {
-            return false;
+            List<ReceiverOutput> heldReceiverOutputs = cache.lastReliableReceiverOutputsFor(heldSystem);
+            boolean heldReliable = reliableSystemOutput(heldSystem);
+            if (applyHeldReceiverOutputsIfAvailable(
+                    level,
+                    cache,
+                    networkId,
+                    cachedTrace,
+                    heldSystem,
+                    heldReceiverOutputs,
+                    modePrefix + "_held_system",
+                    heldReliable,
+                    readoutStep
+            )) {
+                return heldReliable;
+            }
+
+            if (cache.markSystemApplied(heldSystem.systemId(), level.getGameTime())) {
+                cache.applySystemOutputs(level, heldSystem, heldReliable, readoutStep);
+                logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, heldSystem,
+                        modePrefix + "_held_system_fallback", heldReliable, readoutStep);
+            }
+
+            return heldReliable;
         }
 
         if (cachedSystem != null) {
             List<ReceiverOutput> heldReceiverOutputs = cache.lastReliableReceiverOutputsFor(cachedSystem);
-            if (!heldReceiverOutputs.isEmpty() && cache.markHeldReadoutApplied(cachedSystem, level.getGameTime())) {
-                applyReceiverOutputs(level, heldReceiverOutputs, false, readoutStep);
-                logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, cachedSystem,
-                        modePrefix + "_held_readout", false, readoutStep);
-                return false;
-            }
-
-            if (!heldReceiverOutputs.isEmpty()) {
-                return false;
+            boolean cachedReliable = reliableSystemOutput(cachedSystem);
+            if (applyHeldReceiverOutputsIfAvailable(
+                    level,
+                    cache,
+                    networkId,
+                    cachedTrace,
+                    cachedSystem,
+                    heldReceiverOutputs,
+                    modePrefix + "_held_readout",
+                    cachedReliable,
+                    readoutStep
+            )) {
+                return cachedReliable;
             }
 
             if (cache.markSystemApplied(cachedSystem.systemId(), level.getGameTime())) {
-                cache.applySystemOutputs(level, cachedSystem, false, readoutStep);
+                cache.applySystemOutputs(level, cachedSystem, cachedReliable, readoutStep);
                 logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, cachedSystem,
-                        modePrefix + "_current_system", false, readoutStep);
-                return false;
+                        modePrefix + "_current_system_unreliable", cachedReliable, readoutStep);
+                return cachedReliable;
             }
 
-            return false;
+            return cachedReliable;
         }
 
         if (cachedTrace == null) {
             return false;
         }
 
-        if (cache.hasActiveSystemReadoutOverlap(cachedTrace.sampleCompiledOutputs())) {
+        List<ReceiverOutput> directOutputs = cachedTrace.sampleCompiledOutputs();
+        List<ReceiverOutput> heldReceiverOutputs = cache.lastReliableReceiverOutputsFor(directOutputs);
+        if (applyHeldReceiverOutputsIfAvailable(
+                level,
+                cache,
+                networkId,
+                cachedTrace,
+                null,
+                heldReceiverOutputs,
+                modePrefix + "_held_readout",
+                false,
+                readoutStep
+        )) {
+            return false;
+        }
+
+        if (cache.hasSystemAuthorityForNetwork(networkId)) {
+            logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, null,
+                    modePrefix + "_no_authoritative_readout", false, readoutStep);
+            return false;
+        }
+
+        if (cache.hasActiveSystemReadoutOverlap(directOutputs)) {
             logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, null,
                     modePrefix + "_suppressed_active_system_readout", false, readoutStep);
             return false;
         }
 
-        cachedTrace.applyOutputs(level, false, readoutStep);
         logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, null,
-                modePrefix + "_direct_provisional", false, readoutStep);
+                modePrefix + "_no_authoritative_readout", false, readoutStep);
         return false;
+    }
+
+    private static boolean applyHeldReceiverOutputsIfAvailable(
+            Level level,
+            LevelTraceCache cache,
+            int networkId,
+            CachedOpticalTrace cachedTrace,
+            CachedOpticalSystem appliedSystem,
+            List<ReceiverOutput> heldReceiverOutputs,
+            String mode,
+            boolean reliable,
+            long readoutStep
+    ) {
+        if (heldReceiverOutputs.isEmpty()) {
+            return false;
+        }
+
+        if (cache.markHeldReadoutApplied(heldReceiverOutputs, level.getGameTime())) {
+            applyReceiverOutputs(level, heldReceiverOutputs, reliable, readoutStep);
+        }
+
+        logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, appliedSystem,
+                mode, reliable, readoutStep);
+        return true;
     }
 
     private static boolean applyCachedOutputs(
@@ -942,27 +1008,88 @@ public final class OpticalTraceCache {
             }
 
             CachedOpticalSystem heldSystem = cache.lastUsableSystemForNetwork(networkId);
-            if (heldSystem != null && cache.markSystemApplied(heldSystem.systemId(), level.getGameTime())) {
-                cache.applySystemOutputs(level, heldSystem, false, readoutStep);
-                logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, heldSystem,
-                        "unusable_system_held_system", false, readoutStep);
-                return false;
+            if (heldSystem != null) {
+                List<ReceiverOutput> heldReceiverOutputs = cache.lastReliableReceiverOutputsFor(heldSystem);
+                boolean heldReliable = reliableSystemOutput(heldSystem);
+                if (applyHeldReceiverOutputsIfAvailable(
+                        level,
+                        cache,
+                        networkId,
+                        cachedTrace,
+                        heldSystem,
+                        heldReceiverOutputs,
+                        "unusable_system_held_system",
+                        heldReliable,
+                        readoutStep
+                )) {
+                    return heldReliable;
+                }
+
+                if (cache.markSystemApplied(heldSystem.systemId(), level.getGameTime())) {
+                    cache.applySystemOutputs(level, heldSystem, heldReliable, readoutStep);
+                    logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, heldSystem,
+                            "unusable_system_held_system_fallback", heldReliable, readoutStep);
+                }
+
+                return heldReliable;
             }
 
             List<ReceiverOutput> heldReceiverOutputs = cache.lastReliableReceiverOutputsFor(cachedSystem);
-            if (!heldReceiverOutputs.isEmpty() && cache.markHeldReadoutApplied(cachedSystem, level.getGameTime())) {
-                applyReceiverOutputs(level, heldReceiverOutputs, false, readoutStep);
-                logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, cachedSystem,
-                        "unusable_system_held_readout", false, readoutStep);
-                return false;
+            boolean cachedReliable = reliableSystemOutput(cachedSystem);
+            if (applyHeldReceiverOutputsIfAvailable(
+                    level,
+                    cache,
+                    networkId,
+                    cachedTrace,
+                    cachedSystem,
+                    heldReceiverOutputs,
+                    "unusable_system_held_readout",
+                    cachedReliable,
+                    readoutStep
+            )) {
+                return cachedReliable;
             }
 
             if (cache.markSystemApplied(cachedSystem.systemId(), level.getGameTime())) {
-                cache.applySystemOutputs(level, cachedSystem, false, readoutStep);
+                cache.applySystemOutputs(level, cachedSystem, cachedReliable, readoutStep);
                 logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, cachedSystem,
-                        "unusable_system_current_outputs", false, readoutStep);
-                return false;
+                        "unusable_system_current_unreliable", cachedReliable, readoutStep);
             }
+
+            return cachedReliable;
+        }
+
+        if (cache.hasSystemAuthorityForNetwork(networkId)) {
+            CachedOpticalSystem heldSystem = cache.lastUsableSystemForNetwork(networkId);
+
+            List<ReceiverOutput> heldReceiverOutputs = heldSystem == null
+                    ? cache.lastReliableReceiverOutputsForNetwork(networkId)
+                    : cache.lastReliableReceiverOutputsFor(heldSystem);
+            boolean heldReliable = reliableSystemOutput(heldSystem);
+            if (applyHeldReceiverOutputsIfAvailable(
+                    level,
+                    cache,
+                    networkId,
+                    cachedTrace,
+                    heldSystem,
+                    heldReceiverOutputs,
+                    heldSystem == null ? "missing_system_held_readout" : "missing_system_held_system",
+                    heldReliable,
+                    readoutStep
+            )) {
+                return heldReliable;
+            }
+
+            if (heldSystem != null && cache.markSystemApplied(heldSystem.systemId(), level.getGameTime())) {
+                cache.applySystemOutputs(level, heldSystem, heldReliable, readoutStep);
+                logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, heldSystem,
+                        "missing_system_held_system_fallback", heldReliable, readoutStep);
+                return heldReliable;
+            }
+
+            logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, null,
+                    "missing_system_no_authoritative_readout", false, readoutStep);
+            return false;
         }
 
         List<ReceiverOutput> directOutputs = cachedTrace.sampleCompiledOutputs();
@@ -979,6 +1106,10 @@ public final class OpticalTraceCache {
         logReadoutApplyIfNeeded(level, cache, networkId, cachedTrace, null,
                 reliable ? "direct_trace" : "direct_trace_unreliable_system_authority", reliable, readoutStep);
         return reliable;
+    }
+
+    private static boolean reliableSystemOutput(CachedOpticalSystem system) {
+        return system != null && system.usableForGameplay() && system.solution().reliableForReadout();
     }
 
     private static void publishCompiledSpotLayer(
@@ -1588,12 +1719,35 @@ public final class OpticalTraceCache {
             return rebuiltNetworkIds;
         }
 
+        if (hasQueuedSourceRefresh(cache, componentKeys)) {
+            cache.enqueueSystemRebuild(networkId);
+            return rebuiltNetworkIds;
+        }
+
         BuiltOpticalSystem builtSystem = buildCachedSystem(level, cache, componentKeys);
         if (builtSystem == null) {
             return rebuiltNetworkIds;
         }
 
         IntSet componentNetworkIds = networkIdsFor(cache, builtSystem.sourceKeys());
+        if (!builtSystem.system().structurallyFresh() || !builtSystem.system().parametricallyFresh()) {
+            for (int componentNetworkId : componentNetworkIds) {
+                cache.enqueueKnownSourceRefresh(level, componentNetworkId, level.getGameTime(), true);
+            }
+
+            cache.enqueueSystemRebuild(networkId);
+            OpticalCompilerDebugLogger.logSystemRebuildDeferred(
+                    level,
+                    networkId,
+                    componentNetworkIds.size(),
+                    countStaleSourceRecords(cache, builtSystem.sourceKeys()),
+                    countQueuedSourceRefreshes(cache, builtSystem.sourceKeys()),
+                    cache.pendingSystemRebuildCount(),
+                    "stale_direct_source_records"
+            );
+            return rebuiltNetworkIds;
+        }
+
         cache.installSystem(builtSystem.system(), componentNetworkIds);
         cache.dropQueuedSystemRebuilds(componentNetworkIds);
         rebuiltNetworkIds.addAll(componentNetworkIds);
@@ -1606,6 +1760,50 @@ public final class OpticalTraceCache {
         }
 
         return rebuiltNetworkIds;
+    }
+
+    private static int countStaleSourceRecords(LevelTraceCache cache, Set<SourceTraceKey> sourceKeys) {
+        int staleCount = 0;
+
+        for (SourceTraceKey sourceKey : sourceKeys) {
+            DirectSourceRecord record = cache.directSourcesByKey.get(sourceKey);
+
+            if (!directSourceRecordFresh(cache, record)) {
+                staleCount++;
+            }
+        }
+
+        return staleCount;
+    }
+
+    private static boolean directSourceRecordFresh(LevelTraceCache cache, DirectSourceRecord record) {
+        return record != null && !cache.dependencyIndex.isDirty(record.networkId());
+    }
+
+    private static int countQueuedSourceRefreshes(LevelTraceCache cache, Set<SourceTraceKey> sourceKeys) {
+        int queuedCount = 0;
+
+        for (SourceTraceKey sourceKey : sourceKeys) {
+            DirectSourceRecord record = cache.directSourcesByKey.get(sourceKey);
+
+            if (record != null && cache.queuedNetworkIds.contains(record.networkId())) {
+                queuedCount++;
+            }
+        }
+
+        return queuedCount;
+    }
+
+    private static boolean hasQueuedSourceRefresh(LevelTraceCache cache, Set<SourceTraceKey> sourceKeys) {
+        for (SourceTraceKey sourceKey : sourceKeys) {
+            DirectSourceRecord record = cache.directSourcesByKey.get(sourceKey);
+
+            if (record != null && cache.queuedNetworkIds.contains(record.networkId())) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static Set<SourceTraceKey> collectConnectedSourceKeys(
@@ -1667,8 +1865,9 @@ public final class OpticalTraceCache {
             }
 
             systemId = Math.min(systemId, record.networkId());
-            structurallyFresh &= record.epochs().structurallyMatches(currentEpochs);
-            parametricallyFresh &= record.epochs().parametersMatch(currentEpochs);
+            boolean recordFresh = directSourceRecordFresh(cache, record);
+            structurallyFresh &= recordFresh;
+            parametricallyFresh &= recordFresh;
             graphs.add(record.graph());
             passiveGraphs.add(record.passiveGraph());
             coherentGraphs.add(record.coherentGraph());
@@ -1701,7 +1900,8 @@ public final class OpticalTraceCache {
                         directCoherentSourcePowersByLane
                 );
                 ScalarPowerSolution solution = solvedChannels.solution();
-                if (FiberOverloadMonitor.burnOverloadedFibers(level, solvedChannels.graph(), solution)) {
+                if (FiberOverloadMonitor.burnOverloadedFibers(level, solvedChannels.graph(), solution)
+                        || GainMediumOverloadMonitor.burnOverloadedGainMedia(level, solvedChannels.graph(), solution)) {
                     cache.invalidateTopologyCompilationCaches();
                     return null;
                 }
@@ -1744,10 +1944,6 @@ public final class OpticalTraceCache {
                 );
                 cache.lastSystemRebuildCacheHit = true;
 
-                if (refreshedSystem.usableForGameplay()) {
-                    cache.rememberUsableSystem(refreshedSystem);
-                }
-
                 return new BuiltOpticalSystem(refreshedSystem, expandedSourceKeys);
             }
         }
@@ -1774,7 +1970,8 @@ public final class OpticalTraceCache {
         graph = solvedChannels.graph();
         CompiledPortGraph coherentGraph = solvedChannels.coherentGraph();
         ScalarPowerSolution solution = solvedChannels.solution();
-        if (FiberOverloadMonitor.burnOverloadedFibers(level, graph, solution)) {
+        if (FiberOverloadMonitor.burnOverloadedFibers(level, graph, solution)
+                || GainMediumOverloadMonitor.burnOverloadedGainMedia(level, graph, solution)) {
             cache.invalidateTopologyCompilationCaches();
             return null;
         }
@@ -1814,10 +2011,6 @@ public final class OpticalTraceCache {
                 parametricallyFresh,
                 structurallyFresh && parametricallyFresh && canUseForGameplay(graph, solution)
         );
-
-        if (system.usableForGameplay()) {
-            cache.rememberUsableSystem(system);
-        }
 
         if (systemCompilationKey != null && SpectralizationConfig.opticalCompilerSystemCacheMaxEntries() > 0) {
             cache.systemCompilationCache.put(systemCompilationKey, system);
@@ -1931,9 +2124,7 @@ public final class OpticalTraceCache {
         );
         Map<SpectralPowerLane, Map<PortGraphNode, Double>> coherentSourcePowersByLane =
                 copyLanePowerMap(directCoherentSourcePowersByLane);
-        RubySeedSynthesis rubySeedSynthesis = synthesizeRubyCoherentSources(level, passiveGraph, incoherentSolution);
-        coherentGraph = expandCoherentGraphWithRubySources(level, coherentGraph, rubySeedSynthesis.sources());
-        addRubyCoherentSourcePowers(coherentGraph, rubySeedSynthesis.sources(), coherentSourcePowersByLane);
+        RubySeedSynthesis rubySeedSynthesis = RubySeedSynthesis.empty();
         OpticalCompilerDebugLogger.logRubySeedSynthesis(
                 level,
                 coherentGraph,
@@ -1944,7 +2135,7 @@ public final class OpticalTraceCache {
                 rubySeedSynthesis.maxNodeSourcePower(),
                 rubySeedSynthesis.maxPumpRate()
         );
-        GainSchedule gainSchedule = GainSchedulers.stableFeedback().schedule(level, coherentGraph);
+        GainSchedule gainSchedule = GainSchedulers.materialGain().schedule(level, coherentGraph);
         OpticalCompilerDebugLogger.logGainSchedule(level, coherentGraph, gainSchedule);
         CompiledPortGraph scheduledCoherentGraph = gainSchedule.graph();
         ScalarPowerSolution coherentSolution = solvePowerLanes(
@@ -1962,6 +2153,9 @@ public final class OpticalTraceCache {
                 level,
                 passiveGraph,
                 scheduledCoherentGraph,
+                incoherentSourcePowersByLane,
+                directCoherentSourcePowersByLane,
+                coherentSourcePowersByLane,
                 incoherentSourcePowersByNode.size(),
                 totalSourcePower(incoherentSourcePowersByNode),
                 directCoherentSourcePowersByNode.size(),
@@ -1985,162 +2179,6 @@ public final class OpticalTraceCache {
                 coherentSourcePowersByLane,
                 hasPositiveSource(coherentSourcePowersByNode),
                 combinedSolution
-        );
-    }
-
-    private static RubySeedSynthesis synthesizeRubyCoherentSources(
-            ServerLevel level,
-            CompiledPortGraph passiveGraph,
-            ScalarPowerSolution incoherentSolution
-    ) {
-        Map<RubyModeKey, Double> seedPowerByMode = new HashMap<>();
-        Set<BlockPos> rubySeedPositions = new HashSet<>();
-        int maxPumpRate = 0;
-        double totalStraySeedPower = 0.0;
-        double totalCoherentSourcePower = 0.0;
-        double maxNodeSourcePower = 0.0;
-        List<RubyCoherentSource> sources = new ArrayList<>();
-
-        for (Map.Entry<PortGraphNode, Double> entry : incoherentSolution
-                .powerByNodeForSpectral(RubyBlock.RUBY_LINE, CoherenceKind.INCOHERENT)
-                .entrySet()) {
-            PortGraphNode node = entry.getKey();
-
-            if (node.waveKind() != PortWaveKind.OUTGOING || !level.isLoaded(node.pos())) {
-                continue;
-            }
-
-            BlockState state = level.getBlockState(node.pos());
-
-            if (state.getBlock() != Spectralization.RUBY_BLOCK.get()) {
-                continue;
-            }
-
-            double seedPower = entry.getValue();
-
-            if (seedPower <= 0.0) {
-                continue;
-            }
-
-            totalStraySeedPower += seedPower;
-            int pumpRate = OpticalPumpSources.adjacentPumpRate(level, node.pos());
-            maxPumpRate = Math.max(maxPumpRate, pumpRate);
-            seedPowerByMode.merge(new RubyModeKey(node.pos(), node.side()), seedPower, Double::sum);
-            rubySeedPositions.add(node.pos());
-        }
-
-        List<Map.Entry<RubyModeKey, Double>> seedEntries = new ArrayList<>(seedPowerByMode.entrySet());
-        seedEntries.sort(Map.Entry.comparingByKey(RUBY_MODE_KEY_COMPARATOR));
-
-        for (Map.Entry<RubyModeKey, Double> entry : seedEntries) {
-            RubyModeKey key = entry.getKey();
-            BlockPos pos = key.pos();
-            double seedPower = entry.getValue();
-
-            if (seedPower <= 0.0 || !level.isLoaded(pos)) {
-                continue;
-            }
-
-            BlockState state = level.getBlockState(pos);
-            double convertedPower = OpticalMaterialProfiles.saturatedCoherentEmissionFor(
-                    level,
-                    pos,
-                    state,
-                    seedPower
-            );
-
-            if (convertedPower > 0.0) {
-                if (convertedPower <= RUBY_DERIVED_COHERENT_SOURCE_MIN_POWER) {
-                    continue;
-                }
-
-                if (sources.size() >= MAX_RUBY_DERIVED_COHERENT_SOURCES) {
-                    return new RubySeedSynthesis(
-                            sources,
-                            rubySeedPositions.size(),
-                            maxPumpRate,
-                            totalStraySeedPower,
-                            totalCoherentSourcePower,
-                            maxNodeSourcePower
-                    );
-                }
-
-                sources.add(new RubyCoherentSource(pos, key.direction(), convertedPower));
-                totalCoherentSourcePower += convertedPower;
-                maxNodeSourcePower = Math.max(maxNodeSourcePower, convertedPower);
-            }
-        }
-
-        return new RubySeedSynthesis(
-                sources,
-                rubySeedPositions.size(),
-                maxPumpRate,
-                totalStraySeedPower,
-                totalCoherentSourcePower,
-                maxNodeSourcePower
-        );
-    }
-
-    private static CompiledPortGraph expandCoherentGraphWithRubySources(
-            ServerLevel level,
-            CompiledPortGraph coherentGraph,
-            List<RubyCoherentSource> rubySources
-    ) {
-        if (rubySources.isEmpty()) {
-            return coherentGraph;
-        }
-
-        List<CompiledPortGraph> graphs = new ArrayList<>();
-        graphs.add(coherentGraph);
-
-        List<RubyCoherentSource> orderedRubySources = new ArrayList<>(rubySources);
-        orderedRubySources.sort(RUBY_COHERENT_SOURCE_COMPARATOR);
-
-        for (RubyCoherentSource rubySource : orderedRubySources) {
-            graphs.add(PortGraphCompiler.compileDirect(
-                    level,
-                    rubySource.pos(),
-                    rubyCoherentOutputBeam(rubySource.direction(), rubySource.power())
-            ));
-        }
-
-        return unionGraphs(graphs);
-    }
-
-    private static void addRubyCoherentSourcePowers(
-            CompiledPortGraph coherentGraph,
-            List<RubyCoherentSource> rubySources,
-            Map<SpectralPowerLane, Map<PortGraphNode, Double>> coherentSourcePowersByLane
-    ) {
-        if (rubySources.isEmpty()) {
-            return;
-        }
-
-        Set<PortGraphNode> coherentNodes = new HashSet<>(coherentGraph.nodes());
-        SpectralPowerLane rubyCoherentLane = new SpectralPowerLane(
-                RubyBlock.RUBY_LINE,
-                CoherenceKind.COHERENT,
-                BeamProfileKey.collimated(0.25D)
-        );
-        Map<PortGraphNode, Double> rubyCoherentSourcePowersByNode =
-                coherentSourcePowersByLane.computeIfAbsent(rubyCoherentLane, ignored -> new HashMap<>());
-
-        for (RubyCoherentSource rubySource : rubySources) {
-            PortGraphNode sourceNode = rubySource.sourceNode();
-
-            if (coherentNodes.contains(sourceNode)) {
-                rubyCoherentSourcePowersByNode.merge(sourceNode, rubySource.power(), Double::sum);
-            }
-        }
-    }
-
-    private static OutputBeam rubyCoherentOutputBeam(Direction direction, double power) {
-        return new OutputBeam(
-                direction,
-                BeamPacket.single(
-                        new PlaneWaveComponent(RubyBlock.RUBY_LINE, power, direction, CoherenceKind.COHERENT),
-                        BeamEnvelope.collimated(0.25)
-                )
         );
     }
 
@@ -2317,7 +2355,7 @@ public final class OpticalTraceCache {
 
     private static boolean hasPositiveSource(Map<PortGraphNode, Double> sourcePowersByNode) {
         for (double power : sourcePowersByNode.values()) {
-            if (power > RUBY_DERIVED_COHERENT_SOURCE_MIN_POWER) {
+            if (power > POSITIVE_SOURCE_MIN_POWER) {
                 return true;
             }
         }
@@ -2345,42 +2383,15 @@ public final class OpticalTraceCache {
     }
 
     private record RubySeedSynthesis(
-            List<RubyCoherentSource> sources,
             int seedNodeCount,
+            int sourceCount,
             int maxPumpRate,
             double totalStraySeedPower,
             double totalCoherentSourcePower,
             double maxNodeSourcePower
     ) {
-        private RubySeedSynthesis {
-            Objects.requireNonNull(sources, "sources");
-            sources = List.copyOf(sources);
-        }
-
-        private int sourceCount() {
-            return sources.size();
-        }
-    }
-
-    private record RubyModeKey(BlockPos pos, Direction direction) {
-        private RubyModeKey {
-            pos = pos.immutable();
-            Objects.requireNonNull(direction, "direction");
-        }
-    }
-
-    private record RubyCoherentSource(BlockPos pos, Direction direction, double power) {
-        private RubyCoherentSource {
-            pos = pos.immutable();
-            Objects.requireNonNull(direction, "direction");
-
-            if (!Double.isFinite(power) || power <= 0.0D) {
-                throw new IllegalArgumentException("Ruby coherent source power must be positive and finite");
-            }
-        }
-
-        private PortGraphNode sourceNode() {
-            return new PortGraphNode(pos, direction, PortWaveKind.OUTGOING);
+        private static RubySeedSynthesis empty() {
+            return new RubySeedSynthesis(0, 0, 0, 0.0, 0.0, 0.0);
         }
     }
 
@@ -2915,6 +2926,7 @@ public final class OpticalTraceCache {
         private final Map<Integer, CachedOpticalTrace> cachedTracesByNetwork = new HashMap<>();
         private final Map<Integer, CachedOpticalSystem> cachedSystemsBySystem = new HashMap<>();
         private final Map<Integer, CachedOpticalSystem> lastUsableSystemsBySystem = new HashMap<>();
+        private final Map<Integer, List<ReceiverOutput>> lastReliableReceiverOutputsBySystem = new HashMap<>();
         private final Map<ReadoutSignature, List<ReceiverOutput>> lastReliableReceiverOutputsByReadout = new HashMap<>();
         private final Map<Integer, Integer> systemIdsByNetwork = new HashMap<>();
         private final Map<Integer, IntSet> networkIdsBySystem = new HashMap<>();
@@ -3069,6 +3081,18 @@ public final class OpticalTraceCache {
 
         boolean isSystemRebuildPending(int networkId) {
             return queuedSystemRebuildNetworkIds.contains(networkId);
+        }
+
+        boolean hasQueuedRefreshForSystemNetwork(int networkId) {
+            IntSet networkIds = systemNetworkIdsForNetwork(networkId);
+
+            for (int componentNetworkId : networkIds) {
+                if (queuedNetworkIds.contains(componentNetworkId)) {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         boolean hasSystemAuthorityForNetwork(int networkId) {
@@ -3276,7 +3300,7 @@ public final class OpticalTraceCache {
             OpticalTraceCache.applyReceiverOutputs(level, outputs, sampleReliable, readoutStep);
 
             if (sampleReliable) {
-                rememberReliableReceiverOutputs(outputs);
+                rememberReliableReceiverOutputs(system.systemId(), outputs);
             }
         }
 
@@ -3343,11 +3367,11 @@ public final class OpticalTraceCache {
                     continue;
                 }
 
-                List<ReceiverOutput> heldOutputs = lastReliableReceiverOutputsByReadout.get(signature);
-                if (heldOutputs == null || heldOutputs.isEmpty()) {
-                    applySystemOutputs(level, system, false, readoutStep);
-                } else {
+                List<ReceiverOutput> heldOutputs = lastReliableReceiverOutputsFor(system);
+                if (heldOutputs != null && !heldOutputs.isEmpty()) {
                     OpticalTraceCache.applyReceiverOutputs(level, heldOutputs, false, readoutStep);
+                } else {
+                    applySystemOutputs(level, system, false, readoutStep);
                 }
             }
 
@@ -3359,10 +3383,8 @@ public final class OpticalTraceCache {
                     continue;
                 }
 
-                List<ReceiverOutput> heldOutputs = lastReliableReceiverOutputsByReadout.get(signature);
-                if (heldOutputs == null || heldOutputs.isEmpty()) {
-                    OpticalTraceCache.applyReceiverOutputs(level, outputs, false, readoutStep);
-                } else {
+                List<ReceiverOutput> heldOutputs = lastReliableReceiverOutputsFor(outputs);
+                if (heldOutputs != null && !heldOutputs.isEmpty()) {
                     OpticalTraceCache.applyReceiverOutputs(level, heldOutputs, false, readoutStep);
                 }
             }
@@ -3379,13 +3401,18 @@ public final class OpticalTraceCache {
                 return false;
             }
 
+            IntSet refreshNetworkIds = new IntOpenHashSet(affectedNetworkIds);
+            for (int networkId : affectedNetworkIds) {
+                refreshNetworkIds.addAll(systemNetworkIdsForNetwork(networkId));
+            }
+
             if (dirtyKind == OpticalDirtyKind.STRUCTURE || dirtyKind == OpticalDirtyKind.TOPOLOGY) {
-                invalidateTopologyCompilationCachesFor(affectedNetworkIds);
+                invalidateTopologyCompilationCachesFor(refreshNetworkIds);
             }
 
             epochs = epochs.advance(dirtyKind);
 
-            for (int networkId : affectedNetworkIds) {
+            for (int networkId : refreshNetworkIds) {
                 lastDirtyTicksByNetwork.put(networkId, gameTime);
                 markSystemDirty(networkId, dirtyKind);
                 retireHudOwner(networkId);
@@ -3529,17 +3556,55 @@ public final class OpticalTraceCache {
 
         void rememberUsableSystem(CachedOpticalSystem system) {
             lastUsableSystemsBySystem.put(system.systemId(), system);
-            rememberReliableReceiverOutputs(system.receiverOutputs());
+            rememberReliableReceiverOutputs(system.systemId(), system.receiverOutputs());
         }
 
         List<ReceiverOutput> lastReliableReceiverOutputsFor(CachedOpticalSystem system) {
-            ReadoutSignature signature = ReadoutSignature.of(system.receiverOutputs());
+            List<ReceiverOutput> systemOutputs = lastReliableReceiverOutputsBySystem.get(system.systemId());
+
+            if (systemOutputs != null && !systemOutputs.isEmpty()) {
+                return systemOutputs;
+            }
+
+            return lastReliableReceiverOutputsFor(system.receiverOutputs());
+        }
+
+        List<ReceiverOutput> lastReliableReceiverOutputsFor(List<ReceiverOutput> receiverOutputs) {
+            ReadoutSignature signature = ReadoutSignature.of(receiverOutputs);
 
             if (signature.empty()) {
                 return List.of();
             }
 
             return lastReliableReceiverOutputsByReadout.getOrDefault(signature, List.of());
+        }
+
+        List<ReceiverOutput> lastReliableReceiverOutputsForNetwork(int networkId) {
+            Integer systemId = systemIdsByNetwork.get(networkId);
+
+            if (systemId == null) {
+                return List.of();
+            }
+
+            List<ReceiverOutput> systemOutputs = lastReliableReceiverOutputsBySystem.get(systemId);
+
+            if (systemOutputs != null && !systemOutputs.isEmpty()) {
+                return systemOutputs;
+            }
+
+            CachedOpticalSystem system = cachedSystemsBySystem.get(systemId);
+
+            if (system != null) {
+                return lastReliableReceiverOutputsFor(system.receiverOutputs());
+            }
+
+            CachedOpticalSystem heldSystem = lastUsableSystemsBySystem.get(systemId);
+
+            if (heldSystem != null) {
+                return lastReliableReceiverOutputsFor(heldSystem.receiverOutputs());
+            }
+
+            return List.of();
         }
 
         SourceTraceKey sourceKeyForNetwork(int networkId) {
@@ -3573,7 +3638,7 @@ public final class OpticalTraceCache {
         }
 
         void installSystem(CachedOpticalSystem system, IntSet networkIds) {
-            removeSystemsForNetworkIds(networkIds);
+            removeSystemsForNetworkIds(networkIds, system.systemId());
             cachedSystemsBySystem.put(system.systemId(), system);
             networkIdsBySystem.put(system.systemId(), new IntOpenHashSet(networkIds));
             retiredHudOwnerIds.remove(-system.systemId());
@@ -3581,6 +3646,10 @@ public final class OpticalTraceCache {
             for (int networkId : networkIds) {
                 systemIdsByNetwork.put(networkId, system.systemId());
                 retiredHudOwnerIds.add(networkId);
+            }
+
+            if (system.usableForGameplay()) {
+                rememberUsableSystem(system);
             }
         }
 
@@ -3612,12 +3681,17 @@ public final class OpticalTraceCache {
                     networkIdsBySystem.remove(systemId);
                     cachedSystemsBySystem.remove(systemId);
                     lastUsableSystemsBySystem.remove(systemId);
+                    lastReliableReceiverOutputsBySystem.remove(systemId);
                     retiredHudOwnerIds.add(-systemId);
                 }
             }
         }
 
         private void removeSystemsForNetworkIds(IntSet networkIds) {
+            removeSystemsForNetworkIds(networkIds, -1);
+        }
+
+        private void removeSystemsForNetworkIds(IntSet networkIds, int preserveHeldSystemId) {
             IntSet oldSystemIds = new IntOpenHashSet();
 
             for (int networkId : networkIds) {
@@ -3630,7 +3704,10 @@ public final class OpticalTraceCache {
 
             for (int oldSystemId : oldSystemIds) {
                 cachedSystemsBySystem.remove(oldSystemId);
-                lastUsableSystemsBySystem.remove(oldSystemId);
+                if (oldSystemId != preserveHeldSystemId) {
+                    lastUsableSystemsBySystem.remove(oldSystemId);
+                    lastReliableReceiverOutputsBySystem.remove(oldSystemId);
+                }
                 retiredHudOwnerIds.add(-oldSystemId);
                 IntSet oldNetworkIds = networkIdsBySystem.remove(oldSystemId);
 
@@ -3648,13 +3725,17 @@ public final class OpticalTraceCache {
         }
 
         boolean markHeldReadoutApplied(CachedOpticalSystem system, long gameTime) {
+            return markHeldReadoutApplied(system.receiverOutputs(), gameTime);
+        }
+
+        boolean markHeldReadoutApplied(List<ReceiverOutput> receiverOutputs, long gameTime) {
             if (systemApplyTick != gameTime) {
                 systemApplyTick = gameTime;
                 appliedSystemIdsThisTick.clear();
                 appliedHeldReadoutsThisTick.clear();
             }
 
-            ReadoutSignature signature = ReadoutSignature.of(system.receiverOutputs());
+            ReadoutSignature signature = ReadoutSignature.of(receiverOutputs);
 
             return !signature.empty() && appliedHeldReadoutsThisTick.add(signature);
         }
@@ -3702,6 +3783,14 @@ public final class OpticalTraceCache {
             return appliedSystemIdsThisTick.add(systemId);
         }
 
+        private void rememberReliableReceiverOutputs(int systemId, List<ReceiverOutput> receiverOutputs) {
+            if (!receiverOutputs.isEmpty()) {
+                lastReliableReceiverOutputsBySystem.put(systemId, List.copyOf(receiverOutputs));
+            }
+
+            rememberReliableReceiverOutputs(receiverOutputs);
+        }
+
         private void rememberReliableReceiverOutputs(List<ReceiverOutput> receiverOutputs) {
             ReadoutSignature signature = ReadoutSignature.of(receiverOutputs);
 
@@ -3722,6 +3811,7 @@ public final class OpticalTraceCache {
             retireHudOwner(-systemId);
             if (dirtyKind == OpticalDirtyKind.STRUCTURE || dirtyKind == OpticalDirtyKind.TOPOLOGY) {
                 lastUsableSystemsBySystem.remove(systemId);
+                lastReliableReceiverOutputsBySystem.remove(systemId);
             }
             IntSet systemNetworkIds = networkIdsBySystem.get(systemId);
 

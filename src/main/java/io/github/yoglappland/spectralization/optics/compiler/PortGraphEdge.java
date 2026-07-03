@@ -13,8 +13,34 @@ public record PortGraphEdge(
         double sampleInputPower,
         double sampleOutputPower,
         FrequencyKey sampleFrequency,
-        Map<FrequencyKey, Double> sampleGainByFrequency
+        Map<FrequencyKey, Double> sampleGainByFrequency,
+        Map<FrequencyKey, SaturatingEdgeGain> saturatingGainByFrequency
 ) {
+    public PortGraphEdge(
+            int id,
+            PortGraphEdgeKind kind,
+            PortGraphNode from,
+            PortGraphNode to,
+            int distance,
+            double sampleInputPower,
+            double sampleOutputPower,
+            FrequencyKey sampleFrequency,
+            Map<FrequencyKey, Double> sampleGainByFrequency
+    ) {
+        this(
+                id,
+                kind,
+                from,
+                to,
+                distance,
+                sampleInputPower,
+                sampleOutputPower,
+                sampleFrequency,
+                sampleGainByFrequency,
+                Map.of()
+        );
+    }
+
     public PortGraphEdge(
             int id,
             PortGraphEdgeKind kind,
@@ -25,7 +51,7 @@ public record PortGraphEdge(
             double sampleOutputPower,
             FrequencyKey sampleFrequency
     ) {
-        this(id, kind, from, to, distance, sampleInputPower, sampleOutputPower, sampleFrequency, Map.of());
+        this(id, kind, from, to, distance, sampleInputPower, sampleOutputPower, sampleFrequency, Map.of(), Map.of());
     }
 
     public PortGraphEdge(
@@ -37,7 +63,18 @@ public record PortGraphEdge(
             double sampleInputPower,
             double sampleOutputPower
     ) {
-        this(id, kind, from, to, distance, sampleInputPower, sampleOutputPower, FrequencyKey.DEBUG_VISIBLE, Map.of());
+        this(
+                id,
+                kind,
+                from,
+                to,
+                distance,
+                sampleInputPower,
+                sampleOutputPower,
+                FrequencyKey.DEBUG_VISIBLE,
+                Map.of(),
+                Map.of()
+        );
     }
 
     public PortGraphEdge {
@@ -46,6 +83,7 @@ public record PortGraphEdge(
         Objects.requireNonNull(to, "to");
         Objects.requireNonNull(sampleFrequency, "sampleFrequency");
         Objects.requireNonNull(sampleGainByFrequency, "sampleGainByFrequency");
+        Objects.requireNonNull(saturatingGainByFrequency, "saturatingGainByFrequency");
 
         if (id < 0) {
             throw new IllegalArgumentException("Port graph edge id must be non-negative");
@@ -64,6 +102,7 @@ public record PortGraphEdge(
         }
 
         sampleGainByFrequency = Map.copyOf(sampleGainByFrequency);
+        saturatingGainByFrequency = Map.copyOf(saturatingGainByFrequency);
     }
 
     public double sampleGain() {
@@ -83,5 +122,20 @@ public record PortGraphEdge(
         }
 
         return sampleGain();
+    }
+
+    public SaturatingEdgeGain saturatingGainFor(FrequencyKey frequency) {
+        Objects.requireNonNull(frequency, "frequency");
+        SaturatingEdgeGain gain = saturatingGainByFrequency.get(frequency);
+
+        if (gain != null) {
+            return gain;
+        }
+
+        if (sampleGainByFrequency.containsKey(frequency)) {
+            return null;
+        }
+
+        return saturatingGainByFrequency.get(sampleFrequency);
     }
 }

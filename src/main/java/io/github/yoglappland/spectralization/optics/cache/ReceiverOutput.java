@@ -68,6 +68,17 @@ public record ReceiverOutput(
             double strayPower,
             BeamEnvelope envelope
     ) {
+        return beamProfiler(pos, power, coherentPower, strayPower, envelope, Map.of());
+    }
+
+    public static ReceiverOutput beamProfiler(
+            BlockPos pos,
+            double power,
+            double coherentPower,
+            double strayPower,
+            BeamEnvelope envelope,
+            Map<FrequencyKey, Double> powerByFrequency
+    ) {
         return new ReceiverOutput(
                 pos,
                 ReceiverOutputKind.BEAM_PROFILER,
@@ -76,7 +87,7 @@ public record ReceiverOutput(
                 coherentPower,
                 strayPower,
                 envelope,
-                Map.of()
+                powerByFrequency
         );
     }
 

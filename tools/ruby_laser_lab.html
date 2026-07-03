@@ -1,0 +1,1571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spectralization Ruby Laser Lab</title>
+<style>
+  :root {
+    --bg: #080b0f;
+    --panel: #101720;
+    --panel-2: #151e28;
+    --line: #314251;
+    --text: #edf5f2;
+    --muted: #91a3a8;
+    --hot: #ef6176;
+    --cyan: #62c7d5;
+    --gold: #e5bd60;
+    --green: #76d58e;
+    --bad: #ff9a72;
+  }
+
+  * { box-sizing: border-box; }
+
+  html,
+  body {
+    margin: 0;
+    min-width: 1120px;
+    min-height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  .app {
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 318px minmax(520px, 1fr) 430px;
+  }
+
+  .left,
+  .right {
+    background: #0e151d;
+    overflow: auto;
+    padding: 16px;
+  }
+
+  .left { border-right: 1px solid rgba(98, 199, 213, 0.18); }
+  .right { border-left: 1px solid rgba(98, 199, 213, 0.18); }
+
+  main {
+    min-width: 0;
+    min-height: 100vh;
+    display: grid;
+    grid-template-rows: auto auto auto 1fr auto;
+    gap: 14px;
+    padding: 18px;
+    overflow: auto;
+  }
+
+  h1,
+  h2,
+  h3 {
+    margin: 0;
+    font-weight: 680;
+    letter-spacing: 0;
+  }
+
+  h1 { font-size: 21px; }
+  h2 {
+    margin: 18px 0 10px;
+    font-size: 13px;
+    color: var(--cyan);
+  }
+  h3 {
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .small {
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(98, 199, 213, 0.14);
+  }
+
+  .palette,
+  .actions,
+  .preset-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .slot-actions {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+
+  button {
+    min-height: 34px;
+    border: 1px solid rgba(98, 199, 213, 0.22);
+    background: #14202a;
+    color: var(--text);
+    border-radius: 7px;
+    cursor: pointer;
+  }
+
+  button.active {
+    border-color: var(--hot);
+    box-shadow: 0 0 0 1px rgba(239, 97, 118, 0.52) inset;
+    background: #3f202a;
+  }
+
+  .control-grid {
+    display: grid;
+    grid-template-columns: 1fr 100px;
+    gap: 8px 10px;
+    align-items: center;
+  }
+
+  label {
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  input,
+  select,
+  textarea {
+    width: 100%;
+    min-height: 30px;
+    border: 1px solid rgba(98, 199, 213, 0.18);
+    border-radius: 6px;
+    background: #080d13;
+    color: var(--text);
+    padding: 4px 8px;
+  }
+
+  textarea {
+    min-height: 86px;
+    resize: vertical;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+  }
+
+  .check-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .check-row input {
+    width: 16px;
+    min-height: 16px;
+  }
+
+  .chain-shell,
+  .readout-shell,
+  .plot-shell,
+  .details {
+    border: 1px solid rgba(98, 199, 213, 0.18);
+    background: #0d141c;
+    border-radius: 8px;
+  }
+
+  .chain-shell { padding: 14px; }
+
+  .chain {
+    display: grid;
+    grid-template-columns: repeat(var(--slot-count), minmax(38px, 1fr));
+    gap: 8px;
+  }
+
+  .slot {
+    position: relative;
+    min-width: 0;
+    aspect-ratio: 1 / 1;
+    border: 1px solid rgba(237, 245, 242, 0.16);
+    border-radius: 8px;
+    background: #111a23;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+  }
+
+  .slot.selected {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+  }
+
+  .slot .glyph {
+    font-size: 12px;
+    font-weight: 800;
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  }
+
+  .slot .pump {
+    position: absolute;
+    right: 4px;
+    bottom: 3px;
+    font-size: 10px;
+    color: #ffe5a6;
+  }
+
+  .slot.air { background: #101820; }
+  .slot.source { background: linear-gradient(160deg, #e4c95f, #765319); }
+  .slot.ruby { background: linear-gradient(160deg, #a21f3a, #2d0e17); }
+  .slot.mirror { background: linear-gradient(160deg, #d9e5e5, #58636b); }
+  .slot.custom { background: linear-gradient(160deg, #62c7d5, #174653); }
+  .slot.sensor { background: linear-gradient(160deg, #72d58c, #194d2e); }
+  .slot.absorber { background: linear-gradient(160deg, #34383c, #070808); }
+
+  .readout-shell {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(120px, 1fr));
+    gap: 1px;
+    overflow: hidden;
+    background: rgba(98, 199, 213, 0.18);
+  }
+
+  .metric {
+    min-width: 0;
+    background: #0f1720;
+    padding: 12px;
+  }
+
+  .metric .label {
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .metric .value {
+    margin-top: 5px;
+    font-size: 22px;
+    font-weight: 760;
+  }
+
+  .metric .sub {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .plot-shell { padding: 12px; }
+
+  canvas {
+    display: block;
+    width: 100%;
+    border-radius: 6px;
+    background: #050709;
+  }
+
+  #phaseCanvas {
+    aspect-ratio: 1 / 1;
+    image-rendering: pixelated;
+    cursor: crosshair;
+  }
+
+  #flowCanvas { height: 260px; }
+
+  .details {
+    padding: 12px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+    color: #d9e6e5;
+    overflow: auto;
+    white-space: pre;
+  }
+
+  .legend {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-top: 10px;
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .swatch {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    margin-right: 6px;
+    vertical-align: -2px;
+  }
+
+  .warning { color: var(--bad); }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="left">
+    <h1>Ruby Laser Lab</h1>
+    <div class="small">1D game-parity port graph probe</div>
+
+    <h2>Blocks</h2>
+    <div class="palette" id="palette"></div>
+
+    <h2>Structure</h2>
+    <div class="slot-actions">
+      <button id="shortenBtn" type="button">-</button>
+      <button id="lengthBtn" type="button">16</button>
+      <button id="extendBtn" type="button">+</button>
+    </div>
+    <div class="preset-row" style="margin-top:8px">
+      <button id="preset5Btn" type="button">5 Ruby</button>
+      <button id="presetNoMirrorBtn" type="button">No Mirror</button>
+    </div>
+    <div class="actions" style="margin-top:8px">
+      <button id="clearBtn" type="button">Clear</button>
+      <button id="copyBtn" type="button">Copy JSON</button>
+    </div>
+
+    <h2>Selected Slot</h2>
+    <div class="control-grid">
+      <label for="slotType">Type</label>
+      <select id="slotType"></select>
+      <label for="slotPump">Pump PU</label>
+      <input id="slotPump" type="number" min="0" max="16" step="0.1">
+      <label for="slotR">Reflectance R</label>
+      <input id="slotR" type="number" min="0" max="0.999" step="0.001">
+      <label for="slotA">Absorption A</label>
+      <input id="slotA" type="number" min="0" max="0.999" step="0.001">
+    </div>
+
+    <h2>Game Parameters</h2>
+    <div class="control-grid">
+      <label for="sourcePower">Source SP</label>
+      <input id="sourcePower" type="number" min="0" step="0.01">
+      <label for="sourceSpectrum">Source spectrum</label>
+      <select id="sourceSpectrum">
+        <option value="single_bin">Single bin</option>
+        <option value="creative_white">Creative white</option>
+        <option value="flat_visible">Flat visible</option>
+        <option value="custom_lanes">Custom lanes</option>
+      </select>
+      <label for="sourceBin">Single bin</label>
+      <input id="sourceBin" type="number" min="0" max="31" step="1">
+      <label for="gainMode">Gain mode</label>
+      <select id="gainMode">
+        <option value="off">Off</option>
+        <option value="scalar_tool">Material gain</option>
+      </select>
+      <label for="rubyProfile">Ruby profile</label>
+      <select id="rubyProfile">
+        <option value="single">Editable @26</option>
+        <option value="game">Game spectrum</option>
+      </select>
+      <label for="rubyR">Ruby R</label>
+      <input id="rubyR" type="number" min="0" max="0.999" step="0.001">
+      <label for="rubyA">Ruby A</label>
+      <input id="rubyA" type="number" min="0" max="0.999" step="0.001">
+      <label for="gainInput">Gain input</label>
+      <select id="gainInput">
+        <option value="direct">Direct base gain</option>
+        <option value="pump_curve">Pump curve</option>
+      </select>
+      <label for="rubyBaseGain">Single-pass gain</label>
+      <input id="rubyBaseGain" type="number" min="1" step="0.0001">
+      <label for="gainSlope">Gain budget / PU</label>
+      <input id="gainSlope" type="number" min="0" step="0.0001">
+      <label for="gainLimit">Gain cap</label>
+      <input id="gainLimit" type="number" min="1" step="0.01">
+      <label for="pumpCap">Pump cap</label>
+      <input id="pumpCap" type="number" min="0" max="64" step="1">
+      <label for="mirrorA">Phase mirror A</label>
+      <input id="mirrorA" type="number" min="0" max="0.5" step="0.001">
+      <label for="phaseMaxR">Phase max R</label>
+      <input id="phaseMaxR" type="number" min="0.1" max="0.999" step="0.001">
+      <label for="phaseRes">Phase res</label>
+      <select id="phaseRes">
+        <option value="48">48</option>
+        <option value="64" selected>64</option>
+        <option value="96">96</option>
+        <option value="128">128</option>
+      </select>
+    </div>
+    <div class="check-row" style="margin-top:10px">
+      <input id="propagationLoss" type="checkbox" checked>
+      <label for="propagationLoss">Use game propagation loss</label>
+    </div>
+
+    <h2>Custom Source Lanes</h2>
+    <textarea id="customSourceLanes" spellcheck="false" placeholder="Paste lines like:
+incoherent visible:26 power=2.771800"></textarea>
+  </aside>
+
+  <main>
+    <div class="top">
+      <div>
+        <h1>Structure Probe</h1>
+        <div class="small" id="chainSummary"></div>
+      </div>
+      <div class="actions" style="width:240px">
+        <button id="recalcBtn" type="button">Recalculate</button>
+        <button id="phaseBtn" type="button">Phase</button>
+      </div>
+    </div>
+
+    <section class="chain-shell">
+      <div class="chain" id="chain"></div>
+    </section>
+
+    <section class="readout-shell">
+      <div class="metric">
+        <div class="label">Stray readout</div>
+        <div class="value" id="strayOut">0</div>
+        <div class="sub">incoming sensor port</div>
+      </div>
+      <div class="metric">
+        <div class="label">Coherent readout</div>
+        <div class="value" id="coherentOut">0</div>
+        <div class="sub">ruby-source solve</div>
+      </div>
+      <div class="metric">
+        <div class="label">Ruby seed</div>
+        <div class="value" id="seedOut">0</div>
+        <div class="sub">outgoing ruby ports</div>
+      </div>
+    </section>
+
+    <section class="plot-shell">
+      <canvas id="flowCanvas" width="980" height="260"></canvas>
+    </section>
+
+    <section class="details" id="details"></section>
+  </main>
+
+  <aside class="right">
+    <h1>Phase Map</h1>
+    <div class="small" id="phaseSummary"></div>
+    <h2>Output mirror R / back mirror R</h2>
+    <div class="plot-shell">
+      <canvas id="phaseCanvas" width="384" height="384"></canvas>
+    </div>
+    <div class="legend">
+      <span><span class="swatch" style="background:#111a24"></span>low</span>
+      <span><span class="swatch" style="background:#e5bd60"></span>high</span>
+      <span><span class="swatch" style="background:#76d58e"></span>beats no mirror</span>
+      <span><span class="swatch" style="background:#62c7d5"></span>beats clear slots</span>
+    </div>
+    <h2>Probe</h2>
+    <div class="details" id="phaseProbe" style="max-height:180px"></div>
+  </aside>
+</div>
+
+<script>
+(() => {
+  const AIR_PROPAGATION = 0.995;
+  const INCOHERENT_FREE_SPACE = 0.60;
+  const INCOHERENT_BLOCK = 0.96;
+  const RUBY_LINE_BIN = 26;
+  const TYPES = {
+    air: { name: "Air", glyph: "AIR", cls: "air", R: 0, A: 0 },
+    source: { name: "Creative source", glyph: "SRC", cls: "source", R: 0, A: 1 },
+    ruby: { name: "Ruby block", glyph: "Rb", cls: "ruby", pump: 8 },
+    mirror: { name: "Silver glass", glyph: "Ag", cls: "mirror", R: 0.90, A: 0.01 },
+    custom: { name: "Custom", glyph: "C", cls: "custom", R: 0.10, A: 0.01 },
+    sensor: { name: "Beam profiler", glyph: "SEN", cls: "sensor", R: 0, A: 1 },
+    absorber: { name: "Absorber", glyph: "ABS", cls: "absorber", R: 0, A: 1 }
+  };
+
+  const state = {
+    selectedTool: "ruby",
+    selectedIndex: 0,
+    params: {
+      sourcePower: 3.0,
+      sourceSpectrum: "single_bin",
+      sourceBin: RUBY_LINE_BIN,
+      customSourceLanes: "",
+      gainMode: "scalar_tool",
+      rubyProfile: "single",
+      rubyR: 0.15,
+      rubyA: 0.01,
+      gainInput: "direct",
+      rubyBaseGain: 1.0225,
+      gainSlope: 0.0045,
+      gainLimit: 2.0,
+      pumpCap: 5,
+      mirrorA: 0.01,
+      phaseMaxR: 0.99,
+      phaseRes: 64,
+      propagationLoss: true
+    },
+    blocks: []
+  };
+
+  const els = {
+    palette: document.getElementById("palette"),
+    chain: document.getElementById("chain"),
+    chainSummary: document.getElementById("chainSummary"),
+    slotType: document.getElementById("slotType"),
+    slotPump: document.getElementById("slotPump"),
+    slotR: document.getElementById("slotR"),
+    slotA: document.getElementById("slotA"),
+    sourcePower: document.getElementById("sourcePower"),
+    sourceSpectrum: document.getElementById("sourceSpectrum"),
+    sourceBin: document.getElementById("sourceBin"),
+    customSourceLanes: document.getElementById("customSourceLanes"),
+    gainMode: document.getElementById("gainMode"),
+    rubyProfile: document.getElementById("rubyProfile"),
+    rubyR: document.getElementById("rubyR"),
+    rubyA: document.getElementById("rubyA"),
+    gainInput: document.getElementById("gainInput"),
+    rubyBaseGain: document.getElementById("rubyBaseGain"),
+    gainSlope: document.getElementById("gainSlope"),
+    gainLimit: document.getElementById("gainLimit"),
+    pumpCap: document.getElementById("pumpCap"),
+    mirrorA: document.getElementById("mirrorA"),
+    phaseMaxR: document.getElementById("phaseMaxR"),
+    phaseRes: document.getElementById("phaseRes"),
+    propagationLoss: document.getElementById("propagationLoss"),
+    strayOut: document.getElementById("strayOut"),
+    coherentOut: document.getElementById("coherentOut"),
+    seedOut: document.getElementById("seedOut"),
+    details: document.getElementById("details"),
+    flowCanvas: document.getElementById("flowCanvas"),
+    phaseCanvas: document.getElementById("phaseCanvas"),
+    phaseSummary: document.getElementById("phaseSummary"),
+    phaseProbe: document.getElementById("phaseProbe"),
+    lengthBtn: document.getElementById("lengthBtn")
+  };
+
+  let lastPhase = null;
+
+  function cloneBlock(type) {
+    const spec = TYPES[type] || TYPES.air;
+    return { type, pump: spec.pump ?? 0, R: spec.R ?? 0, A: spec.A ?? 0 };
+  }
+
+  function setPreset(count, mirrors = true) {
+    const blocks = [cloneBlock("source")];
+    if (mirrors) blocks.push(cloneBlock("mirror"));
+    for (let i = 0; i < count; i++) blocks.push(cloneBlock("ruby"));
+    if (mirrors) blocks.push(cloneBlock("mirror"));
+    blocks.push(cloneBlock("sensor"));
+    while (blocks.length < 16) blocks.push(cloneBlock("air"));
+    state.blocks = blocks;
+    state.selectedIndex = mirrors ? 2 : 1;
+    renderAll(false);
+  }
+
+  function fmt(value, digits = 3) {
+    if (!Number.isFinite(value)) return "NaN";
+    if (Math.abs(value) >= 1000 || (Math.abs(value) > 0 && Math.abs(value) < 0.001)) {
+      return value.toExponential(3);
+    }
+    return value.toFixed(digits);
+  }
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function finiteNumber(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function parseDraftNumber(value) {
+    const text = String(value ?? "").trim();
+    if (!text || text === "." || text === "-" || text === "+" || text === "-." || text === "+.") {
+      return null;
+    }
+
+    if (/[.]$/.test(text) || /[eE][+-]?$/.test(text)) {
+      return null;
+    }
+
+    const number = Number(text);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function setInputValue(key, value) {
+    const element = els[key];
+    if (!element || document.activeElement === element) {
+      return;
+    }
+
+    element.value = value;
+  }
+
+  function setSlotInputValue(element, value) {
+    if (!element || document.activeElement === element) {
+      return;
+    }
+
+    element.value = value;
+  }
+
+  function normalizeRA(R, A) {
+    const rr = clamp(finiteNumber(R) ?? 0, 0, 0.999);
+    const aa = clamp(finiteNumber(A) ?? 0, 0, 0.999);
+    return { T: Math.max(0, 1 - rr - aa), R: rr, A: aa };
+  }
+
+  function rubyBaseGain(block, params) {
+    if (params.gainInput === "direct") {
+      const directGain = Number(params.rubyBaseGain);
+      return Number.isFinite(directGain) ? Math.max(1, directGain) : 1;
+    }
+
+    const pumpCap = Math.max(0, Number(params.pumpCap) || 0);
+    const pump = Math.min(Math.max(0, Number(block.pump) || 0), pumpCap);
+    const normalizedPump = pumpCap > 0 ? clamp(pump / pumpCap, 0, 1) : 0;
+    const smoothPump = normalizedPump * normalizedPump * (3 - 2 * normalizedPump);
+    return Math.min(
+      Math.max(1, Number(params.gainLimit) || 1),
+      1 + Math.max(0, Number(params.gainSlope) || 0) * pumpCap * smoothPump
+    );
+  }
+
+  function rubyEffectiveGain(block, params) {
+    const baseGain = rubyBaseGain(block, params);
+    return Number.isFinite(baseGain) ? Math.max(1, baseGain) : 1;
+  }
+
+  function sanitizeParam(key, value) {
+    switch (key) {
+      case "sourcePower":
+      case "gainSlope":
+      case "mirrorA":
+        return Math.max(0, value);
+      case "sourceBin":
+        return clamp(Math.round(value), 0, 31);
+      case "rubyR":
+      case "rubyA":
+        return clamp(value, 0, 0.999);
+      case "rubyBaseGain":
+      case "gainLimit":
+        return Math.max(1, value);
+      case "pumpCap":
+        return clamp(value, 0, 64);
+      case "phaseMaxR":
+        return clamp(value, 0.1, 0.999);
+      default:
+        return value;
+    }
+  }
+
+  function sanitizeSlotField(field, value) {
+    if (field === "pump") return clamp(value, 0, 64);
+    if (field === "R" || field === "A") return clamp(value, 0, 0.999);
+    return value;
+  }
+
+  function activateDirectGainInput() {
+    state.params.gainMode = "scalar_tool";
+    state.params.gainInput = "direct";
+  }
+
+  function creativeWhiteWeights() {
+    const bands = [
+      [7.0, 7.0, 0.55],
+      [16.0, 8.5, 0.70],
+      [24.0, 7.0, 0.55]
+    ];
+    const raw = [];
+    for (let bin = 0; bin < 32; bin++) {
+      let value = 0;
+      for (const [center, width, weight] of bands) {
+        const distance = (bin - center) / width;
+        value += weight * Math.exp(-0.5 * distance * distance);
+      }
+      raw.push(value);
+    }
+    const max = Math.max(...raw);
+    const integerWeights = raw.map(value => clamp(Math.round(value / max * 1000), 1, 1000));
+    const total = integerWeights.reduce((sum, value) => sum + value, 0);
+    return integerWeights.map(value => value / total);
+  }
+
+  function customSourceBins(params) {
+    const powers = new Map();
+    const pattern = /visible\s*:\s*(\d+)(?:\s+power\s*=|=)\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)/g;
+    let match;
+
+    while ((match = pattern.exec(params.customSourceLanes || "")) !== null) {
+      const bin = clamp(Number(match[1]) || 0, 0, 31);
+      const power = Number(match[2]);
+
+      if (Number.isFinite(power) && power > 0) {
+        powers.set(bin, (powers.get(bin) || 0) + power);
+      }
+    }
+
+    return Array.from(powers.entries())
+      .sort((left, right) => left[0] - right[0])
+      .map(([bin, power]) => ({ bin, power }));
+  }
+
+  function sourceBins(params) {
+    const power = Math.max(0, Number(params.sourcePower) || 0);
+    if (params.sourceSpectrum === "custom_lanes") {
+      const customBins = customSourceBins(params);
+      if (customBins.length) return customBins;
+    }
+    if (params.sourceSpectrum === "creative_white") {
+      return creativeWhiteWeights().map((weight, bin) => ({ bin, power: power * weight }));
+    }
+    if (params.sourceSpectrum === "flat_visible") {
+      return Array.from({ length: 32 }, (_, bin) => ({ bin, power: power / 32 }));
+    }
+    return [{ bin: clamp(Math.round(params.sourceBin), 0, 31), power }];
+  }
+
+  function rubyGameResponse(bin) {
+    const samples = [
+      [2, 0.18, 0.04, 0.65],
+      [16, 0.35, 0.04, 0.50],
+      [26, 0.84, 0.15, 0.01],
+      [31, 0.82, 0.05, 0.08]
+    ];
+    if (bin <= samples[0][0]) return { T: samples[0][1], R: samples[0][2], A: samples[0][3] };
+    for (let i = 1; i < samples.length; i++) {
+      if (bin === samples[i][0]) return { T: samples[i][1], R: samples[i][2], A: samples[i][3] };
+      if (bin < samples[i][0]) {
+        const prev = samples[i - 1];
+        const next = samples[i];
+        const f = (bin - prev[0]) / (next[0] - prev[0]);
+        return {
+          T: prev[1] + (next[1] - prev[1]) * f,
+          R: prev[2] + (next[2] - prev[2]) * f,
+          A: prev[3] + (next[3] - prev[3]) * f
+        };
+      }
+    }
+    const last = samples[samples.length - 1];
+    return { T: last[1], R: last[2], A: last[3] };
+  }
+
+  function activeElements(blocks, params, override = null) {
+    const active = [];
+    blocks.forEach((block, pos) => {
+      if (block.type !== "air") active.push({ block, pos, activeIndex: active.length });
+    });
+    const mirrorIndices = active
+      .map((entry, index) => entry.block.type === "mirror" ? index : -1)
+      .filter(index => index >= 0);
+    const leftMirror = mirrorIndices[0];
+    const rightMirror = mirrorIndices.length > 1 ? mirrorIndices[mirrorIndices.length - 1] : leftMirror;
+    return active.map((entry, index) => {
+      let mirrorOverride = null;
+      if (override && entry.block.type === "mirror") {
+        if (index === leftMirror && override.leftR != null) {
+          mirrorOverride = { R: override.leftR, A: override.mirrorA };
+        } else if (index === rightMirror && override.rightR != null) {
+          mirrorOverride = { R: override.rightR, A: override.mirrorA };
+        }
+      }
+      return { ...entry, mirrorOverride };
+    });
+  }
+
+  function blockTRA(entry, bin, params) {
+    const block = entry.block;
+    if (block.type === "ruby") {
+      if (params.rubyProfile === "single" && bin === RUBY_LINE_BIN) {
+        return normalizeRA(params.rubyR, params.rubyA);
+      }
+      return rubyGameResponse(bin);
+    }
+    if (block.type === "mirror") {
+      const R = entry.mirrorOverride?.R ?? block.R;
+      const A = entry.mirrorOverride?.A ?? block.A;
+      return normalizeRA(R, A);
+    }
+    if (block.type === "custom") return normalizeRA(block.R, block.A);
+    if (block.type === "absorber") return { T: 0, R: 0, A: 1 };
+    return { T: 0, R: 0, A: 1 };
+  }
+
+  function propagationGain(distance, coherence, params) {
+    if (!params.propagationLoss) return 1;
+    const steps = Math.max(1, Math.abs(distance));
+    if (coherence === "coherent") {
+      return Math.pow(AIR_PROPAGATION, steps);
+    }
+    const airSteps = Math.max(0, steps - 1);
+    return Math.pow(AIR_PROPAGATION * INCOHERENT_FREE_SPACE, airSteps)
+      * AIR_PROPAGATION * INCOHERENT_BLOCK;
+  }
+
+  function localOutputs(entry, side, bin, params, coherence) {
+    const type = entry.block.type;
+    if (type === "source" || type === "sensor" || type === "absorber") return [];
+    const tra = blockTRA(entry, bin, params);
+    let T = tra.T;
+    let q = 1;
+    if (coherence === "coherent" && type === "ruby" && bin === RUBY_LINE_BIN && params.gainMode === "scalar_tool") {
+      q = rubyEffectiveGain(entry.block, params);
+      T *= q;
+    }
+    if (side === "L") return [{ out: "R", gain: T, q }, { out: "L", gain: tra.R, q }];
+    return [{ out: "L", gain: T, q }, { out: "R", gain: tra.R, q }];
+  }
+
+  function solveLinear(matrix, rhs) {
+    const n = rhs.length;
+    const a = matrix.map((row, i) => {
+      const out = new Float64Array(n + 1);
+      for (let j = 0; j < n; j++) out[j] = (i === j ? 1 : 0) - row[j];
+      out[n] = rhs[i];
+      return out;
+    });
+    for (let col = 0; col < n; col++) {
+      let pivot = col;
+      let max = Math.abs(a[col][col]);
+      for (let row = col + 1; row < n; row++) {
+        const value = Math.abs(a[row][col]);
+        if (value > max) {
+          max = value;
+          pivot = row;
+        }
+      }
+      if (!Number.isFinite(max) || max <= 1e-12) return null;
+      if (pivot !== col) {
+        const tmp = a[pivot];
+        a[pivot] = a[col];
+        a[col] = tmp;
+      }
+      const div = a[col][col];
+      for (let j = col; j <= n; j++) a[col][j] /= div;
+      for (let row = 0; row < n; row++) {
+        if (row === col) continue;
+        const factor = a[row][col];
+        if (Math.abs(factor) < 1e-16) continue;
+        for (let j = col; j <= n; j++) a[row][j] -= factor * a[col][j];
+      }
+    }
+    const x = new Float64Array(n);
+    for (let i = 0; i < n; i++) x[i] = a[i][n];
+    return x;
+  }
+
+  function solveSingleBin(blocks, params, bin, sourcePower, coherence, rubySources = [], override = null) {
+    const active = activeElements(blocks, params, override);
+    const n = active.length;
+    const size = n * 2;
+    const matrix = Array.from({ length: size }, () => new Float64Array(size));
+    const rhs = new Float64Array(size);
+    const lin = i => i * 2;
+    const rin = i => i * 2 + 1;
+
+    function addPropagatedSource(fromIndex, direction, power) {
+      if (power <= 0 || fromIndex < 0 || fromIndex >= n) return;
+      if (direction === "R" && fromIndex + 1 < n) {
+        const distance = active[fromIndex + 1].pos - active[fromIndex].pos;
+        rhs[lin(fromIndex + 1)] += power * propagationGain(distance, coherence, params);
+      } else if (direction === "L" && fromIndex - 1 >= 0) {
+        const distance = active[fromIndex].pos - active[fromIndex - 1].pos;
+        rhs[rin(fromIndex - 1)] += power * propagationGain(distance, coherence, params);
+      }
+    }
+
+    for (let i = 0; i < n; i++) {
+      const entry = active[i];
+      if (entry.block.type === "source") addPropagatedSource(i, "R", sourcePower);
+      for (const side of ["L", "R"]) {
+        const fromNode = side === "L" ? lin(i) : rin(i);
+        for (const output of localOutputs(entry, side, bin, params, coherence)) {
+          if (output.gain <= 0) continue;
+          if (output.out === "R" && i + 1 < n) {
+            const distance = active[i + 1].pos - entry.pos;
+            matrix[lin(i + 1)][fromNode] += output.gain * propagationGain(distance, coherence, params);
+          } else if (output.out === "L" && i - 1 >= 0) {
+            const distance = entry.pos - active[i - 1].pos;
+            matrix[rin(i - 1)][fromNode] += output.gain * propagationGain(distance, coherence, params);
+          }
+        }
+      }
+    }
+
+    for (const rubySource of rubySources) {
+      if (rubySource.bin !== bin) continue;
+      addPropagatedSource(rubySource.activeIndex, rubySource.direction, rubySource.power);
+    }
+
+    const powers = solveLinear(matrix, rhs);
+    if (!powers) return { ok: false, active, matrix, powers: new Float64Array(size), sensor: 0, rubyOutgoing: [] };
+    let sensor = 0;
+    for (let i = 0; i < n; i++) {
+      if (active[i].block.type === "sensor") sensor += Math.max(0, powers[lin(i)]);
+    }
+    const rubyOutgoing = [];
+    for (let i = 0; i < n; i++) {
+      if (active[i].block.type !== "ruby") continue;
+      const tra = blockTRA(active[i], bin, params);
+      const leftIn = Math.max(0, powers[lin(i)]);
+      const rightIn = Math.max(0, powers[rin(i)]);
+      rubyOutgoing.push({ activeIndex: i, direction: "R", power: tra.T * leftIn + tra.R * rightIn });
+      rubyOutgoing.push({ activeIndex: i, direction: "L", power: tra.R * leftIn + tra.T * rightIn });
+    }
+    return { ok: true, active, matrix, powers, sensor, rubyOutgoing };
+  }
+
+  function solvePassive(blocks, params, override = null) {
+    const bins = sourceBins(params);
+    let strayOut = 0;
+    let seedPower = 0;
+    const perBin = [];
+    const rubySources = [];
+    let active = [];
+    let lastResult = null;
+    let rubyLineResult = null;
+
+    for (const source of bins) {
+      if (source.power <= 0) continue;
+      const result = solveSingleBin(blocks, params, source.bin, source.power, "incoherent", [], override);
+      if (!result.ok) return { ok: false, reason: "passive singular" };
+      active = result.active;
+      lastResult = result;
+      if (source.bin === RUBY_LINE_BIN) {
+        rubyLineResult = result;
+      }
+      strayOut += result.sensor;
+      perBin.push({ bin: source.bin, source: source.power, readout: result.sensor });
+      if (source.bin === RUBY_LINE_BIN) {
+        for (const outgoing of result.rubyOutgoing) {
+          if (outgoing.power <= 0) continue;
+          seedPower += outgoing.power;
+          rubySources.push({ ...outgoing, bin: RUBY_LINE_BIN });
+        }
+      }
+    }
+    return { ok: true, strayOut, seedPower, rubySources, perBin, active, lastResult, rubyLineResult };
+  }
+
+  function solveAll(blocks, params, override = null) {
+    const passive = solvePassive(blocks, params, override);
+    if (!passive.ok) return { ok: false, reason: passive.reason };
+
+    const coherent = solveSingleBin(blocks, params, RUBY_LINE_BIN, 0, "coherent", passive.rubySources, override);
+    return {
+      ok: passive.ok && coherent.ok,
+      strayOut: passive.strayOut,
+      coherentOut: coherent.ok ? coherent.sensor : NaN,
+      seedPower: passive.seedPower,
+      passive,
+      coherent
+    };
+  }
+
+  function mirrorlessBlocks(blocks) {
+    return blocks.map(block => block.type === "mirror" ? cloneBlock("air") : { ...block });
+  }
+
+  function transparentMirrorBlocks(blocks, mirrorA) {
+    return blocks.map(block => block.type === "mirror"
+      ? { ...cloneBlock("mirror"), R: 0, A: mirrorA }
+      : { ...block });
+  }
+
+  function phaseBlocks(baseBlocks, leftR, rightR) {
+    const blocks = baseBlocks.map(block => ({ ...block }));
+    const mirrorIndices = blocks
+      .map((block, index) => block.type === "mirror" ? index : -1)
+      .filter(index => index >= 0);
+    if (!mirrorIndices.length) {
+      blocks.splice(1, 0, cloneBlock("mirror"));
+      blocks.splice(blocks.length - 1, 0, cloneBlock("mirror"));
+      mirrorIndices.push(1, blocks.length - 2);
+    }
+    blocks[mirrorIndices[0]].R = leftR;
+    blocks[mirrorIndices[0]].A = state.params.mirrorA;
+    const right = mirrorIndices.length > 1 ? mirrorIndices[mirrorIndices.length - 1] : mirrorIndices[0];
+    blocks[right].R = rightR;
+    blocks[right].A = state.params.mirrorA;
+    return blocks;
+  }
+
+  function renderPalette() {
+    els.palette.innerHTML = "";
+    for (const key of Object.keys(TYPES)) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = TYPES[key].name;
+      button.className = state.selectedTool === key ? "active" : "";
+      button.addEventListener("click", () => {
+        state.selectedTool = key;
+        renderPalette();
+      });
+      els.palette.appendChild(button);
+    }
+  }
+
+  function renderChain() {
+    els.chain.style.setProperty("--slot-count", state.blocks.length);
+    els.chain.innerHTML = "";
+    state.blocks.forEach((block, index) => {
+      const spec = TYPES[block.type] || TYPES.air;
+      const slot = document.createElement("button");
+      slot.type = "button";
+      slot.className = `slot ${spec.cls}${index === state.selectedIndex ? " selected" : ""}`;
+      slot.title = `${index}: ${spec.name}`;
+      slot.innerHTML = `<span class="glyph">${spec.glyph}</span>`;
+      if (block.type === "ruby") {
+        const pump = document.createElement("span");
+        pump.className = "pump";
+        pump.textContent = `${fmt(block.pump, 1)}PU`;
+        slot.appendChild(pump);
+      }
+      slot.addEventListener("click", event => {
+        if (event.shiftKey) state.selectedIndex = index;
+        else {
+          state.blocks[index] = cloneBlock(state.selectedTool);
+          state.selectedIndex = index;
+        }
+        renderAll();
+      });
+      els.chain.appendChild(slot);
+    });
+    els.lengthBtn.textContent = String(state.blocks.length);
+  }
+
+  function renderSlotEditor() {
+    const block = state.blocks[state.selectedIndex] || cloneBlock("air");
+    els.slotType.innerHTML = "";
+    for (const [key, spec] of Object.entries(TYPES)) {
+      const option = document.createElement("option");
+      option.value = key;
+      option.textContent = spec.name;
+      option.selected = block.type === key;
+      els.slotType.appendChild(option);
+    }
+    setSlotInputValue(els.slotPump, block.pump ?? 0);
+    setSlotInputValue(els.slotR, block.R ?? 0);
+    setSlotInputValue(els.slotA, block.A ?? 0);
+    const materialLike = block.type === "mirror" || block.type === "custom";
+    els.slotR.disabled = !materialLike;
+    els.slotA.disabled = !materialLike;
+    els.slotPump.disabled = block.type !== "ruby";
+  }
+
+  function renderParams() {
+    for (const key of ["sourcePower", "sourceBin", "rubyR", "rubyA", "rubyBaseGain", "gainSlope", "gainLimit", "pumpCap", "mirrorA", "phaseMaxR"]) {
+      setInputValue(key, state.params[key]);
+    }
+    els.sourceSpectrum.value = state.params.sourceSpectrum;
+    els.customSourceLanes.value = state.params.customSourceLanes;
+    els.gainMode.value = state.params.gainMode;
+    els.rubyProfile.value = state.params.rubyProfile;
+    els.gainInput.value = state.params.gainInput;
+    els.phaseRes.value = String(state.params.phaseRes);
+    els.propagationLoss.checked = state.params.propagationLoss;
+
+    const editableRubyProfile = state.params.rubyProfile === "single";
+    els.rubyR.disabled = !editableRubyProfile;
+    els.rubyA.disabled = !editableRubyProfile;
+
+    const directGain = state.params.gainInput === "direct";
+    els.rubyBaseGain.disabled = false;
+    els.rubyBaseGain.title = directGain && state.params.gainMode === "scalar_tool"
+      ? ""
+      : "Editing switches to direct material gain";
+    els.gainSlope.disabled = directGain;
+    els.gainLimit.disabled = directGain;
+    els.pumpCap.disabled = directGain;
+  }
+
+  function renderReadout(result) {
+    els.strayOut.textContent = fmt(result.strayOut, 3);
+    els.coherentOut.textContent = fmt(result.coherentOut, 3);
+    els.seedOut.textContent = fmt(result.seedPower, 3);
+    const rubyCount = state.blocks.filter(block => block.type === "ruby").length;
+    const activeCount = state.blocks.filter(block => block.type !== "air").length;
+    els.chainSummary.textContent = `${activeCount} active slots, ${rubyCount} ruby, ${state.params.sourceSpectrum}, gain ${state.params.gainMode}/${state.params.gainInput}, propagation ${state.params.propagationLoss ? "on" : "off"}`;
+  }
+
+  function renderDetails(result) {
+    if (!result.ok) {
+      els.details.textContent = result.reason || "solve failed";
+      els.details.classList.add("warning");
+      return;
+    }
+    els.details.classList.remove("warning");
+    const rows = [];
+    rows.push("slot  active  block       T@26     R@26     A@26     pump     baseG    edgeG");
+    result.passive.active.forEach((entry, activeIndex) => {
+      const tra = blockTRA(entry, RUBY_LINE_BIN, state.params);
+      const baseGain = entry.block.type === "ruby" ? rubyBaseGain(entry.block, state.params) : 1;
+      const edgeGain = entry.block.type === "ruby" && state.params.gainMode === "scalar_tool"
+        ? rubyEffectiveGain(entry.block, state.params)
+        : 1;
+      rows.push(`${String(entry.pos).padStart(2)}    ${String(activeIndex).padStart(2)}     ${entry.block.type.padEnd(10)} ${fmt(tra.T, 5).padStart(8)} ${fmt(tra.R, 5).padStart(8)} ${fmt(tra.A, 5).padStart(8)} ${fmt(entry.block.pump || 0, 2).padStart(8)} ${fmt(baseGain, 5).padStart(8)} ${fmt(edgeGain, 5).padStart(8)}`);
+    });
+    rows.push("");
+    rows.push("source lanes:");
+    const sourceTotal = result.passive.perBin.reduce((sum, lane) => sum + lane.source, 0);
+    for (const lane of result.passive.perBin) {
+      rows.push(`  visible:${String(lane.bin).padStart(2)} source=${fmt(lane.source, 6).padStart(10)} readout=${fmt(lane.readout, 6).padStart(10)}`);
+    }
+    rows.push("");
+    rows.push(`source total       ${fmt(sourceTotal, 6)}`);
+    rows.push(`source mode        ${state.params.sourceSpectrum}`);
+    rows.push(`gain mode          ${state.params.gainMode}`);
+    rows.push(`gain input         ${state.params.gainInput}`);
+    rows.push(`gain active        ${state.params.gainMode === "scalar_tool" ? "yes" : "no"}`);
+    rows.push(`stray readout      ${fmt(result.strayOut, 6)}`);
+    rows.push(`ruby seed          ${fmt(result.seedPower, 6)}`);
+    rows.push(`coherent readout   ${fmt(result.coherentOut, 6)}`);
+    rows.push("");
+    rows.push(`Propagation model: coherent step=${AIR_PROPAGATION}; incoherent air step=${fmt(AIR_PROPAGATION * INCOHERENT_FREE_SPACE, 6)}; incoherent target step=${fmt(AIR_PROPAGATION * INCOHERENT_BLOCK, 6)}`);
+    els.details.textContent = rows.join("\n");
+  }
+
+  function renderFlow(result) {
+    const canvas = els.flowCanvas;
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = "#050709";
+    ctx.fillRect(0, 0, w, h);
+    if (!result.ok || !result.passive.active.length) return;
+    const active = result.passive.active;
+    const margin = 38;
+    const maxSlot = Math.max(1, state.blocks.length - 1);
+    const passiveResult = result.passive.rubyLineResult || result.passive.lastResult;
+    const coherentResult = result.coherent;
+    const passiveSeries = portPowerSeries(passiveResult);
+    const coherentSeries = portPowerSeries(coherentResult);
+    const maxPower = Math.max(
+      1e-9,
+      result.strayOut,
+      result.coherentOut,
+      result.seedPower,
+      ...passiveSeries.map(point => point.power),
+      ...coherentSeries.map(point => point.power)
+    );
+
+    ctx.strokeStyle = "rgba(237,245,242,0.10)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+      const y = margin + (h - margin * 2) * i / 4;
+      ctx.beginPath();
+      ctx.moveTo(margin, y);
+      ctx.lineTo(w - margin, y);
+      ctx.stroke();
+    }
+
+    function yFor(power, offset = 0) {
+      const t = Math.log10(1 + Math.max(0, power)) / Math.log10(1 + maxPower);
+      return h - margin - t * (h - margin * 2) + offset;
+    }
+
+    drawPowerSeries(ctx, passiveSeries, "#e5bd60", margin, w, h, maxSlot, yFor);
+    drawPowerSeries(ctx, coherentSeries, "#62c7d5", margin, w, h, maxSlot, yFor);
+
+    active.forEach(entry => {
+      const x = margin + (w - margin * 2) * entry.pos / maxSlot;
+      const y = h - 30;
+      ctx.fillStyle = blockColor(entry.block.type);
+      ctx.fillRect(x - 11, y - 11, 22, 22);
+      ctx.strokeStyle = "rgba(255,255,255,0.28)";
+      ctx.strokeRect(x - 11, y - 11, 22, 22);
+    });
+
+    ctx.fillStyle = "#91a3a8";
+    ctx.font = "12px Consolas, monospace";
+    ctx.fillText("spatial port power", margin, 18);
+    ctx.fillStyle = "#e5bd60";
+    ctx.fillRect(margin + 124, 10, 22, 3);
+    ctx.fillStyle = "#62c7d5";
+    ctx.fillRect(margin + 182, 10, 22, 3);
+    ctx.fillStyle = "#91a3a8";
+    ctx.fillText("passive", margin + 150, 18);
+    ctx.fillText("coherent", margin + 208, 18);
+  }
+
+  function portPowerSeries(result) {
+    if (!result || !result.ok || !result.active?.length || !result.powers) {
+      return [];
+    }
+
+    return result.active.map((entry, index) => {
+      const leftIn = Math.max(0, result.powers[index * 2] || 0);
+      const rightIn = Math.max(0, result.powers[index * 2 + 1] || 0);
+      return { pos: entry.pos, power: leftIn + rightIn };
+    });
+  }
+
+  function drawPowerSeries(ctx, series, color, margin, width, height, maxSlot, yFor) {
+    if (!series.length) return;
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    series.forEach((point, index) => {
+      const x = margin + (width - margin * 2) * point.pos / maxSlot;
+      const y = yFor(point.power);
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    ctx.fillStyle = color;
+    for (const point of series) {
+      const x = margin + (width - margin * 2) * point.pos / maxSlot;
+      const y = yFor(point.power);
+      ctx.fillRect(x - 2, y - 2, 4, 4);
+    }
+  }
+
+  function blockColor(type) {
+    if (type === "source") return "#e5bd60";
+    if (type === "ruby") return "#b72843";
+    if (type === "mirror") return "#d7e3e4";
+    if (type === "custom") return "#62c7d5";
+    if (type === "sensor") return "#76d58e";
+    if (type === "absorber") return "#333";
+    return "#17202a";
+  }
+
+  function computePhase() {
+    const res = state.params.phaseRes;
+    const maxR = state.params.phaseMaxR;
+    const data = new Float64Array(res * res);
+    const ratio = new Float64Array(res * res);
+    const clearSlotRatio = new Float64Array(res * res);
+    let max = 0;
+    let betterThanNoMirror = 0;
+    let betterThanClearSlots = 0;
+    let best = { value: -Infinity, x: 0, y: 0, leftR: 0, rightR: 0, ratio: 0, clearSlotRatio: 0 };
+    const noMirror = solveAll(mirrorlessBlocks(state.blocks), state.params);
+    const noMirrorOut = noMirror.ok ? Math.max(1e-12, noMirror.coherentOut) : 1e-12;
+    const clearSlots = solveAll(transparentMirrorBlocks(state.blocks, state.params.mirrorA), state.params);
+    const clearSlotsOut = clearSlots.ok ? Math.max(1e-12, clearSlots.coherentOut) : 1e-12;
+
+    for (let y = 0; y < res; y++) {
+      const rightR = maxR * (1 - y / (res - 1));
+      for (let x = 0; x < res; x++) {
+        const leftR = maxR * x / (res - 1);
+        const blocks = phaseBlocks(state.blocks, leftR, rightR);
+        const result = solveAll(blocks, state.params, { leftR, rightR, mirrorA: state.params.mirrorA });
+        const index = y * res + x;
+        const value = result.ok && Number.isFinite(result.coherentOut) ? result.coherentOut : 0;
+        data[index] = value;
+        ratio[index] = value / noMirrorOut;
+        clearSlotRatio[index] = value / clearSlotsOut;
+        if (ratio[index] > 1) betterThanNoMirror++;
+        if (clearSlotRatio[index] > 1) betterThanClearSlots++;
+        if (value > max) max = value;
+        if (value > best.value) {
+          best = {
+            value,
+            x,
+            y,
+            leftR,
+            rightR,
+            ratio: ratio[index],
+            clearSlotRatio: clearSlotRatio[index]
+          };
+        }
+      }
+    }
+    lastPhase = {
+      res,
+      maxR,
+      data,
+      ratio,
+      clearSlotRatio,
+      max,
+      best,
+      noMirrorOut,
+      clearSlotsOut,
+      betterThanNoMirror,
+      betterThanClearSlots
+    };
+    renderPhase();
+  }
+
+  function colorRamp(t, better) {
+    const x = clamp(t, 0, 1);
+    const stops = [
+      [8, 12, 18],
+      [21, 38, 52],
+      [55, 87, 100],
+      [139, 80, 83],
+      [229, 189, 96]
+    ];
+    const scaled = x * (stops.length - 1);
+    const i = Math.min(stops.length - 2, Math.floor(scaled));
+    const f = scaled - i;
+    const a = stops[i];
+    const b = stops[i + 1];
+    let r = a[0] + (b[0] - a[0]) * f;
+    let g = a[1] + (b[1] - a[1]) * f;
+    let bl = a[2] + (b[2] - a[2]) * f;
+    if (better) {
+      r = r * 0.72 + 118 * 0.28;
+      g = g * 0.72 + 213 * 0.28;
+      bl = bl * 0.72 + 142 * 0.28;
+    }
+    return [r | 0, g | 0, bl | 0, 255];
+  }
+
+  function renderPhase() {
+    if (!lastPhase) return;
+    const canvas = els.phaseCanvas;
+    const ctx = canvas.getContext("2d");
+    const {
+      res,
+      data,
+      ratio,
+      clearSlotRatio,
+      max,
+      best,
+      noMirrorOut,
+      clearSlotsOut,
+      betterThanNoMirror,
+      betterThanClearSlots
+    } = lastPhase;
+    const image = ctx.createImageData(res, res);
+    const logMax = Math.log10(1 + Math.max(1e-9, max));
+    for (let i = 0; i < data.length; i++) {
+      const t = Math.log10(1 + data[i]) / logMax;
+      const rgba = colorRamp(t, ratio[i] > 1);
+      image.data[i * 4] = rgba[0];
+      image.data[i * 4 + 1] = rgba[1];
+      image.data[i * 4 + 2] = rgba[2];
+      image.data[i * 4 + 3] = 255;
+    }
+    const scratch = document.createElement("canvas");
+    scratch.width = res;
+    scratch.height = res;
+    scratch.getContext("2d").putImageData(image, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(scratch, 0, 0, canvas.width, canvas.height);
+    drawContour(ctx, ratio, res, canvas.width, canvas.height, 1, "#76d58e", 1.6);
+    drawContour(ctx, clearSlotRatio, res, canvas.width, canvas.height, 1, "#62c7d5", 1.2);
+    ctx.strokeStyle = "rgba(255,255,255,0.82)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(best.x / (res - 1) * canvas.width, best.y / (res - 1) * canvas.height - 6);
+    ctx.lineTo(best.x / (res - 1) * canvas.width, best.y / (res - 1) * canvas.height + 6);
+    ctx.moveTo(best.x / (res - 1) * canvas.width - 6, best.y / (res - 1) * canvas.height);
+    ctx.lineTo(best.x / (res - 1) * canvas.width + 6, best.y / (res - 1) * canvas.height);
+    ctx.stroke();
+    els.phaseSummary.textContent = `best ${fmt(best.value, 3)} SP at L=${fmt(best.leftR, 3)}, R=${fmt(best.rightR, 3)}; no mirror ${fmt(noMirrorOut, 3)} SP; clear slots ${fmt(clearSlotsOut, 3)} SP`;
+    els.phaseProbe.textContent =
+      `best output    ${fmt(best.value, 6)}\n` +
+      `left R         ${fmt(best.leftR, 6)}\n` +
+      `right R        ${fmt(best.rightR, 6)}\n` +
+      `vs no mirror   ${fmt(best.ratio, 6)}x\n` +
+      `vs clear slots ${fmt(best.clearSlotRatio, 6)}x\n` +
+      `beats no mirror cells   ${betterThanNoMirror}/${data.length}\n` +
+      `beats clear slots cells ${betterThanClearSlots}/${data.length}`;
+  }
+
+  function drawContour(ctx, values, res, width, height, threshold, color, lineWidth) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth;
+    ctx.beginPath();
+
+    for (let y = 0; y < res - 1; y++) {
+      for (let x = 0; x < res - 1; x++) {
+        const v00 = values[y * res + x] - threshold;
+        const v10 = values[y * res + x + 1] - threshold;
+        const v01 = values[(y + 1) * res + x] - threshold;
+        const v11 = values[(y + 1) * res + x + 1] - threshold;
+        const points = [];
+
+        addContourPoint(points, v00, v10, x, y, x + 1, y, res, width, height);
+        addContourPoint(points, v10, v11, x + 1, y, x + 1, y + 1, res, width, height);
+        addContourPoint(points, v01, v11, x, y + 1, x + 1, y + 1, res, width, height);
+        addContourPoint(points, v00, v01, x, y, x, y + 1, res, width, height);
+
+        if (points.length >= 2) {
+          ctx.moveTo(points[0].x, points[0].y);
+          ctx.lineTo(points[1].x, points[1].y);
+        }
+
+        if (points.length >= 4) {
+          ctx.moveTo(points[2].x, points[2].y);
+          ctx.lineTo(points[3].x, points[3].y);
+        }
+      }
+    }
+
+    ctx.stroke();
+  }
+
+  function addContourPoint(points, a, b, x0, y0, x1, y1, res, width, height) {
+    if ((a < 0 && b < 0) || (a > 0 && b > 0) || a === b) {
+      return;
+    }
+
+    const t = clamp(Math.abs(a) / (Math.abs(a) + Math.abs(b)), 0, 1);
+    const x = (x0 + (x1 - x0) * t) / (res - 1) * width;
+    const y = (y0 + (y1 - y0) * t) / (res - 1) * height;
+    points.push({ x, y });
+  }
+
+  function probePhase(event) {
+    if (!lastPhase) return;
+    const rect = els.phaseCanvas.getBoundingClientRect();
+    const x = clamp(Math.floor((event.clientX - rect.left) / rect.width * lastPhase.res), 0, lastPhase.res - 1);
+    const y = clamp(Math.floor((event.clientY - rect.top) / rect.height * lastPhase.res), 0, lastPhase.res - 1);
+    const index = y * lastPhase.res + x;
+    const leftR = lastPhase.maxR * x / (lastPhase.res - 1);
+    const rightR = lastPhase.maxR * (1 - y / (lastPhase.res - 1));
+    const blocks = phaseBlocks(state.blocks, leftR, rightR);
+    const result = solveAll(blocks, state.params, { leftR, rightR, mirrorA: state.params.mirrorA });
+    els.phaseProbe.textContent =
+      `output         ${fmt(lastPhase.data[index], 6)}\n` +
+      `left R         ${fmt(leftR, 6)}\n` +
+      `right R        ${fmt(rightR, 6)}\n` +
+      `vs no mirror   ${fmt(lastPhase.ratio[index], 6)}x\n` +
+      `vs clear slots ${fmt(lastPhase.clearSlotRatio[index], 6)}x\n` +
+      `stray          ${fmt(result.strayOut, 6)}\n` +
+      `seed           ${fmt(result.seedPower, 6)}`;
+  }
+
+  function renderAll(skipPhase = true) {
+    renderPalette();
+    renderChain();
+    renderSlotEditor();
+    renderParams();
+    const result = solveAll(state.blocks, state.params);
+    renderReadout(result);
+    renderDetails(result);
+    renderFlow(result);
+    if (!skipPhase) computePhase();
+  }
+
+  function bindEvents() {
+    document.getElementById("preset5Btn").addEventListener("click", () => setPreset(5, true));
+    document.getElementById("presetNoMirrorBtn").addEventListener("click", () => setPreset(5, false));
+    document.getElementById("clearBtn").addEventListener("click", () => {
+      state.blocks = Array.from({ length: state.blocks.length }, () => cloneBlock("air"));
+      renderAll();
+    });
+    document.getElementById("copyBtn").addEventListener("click", async () => {
+      await navigator.clipboard.writeText(JSON.stringify({ params: state.params, blocks: state.blocks }, null, 2));
+    });
+    document.getElementById("recalcBtn").addEventListener("click", () => renderAll());
+    document.getElementById("phaseBtn").addEventListener("click", () => computePhase());
+    document.getElementById("shortenBtn").addEventListener("click", () => {
+      if (state.blocks.length > 4) state.blocks.pop();
+      state.selectedIndex = Math.min(state.selectedIndex, state.blocks.length - 1);
+      renderAll();
+    });
+    document.getElementById("extendBtn").addEventListener("click", () => {
+      if (state.blocks.length < 32) state.blocks.push(cloneBlock("air"));
+      renderAll();
+    });
+    els.slotType.addEventListener("change", () => {
+      state.blocks[state.selectedIndex] = cloneBlock(els.slotType.value);
+      renderAll();
+    });
+    for (const [el, field] of [[els.slotPump, "pump"], [els.slotR, "R"], [els.slotA, "A"]]) {
+      el.addEventListener("input", () => {
+        const value = parseDraftNumber(el.value);
+
+        if (value == null) {
+          return;
+        }
+
+        const block = state.blocks[state.selectedIndex];
+        block[field] = value;
+        renderAll();
+      });
+      el.addEventListener("blur", () => {
+        const block = state.blocks[state.selectedIndex];
+        const value = parseDraftNumber(el.value);
+
+        if (value == null) {
+          setSlotInputValue(el, block[field] ?? 0);
+          return;
+        }
+
+        block[field] = sanitizeSlotField(field, value);
+        renderAll();
+      });
+    }
+    for (const key of ["sourcePower", "sourceBin", "rubyR", "rubyA", "rubyBaseGain", "gainSlope", "gainLimit", "pumpCap", "mirrorA", "phaseMaxR"]) {
+      els[key].addEventListener("input", () => {
+        const value = parseDraftNumber(els[key].value);
+
+        if (value == null) {
+          return;
+        }
+
+        if (key === "rubyBaseGain") {
+          activateDirectGainInput();
+        }
+
+        state.params[key] = value;
+        renderAll();
+      });
+      els[key].addEventListener("blur", () => {
+        const value = parseDraftNumber(els[key].value);
+
+        if (value == null) {
+          setInputValue(key, state.params[key]);
+          return;
+        }
+
+        if (key === "rubyBaseGain") {
+          activateDirectGainInput();
+        }
+
+        state.params[key] = sanitizeParam(key, value);
+        renderAll();
+      });
+    }
+    els.sourceSpectrum.addEventListener("change", () => {
+      state.params.sourceSpectrum = els.sourceSpectrum.value;
+      renderAll();
+    });
+    els.customSourceLanes.addEventListener("input", () => {
+      state.params.customSourceLanes = els.customSourceLanes.value;
+      renderAll();
+    });
+    els.gainMode.addEventListener("change", () => {
+      state.params.gainMode = els.gainMode.value;
+      renderAll();
+    });
+    els.rubyProfile.addEventListener("change", () => {
+      state.params.rubyProfile = els.rubyProfile.value;
+      renderAll();
+    });
+    els.gainInput.addEventListener("change", () => {
+      state.params.gainInput = els.gainInput.value;
+      renderAll();
+    });
+    els.phaseRes.addEventListener("change", () => {
+      state.params.phaseRes = Number(els.phaseRes.value) || 64;
+      renderAll();
+    });
+    els.propagationLoss.addEventListener("change", () => {
+      state.params.propagationLoss = els.propagationLoss.checked;
+      renderAll();
+    });
+    els.phaseCanvas.addEventListener("mousemove", probePhase);
+  }
+
+  function init() {
+    setPreset(5, true);
+    bindEvents();
+    renderAll(false);
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

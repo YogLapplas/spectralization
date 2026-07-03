@@ -85,10 +85,10 @@ public final class SpectralizationConfig {
         builder.push("optical_solver");
         OPTICAL_SOLVER_MAX_REQUESTS_PER_TICK = builder
                 .comment("Maximum dirty optical trace requests processed per server tick.")
-                .defineInRange("max_requests_per_tick", 2, 1, 128);
+                .defineInRange("max_requests_per_tick", 16, 1, 128);
         OPTICAL_SOLVER_BUDGET_MICROS = builder
                 .comment("Soft server-tick budget for dirty optical trace processing, in microseconds.")
-                .defineInRange("budget_micros", 2000, 100, 50_000);
+                .defineInRange("budget_micros", 8000, 100, 50_000);
         OPTICAL_EFFECT_TRACE_MAX_STATES = builder
                 .comment("Maximum legacy effect-trace states per dirty source. The compiler solver is not limited by this; it only caps particles, spots, entity exposure, and debug observed traces.")
                 .defineInRange("effect_trace_max_states", 384, 0, 4096);
@@ -121,7 +121,7 @@ public final class SpectralizationConfig {
                 .defineInRange("full_network_max_nodes", 16384, 64, 262144);
         OPTICAL_COMPILER_SYSTEM_REBUILD_QUIET_TICKS = builder
                 .comment("Ticks without direct optical work required before queued topology/data rebuilds are allowed to run.")
-                .defineInRange("system_rebuild_quiet_ticks", 1, 0, 200);
+                .defineInRange("system_rebuild_quiet_ticks", 0, 0, 200);
         OPTICAL_COMPILER_LARGE_DIRECT_GRAPH_NODES = builder
                 .comment("Direct graph node count above which dirty recompilation is deferred until the network is quiet.")
                 .defineInRange("large_direct_graph_nodes", 1024, 64, 262144);

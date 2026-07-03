@@ -2,14 +2,17 @@ package io.github.yoglappland.spectralization.client.screen;
 
 import io.github.yoglappland.spectralization.blockentity.CreativeLightSourceBlockEntity;
 import io.github.yoglappland.spectralization.menu.CreativeLightSourceMenu;
+import io.github.yoglappland.spectralization.network.CreativeLightPowerPayload;
 import io.github.yoglappland.spectralization.network.CreativeLightSpectrumPayload;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
 import io.github.yoglappland.spectralization.optics.BeamModel;
 import io.github.yoglappland.spectralization.optics.CoherenceKind;
 import io.github.yoglappland.spectralization.optics.SpectralColorMap;
 import io.github.yoglappland.spectralization.optics.SpectralRegion;
+import java.util.Locale;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
@@ -24,10 +27,14 @@ public class CreativeLightSourceScreen extends AbstractContainerScreen<CreativeL
     private static final int CHART_WIDTH = 224;
     private static final int CHART_HEIGHT = 116;
     private static final int CHART_BOTTOM = CHART_TOP + CHART_HEIGHT;
+    private static final int CHART_SNAP_PIXELS = 2;
 
     private int page = PAGE_PARAMETERS;
     private int lastSentSpectrumBin = -1;
     private int lastSentSpectrumWeight = -1;
+    private EditBox powerBox;
+    private int lastPowerBoxCenti = Integer.MIN_VALUE;
+    private int lastSentPowerCenti = Integer.MIN_VALUE;
 
     public CreativeLightSourceScreen(CreativeLightSourceMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
@@ -39,6 +46,7 @@ public class CreativeLightSourceScreen extends AbstractContainerScreen<CreativeL
     @Override
     protected void init() {
         super.init();
+        powerBox = null;
 
         addRenderableWidget(Button.builder(Component.literal(page == PAGE_PARAMETERS ? "Spectrum" : "Parameters"), button -> {
                     page = page == PAGE_PARAMETERS ? PAGE_SPECTRUM : PAGE_PARAMETERS;
@@ -55,6 +63,7 @@ public class CreativeLightSourceScreen extends AbstractContainerScreen<CreativeL
         addRow(y, CreativeLightSourceMenu.BUTTON_REGION_DOWN, CreativeLightSourceMenu.BUTTON_REGION_UP);
         addRow(y + 18, CreativeLightSourceMenu.BUTTON_BIN_DOWN, CreativeLightSourceMenu.BUTTON_BIN_UP);
         addRow(y + 36, CreativeLightSourceMenu.BUTTON_POWER_DOWN, CreativeLightSourceMenu.BUTTON_POWER_UP);
+        addPowerBox(y + 36);
         addSingleButton(y + 54, CreativeLightSourceMenu.BUTTON_COHERENCE, "Toggle");
         addRow(y + 72, CreativeLightSourceMenu.BUTTON_MODEL_DOWN, CreativeLightSourceMenu.BUTTON_MODEL_UP);
         addRow(y + 90, CreativeLightSourceMenu.BUTTON_RADIUS_DOWN, CreativeLightSourceMenu.BUTTON_RADIUS_UP);
@@ -62,6 +71,25 @@ public class CreativeLightSourceScreen extends AbstractContainerScreen<CreativeL
         addRow(y + 126, CreativeLightSourceMenu.BUTTON_FOCUS_DOWN, CreativeLightSourceMenu.BUTTON_FOCUS_UP);
         addRow(y + 144, CreativeLightSourceMenu.BUTTON_MODE_M_DOWN, CreativeLightSourceMenu.BUTTON_MODE_M_UP);
         addRow(y + 162, CreativeLightSourceMenu.BUTTON_MODE_N_DOWN, CreativeLightSourceMenu.BUTTON_MODE_N_UP);
+    }
+
+    @Override
+    protected void containerTick() {
+        super.containerTick();
+
+        if (page != PAGE_PARAMETERS || powerBox == null || powerBox.isFocused()) {
+            return;
+        }
+
+        int powerCenti = data(CreativeLightSourceBlockEntity.DATA_POWER);
+
+        if (powerCenti == lastPowerBoxCenti) {
+            return;
+        }
+
+        powerBox.setValue(powerText(powerCenti));
+        lastPowerBoxCenti = powerCenti;
+        lastSentPowerCenti = powerCenti;
     }
 
     @Override
@@ -93,7 +121,7 @@ public class CreativeLightSourceScreen extends AbstractContainerScreen<CreativeL
         int y = 24;
         drawValue(graphics, y, "Region", regionName());
         drawValue(graphics, y + 18, "Bin", Integer.toString(data(CreativeLightSourceBlockEntity.DATA_BIN)));
-        drawValue(graphics, y + 36, "Power", Integer.toString(data(CreativeLightSourceBlockEntity.DATA_POWER)));
+        drawValue(graphics, y + 36, "Power", powerText(data(CreativeLightSourceBlockEntity.DATA_POWER)));
         drawValue(graphics, y + 54, "Coherence", coherenceName());
         drawValue(graphics, y + 72, "Model", beamModelName());
         drawValue(graphics, y + 90, "Radius", milli(CreativeLightSourceBlockEntity.DATA_RADIUS_MILLI));
@@ -108,6 +136,18 @@ public class CreativeLightSourceScreen extends AbstractContainerScreen<CreativeL
         addRenderableWidget(Button.builder(Component.literal("+"), button -> click(upId))
                 .bounds(leftPos + 215, y, 26, 16)
                 .build());
+    }
+
+    private void addPowerBox(int y) {
+        int powerCenti = data(CreativeLightSourceBlockEntity.DATA_POWER);
+        powerBox = new EditBox(font, leftPos + 116, y, 58, 16, Component.literal("Power"));
+        powerBox.setMaxLength(12);
+        powerBox.setFilter(CreativeLightSourceScreen::isPowerText);
+        powerBox.setValue(powerText(powerCenti));
+        lastPowerBoxCenti = powerCenti;
+        lastSentPowerCenti = powerCenti;
+        powerBox.setResponder(this::sendPowerFromText);
+        addRenderableWidget(powerBox);
     }
 
     private void addSingleButton(int y, int id, String text) {
@@ -174,7 +214,7 @@ public class CreativeLightSourceScreen extends AbstractContainerScreen<CreativeL
 
     private void renderSpectrumLabels(GuiGraphics graphics) {
         graphics.drawString(font, "Region: " + regionName(), 12, 22, 0xD8DEE9, false);
-        graphics.drawString(font, "Total power: " + data(CreativeLightSourceBlockEntity.DATA_POWER), 122, 22, 0xD8DEE9, false);
+        graphics.drawString(font, "Total power: " + powerText(data(CreativeLightSourceBlockEntity.DATA_POWER)), 122, 22, 0xD8DEE9, false);
 
         int totalWeight = totalSpectrumWeight();
         graphics.drawString(font, "Weight sum: " + totalWeight, 12, 164, 0xD8DEE9, false);
@@ -219,20 +259,45 @@ public class CreativeLightSourceScreen extends AbstractContainerScreen<CreativeL
 
         int bins = activeSpectrumBins();
         int bin = Mth.clamp((int) ((mouseX - left) * bins / CHART_WIDTH), 0, bins - 1);
-        int weight = Mth.clamp(
-                Math.round((float) ((bottom - mouseY) / CHART_HEIGHT * CreativeLightSourceBlockEntity.MAX_SPECTRUM_WEIGHT)),
-                0,
-                CreativeLightSourceBlockEntity.MAX_SPECTRUM_WEIGHT
-        );
+        int weight = spectrumWeightFromMouse(mouseY, top, bottom);
+        boolean exclusive = weight == CreativeLightSourceBlockEntity.MAX_SPECTRUM_WEIGHT;
 
-        if (bin == lastSentSpectrumBin && weight == lastSentSpectrumWeight) {
+        if (!exclusive && bin == lastSentSpectrumBin && weight == lastSentSpectrumWeight) {
             return true;
         }
 
         lastSentSpectrumBin = bin;
         lastSentSpectrumWeight = weight;
-        PacketDistributor.sendToServer(new CreativeLightSpectrumPayload(menu.containerId, bin, weight));
+        PacketDistributor.sendToServer(new CreativeLightSpectrumPayload(menu.containerId, bin, weight, exclusive));
         return true;
+    }
+
+    private static int spectrumWeightFromMouse(double mouseY, int top, int bottom) {
+        if (mouseY <= top + CHART_SNAP_PIXELS) {
+            return CreativeLightSourceBlockEntity.MAX_SPECTRUM_WEIGHT;
+        }
+
+        if (mouseY >= bottom - CHART_SNAP_PIXELS) {
+            return 0;
+        }
+
+        return Mth.clamp(
+                Math.round((float) ((bottom - mouseY) / CHART_HEIGHT * CreativeLightSourceBlockEntity.MAX_SPECTRUM_WEIGHT)),
+                0,
+                CreativeLightSourceBlockEntity.MAX_SPECTRUM_WEIGHT
+        );
+    }
+
+    private void sendPowerFromText(String value) {
+        int powerCenti = parsePowerCenti(value);
+
+        if (powerCenti < 0 || powerCenti == lastSentPowerCenti) {
+            return;
+        }
+
+        lastSentPowerCenti = powerCenti;
+        lastPowerBoxCenti = powerCenti;
+        PacketDistributor.sendToServer(new CreativeLightPowerPayload(menu.containerId, powerCenti));
     }
 
     private int data(int index) {
@@ -333,5 +398,65 @@ public class CreativeLightSourceScreen extends AbstractContainerScreen<CreativeL
 
     private String milli(int index) {
         return String.format("%.3f", data(index) / 1000.0);
+    }
+
+    private static boolean isPowerText(String value) {
+        if (value.isEmpty()) {
+            return true;
+        }
+
+        int decimalPoint = -1;
+        int decimals = 0;
+
+        for (int index = 0; index < value.length(); index++) {
+            char character = value.charAt(index);
+
+            if (character >= '0' && character <= '9') {
+                if (decimalPoint >= 0) {
+                    decimals++;
+                }
+
+                if (decimals > 2) {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (character == '.' && decimalPoint < 0) {
+                decimalPoint = index;
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    private static int parsePowerCenti(String value) {
+        if (value.isEmpty() || ".".equals(value)) {
+            return -1;
+        }
+
+        try {
+            double parsed = Double.parseDouble(value);
+
+            if (!Double.isFinite(parsed)) {
+                return -1;
+            }
+
+            return Mth.clamp(
+                    (int) Math.round(parsed * CreativeLightSourceBlockEntity.POWER_SCALE),
+                    0,
+                    CreativeLightSourceBlockEntity.MAX_POWER_CENTI
+            );
+        } catch (NumberFormatException ignored) {
+            return -1;
+        }
+    }
+
+    private static String powerText(int powerCenti) {
+        return String.format(Locale.ROOT, "%.2f", powerCenti / (double) CreativeLightSourceBlockEntity.POWER_SCALE);
     }
 }

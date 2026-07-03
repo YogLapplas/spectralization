@@ -79,6 +79,7 @@ public final class SpectralBlockChangeHandlers {
             OpticalWorldIndex.onBlockBroken(levelAccessor, pos);
             OpticalTraceCache.forgetDormantSource(levelAccessor, pos);
             OpticalTraceCache.markChanged(levelAccessor, pos, OpticalDirtyKind.STRUCTURE);
+            RubyBlockEntity.refreshNear(levelAccessor, pos);
             OpticalTraceCache.requestIntrinsicSourcesNear(levelAccessor, pos);
             OpticalNetworkIndex.markDirty(levelAccessor);
         }

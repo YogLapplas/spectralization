@@ -4,9 +4,12 @@ import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.block.RubyBlock;
 import io.github.yoglappland.spectralization.blockentity.FiberLaserBlockEntity;
 import io.github.yoglappland.spectralization.optics.pump.OpticalPumpSources;
+import java.util.ArrayDeque;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -72,7 +75,7 @@ public final class OpticalMaterialProfiles {
             sample(SpectralRegion.INFRARED, 16, 0.60, 0.03, 0.24),
             sample(SpectralRegion.VISIBLE, 2, 0.18, 0.04, 0.65),
             sample(SpectralRegion.VISIBLE, 16, 0.35, 0.04, 0.50),
-            sample(SpectralRegion.VISIBLE, 26, 0.90, 0.03, 0.05),
+            sample(SpectralRegion.VISIBLE, 26, 0.929, 0.031, 0.04),
             sample(SpectralRegion.VISIBLE, 31, 0.82, 0.05, 0.08),
             sample(SpectralRegion.ULTRAVIOLET, 16, 0.05, 0.05, 0.80)
     );
@@ -80,7 +83,7 @@ public final class OpticalMaterialProfiles {
             sample(SpectralRegion.INFRARED, 16, 0.64, 0.03, 0.20),
             sample(SpectralRegion.VISIBLE, 2, 0.18, 0.04, 0.65),
             sample(SpectralRegion.VISIBLE, 16, 0.38, 0.04, 0.46),
-            sample(SpectralRegion.VISIBLE, 26, 0.97, 0.02, 0.005),
+            sample(SpectralRegion.VISIBLE, 26, 0.929, 0.031, 0.04),
             sample(SpectralRegion.VISIBLE, 31, 0.88, 0.04, 0.07),
             sample(SpectralRegion.ULTRAVIOLET, 16, 0.05, 0.05, 0.80)
     );
@@ -89,10 +92,12 @@ public final class OpticalMaterialProfiles {
             sample(SpectralRegion.VISIBLE, 16, 0.88, 0.02, 0.08),
             sample(SpectralRegion.ULTRAVIOLET, 16, 0.35, 0.02, 0.55)
     );
-    private static final double RUBY_COHERENT_POWER_BUDGET_PER_PUMP_RATE = 1.25;
-    private static final double RUBY_COHERENT_SEED_SATURATION_POWER = 1.0;
-    private static final double RUBY_SCHEDULED_GAIN_PER_PUMP_RATE = 0.35;
-    private static final double RUBY_MAX_SCHEDULED_GAIN = 4.0;
+    private static final int RUBY_DOMAIN_MAX_BLOCKS = 512;
+    private static final double RUBY_MAX_EFFECTIVE_PUMP = 4.0;
+    private static final double RUBY_SINGLE_PASS_GAIN_PER_PU = 0.07;
+    private static final double RUBY_MATERIAL_SATURATION_POWER = 120.0;
+    private static final double RUBY_HANDLING_LIMIT = 320.0;
+    private static final double RUBY_EXCITED_SEED_POWER_PER_EXCITER = 7.5;
     private static final double RUBY_GAIN_MATERIAL_WEIGHT = 2.0;
 
     private static final Set<Block> AIR_LIKE_BLOCKS = Set.of(
@@ -274,7 +279,7 @@ public final class OpticalMaterialProfiles {
         if (state.getBlock() == Spectralization.RUBY_BLOCK.get()
                 && level != null
                 && pos != null
-                && OpticalPumpSources.effectiveAdjacentPumpRate(level, pos, state) > 0) {
+                && rubyDomainPumpDensity(level, pos, state) > 0.0) {
             return RUBY_PUMPED;
         }
 
@@ -294,14 +299,19 @@ public final class OpticalMaterialProfiles {
     }
 
     public static double rubyMaximumEffectiveSinglePassGain() {
-        return Math.min(
-                RUBY_MAX_SCHEDULED_GAIN,
-                1.0 + RUBY_SCHEDULED_GAIN_PER_PUMP_RATE * OpticalPumpSources.RUBY_PUMP_CAP
-        );
+        return 1.0 + RUBY_SINGLE_PASS_GAIN_PER_PU * RUBY_MAX_EFFECTIVE_PUMP;
     }
 
     public static double rubyScheduledGainUpperLimit() {
-        return RUBY_MAX_SCHEDULED_GAIN;
+        return rubyMaximumEffectiveSinglePassGain();
+    }
+
+    public static double rubyMaterialSaturationPower() {
+        return RUBY_MATERIAL_SATURATION_POWER;
+    }
+
+    public static double rubyHandlingLimit() {
+        return RUBY_HANDLING_LIMIT;
     }
 
     public static double scheduledCoherentBaseGainFor(Level level, BlockPos pos, BlockState state, FrequencyKey frequency) {
@@ -319,9 +329,9 @@ public final class OpticalMaterialProfiles {
             return 1.0;
         }
 
-        int pumpRate = OpticalPumpSources.effectiveAdjacentPumpRate(level, pos, state);
+        double pumpDensity = rubyDomainStats(level, pos, state).pumpDensity();
 
-        if (pumpRate <= 0) {
+        if (pumpDensity <= 0.0) {
             return 1.0;
         }
 
@@ -331,7 +341,122 @@ public final class OpticalMaterialProfiles {
             return 1.0;
         }
 
-        return Math.min(RUBY_MAX_SCHEDULED_GAIN, 1.0 + RUBY_SCHEDULED_GAIN_PER_PUMP_RATE * pumpRate * spectralCoupling);
+        double effectivePump = Math.min(RUBY_MAX_EFFECTIVE_PUMP, Math.max(0.0, pumpDensity));
+        return 1.0 + RUBY_SINGLE_PASS_GAIN_PER_PU * effectivePump * spectralCoupling;
+    }
+
+    public static double saturatedCoherentExtraOutputFor(Level level, BlockPos pos, BlockState state, FrequencyKey frequency) {
+        if (state.is(Spectralization.FIBER_LASER.get())) {
+            if (level != null
+                    && pos != null
+                    && level.getBlockEntity(pos) instanceof FiberLaserBlockEntity fiberLaser) {
+                return fiberLaser.saturatedCoherentExtraOutput();
+            }
+
+            return 0.0;
+        }
+
+        if (state.getBlock() != Spectralization.RUBY_BLOCK.get()) {
+            return 0.0;
+        }
+
+        double baseGain = scheduledCoherentBaseGainFor(level, pos, state, frequency);
+
+        if (baseGain <= 1.0) {
+            return 0.0;
+        }
+
+        double spectralCoupling = rubyEmissionCoupling(frequency);
+
+        if (spectralCoupling <= 0.0) {
+            return 0.0;
+        }
+
+        double passiveTransmittance = profileFor(level, pos, state).responseAt(frequency).transmittance();
+        return passiveTransmittance * RUBY_MATERIAL_SATURATION_POWER * (1.0 - 1.0 / baseGain);
+    }
+
+    public static double rubyExcitedCoherentSeedPowerPerDirection(Level level, BlockPos pos, BlockState state) {
+        if (level == null
+                || pos == null
+                || state.getBlock() != Spectralization.RUBY_BLOCK.get()) {
+            return 0.0;
+        }
+
+        int exciterCount = adjacentRubyExciterCount(level, pos);
+
+        if (exciterCount <= 0) {
+            return 0.0;
+        }
+
+        double totalPower = RUBY_EXCITED_SEED_POWER_PER_EXCITER
+                * exciterCount
+                * rubyEmissionCoupling(RubyBlock.RUBY_LINE);
+
+        return totalPower / Direction.values().length;
+    }
+
+    public static double rubyDomainPumpDensity(Level level, BlockPos pos, BlockState state) {
+        return rubyDomainStats(level, pos, state).pumpDensity();
+    }
+
+    private static RubyDomainStats rubyDomainStats(Level level, BlockPos pos, BlockState state) {
+        if (level == null
+                || pos == null
+                || state.getBlock() != Spectralization.RUBY_BLOCK.get()) {
+            return RubyDomainStats.EMPTY;
+        }
+
+        ArrayDeque<BlockPos> open = new ArrayDeque<>();
+        Set<BlockPos> visited = new HashSet<>();
+        double totalPumpRate = 0.0;
+        int rubyCount = 0;
+
+        open.add(pos.immutable());
+
+        while (!open.isEmpty() && rubyCount < RUBY_DOMAIN_MAX_BLOCKS) {
+            BlockPos current = open.removeFirst();
+
+            if (!visited.add(current)) {
+                continue;
+            }
+
+            BlockState currentState = level.getBlockState(current);
+
+            if (currentState.getBlock() != Spectralization.RUBY_BLOCK.get()) {
+                continue;
+            }
+
+            rubyCount++;
+            totalPumpRate += OpticalPumpSources.effectiveAdjacentPumpRate(level, current, currentState);
+
+            for (Direction direction : Direction.values()) {
+                BlockPos neighbor = current.relative(direction);
+
+                if (!visited.contains(neighbor)
+                        && level.getBlockState(neighbor).getBlock() == Spectralization.RUBY_BLOCK.get()) {
+                    open.add(neighbor.immutable());
+                }
+            }
+        }
+
+        if (rubyCount <= 0) {
+            return RubyDomainStats.EMPTY;
+        }
+
+        return new RubyDomainStats(rubyCount, totalPumpRate);
+    }
+
+    private static int adjacentRubyExciterCount(Level level, BlockPos pos) {
+        int count = 0;
+
+        for (Direction direction : Direction.values()) {
+            if (level.getBlockState(pos.relative(direction)).getBlock() == Blocks.GLOWSTONE) {
+                count++;
+            }
+        }
+
+        return count;
     }
 
     public static double gainMaterialWeightFor(BlockState state) {
@@ -350,27 +475,6 @@ public final class OpticalMaterialProfiles {
         return state.is(Spectralization.FIBER_LASER.get());
     }
 
-    public static double saturatedCoherentEmissionFor(Level level, BlockPos pos, BlockState state, double seedPower) {
-        if (state.getBlock() != Spectralization.RUBY_BLOCK.get()) {
-            return 0.0;
-        }
-
-        if (!Double.isFinite(seedPower) || seedPower <= 0.0) {
-            return 0.0;
-        }
-
-        int pumpRate = OpticalPumpSources.effectiveAdjacentPumpRate(level, pos, state);
-
-        if (pumpRate <= 0) {
-            return 0.0;
-        }
-
-        double spectralCoupling = rubyEmissionCoupling(RubyBlock.RUBY_LINE);
-        double budget = RUBY_COHERENT_POWER_BUDGET_PER_PUMP_RATE * pumpRate * spectralCoupling;
-
-        return budget * seedPower / (seedPower + RUBY_COHERENT_SEED_SATURATION_POWER);
-    }
-
     private static double rubyEmissionCoupling(FrequencyKey frequency) {
         if (frequency.region() != RubyBlock.RUBY_LINE.region()) {
             return 0.0;
@@ -383,6 +487,28 @@ public final class OpticalMaterialProfiles {
         }
 
         return Math.max(0.0, 1.0 - distance / 12.0);
+    }
+
+    private record RubyDomainStats(int blockCount, double pumpRate) {
+        private static final RubyDomainStats EMPTY = new RubyDomainStats(0, 0.0);
+
+        private RubyDomainStats {
+            if (blockCount < 0) {
+                throw new IllegalArgumentException("Ruby domain block count must be non-negative");
+            }
+
+            if (!Double.isFinite(pumpRate) || pumpRate < 0.0) {
+                throw new IllegalArgumentException("Ruby domain pump rate must be finite and non-negative");
+            }
+        }
+
+        private double pumpDensity() {
+            if (blockCount <= 0) {
+                return 0.0;
+            }
+
+            return pumpRate / blockCount;
+        }
     }
 
     private static OpticalMaterialProfile coloredGlass(int centerBin) {

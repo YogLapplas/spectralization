@@ -24,7 +24,8 @@ public record ScalarPowerSolution(
         Map<SpectralPowerLane, Map<PortGraphNode, Double>> powerByLane,
         List<ScalarSolverRegionResult> regionResults,
         boolean profileCollapsedFallback,
-        boolean profileOverflow
+        boolean profileOverflow,
+        ProfileSolverDiagnostics profileDiagnostics
 ) {
     public ScalarPowerSolution(
             ScalarSolverKind solverKind,
@@ -58,6 +59,41 @@ public record ScalarPowerSolution(
         );
     }
 
+    public ScalarPowerSolution(
+            ScalarSolverKind solverKind,
+            ScalarSolverPlan solverPlan,
+            boolean converged,
+            boolean unstable,
+            int iterations,
+            double residual,
+            double maxNodePower,
+            double totalNodePower,
+            Map<PortGraphNode, Double> powerByNode,
+            Map<PortGraphNode, Double> coherentPowerByNode,
+            Map<SpectralPowerLane, Map<PortGraphNode, Double>> powerByLane,
+            List<ScalarSolverRegionResult> regionResults,
+            boolean profileCollapsedFallback,
+            boolean profileOverflow
+    ) {
+        this(
+                solverKind,
+                solverPlan,
+                converged,
+                unstable,
+                iterations,
+                residual,
+                maxNodePower,
+                totalNodePower,
+                powerByNode,
+                coherentPowerByNode,
+                powerByLane,
+                regionResults,
+                profileCollapsedFallback,
+                profileOverflow,
+                ProfileSolverDiagnostics.none()
+        );
+    }
+
     public ScalarPowerSolution {
         Objects.requireNonNull(solverKind, "solverKind");
         Objects.requireNonNull(solverPlan, "solverPlan");
@@ -65,6 +101,7 @@ public record ScalarPowerSolution(
         Objects.requireNonNull(coherentPowerByNode, "coherentPowerByNode");
         Objects.requireNonNull(powerByLane, "powerByLane");
         Objects.requireNonNull(regionResults, "regionResults");
+        Objects.requireNonNull(profileDiagnostics, "profileDiagnostics");
 
         if (iterations < 0) {
             throw new IllegalArgumentException("Power solution iterations must be non-negative");
@@ -235,7 +272,8 @@ public record ScalarPowerSolution(
                 powerByLane,
                 regionResults,
                 profileCollapsedFallback,
-                profileOverflow
+                profileOverflow,
+                profileDiagnostics
         );
     }
 

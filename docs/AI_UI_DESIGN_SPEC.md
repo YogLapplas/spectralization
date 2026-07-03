@@ -442,7 +442,7 @@ Debug panel 可以有文字，但必须是刻意打开的。
 - dirty kind。
 - source total。
 - receiver total。
-- SCC/gain schedule 摘要。
+- SCC/gain source/saturation 摘要。
 - port mapping。
 
 这些内容不属于默认机器 UI。

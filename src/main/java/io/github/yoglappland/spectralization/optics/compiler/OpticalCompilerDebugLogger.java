@@ -4,6 +4,7 @@ import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.diagnostics.SpectralDiagnostics;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalTrace;
+import io.github.yoglappland.spectralization.optics.FrequencyKey;
 import io.github.yoglappland.spectralization.optics.OpticalTraceTermination;
 import io.github.yoglappland.spectralization.optics.OpticalTraceTerminationReason;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
@@ -415,6 +416,37 @@ public final class OpticalCompilerDebugLogger {
         write(builder.toString());
     }
 
+    public static void logSystemRebuildDeferred(
+            Level level,
+            int requestedNetworkId,
+            int componentNetworkCount,
+            int staleSourceRecordCount,
+            int queuedSourceRefreshCount,
+            int pendingAfter,
+            String reason
+    ) {
+        if (!SpectralizationConfig.opticalCompilerDebugLog()) {
+            return;
+        }
+
+        StringBuilder builder = new StringBuilder(384);
+        builder.append("=== spectralization optical compiler ===\n");
+        builder.append("session_log=").append(SESSION_LOG_FILE_NAME).append('\n');
+        builder.append("stage=system_rebuild_deferred\n");
+        builder.append("time=").append(Instant.now()).append('\n');
+        builder.append("dimension=").append(level.dimension().location()).append('\n');
+        builder.append("authority=").append(AUTH_REFERENCE).append('\n');
+        builder.append("requested_network=").append(requestedNetworkId)
+                .append(" reason=").append(reason)
+                .append(" component_networks=").append(componentNetworkCount)
+                .append(" stale_source_records=").append(staleSourceRecordCount)
+                .append(" queued_source_refreshes=").append(queuedSourceRefreshCount)
+                .append(" pending_after=").append(pendingAfter)
+                .append('\n');
+        builder.append('\n');
+        write(builder.toString());
+    }
+
     public static void logSystemRebuild(
             Level level,
             int requestedNetworkId,
@@ -783,21 +815,48 @@ public final class OpticalCompilerDebugLogger {
         builder.append("gain_schedule")
                 .append(" sources=").append(schedule.gainSourceCount())
                 .append(" scheduled=").append(schedule.scheduled())
-                .append(" stable=").append(schedule.stable())
                 .append(" mode=").append(schedule.schedulerMode())
-                .append(" passive_rho=").append(formatPower(schedule.passiveRho()))
-                .append(" rho_target=").append(formatPower(schedule.rhoTarget()))
-                .append(" rho_hard=").append(formatPower(schedule.rhoHard()))
-                .append(" rho_before=").append(formatPower(schedule.rhoBefore()))
-                .append(" rho_after=").append(formatPower(schedule.rhoAfter()))
                 .append(" total_gain_headroom=").append(formatPower(schedule.totalGainHeadroom()))
-                .append(" max_mode_weight=").append(formatPower(schedule.maxModeWeight()))
-                .append(" max_source_cap=").append(formatPower(schedule.maxSourceCap()))
                 .append(" max_base_gain=").append(formatPower(schedule.maxBaseGain()))
                 .append(" max_effective_gain=").append(formatPower(schedule.maxEffectiveGain()))
                 .append('\n');
+        appendGraphSaturationSummary(builder, "scheduled_graph_saturation", schedule.graph());
+        appendGainSourceDebugInfo(builder, schedule);
         builder.append('\n');
         write(builder.toString());
+    }
+
+    private static void appendGainSourceDebugInfo(StringBuilder builder, GainSchedule schedule) {
+        if (schedule.gainSources().isEmpty()) {
+            return;
+        }
+
+        builder.append("gain_source_details:\n");
+        int maxRows = verboseLog()
+                ? Math.max(1, SpectralizationConfig.opticalCompilerDebugMaxEdges())
+                : 8;
+        int rowCount = 0;
+
+        for (GainSchedule.GainSourceDebugInfo source : schedule.gainSources()) {
+            if (rowCount >= maxRows) {
+                builder.append("  ... ").append(schedule.gainSources().size() - rowCount)
+                        .append(" more gain sources\n");
+                return;
+            }
+
+            builder.append("  edge=").append(source.edgeId())
+                    .append(" scc=").append(source.sccId())
+                    .append(" pos=").append(source.x()).append(',').append(source.y()).append(',').append(source.z())
+                    .append(" material=").append(source.materialId())
+                    .append(" scope=").append(source.spectralScope())
+                    .append(" material_weight=").append(formatPower(source.materialWeight()))
+                    .append(" base_gain=").append(formatPower(source.baseGain()))
+                    .append(" saturated_extra_output=").append(formatPower(source.saturatedExtraOutput()))
+                    .append(" base_frequencies=").append(source.baseFrequencyCount())
+                    .append(" saturated_frequencies=").append(source.saturatedFrequencyCount())
+                    .append('\n');
+            rowCount++;
+        }
     }
 
     public static void logRubySeedSynthesis(
@@ -845,6 +904,9 @@ public final class OpticalCompilerDebugLogger {
             Level level,
             CompiledPortGraph passiveGraph,
             CompiledPortGraph coherentGraph,
+            Map<SpectralPowerLane, Map<PortGraphNode, Double>> incoherentSourcePowersByLane,
+            Map<SpectralPowerLane, Map<PortGraphNode, Double>> directCoherentSourcePowersByLane,
+            Map<SpectralPowerLane, Map<PortGraphNode, Double>> coherentSourcePowersByLane,
             int incoherentSourceCount,
             double incoherentSourcePower,
             int directCoherentSourceCount,
@@ -890,6 +952,8 @@ public final class OpticalCompilerDebugLogger {
                 .append(" feedback_sccs=").append(coherentGraph.feedbackSccCount())
                 .append(" beta1=").append(coherentGraph.beta1())
                 .append('\n');
+        appendGraphSaturationSummary(builder, "passive_graph_saturation", passiveGraph);
+        appendGraphSaturationSummary(builder, "coherent_graph_saturation", coherentGraph);
         builder.append("source_vectors")
                 .append(" incoherent_count=").append(incoherentSourceCount)
                 .append(" incoherent_power=").append(formatPower(incoherentSourcePower))
@@ -902,19 +966,15 @@ public final class OpticalCompilerDebugLogger {
                 .append(" coherent_count=").append(coherentSourceCount)
                 .append(" coherent_power=").append(formatPower(coherentSourcePower))
                 .append('\n');
+        appendLanePowerSummary(builder, "incoherent_source_lanes", incoherentSourcePowersByLane, 32);
+        appendLanePowerSummary(builder, "direct_coherent_source_lanes", directCoherentSourcePowersByLane, 32);
+        appendLanePowerSummary(builder, "coherent_source_lanes", coherentSourcePowersByLane, 32);
         builder.append("gain_schedule")
                 .append(" scheduled=").append(gainSchedule.scheduled())
-                .append(" stable=").append(gainSchedule.stable())
                 .append(" mode=").append(gainSchedule.schedulerMode())
-                .append(" rho_before=").append(formatPower(gainSchedule.rhoBefore()))
-                .append(" rho_after=").append(formatPower(gainSchedule.rhoAfter()))
+                .append(" total_gain_headroom=").append(formatPower(gainSchedule.totalGainHeadroom()))
+                .append(" max_base_gain=").append(formatPower(gainSchedule.maxBaseGain()))
                 .append(" max_effective_gain=").append(formatPower(gainSchedule.maxEffectiveGain()))
-                .append('\n');
-        builder.append("theoretical_limits")
-                .append(" coherent_power_multiplier=")
-                .append(formatPower(coherentLimitMultiplier(gainSchedule.rhoAfter())))
-                .append(" coherent_internal_power_upper=")
-                .append(formatPower(coherentInternalPowerUpperBound(coherentSourcePower, gainSchedule.rhoAfter())))
                 .append('\n');
         appendScalarSolution(builder, "incoherent_channel", incoherentSolution, AUTH_GAMEPLAY);
         appendScalarSolution(builder, "coherent_channel", coherentSolution, AUTH_GAMEPLAY);
@@ -967,6 +1027,7 @@ public final class OpticalCompilerDebugLogger {
                 .append(" profile_overflow=").append(solution.profileOverflow())
                 .append(" profile_fallback=").append(solution.profileCollapsedFallback())
                 .append('\n');
+        appendGraphSaturationSummary(builder, channel + "_graph_saturation", graph);
         appendScalarSolution(builder, channel + "_lane_solution", solution, AUTH_GAMEPLAY);
         builder.append('\n');
         write(builder.toString());
@@ -1231,6 +1292,38 @@ public final class OpticalCompilerDebugLogger {
                     .append(" coherent=").append(formatPower(receiverOutput.coherentPower()))
                     .append(" stray=").append(formatPower(receiverOutput.strayPower()))
                     .append('\n');
+            appendReceiverFrequencyPowers(builder, receiverOutput, "    ");
+            rowCount++;
+        }
+    }
+
+    private static void appendReceiverFrequencyPowers(
+            StringBuilder builder,
+            ReceiverOutput receiverOutput,
+            String indent
+    ) {
+        if (receiverOutput.powerByFrequency().isEmpty()) {
+            return;
+        }
+
+        List<Map.Entry<FrequencyKey, Double>> frequencies = new ArrayList<>(receiverOutput.powerByFrequency().entrySet());
+        frequencies.sort(Map.Entry.comparingByKey(Comparator
+                .comparing((FrequencyKey frequency) -> frequency.region().ordinal())
+                .thenComparingInt(FrequencyKey::bin)));
+        int maxRows = Math.max(1, Math.min(32, SpectralizationConfig.opticalCompilerDebugMaxEdges()));
+        int rowCount = 0;
+
+        for (Map.Entry<FrequencyKey, Double> entry : frequencies) {
+            if (rowCount >= maxRows) {
+                builder.append(indent).append("... ").append(frequencies.size() - rowCount).append(" more frequencies\n");
+                return;
+            }
+
+            builder.append(indent)
+                    .append(formatFrequency(entry.getKey()))
+                    .append("=")
+                    .append(formatPower(entry.getValue()))
+                    .append('\n');
             rowCount++;
         }
     }
@@ -1320,10 +1413,32 @@ public final class OpticalCompilerDebugLogger {
                 .append(" lanes=").append(solution.powerByLane().size())
                 .append('\n');
         appendSolverPlan(builder, label, solution.solverPlan());
+        appendProfileDiagnostics(builder, label, solution.profileDiagnostics());
         if (verboseLog()) {
             appendPowerLanes(builder, label, solution);
             appendSolverRegionResults(builder, label, solution);
         }
+    }
+
+    private static void appendProfileDiagnostics(
+            StringBuilder builder,
+            String label,
+            ProfileSolverDiagnostics diagnostics
+    ) {
+        if (!diagnostics.present()) {
+            return;
+        }
+
+        builder.append(label)
+                .append("_profile_diagnostics")
+                .append(" states=").append(diagnostics.stateCount())
+                .append(" transitions=").append(diagnostics.transitionCount())
+                .append(" readout_projections=").append(diagnostics.readoutProjectionCount())
+                .append(" saturating_transitions=").append(diagnostics.saturatingTransitionCount())
+                .append(" internal_saturating_transitions=").append(diagnostics.internalSaturatingTransitionCount())
+                .append(" saturating_sccs=").append(diagnostics.saturatingSccCount())
+                .append(" max_saturating_scc_states=").append(diagnostics.maxSaturatingSccStates())
+                .append('\n');
     }
 
     private static void appendPowerLanes(
@@ -1349,16 +1464,57 @@ public final class OpticalCompilerDebugLogger {
             }
 
             builder.append("  ")
-                    .append(entry.getKey().coherence())
-                    .append(" ")
-                    .append(entry.getKey().frequency().region())
-                    .append(":")
-                    .append(entry.getKey().frequency().bin())
+                    .append(formatLane(entry.getKey()))
                     .append(" total=")
                     .append(formatPower(totalNodePower(entry.getValue())))
                     .append('\n');
             rowCount++;
         }
+    }
+
+    private static void appendLanePowerSummary(
+            StringBuilder builder,
+            String label,
+            Map<SpectralPowerLane, Map<PortGraphNode, Double>> lanePowers,
+            int maxRows
+    ) {
+        builder.append(label)
+                .append(" count=").append(lanePowers.size())
+                .append(" total_power=").append(formatPower(totalLanePower(lanePowers)))
+                .append('\n');
+
+        if (lanePowers.isEmpty()) {
+            return;
+        }
+
+        List<Map.Entry<SpectralPowerLane, Map<PortGraphNode, Double>>> lanes =
+                new ArrayList<>(lanePowers.entrySet());
+        lanes.sort(Map.Entry.comparingByKey(SpectralPowerLane.COMPARATOR));
+        int rowCount = 0;
+
+        for (Map.Entry<SpectralPowerLane, Map<PortGraphNode, Double>> entry : lanes) {
+            if (rowCount >= maxRows) {
+                builder.append("  ... ").append(lanes.size() - rowCount).append(" more lanes\n");
+                return;
+            }
+
+            builder.append("  ")
+                    .append(formatLane(entry.getKey()))
+                    .append(" power=")
+                    .append(formatPower(totalNodePower(entry.getValue())))
+                    .append('\n');
+            rowCount++;
+        }
+    }
+
+    private static double totalLanePower(Map<SpectralPowerLane, Map<PortGraphNode, Double>> lanePowers) {
+        double total = 0.0;
+
+        for (Map<PortGraphNode, Double> nodePowers : lanePowers.values()) {
+            total += totalNodePower(nodePowers);
+        }
+
+        return total;
     }
 
     private static double totalNodePower(Map<PortGraphNode, Double> powers) {
@@ -1587,6 +1743,53 @@ public final class OpticalCompilerDebugLogger {
                 .append('\n');
     }
 
+    private static void appendGraphSaturationSummary(
+            StringBuilder builder,
+            String label,
+            CompiledPortGraph graph
+    ) {
+        int saturatingEdges = 0;
+        int saturatingFrequencies = 0;
+        int sampleFrequencySaturatingEdges = 0;
+        int aggregateGainEdges = 0;
+        int aggregateSaturationEdges = 0;
+        int frequencyGainEdges = 0;
+
+        for (PortGraphEdge edge : graph.edges()) {
+            if (edge.sampleGainByFrequency().isEmpty()) {
+                if (edge.sampleGain() > 0.0D) {
+                    aggregateGainEdges++;
+                }
+            } else {
+                frequencyGainEdges++;
+            }
+
+            if (edge.saturatingGainByFrequency().isEmpty()) {
+                continue;
+            }
+
+            saturatingEdges++;
+            saturatingFrequencies += edge.saturatingGainByFrequency().size();
+
+            if (edge.saturatingGainByFrequency().containsKey(edge.sampleFrequency())) {
+                sampleFrequencySaturatingEdges++;
+            }
+
+            if (edge.sampleGainByFrequency().isEmpty()) {
+                aggregateSaturationEdges++;
+            }
+        }
+
+        builder.append(label)
+                .append(" saturated_edges=").append(saturatingEdges)
+                .append(" saturated_frequencies=").append(saturatingFrequencies)
+                .append(" sample_frequency_saturated_edges=").append(sampleFrequencySaturatingEdges)
+                .append(" aggregate_gain_edges=").append(aggregateGainEdges)
+                .append(" aggregate_saturation_edges=").append(aggregateSaturationEdges)
+                .append(" frequency_gain_edges=").append(frequencyGainEdges)
+                .append('\n');
+    }
+
     private static void appendTerminationSummary(StringBuilder builder, CompiledOpticalTrace trace) {
         Map<OpticalTraceTerminationReason, Integer> counts = new EnumMap<>(OpticalTraceTerminationReason.class);
 
@@ -1730,6 +1933,16 @@ public final class OpticalCompilerDebugLogger {
         return formatPos(node.pos()) + "/" + node.side().getSerializedName() + "/" + node.waveKind().name().toLowerCase(Locale.ROOT);
     }
 
+    private static String formatLane(SpectralPowerLane lane) {
+        return lane.coherence().name().toLowerCase(Locale.ROOT)
+                + " "
+                + formatFrequency(lane.frequency());
+    }
+
+    private static String formatFrequency(FrequencyKey frequency) {
+        return frequency.region().name().toLowerCase(Locale.ROOT) + ":" + frequency.bin();
+    }
+
     private static String formatPos(BlockPos pos) {
         return pos.getX() + "," + pos.getY() + "," + pos.getZ();
     }
@@ -1740,22 +1953,6 @@ public final class OpticalCompilerDebugLogger {
         }
 
         return String.format(Locale.ROOT, "%.6f", power);
-    }
-
-    private static double coherentLimitMultiplier(double rhoAfter) {
-        if (!Double.isFinite(rhoAfter) || rhoAfter >= 1.0D) {
-            return Double.POSITIVE_INFINITY;
-        }
-
-        return 1.0D / Math.max(1.0E-9D, 1.0D - Math.max(0.0D, rhoAfter));
-    }
-
-    private static double coherentInternalPowerUpperBound(double coherentSourcePower, double rhoAfter) {
-        if (!Double.isFinite(coherentSourcePower) || coherentSourcePower <= 0.0D) {
-            return 0.0D;
-        }
-
-        return coherentSourcePower * coherentLimitMultiplier(rhoAfter);
     }
 
     private static String formatRgb(int red, int green, int blue) {

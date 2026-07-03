@@ -47,7 +47,8 @@ public record OpticalReadoutBinding(
                     totalPower,
                     coherentPower,
                     Math.max(0.0, totalPower - coherentPower),
-                    envelope
+                    envelope,
+                    inputNode == null ? Map.of() : solution.powerByFrequencyAt(inputNode)
             );
         };
     }

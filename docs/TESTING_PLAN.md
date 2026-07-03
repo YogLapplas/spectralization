@@ -330,7 +330,7 @@ debug_log_verbose = true
 当前本地测试以人工游戏内验证为主。后续应逐步补自动化：
 
 - 材料 LUT 插值单元测试。
-- `EffectiveGainSoftcap` 单元测试。
+- 饱和增益边和材料过载单元测试。
 - SCC / chord 求解器固定图测试。
 - 可靠性门控测试。
 - 光纤连接图测试。

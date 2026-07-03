@@ -20,7 +20,7 @@ public class PumpMagmaBlockEntity extends BlockEntity implements OpticalPumpSour
     public static final int CAPACITY = 16_000;
     private static final int CYCLE_TICKS = 5;
     private static final int FE_PER_PUMP_UNIT = 8_000;
-    private static final int MAX_PUMP_AMOUNT = 2;
+    private static final int MAX_PUMP_AMOUNT = 1;
     private static final int ACTIVATION_THRESHOLD_FE = 8_000;
     private static final String ENERGY_TAG = "energy";
     private static final String TICKS_UNTIL_CYCLE_TAG = "ticks_until_cycle";
@@ -102,7 +102,7 @@ public class PumpMagmaBlockEntity extends BlockEntity implements OpticalPumpSour
             pumpAmount = 0;
         }
 
-        if (consumed > ACTIVATION_THRESHOLD_FE) {
+        if (consumed >= ACTIVATION_THRESHOLD_FE) {
             activeTicks = CYCLE_TICKS;
             setActive(level, pos, true);
         } else {

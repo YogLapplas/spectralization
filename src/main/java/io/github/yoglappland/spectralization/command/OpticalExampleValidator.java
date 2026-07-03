@@ -585,7 +585,10 @@ final class OpticalExampleValidator {
         ContainerData data = source.createDataAccess();
         data.set(CreativeLightSourceBlockEntity.DATA_REGION, FrequencyKey.DEBUG_VISIBLE.region().ordinal());
         data.set(CreativeLightSourceBlockEntity.DATA_BIN, FrequencyKey.DEBUG_VISIBLE.bin());
-        data.set(CreativeLightSourceBlockEntity.DATA_POWER, (int) SOURCE_POWER);
+        data.set(
+                CreativeLightSourceBlockEntity.DATA_POWER,
+                (int) Math.round(SOURCE_POWER * CreativeLightSourceBlockEntity.POWER_SCALE)
+        );
         data.set(CreativeLightSourceBlockEntity.DATA_COHERENCE, CoherenceKind.COHERENT.ordinal());
         data.set(CreativeLightSourceBlockEntity.DATA_BEAM_MODEL, BeamModel.COLLIMATED.ordinal());
         data.set(CreativeLightSourceBlockEntity.DATA_RADIUS_MILLI, radiusMilli);

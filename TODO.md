@@ -73,8 +73,8 @@
 - [x] SolverPlan。
 - [x] DAG / 拓扑传播。
 - [x] Feedback SCC / chord 数值求解。
-- [x] Stable feedback gain scheduler。
-- [x] Effective gain softcap + hard rho。
+- [x] 删除旧反馈预调度器，改为材料增益 + 饱和边。
+- [x] 删除旧反馈软上限与谱半径硬阈值，稳定性不再是 gameplay 公理。
 - [x] Authoritative runtime path：gameplay 只读取 compiled effective edge gains + power solve + readout。
 - [x] Reference / oracle path 身份标注：`gameplay`、`reference`、`debug_oracle`、`legacy_compare`。
 - [x] 多等效 profile 损耗：光纤耦合、透镜孔径裁剪等半径敏感损耗先折叠进边 gain，再进入功率系统。
@@ -91,7 +91,7 @@
 - [ ] Loop macro / 小环等效缓存。
 - [ ] 对称性 / 重复子图压缩。
 - [ ] Solver metadata：误差界、残差、稳定性余量、截断功率。
-- [ ] Debug command 导出 graph / solver plan / readout / gain schedule。
+- [ ] Debug command 导出 graph / solver plan / readout / gain source / saturation branch。
 - [ ] 给 collapsed fallback 的读数层增加更明显的玩家/调试提示。
 
 ## 调度与可靠性
@@ -100,8 +100,8 @@
 
 - [x] 高层变化中断低层导出计算。
 - [x] 网络完成一次未中断导出后才标记可靠。
-- [x] 反馈增益在求解前被调度成稳定线性系统。
-- [~] 当前调度已经能支撑大网络和高频红石，但还没有完整注意力系统。
+- [x] 主动增益改为材料局部定律：单程增益、饱和功率、吸收承载。
+- [~] 当前队列调度已经能支撑大网络和高频红石，但还没有完整注意力系统。
 - [ ] 网络优先级：中断 > 正在计算 > 有可靠性需求的传感器 > 高功率 > 玩家可见 > 最近变化 > 场源影响。
 - [ ] 无传感器网络降级排队，只保留必要固有数据和拓扑状态。
 - [ ] 传感器附近网络提高优先级。
@@ -148,7 +148,9 @@
 - [x] 删除萤石作为散杂种子光或泵浦源的旧设定。
 - [ ] 红宝石泵浦源从临时热源/原版方块迁移为模组内电驱光源方块。
 - [ ] 增加多级方块泵浦源：基础泵浦灯、二极管泵浦阵列、晶体专用泵浦模块。
-- [x] 红宝石把合适的非相干种子转为相干红宝石线。
+- [x] 荧光激发源让红宝石成为六向相干种子源。
+- [x] 泵浦只提高单程增益，不改变种子或转换效率。
+- [x] 红宝石材料饱和和过载烧毁进入主求解/导出路径。
 - [x] 银块作为背镜。
 - [x] 涂银玻璃作为输出镜。
 - [x] 三个红宝石块可以形成初级有效激光腔。

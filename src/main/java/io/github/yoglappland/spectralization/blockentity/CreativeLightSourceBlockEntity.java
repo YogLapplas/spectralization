@@ -29,6 +29,9 @@ import net.minecraft.world.level.block.state.BlockState;
 public class CreativeLightSourceBlockEntity extends BlockEntity {
     public static final int MAX_SPECTRUM_BINS = SpectralRegion.VISIBLE.defaultBins();
     public static final int MAX_SPECTRUM_WEIGHT = 1000;
+    public static final int POWER_SCALE = 100;
+    public static final int DEFAULT_POWER_CENTI = 300;
+    public static final int MAX_POWER_CENTI = 1_000_000;
     public static final int DATA_COUNT = 10 + MAX_SPECTRUM_BINS;
     public static final int DATA_REGION = 0;
     public static final int DATA_BIN = 1;
@@ -41,10 +44,12 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
     public static final int DATA_MODE_M = 8;
     public static final int DATA_MODE_N = 9;
     public static final int DATA_SPECTRUM_START = 10;
+    private static final String POWER_CENTI_TAG = "PowerCenti";
+    private static final String LEGACY_POWER_TAG = "Power";
 
     private SpectralRegion region = FrequencyKey.DEBUG_VISIBLE.region();
     private int bin = FrequencyKey.DEBUG_VISIBLE.bin();
-    private int power = 100;
+    private int powerCenti = DEFAULT_POWER_CENTI;
     private CoherenceKind coherence = CoherenceKind.COHERENT;
     private BeamModel beamModel = BeamModel.COLLIMATED;
     private int radiusMilli = 250;
@@ -116,6 +121,35 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
         };
     }
 
+    public boolean setSpectrumWeight(int binIndex, int weight, boolean exclusive) {
+        if (binIndex < 0 || binIndex >= spectrumWeights.length) {
+            return false;
+        }
+
+        int clamped = Mth.clamp(weight, 0, MAX_SPECTRUM_WEIGHT);
+        boolean changed = false;
+
+        if (exclusive) {
+            for (int index = 0; index < spectrumWeights.length; index++) {
+                int nextWeight = index == binIndex ? clamped : 0;
+
+                if (spectrumWeights[index] != nextWeight) {
+                    spectrumWeights[index] = nextWeight;
+                    changed = true;
+                }
+            }
+        } else if (spectrumWeights[binIndex] != clamped) {
+            spectrumWeights[binIndex] = clamped;
+            changed = true;
+        }
+
+        if (changed) {
+            markSourceChanged();
+        }
+
+        return true;
+    }
+
     @Override
     protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
@@ -128,8 +162,10 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
             setData(DATA_BIN, tag.getInt("Bin"));
         }
 
-        if (tag.contains("Power")) {
-            setData(DATA_POWER, tag.getInt("Power"));
+        if (tag.contains(POWER_CENTI_TAG)) {
+            setData(DATA_POWER, tag.getInt(POWER_CENTI_TAG));
+        } else if (tag.contains(LEGACY_POWER_TAG)) {
+            setData(DATA_POWER, tag.getInt(LEGACY_POWER_TAG) * POWER_SCALE);
         }
 
         if (tag.contains("Coherence")) {
@@ -175,7 +211,8 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
         super.saveAdditional(tag, registries);
         tag.putInt("Region", region.ordinal());
         tag.putInt("Bin", bin);
-        tag.putInt("Power", power);
+        tag.putInt(POWER_CENTI_TAG, powerCenti);
+        tag.putInt(LEGACY_POWER_TAG, Math.round(powerCenti / (float) POWER_SCALE));
         tag.putInt("Coherence", coherence.ordinal());
         tag.putInt("BeamModel", beamModel.ordinal());
         tag.putInt("RadiusMilli", radiusMilli);
@@ -194,7 +231,7 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
         return switch (index) {
             case DATA_REGION -> region.ordinal();
             case DATA_BIN -> bin;
-            case DATA_POWER -> power;
+            case DATA_POWER -> powerCenti;
             case DATA_COHERENCE -> coherence.ordinal();
             case DATA_BEAM_MODEL -> beamModel.ordinal();
             case DATA_RADIUS_MILLI -> radiusMilli;
@@ -208,14 +245,7 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
 
     private void setData(int index, int value) {
         if (index >= DATA_SPECTRUM_START && index < DATA_COUNT) {
-            int binIndex = index - DATA_SPECTRUM_START;
-            int clamped = Mth.clamp(value, 0, MAX_SPECTRUM_WEIGHT);
-
-            if (spectrumWeights[binIndex] != clamped) {
-                spectrumWeights[binIndex] = clamped;
-                markSourceChanged();
-            }
-
+            setSpectrumWeight(index - DATA_SPECTRUM_START, value, false);
             return;
         }
 
@@ -226,7 +256,7 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
                 bin = Mth.clamp(bin, 0, region.defaultBins() - 1);
             }
             case DATA_BIN -> bin = Mth.clamp(value, 0, region.defaultBins() - 1);
-            case DATA_POWER -> power = Mth.clamp(value, 0, 1_000_000);
+            case DATA_POWER -> powerCenti = Mth.clamp(value, 0, MAX_POWER_CENTI);
             case DATA_COHERENCE -> {
                 CoherenceKind[] kinds = CoherenceKind.values();
                 coherence = kinds[Mth.clamp(value, 0, kinds.length - 1)];
@@ -257,6 +287,7 @@ public class CreativeLightSourceBlockEntity extends BlockEntity {
 
     private List<PlaneWaveComponent> spectrumComponents(Direction direction) {
         int bins = Math.min(region.defaultBins(), spectrumWeights.length);
+        double power = powerCenti / (double) POWER_SCALE;
         List<SpectrumBin> activeBins = new ArrayList<>();
 
         for (int index = 0; index < bins; index++) {

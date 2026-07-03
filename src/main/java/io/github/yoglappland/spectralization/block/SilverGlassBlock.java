@@ -20,8 +20,8 @@ public class SilverGlassBlock extends Block implements OpticalElement {
     public static final DirectionProperty FACING = BlockStateProperties.FACING;
     private static final double SIDE_TRANSMITTANCE = 0.96;
     private static final double SIDE_REFLECTANCE = 0.03;
-    private static final double COATING_TRANSMITTANCE = 0.24;
-    private static final double COATING_REFLECTANCE = 0.70;
+    private static final double COATING_TRANSMITTANCE = 0.09;
+    private static final double COATING_REFLECTANCE = 0.90;
 
     public SilverGlassBlock(Properties properties) {
         super(properties);

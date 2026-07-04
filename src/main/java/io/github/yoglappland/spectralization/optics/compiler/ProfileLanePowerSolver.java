@@ -53,6 +53,10 @@ public final class ProfileLanePowerSolver {
             return ScalarPowerSolutions.empty(ScalarSolverKind.NONE, solverPlan);
         }
 
+        if (graph.feedbackSccCount() > 0) {
+            return solveProfileCollapsedExact(level, graph, sources, solverPlan, false, false);
+        }
+
         FiniteProfileSystem system = buildFiniteProfileSystem(level, graph, sources);
         ProfileSolverDiagnostics diagnostics = diagnosticsFor(system);
 

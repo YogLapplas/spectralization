@@ -664,7 +664,7 @@ final class OpticalExampleValidator {
     private static ValidationReport validateSplitterLensSplitter(TestSample sample, double expectedPower) {
         List<String> failures = commonProfilerFailures(sample);
         expectFeedback(sample, true, failures);
-        expectFeedbackOracleSolver(sample, failures);
+        expectFeedbackCollapsedEquivalence(sample, failures);
         expectPowerClose(sample.actualPower(), expectedPower, "profiler power", failures);
         expectPositive(sample.solution().powerByLane().size(), "profile lane count", failures);
         return report(failures, sample.actualPower());
@@ -722,8 +722,8 @@ final class OpticalExampleValidator {
         failures.addAll(commonProfilerFailures(wide, "wide"));
         expectFeedback(narrow, true, failures);
         expectFeedback(wide, true, failures);
-        expectSolver(narrow, ScalarSolverKind.PROFILE_STATE_EXACT, failures);
-        expectSolver(wide, ScalarSolverKind.PROFILE_STATE_EXACT, failures);
+        expectFeedbackCollapsedEquivalence(narrow, failures);
+        expectFeedbackCollapsedEquivalence(wide, failures);
         expectNoProfileDegradation(narrow, failures);
         expectNoProfileDegradation(wide, failures);
 
@@ -771,7 +771,7 @@ final class OpticalExampleValidator {
         expectFeedback(direct, false, failures);
         expectFeedback(expanded, true, failures);
         expectSolver(direct, ScalarSolverKind.PROFILE_STATE_EXACT, failures);
-        expectSolver(expanded, ScalarSolverKind.PROFILE_STATE_EXACT, failures);
+        expectFeedbackCollapsedEquivalence(expanded, failures);
         expectNoProfileDegradation(direct, failures);
         expectNoProfileDegradation(expanded, failures);
 
@@ -859,20 +859,16 @@ final class OpticalExampleValidator {
         }
     }
 
-    private static void expectFeedbackOracleSolver(TestSample sample, List<String> failures) {
-        ScalarSolverKind solverKind = sample.solution().solverKind();
+    private static void expectFeedbackCollapsedEquivalence(TestSample sample, List<String> failures) {
+        expectSolver(sample, ScalarSolverKind.PROFILE_COLLAPSED_EXACT, failures);
 
-        if (solverKind == ScalarSolverKind.PROFILE_STATE_EXACT) {
-            expectNoProfileDegradation(sample, failures);
-            return;
+        if (sample.solution().profileCollapsedFallback()) {
+            failures.add("feedback graph should use collapsed equivalence directly, not fallback");
         }
 
-        if (solverKind == ScalarSolverKind.PROFILE_COLLAPSED_EXACT
-                && sample.solution().profileCollapsedFallback()) {
-            return;
+        if (sample.solution().profileOverflow()) {
+            failures.add("feedback graph should not overflow before collapsed equivalence");
         }
-
-        failures.add("expected profile-state exact or explicit collapsed feedback fallback, got " + solverKind);
     }
 
     private static void expectNoProfileDegradation(TestSample sample, List<String> failures) {

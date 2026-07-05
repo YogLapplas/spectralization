@@ -1,6 +1,5 @@
 package io.github.yoglappland.spectralization.optics.pump;
 
-import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.tag.SpectralBlockTags;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -11,12 +10,12 @@ import net.minecraft.world.level.block.state.BlockState;
 public final class OpticalPumpSources {
     public static final int RUBY_PUMP_CAP = 4;
 
-    public static int adjacentPumpRate(Level level, BlockPos pos) {
+    public static double adjacentPumpRate(Level level, BlockPos pos) {
         if (level == null || pos == null) {
-            return 0;
+            return 0.0D;
         }
 
-        int pumpRate = 0;
+        double pumpRate = 0.0D;
 
         for (Direction direction : Direction.values()) {
             BlockPos neighborPos = pos.relative(direction);
@@ -26,28 +25,22 @@ public final class OpticalPumpSources {
         return pumpRate;
     }
 
-    public static int effectiveAdjacentPumpRate(Level level, BlockPos pos, BlockState gainMediumState) {
-        int rawPumpRate = adjacentPumpRate(level, pos);
-
-        if (gainMediumState != null && gainMediumState.getBlock() == Spectralization.RUBY_BLOCK.get()) {
-            return Math.min(RUBY_PUMP_CAP, rawPumpRate);
-        }
-
-        return rawPumpRate;
+    public static double effectiveAdjacentPumpRate(Level level, BlockPos pos, BlockState gainMediumState) {
+        return adjacentPumpRate(level, pos);
     }
 
-    public static int pumpRateFor(Level level, BlockPos pos, BlockState state) {
+    public static double pumpRateFor(Level level, BlockPos pos, BlockState state) {
         if (level == null || pos == null || !level.isLoaded(pos)) {
-            return 0;
+            return 0.0D;
         }
 
         BlockEntity blockEntity = level.getBlockEntity(pos);
 
         if (blockEntity instanceof OpticalPumpSource pumpSource) {
-            return Math.max(0, pumpSource.pumpAmount());
+            return Math.max(0.0D, pumpSource.pumpAmount());
         }
 
-        return 0;
+        return 0.0D;
     }
 
     public static boolean isPumpSource(Level level, BlockPos pos, BlockState state) {

@@ -1,6 +1,14 @@
 {
   "replace": false,
   "values": [
-    "spectralization:ruby_block"
+    "spectralization:ruby_block",
+    "spectralization:ce_yag_crystal_block",
+    "spectralization:nd_yag_crystal_block",
+    "spectralization:yb_yag_crystal_block",
+    "spectralization:er_yag_crystal_block",
+    "spectralization:ce_fluorite_crystal_block",
+    "spectralization:nd_fluorite_crystal_block",
+    "spectralization:yb_fluorite_crystal_block",
+    "spectralization:er_fluorite_crystal_block"
   ]
 }

@@ -100,7 +100,10 @@ public class AutoCapacitorBlockEntity extends BlockEntity {
                 continue;
             }
 
-            if (level.getBlockEntity(targetPos) instanceof PumpMagmaBlockEntity) {
+            BlockEntity targetBlockEntity = level.getBlockEntity(targetPos);
+
+            if (targetBlockEntity instanceof PumpMagmaBlockEntity
+                    || targetBlockEntity instanceof SeedLightBlockEntity) {
                 pumpTargets.add(target);
             } else {
                 otherTargets.add(target);

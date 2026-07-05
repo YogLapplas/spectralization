@@ -1,19 +1,30 @@
 {
   "variants": {
+    "facing=up": {
+      "model": "spectralization:block/advanced_diode_laser"
+    },
+    "facing=down": {
+      "model": "spectralization:block/advanced_diode_laser",
+      "x": 180
+    },
     "facing=north": {
       "model": "spectralization:block/advanced_diode_laser",
-      "y": 180
+      "x": 90
     },
     "facing=east": {
       "model": "spectralization:block/advanced_diode_laser",
-      "y": 270
+      "x": 90,
+      "y": 90
     },
     "facing=south": {
-      "model": "spectralization:block/advanced_diode_laser"
+      "model": "spectralization:block/advanced_diode_laser",
+      "x": 90,
+      "y": 180
     },
     "facing=west": {
       "model": "spectralization:block/advanced_diode_laser",
-      "y": 90
+      "x": 90,
+      "y": 270
     }
   }
 }

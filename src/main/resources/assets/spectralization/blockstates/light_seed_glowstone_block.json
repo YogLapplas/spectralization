@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "active=false": {
+      "model": "spectralization:block/light_seed_glowstone_block"
+    },
+    "active=true": {
+      "model": "spectralization:block/light_seed_glowstone_block"
+    }
+  }
+}

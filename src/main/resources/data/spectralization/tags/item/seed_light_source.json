@@ -1,0 +1,8 @@
+{
+  "replace": false,
+  "values": [
+    "spectralization:light_seed_glowstone_block",
+    "spectralization:high_density_light_seed_glowstone_block",
+    "spectralization:diode_light_seed"
+  ]
+}

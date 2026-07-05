@@ -91,7 +91,7 @@ public final class OpticalMediumProfiles {
             return WATER;
         }
 
-        if (GLASS_LIKE_BLOCKS.contains(block)) {
+        if (GLASS_LIKE_BLOCKS.contains(block) || isSpectralGlassLike(block)) {
             return GLASS;
         }
 
@@ -104,6 +104,24 @@ public final class OpticalMediumProfiles {
         }
 
         return DEFAULT_SOLID;
+    }
+
+    private static boolean isSpectralGlassLike(Block block) {
+        return block == Spectralization.QUARTZ_GLASS.get()
+                || block == Spectralization.BOROSILICATE_GLASS.get()
+                || block == Spectralization.CROWN_GLASS.get()
+                || block == Spectralization.FLINT_GLASS.get()
+                || block == Spectralization.HEAVY_GLASS.get()
+                || block == Spectralization.YAG_CRYSTAL_BLOCK.get()
+                || block == Spectralization.CE_YAG_CRYSTAL_BLOCK.get()
+                || block == Spectralization.ND_YAG_CRYSTAL_BLOCK.get()
+                || block == Spectralization.YB_YAG_CRYSTAL_BLOCK.get()
+                || block == Spectralization.ER_YAG_CRYSTAL_BLOCK.get()
+                || block == Spectralization.FLUORITE_BLOCK.get()
+                || block == Spectralization.CE_FLUORITE_CRYSTAL_BLOCK.get()
+                || block == Spectralization.ND_FLUORITE_CRYSTAL_BLOCK.get()
+                || block == Spectralization.YB_FLUORITE_CRYSTAL_BLOCK.get()
+                || block == Spectralization.ER_FLUORITE_CRYSTAL_BLOCK.get();
     }
 
     private OpticalMediumProfiles() {

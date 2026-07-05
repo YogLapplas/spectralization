@@ -1,5 +1,6 @@
 package io.github.yoglappland.spectralization.blockentity;
 
+import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.block.PumpMagmaBlock;
 import io.github.yoglappland.spectralization.energy.SpectralEnergyStorage;
 import io.github.yoglappland.spectralization.optics.pump.OpticalPumpSource;
@@ -17,28 +18,32 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.energy.IEnergyStorage;
 
 public class PumpMagmaBlockEntity extends BlockEntity implements OpticalPumpSource {
-    public static final int CAPACITY = 16_000;
+    public static final int CAPACITY = 480_000;
     private static final int CYCLE_TICKS = 5;
-    private static final int FE_PER_PUMP_UNIT = 8_000;
-    private static final int MAX_PUMP_AMOUNT = 1;
-    private static final int ACTIVATION_THRESHOLD_FE = 8_000;
+    private static final PumpTier MAGMA_TIER = new PumpTier(16_000, 8_000.0D, 1.0D);
+    private static final PumpTier HIGH_DENSITY_MAGMA_TIER = new PumpTier(72_000, 16_000.0D, 4.5D);
+    private static final PumpTier DIODE_TIER = new PumpTier(480_000, 34_286.0D, 14.0D);
+    private static final double PUMP_EPSILON = 1.0E-6D;
     private static final String ENERGY_TAG = "energy";
     private static final String TICKS_UNTIL_CYCLE_TAG = "ticks_until_cycle";
     private static final String ACTIVE_TICKS_TAG = "active_ticks";
     private static final String PUMP_AMOUNT_TAG = "pump_amount";
 
-    private final SpectralEnergyStorage energy = new SpectralEnergyStorage(
-            CAPACITY,
-            CAPACITY,
-            0,
-            this::setChanged
-    );
+    private final SpectralEnergyStorage energy;
     private int ticksUntilCycle = 0;
     private int activeTicks = 0;
-    private int pumpAmount = 0;
+    private double pumpAmount = 0.0D;
 
     public PumpMagmaBlockEntity(BlockPos pos, BlockState blockState) {
         super(SpectralBlockEntities.PUMP_MAGMA_BLOCK.get(), pos, blockState);
+
+        PumpTier tier = tierFor(blockState);
+        this.energy = new SpectralEnergyStorage(
+                tier.capacity(),
+                tier.capacity(),
+                0,
+                this::setChanged
+        );
     }
 
     public static void tick(Level level, BlockPos pos, PumpMagmaBlockEntity pump) {
@@ -50,7 +55,7 @@ public class PumpMagmaBlockEntity extends BlockEntity implements OpticalPumpSour
     }
 
     @Override
-    public int pumpAmount() {
+    public double pumpAmount() {
         return pumpAmount;
     }
 
@@ -86,12 +91,13 @@ public class PumpMagmaBlockEntity extends BlockEntity implements OpticalPumpSour
     }
 
     private void runCycle(Level level, BlockPos pos) {
-        int previousPumpAmount = pumpAmount;
+        double previousPumpAmount = pumpAmount;
         int consumed = 0;
 
         if (hasAdjacentGainMedium(level, pos)) {
-            int pumpUnits = Math.min(MAX_PUMP_AMOUNT, energy.getEnergyStored() / FE_PER_PUMP_UNIT);
-            consumed = pumpUnits * FE_PER_PUMP_UNIT;
+            PumpTier tier = tierFor(getBlockState());
+            double pumpUnits = Math.min(tier.maxPumpAmount(), energy.getEnergyStored() / tier.fePerPumpUnit());
+            consumed = Math.min(energy.getEnergyStored(), (int) Math.ceil(pumpUnits * tier.fePerPumpUnit()));
 
             if (consumed > 0) {
                 energy.setEnergyStored(energy.getEnergyStored() - consumed);
@@ -99,10 +105,10 @@ public class PumpMagmaBlockEntity extends BlockEntity implements OpticalPumpSour
 
             pumpAmount = pumpUnits;
         } else {
-            pumpAmount = 0;
+            pumpAmount = 0.0D;
         }
 
-        if (consumed >= ACTIVATION_THRESHOLD_FE) {
+        if (pumpAmount > 0.0D) {
             activeTicks = CYCLE_TICKS;
             setActive(level, pos, true);
         } else {
@@ -110,8 +116,8 @@ public class PumpMagmaBlockEntity extends BlockEntity implements OpticalPumpSour
             setActive(level, pos, false);
         }
 
-        if (pumpAmount != previousPumpAmount) {
-            RubyBlockEntity.refreshNear(level, pos);
+        if (Math.abs(pumpAmount - previousPumpAmount) > PUMP_EPSILON) {
+            GainMediumBlockEntity.refreshNear(level, pos);
         }
     }
 
@@ -141,7 +147,7 @@ public class PumpMagmaBlockEntity extends BlockEntity implements OpticalPumpSour
         energy.setEnergyStored(tag.getInt(ENERGY_TAG));
         ticksUntilCycle = Math.max(0, tag.getInt(TICKS_UNTIL_CYCLE_TAG));
         activeTicks = Math.max(0, tag.getInt(ACTIVE_TICKS_TAG));
-        pumpAmount = Math.max(0, tag.getInt(PUMP_AMOUNT_TAG));
+        pumpAmount = Math.max(0.0D, tag.getDouble(PUMP_AMOUNT_TAG));
     }
 
     @Override
@@ -150,6 +156,23 @@ public class PumpMagmaBlockEntity extends BlockEntity implements OpticalPumpSour
         tag.putInt(ENERGY_TAG, energy.getEnergyStored());
         tag.putInt(TICKS_UNTIL_CYCLE_TAG, ticksUntilCycle);
         tag.putInt(ACTIVE_TICKS_TAG, activeTicks);
-        tag.putInt(PUMP_AMOUNT_TAG, pumpAmount);
+        tag.putDouble(PUMP_AMOUNT_TAG, pumpAmount);
+    }
+
+    private static PumpTier tierFor(BlockState state) {
+        Block block = state.getBlock();
+
+        if (block == Spectralization.HIGH_DENSITY_PUMP_MAGMA_BLOCK.get()) {
+            return HIGH_DENSITY_MAGMA_TIER;
+        }
+
+        if (block == Spectralization.DIODE_PUMP.get()) {
+            return DIODE_TIER;
+        }
+
+        return MAGMA_TIER;
+    }
+
+    private record PumpTier(int capacity, double fePerPumpUnit, double maxPumpAmount) {
     }
 }

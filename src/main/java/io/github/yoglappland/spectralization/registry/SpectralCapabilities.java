@@ -54,6 +54,11 @@ public final class SpectralCapabilities {
                 (pump, side) -> pump.getEnergyStorage(side)
         );
         event.registerBlockEntity(
+                Capabilities.EnergyStorage.BLOCK,
+                SpectralBlockEntities.SEED_LIGHT_SOURCE.get(),
+                (source, side) -> source.getEnergyStorage(side)
+        );
+        event.registerBlockEntity(
                 Capabilities.ItemHandler.BLOCK,
                 SpectralBlockEntities.LIGHT_SOURCE_GENERATOR.get(),
                 (generator, side) -> generator.getSourceItems(side)

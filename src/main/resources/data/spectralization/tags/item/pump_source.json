@@ -1,6 +1,8 @@
 {
   "replace": false,
   "values": [
-    "spectralization:pump_magma_block"
+    "spectralization:pump_magma_block",
+    "spectralization:high_density_pump_magma_block",
+    "spectralization:diode_pump"
   ]
 }

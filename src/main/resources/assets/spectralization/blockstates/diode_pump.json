@@ -1,0 +1,82 @@
+{
+  "multipart": [
+    {
+      "when": {
+        "active": "false",
+        "facing": "north"
+      },
+      "apply": {
+        "model": "spectralization:block/diode_pump"
+      }
+    },
+    {
+      "when": {
+        "active": "false",
+        "facing": "east"
+      },
+      "apply": {
+        "model": "spectralization:block/diode_pump",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "active": "false",
+        "facing": "south"
+      },
+      "apply": {
+        "model": "spectralization:block/diode_pump",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "active": "false",
+        "facing": "west"
+      },
+      "apply": {
+        "model": "spectralization:block/diode_pump",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "active": "true",
+        "facing": "north"
+      },
+      "apply": {
+        "model": "spectralization:block/diode_pump"
+      }
+    },
+    {
+      "when": {
+        "active": "true",
+        "facing": "east"
+      },
+      "apply": {
+        "model": "spectralization:block/diode_pump",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "active": "true",
+        "facing": "south"
+      },
+      "apply": {
+        "model": "spectralization:block/diode_pump",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "active": "true",
+        "facing": "west"
+      },
+      "apply": {
+        "model": "spectralization:block/diode_pump",
+        "y": 270
+      }
+    }
+  ]
+}

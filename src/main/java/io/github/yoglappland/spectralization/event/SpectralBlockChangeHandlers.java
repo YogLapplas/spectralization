@@ -3,7 +3,7 @@ package io.github.yoglappland.spectralization.event;
 import io.github.yoglappland.spectralization.block.MicrolizerPartBlock;
 import io.github.yoglappland.spectralization.block.FiberRelayBlock;
 import io.github.yoglappland.spectralization.block.HolographicStorageMultiblock;
-import io.github.yoglappland.spectralization.blockentity.RubyBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.GainMediumBlockEntity;
 import io.github.yoglappland.spectralization.microlizer.MicrolizerNetworkData;
 import io.github.yoglappland.spectralization.optics.cache.OpticalDirtyKind;
 import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
@@ -49,7 +49,7 @@ public final class SpectralBlockChangeHandlers {
             OpticalWorldIndex.onBlockPlaced(levelAccessor, pos);
             OpticalTraceCache.rememberSourceState(levelAccessor, pos);
             OpticalTraceCache.markChanged(levelAccessor, pos, OpticalDirtyKind.STRUCTURE);
-            RubyBlockEntity.refreshNear(levelAccessor, pos);
+            GainMediumBlockEntity.refreshNear(levelAccessor, pos);
             OpticalTraceCache.requestIntrinsicSourcesNear(levelAccessor, pos);
             OpticalNetworkIndex.markDirty(levelAccessor);
         }
@@ -79,7 +79,7 @@ public final class SpectralBlockChangeHandlers {
             OpticalWorldIndex.onBlockBroken(levelAccessor, pos);
             OpticalTraceCache.forgetDormantSource(levelAccessor, pos);
             OpticalTraceCache.markChanged(levelAccessor, pos, OpticalDirtyKind.STRUCTURE);
-            RubyBlockEntity.refreshNear(levelAccessor, pos);
+            GainMediumBlockEntity.refreshNear(levelAccessor, pos);
             OpticalTraceCache.requestIntrinsicSourcesNear(levelAccessor, pos);
             OpticalNetworkIndex.markDirty(levelAccessor);
         }
@@ -98,7 +98,7 @@ public final class SpectralBlockChangeHandlers {
 
     public static void neighborNotified(LevelAccessor levelAccessor, BlockPos pos) {
         boolean opticalDataChanged = OpticalTraceCache.markChanged(levelAccessor, pos, OpticalDirtyKind.PARAMETER);
-        opticalDataChanged |= RubyBlockEntity.refreshNear(levelAccessor, pos);
+        opticalDataChanged |= GainMediumBlockEntity.refreshNear(levelAccessor, pos);
 
         if (opticalDataChanged) {
             OpticalTraceCache.requestIntrinsicSourcesNear(levelAccessor, pos);
@@ -189,7 +189,7 @@ public final class SpectralBlockChangeHandlers {
         OpticalWorldIndex.onBlockPlaced(level, pos);
         OpticalTraceCache.rememberSourceState(level, pos);
         OpticalTraceCache.markChanged(level, pos, OpticalDirtyKind.STRUCTURE);
-        RubyBlockEntity.refreshNear(level, pos);
+        GainMediumBlockEntity.refreshNear(level, pos);
         OpticalTraceCache.requestIntrinsicSourcesNear(level, pos);
         OpticalNetworkIndex.markDirty(level);
         FiberNetworkIndex.onBlockPlaced(level, pos);

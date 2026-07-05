@@ -1,7 +1,7 @@
 package io.github.yoglappland.spectralization.block;
 
 import io.github.yoglappland.spectralization.blockentity.PumpMagmaBlockEntity;
-import io.github.yoglappland.spectralization.blockentity.RubyBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.GainMediumBlockEntity;
 import io.github.yoglappland.spectralization.registry.SpectralBlockEntities;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
@@ -47,14 +47,14 @@ public class PumpMagmaBlock extends HorizontalFacingEntityBlock {
         super.onPlace(state, level, pos, oldState, movedByPiston);
 
         if (!level.isClientSide) {
-            RubyBlockEntity.refreshNear(level, pos);
+            GainMediumBlockEntity.refreshNear(level, pos);
         }
     }
 
     @Override
     protected void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean movedByPiston) {
         if (!state.is(newState.getBlock()) && !level.isClientSide) {
-            RubyBlockEntity.refreshNear(level, pos);
+            GainMediumBlockEntity.refreshNear(level, pos);
         }
 
         super.onRemove(state, level, pos, newState, movedByPiston);
@@ -72,7 +72,7 @@ public class PumpMagmaBlock extends HorizontalFacingEntityBlock {
         super.neighborChanged(state, level, pos, neighborBlock, neighborPos, movedByPiston);
 
         if (!level.isClientSide) {
-            RubyBlockEntity.refreshNear(level, pos);
+            GainMediumBlockEntity.refreshNear(level, pos);
         }
     }
 

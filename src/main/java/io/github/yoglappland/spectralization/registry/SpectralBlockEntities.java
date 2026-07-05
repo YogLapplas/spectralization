@@ -12,6 +12,7 @@ import io.github.yoglappland.spectralization.blockentity.FiberDrawingMachineBloc
 import io.github.yoglappland.spectralization.blockentity.FiberLaserBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.FiberOpticInterfaceBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.FiberRelayBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.GainMediumBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.HolographicStorageCrystalBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.HolographicStorageMainCoreBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.HolographicStorageShellBlockEntity;
@@ -24,6 +25,7 @@ import io.github.yoglappland.spectralization.blockentity.PhotothermalGeneratorBl
 import io.github.yoglappland.spectralization.blockentity.PumpMagmaBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.RecursiveGeneratorBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.RubyBlockEntity;
+import io.github.yoglappland.spectralization.blockentity.SeedLightBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.SolarDopingChamberBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.SpectrometerBlockEntity;
 import io.github.yoglappland.spectralization.blockentity.StrayLightEmitterBlockEntity;
@@ -101,7 +103,18 @@ public final class SpectralBlockEntities {
             BLOCK_ENTITY_TYPES.register("pump_magma_block", () ->
                     BlockEntityType.Builder.of(
                             PumpMagmaBlockEntity::new,
-                            Spectralization.PUMP_MAGMA_BLOCK.get()
+                            Spectralization.PUMP_MAGMA_BLOCK.get(),
+                            Spectralization.HIGH_DENSITY_PUMP_MAGMA_BLOCK.get(),
+                            Spectralization.DIODE_PUMP.get()
+                    ).build(null));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<SeedLightBlockEntity>> SEED_LIGHT_SOURCE =
+            BLOCK_ENTITY_TYPES.register("seed_light_source", () ->
+                    BlockEntityType.Builder.of(
+                            SeedLightBlockEntity::new,
+                            Spectralization.LIGHT_SEED_GLOWSTONE_BLOCK.get(),
+                            Spectralization.HIGH_DENSITY_LIGHT_SEED_GLOWSTONE_BLOCK.get(),
+                            Spectralization.DIODE_LIGHT_SEED.get()
                     ).build(null));
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<HolographicStorageCrystalBlockEntity>> HOLOGRAPHIC_STORAGE_CRYSTAL =
@@ -163,6 +176,20 @@ public final class SpectralBlockEntities {
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<RubyBlockEntity>> RUBY_BLOCK =
             BLOCK_ENTITY_TYPES.register("ruby_block", () ->
                     BlockEntityType.Builder.of(RubyBlockEntity::new, Spectralization.RUBY_BLOCK.get()).build(null));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<GainMediumBlockEntity>> GAIN_MEDIUM =
+            BLOCK_ENTITY_TYPES.register("gain_medium", () ->
+                    BlockEntityType.Builder.of(
+                            GainMediumBlockEntity::new,
+                            Spectralization.CE_YAG_CRYSTAL_BLOCK.get(),
+                            Spectralization.ND_YAG_CRYSTAL_BLOCK.get(),
+                            Spectralization.YB_YAG_CRYSTAL_BLOCK.get(),
+                            Spectralization.ER_YAG_CRYSTAL_BLOCK.get(),
+                            Spectralization.CE_FLUORITE_CRYSTAL_BLOCK.get(),
+                            Spectralization.ND_FLUORITE_CRYSTAL_BLOCK.get(),
+                            Spectralization.YB_FLUORITE_CRYSTAL_BLOCK.get(),
+                            Spectralization.ER_FLUORITE_CRYSTAL_BLOCK.get()
+                    ).build(null));
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<PhotonicGradientGeneratorBlockEntity>> LIGHT_SOURCE_GENERATOR =
             BLOCK_ENTITY_TYPES.register("light_source_generator", () ->

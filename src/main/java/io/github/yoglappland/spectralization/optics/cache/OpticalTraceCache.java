@@ -2934,7 +2934,7 @@ public final class OpticalTraceCache {
         private final Map<Integer, LongSet> geometrySignaturePositionsByNetwork = new HashMap<>();
         private final Map<Integer, Long> lastRequestTicksByNetwork = new HashMap<>();
         private final Map<Integer, Long> lastDirtyTicksByNetwork = new HashMap<>();
-        private final Map<Long, Integer> pumpRatesByPos = new HashMap<>();
+        private final Map<Long, Double> pumpRatesByPos = new HashMap<>();
         private final Map<DirectCompilationKey, DirectCompilation> directCompilationCache =
                 new LinkedHashMap<>(128, 0.75F, true) {
                     @Override
@@ -3528,10 +3528,10 @@ public final class OpticalTraceCache {
                 return false;
             }
 
-            int pumpRate = OpticalPumpSources.pumpRateFor(level, pos, state);
-            Integer previous = pumpRatesByPos.put(pos.asLong(), pumpRate);
+            double pumpRate = OpticalPumpSources.pumpRateFor(level, pos, state);
+            Double previous = pumpRatesByPos.put(pos.asLong(), pumpRate);
 
-            return previous == null || previous != pumpRate;
+            return previous == null || Math.abs(previous - pumpRate) > 1.0E-6D;
         }
 
         CachedOpticalSystem systemForNetwork(int networkId) {

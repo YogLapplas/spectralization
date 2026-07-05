@@ -473,7 +473,7 @@ public final class MicrolizedMachineItemData {
     private static RubyPayloadStats rubyPayloadStats(ServerLevel level, BlockPos workMin, BlockPos workMax) {
         int rubyBlocks = 0;
         int pumpedRubyBlocks = 0;
-        int maxPumpRate = 0;
+        double maxPumpRate = 0.0D;
 
         for (BlockPos pos : BlockPos.betweenClosed(workMin, workMax)) {
             BlockPos immutablePos = pos.immutable();
@@ -483,7 +483,7 @@ public final class MicrolizedMachineItemData {
             }
 
             rubyBlocks++;
-            int pumpRate = OpticalPumpSources.effectiveAdjacentPumpRate(level, immutablePos, state);
+            double pumpRate = OpticalPumpSources.effectiveAdjacentPumpRate(level, immutablePos, state);
             if (pumpRate > 0) {
                 pumpedRubyBlocks++;
             }
@@ -891,7 +891,7 @@ public final class MicrolizedMachineItemData {
         }
     }
 
-    private record RubyPayloadStats(int rubyBlocks, int pumpedRubyBlocks, int maxPumpRate) {
+    private record RubyPayloadStats(int rubyBlocks, int pumpedRubyBlocks, double maxPumpRate) {
     }
 
     private MicrolizedMachineItemData() {

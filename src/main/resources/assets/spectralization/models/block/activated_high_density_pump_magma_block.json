@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/cube_all",
+  "textures": {
+    "all": "spectralization:block/activated_high_density_pump_magma_block"
+  }
+}

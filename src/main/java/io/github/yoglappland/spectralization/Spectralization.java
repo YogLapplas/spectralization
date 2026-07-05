@@ -18,6 +18,7 @@ import io.github.yoglappland.spectralization.block.FiberDrawingMachineBlock;
 import io.github.yoglappland.spectralization.block.FiberLaserBlock;
 import io.github.yoglappland.spectralization.block.FiberOpticInterfaceBlock;
 import io.github.yoglappland.spectralization.block.FiberRelayBlock;
+import io.github.yoglappland.spectralization.block.GainMediumBlock;
 import io.github.yoglappland.spectralization.block.HolographicStorageCrystalBlock;
 import io.github.yoglappland.spectralization.block.HolographicStorageMainCoreBlock;
 import io.github.yoglappland.spectralization.block.HolographicStorageScreenBlock;
@@ -34,6 +35,7 @@ import io.github.yoglappland.spectralization.block.PhotothermalGeneratorBlock;
 import io.github.yoglappland.spectralization.block.PumpMagmaBlock;
 import io.github.yoglappland.spectralization.block.RecursiveGeneratorBlock;
 import io.github.yoglappland.spectralization.block.RubyBlock;
+import io.github.yoglappland.spectralization.block.SeedLightBlock;
 import io.github.yoglappland.spectralization.block.SilverGlassBlock;
 import io.github.yoglappland.spectralization.block.SolarDopingChamberBlock;
 import io.github.yoglappland.spectralization.block.SpectrometerBlock;
@@ -822,7 +824,8 @@ public class Spectralization {
                             .strength(0.4F, 0.4F)
                             .sound(SoundType.GLASS)
                             .lightLevel(state -> 10)
-                            .noOcclusion()
+                            .noOcclusion(),
+                    0.5D
             )
     );
 
@@ -837,7 +840,8 @@ public class Spectralization {
                             .strength(0.5F, 0.5F)
                             .sound(SoundType.GLASS)
                             .lightLevel(state -> 15)
-                            .noOcclusion()
+                            .noOcclusion(),
+                    1.0D
             )
     );
 
@@ -874,6 +878,73 @@ public class Spectralization {
 
     public static final DeferredItem<BlockItem> PUMP_MAGMA_BLOCK_ITEM =
             ITEMS.registerSimpleBlockItem("pump_magma_block", PUMP_MAGMA_BLOCK);
+
+    public static final DeferredBlock<PumpMagmaBlock> HIGH_DENSITY_PUMP_MAGMA_BLOCK = BLOCKS.register(
+            "high_density_pump_magma_block",
+            () -> new PumpMagmaBlock(
+                    BlockBehaviour.Properties.of()
+                            .mapColor(MapColor.COLOR_ORANGE)
+                            .strength(2.0F, 8.0F)
+                            .sound(SoundType.STONE)
+                            .lightLevel(state -> state.getValue(PumpMagmaBlock.ACTIVE) ? 12 : 0)
+            )
+    );
+
+    public static final DeferredItem<BlockItem> HIGH_DENSITY_PUMP_MAGMA_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("high_density_pump_magma_block", HIGH_DENSITY_PUMP_MAGMA_BLOCK);
+
+    public static final DeferredBlock<PumpMagmaBlock> DIODE_PUMP = BLOCKS.register(
+            "diode_pump",
+            () -> new PumpMagmaBlock(
+                    BlockBehaviour.Properties.of()
+                            .mapColor(MapColor.METAL)
+                            .strength(2.5F, 8.0F)
+                            .sound(SoundType.METAL)
+                            .lightLevel(state -> state.getValue(PumpMagmaBlock.ACTIVE) ? 9 : 0)
+            )
+    );
+
+    public static final DeferredItem<BlockItem> DIODE_PUMP_ITEM =
+            ITEMS.registerSimpleBlockItem("diode_pump", DIODE_PUMP);
+
+    public static final DeferredBlock<SeedLightBlock> LIGHT_SEED_GLOWSTONE_BLOCK = BLOCKS.register(
+            "light_seed_glowstone_block",
+            () -> new SeedLightBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.SAND)
+                    .strength(0.5F, 0.5F)
+                    .sound(SoundType.GLASS)
+                    .lightLevel(state -> state.getValue(SeedLightBlock.ACTIVE) ? 15 : 2))
+    );
+
+    public static final DeferredItem<BlockItem> LIGHT_SEED_GLOWSTONE_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("light_seed_glowstone_block", LIGHT_SEED_GLOWSTONE_BLOCK);
+
+    public static final DeferredBlock<SeedLightBlock> HIGH_DENSITY_LIGHT_SEED_GLOWSTONE_BLOCK = BLOCKS.register(
+            "high_density_light_seed_glowstone_block",
+            () -> new SeedLightBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.SAND)
+                    .strength(0.8F, 0.8F)
+                    .sound(SoundType.GLASS)
+                    .lightLevel(state -> state.getValue(SeedLightBlock.ACTIVE) ? 15 : 3))
+    );
+
+    public static final DeferredItem<BlockItem> HIGH_DENSITY_LIGHT_SEED_GLOWSTONE_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem(
+                    "high_density_light_seed_glowstone_block",
+                    HIGH_DENSITY_LIGHT_SEED_GLOWSTONE_BLOCK
+            );
+
+    public static final DeferredBlock<SeedLightBlock> DIODE_LIGHT_SEED = BLOCKS.register(
+            "diode_light_seed",
+            () -> new SeedLightBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_LIGHT_BLUE)
+                    .strength(1.5F, 6.0F)
+                    .sound(SoundType.METAL)
+                    .lightLevel(state -> state.getValue(SeedLightBlock.ACTIVE) ? 12 : 0))
+    );
+
+    public static final DeferredItem<BlockItem> DIODE_LIGHT_SEED_ITEM =
+            ITEMS.registerSimpleBlockItem("diode_light_seed", DIODE_LIGHT_SEED);
 
     public static final DeferredBlock<HorizontalFacingBlock> BASIC_MACHINE_BLOCK = BLOCKS.register(
             "basic_machine_block",
@@ -1054,20 +1125,20 @@ public class Spectralization {
             transparentStorageBlock("fluorite_block", MapColor.COLOR_PURPLE, SoundType.AMETHYST);
     public static final DeferredItem<BlockItem> FLUORITE_BLOCK_ITEM =
             ITEMS.registerSimpleBlockItem("fluorite_block", FLUORITE_BLOCK);
-    public static final DeferredBlock<TransparentBlock> ND_FLUORITE_CRYSTAL_BLOCK =
-            transparentStorageBlock("nd_fluorite_crystal_block", MapColor.COLOR_PURPLE, SoundType.AMETHYST);
+    public static final DeferredBlock<GainMediumBlock> ND_FLUORITE_CRYSTAL_BLOCK =
+            gainMediumBlock("nd_fluorite_crystal_block", MapColor.COLOR_PURPLE);
     public static final DeferredItem<BlockItem> ND_FLUORITE_CRYSTAL_BLOCK_ITEM =
             ITEMS.registerSimpleBlockItem("nd_fluorite_crystal_block", ND_FLUORITE_CRYSTAL_BLOCK);
-    public static final DeferredBlock<TransparentBlock> YB_FLUORITE_CRYSTAL_BLOCK =
-            transparentStorageBlock("yb_fluorite_crystal_block", MapColor.COLOR_PURPLE, SoundType.AMETHYST);
+    public static final DeferredBlock<GainMediumBlock> YB_FLUORITE_CRYSTAL_BLOCK =
+            gainMediumBlock("yb_fluorite_crystal_block", MapColor.COLOR_PURPLE);
     public static final DeferredItem<BlockItem> YB_FLUORITE_CRYSTAL_BLOCK_ITEM =
             ITEMS.registerSimpleBlockItem("yb_fluorite_crystal_block", YB_FLUORITE_CRYSTAL_BLOCK);
-    public static final DeferredBlock<TransparentBlock> ER_FLUORITE_CRYSTAL_BLOCK =
-            transparentStorageBlock("er_fluorite_crystal_block", MapColor.COLOR_PURPLE, SoundType.AMETHYST);
+    public static final DeferredBlock<GainMediumBlock> ER_FLUORITE_CRYSTAL_BLOCK =
+            gainMediumBlock("er_fluorite_crystal_block", MapColor.COLOR_PURPLE);
     public static final DeferredItem<BlockItem> ER_FLUORITE_CRYSTAL_BLOCK_ITEM =
             ITEMS.registerSimpleBlockItem("er_fluorite_crystal_block", ER_FLUORITE_CRYSTAL_BLOCK);
-    public static final DeferredBlock<TransparentBlock> CE_FLUORITE_CRYSTAL_BLOCK =
-            transparentStorageBlock("ce_fluorite_crystal_block", MapColor.COLOR_PURPLE, SoundType.AMETHYST);
+    public static final DeferredBlock<GainMediumBlock> CE_FLUORITE_CRYSTAL_BLOCK =
+            gainMediumBlock("ce_fluorite_crystal_block", MapColor.COLOR_PURPLE);
     public static final DeferredItem<BlockItem> CE_FLUORITE_CRYSTAL_BLOCK_ITEM =
             ITEMS.registerSimpleBlockItem("ce_fluorite_crystal_block", CE_FLUORITE_CRYSTAL_BLOCK);
     public static final DeferredBlock<Block> YTTRIUM_OXIDE_BLOCK =
@@ -1078,20 +1149,20 @@ public class Spectralization {
             transparentStorageBlock("yag_crystal_block", MapColor.SAND, SoundType.AMETHYST);
     public static final DeferredItem<BlockItem> YAG_CRYSTAL_BLOCK_ITEM =
             ITEMS.registerSimpleBlockItem("yag_crystal_block", YAG_CRYSTAL_BLOCK);
-    public static final DeferredBlock<TransparentBlock> ND_YAG_CRYSTAL_BLOCK =
-            transparentStorageBlock("nd_yag_crystal_block", MapColor.SAND, SoundType.AMETHYST);
+    public static final DeferredBlock<GainMediumBlock> ND_YAG_CRYSTAL_BLOCK =
+            gainMediumBlock("nd_yag_crystal_block", MapColor.SAND);
     public static final DeferredItem<BlockItem> ND_YAG_CRYSTAL_BLOCK_ITEM =
             ITEMS.registerSimpleBlockItem("nd_yag_crystal_block", ND_YAG_CRYSTAL_BLOCK);
-    public static final DeferredBlock<TransparentBlock> YB_YAG_CRYSTAL_BLOCK =
-            transparentStorageBlock("yb_yag_crystal_block", MapColor.SAND, SoundType.AMETHYST);
+    public static final DeferredBlock<GainMediumBlock> YB_YAG_CRYSTAL_BLOCK =
+            gainMediumBlock("yb_yag_crystal_block", MapColor.SAND);
     public static final DeferredItem<BlockItem> YB_YAG_CRYSTAL_BLOCK_ITEM =
             ITEMS.registerSimpleBlockItem("yb_yag_crystal_block", YB_YAG_CRYSTAL_BLOCK);
-    public static final DeferredBlock<TransparentBlock> ER_YAG_CRYSTAL_BLOCK =
-            transparentStorageBlock("er_yag_crystal_block", MapColor.SAND, SoundType.AMETHYST);
+    public static final DeferredBlock<GainMediumBlock> ER_YAG_CRYSTAL_BLOCK =
+            gainMediumBlock("er_yag_crystal_block", MapColor.SAND);
     public static final DeferredItem<BlockItem> ER_YAG_CRYSTAL_BLOCK_ITEM =
             ITEMS.registerSimpleBlockItem("er_yag_crystal_block", ER_YAG_CRYSTAL_BLOCK);
-    public static final DeferredBlock<TransparentBlock> CE_YAG_CRYSTAL_BLOCK =
-            transparentStorageBlock("ce_yag_crystal_block", MapColor.SAND, SoundType.AMETHYST);
+    public static final DeferredBlock<GainMediumBlock> CE_YAG_CRYSTAL_BLOCK =
+            gainMediumBlock("ce_yag_crystal_block", MapColor.SAND);
     public static final DeferredItem<BlockItem> CE_YAG_CRYSTAL_BLOCK_ITEM =
             ITEMS.registerSimpleBlockItem("ce_yag_crystal_block", CE_YAG_CRYSTAL_BLOCK);
     public static final DeferredBlock<Block> SILICON_BLOCK =
@@ -1178,6 +1249,23 @@ public class Spectralization {
                                 .strength(3.0F, 6.0F)
                                 .requiresCorrectToolForDrops()
                                 .sound(soundType)
+                                .noOcclusion()
+                                .isRedstoneConductor((state, level, pos) -> false)
+                                .isSuffocating((state, level, pos) -> false)
+                                .isViewBlocking((state, level, pos) -> false)
+                )
+        );
+    }
+
+    private static DeferredBlock<GainMediumBlock> gainMediumBlock(String name, MapColor mapColor) {
+        return BLOCKS.register(
+                name,
+                () -> new GainMediumBlock(
+                        BlockBehaviour.Properties.of()
+                                .mapColor(mapColor)
+                                .strength(3.0F, 6.0F)
+                                .requiresCorrectToolForDrops()
+                                .sound(SoundType.AMETHYST)
                                 .noOcclusion()
                                 .isRedstoneConductor((state, level, pos) -> false)
                                 .isSuffocating((state, level, pos) -> false)

@@ -17,14 +17,14 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 
 public final class LaserDeviceRecipeCategory implements IRecipeCategory<LaserDeviceRecipe> {
-    private static final int WIDTH = 154;
-    private static final int HEIGHT = 62;
+    private static final int WIDTH = 176;
+    private static final int HEIGHT = 70;
     private static final int SLOT_SIZE = 18;
     private static final int ITEM_SLOT_INSET = 1;
     private static final int DEVICE_X = 14;
-    private static final int DEVICE_Y = 22;
+    private static final int DEVICE_Y = 26;
     private static final int TEXT_X = 42;
-    private static final int TEXT_Y = 13;
+    private static final int TEXT_Y = 8;
     private static final int LINE_HEIGHT = 13;
 
     private final IDrawable icon;
@@ -88,21 +88,29 @@ public final class LaserDeviceRecipeCategory implements IRecipeCategory<LaserDev
                 graphics,
                 0,
                 Component.translatable(
-                        "jei.spectralization.optical_device.single_pass_gain",
-                        gainText(recipe.singlePassGain())
+                        "jei.spectralization.optical_device.gain_per_pu",
+                        gainSlopeText(recipe.gainPerPumpUnit())
                 )
         );
         drawLine(
                 graphics,
                 1,
                 Component.translatable(
-                        "jei.spectralization.optical_device.gain_limit",
-                        gainText(recipe.gainLimit())
+                        "jei.spectralization.optical_device.reference_gain",
+                        referenceGainText(recipe.nominalSinglePassGain(), recipe.referencePump())
                 )
         );
         drawLine(
                 graphics,
                 2,
+                Component.translatable(
+                        "jei.spectralization.optical_device.saturation_power",
+                        powerText(recipe.saturationPower())
+                )
+        );
+        drawLine(
+                graphics,
+                3,
                 Component.translatable(
                         "jei.spectralization.optical_device.handling_limit",
                         powerText(recipe.handlingLimit())
@@ -118,6 +126,30 @@ public final class LaserDeviceRecipeCategory implements IRecipeCategory<LaserDev
                 TEXT_Y + line * LINE_HEIGHT,
                 SpectralJeiUi.TEXT,
                 false
+        );
+    }
+
+    private static Component gainSlopeText(double gainPerPumpUnit) {
+        if (!Double.isFinite(gainPerPumpUnit) || gainPerPumpUnit <= 0.0D) {
+            return Component.translatable("jei.spectralization.optical_device.not_configured");
+        }
+
+        return Component.literal(String.format(Locale.ROOT, "+%.4fx/PU", gainPerPumpUnit));
+    }
+
+    private static Component referenceGainText(double gain, double referencePump) {
+        if (!Double.isFinite(gain) || gain <= 0.0D) {
+            return Component.translatable("jei.spectralization.optical_device.not_configured");
+        }
+
+        if (!Double.isFinite(referencePump) || referencePump <= 0.0D) {
+            return gainText(gain);
+        }
+
+        return Component.translatable(
+                "jei.spectralization.optical_device.reference_gain_at_pump",
+                gainText(gain),
+                String.format(Locale.ROOT, "%.1f", referencePump)
         );
     }
 

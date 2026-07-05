@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "active=false": {
+      "model": "spectralization:block/diode_light_seed"
+    },
+    "active=true": {
+      "model": "spectralization:block/diode_light_seed"
+    }
+  }
+}

@@ -13,6 +13,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -30,22 +31,25 @@ public final class GainMediumOverloadMonitor {
             return false;
         }
 
-        Map<BlockPos, MaterialLoad> loadsByPos = rubyMaterialLoads(level, graph, solution);
+        Map<BlockPos, MaterialLoad> loadsByPos = gainMediumMaterialLoads(level, graph, solution);
         boolean burned = false;
 
         for (Map.Entry<BlockPos, MaterialLoad> entry : loadsByPos.entrySet()) {
             BlockPos pos = entry.getKey();
             MaterialLoad load = entry.getValue();
-            double limit = OpticalMaterialProfiles.rubyHandlingLimit();
+            BlockState state = level.getBlockState(pos);
+            double limit = OpticalMaterialProfiles.handlingLimitFor(state);
 
-            if (load.absorbedPower() <= limit || !level.getBlockState(pos).is(Spectralization.RUBY_BLOCK.get())) {
+            if (!Double.isFinite(limit) || load.absorbedPower() <= limit) {
                 continue;
             }
 
+            String materialId = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
             Spectralization.LOGGER.info(
-                    "Ruby overload in {} at {}: absorbed={} limit={} raw={} incoming={} outgoing={} absorption_max={}",
+                    "Gain medium overload in {} at {}: material={} absorbed={} limit={} raw={} incoming={} outgoing={} absorption_max={}",
                     level.dimension().location(),
                     pos.toShortString(),
+                    materialId,
                     format(load.absorbedPower()),
                     format(limit),
                     format(load.rawPortLoad()),
@@ -55,7 +59,7 @@ public final class GainMediumOverloadMonitor {
             );
             SpectralDiagnostics.anomaly(level, "optics", "gain_medium_overload")
                     .pos("pos", pos)
-                    .field("material", "ruby")
+                    .field("material", materialId)
                     .field("load", load.absorbedPower())
                     .field("absorbed_load", load.absorbedPower())
                     .field("limit", limit)
@@ -73,25 +77,25 @@ public final class GainMediumOverloadMonitor {
         return burned;
     }
 
-    private static Map<BlockPos, MaterialLoad> rubyMaterialLoads(
+    private static Map<BlockPos, MaterialLoad> gainMediumMaterialLoads(
             ServerLevel level,
             CompiledPortGraph graph,
             ScalarPowerSolution solution
     ) {
-        Map<BlockPos, MaterialLoad> loadsByPos = rubyRawPortLoads(level, graph, solution);
-        Map<PortGraphNode, BlockPos> rubyInputNodePositions = rubyInputNodePositions(level, graph);
+        Map<BlockPos, MaterialLoad> loadsByPos = gainMediumRawPortLoads(level, graph, solution);
+        Map<PortGraphNode, BlockPos> gainMediumInputNodePositions = gainMediumInputNodePositions(level, graph);
 
         for (Map.Entry<SpectralPowerLane, Map<PortGraphNode, Double>> laneEntry : solution.powerByLane().entrySet()) {
             SpectralPowerLane lane = laneEntry.getKey();
 
             for (Map.Entry<PortGraphNode, Double> powerEntry : laneEntry.getValue().entrySet()) {
-                BlockPos pos = rubyInputNodePositions.get(powerEntry.getKey());
+                BlockPos pos = gainMediumInputNodePositions.get(powerEntry.getKey());
 
                 if (pos == null || powerEntry.getValue() <= 0.0D) {
                     continue;
                 }
 
-                double absorption = rubyAbsorption(level, pos, lane.frequency());
+                double absorption = gainMediumAbsorption(level, pos, lane.frequency());
                 double absorbedPower = powerEntry.getValue() * absorption;
                 MaterialLoad load = loadsByPos.getOrDefault(pos, MaterialLoad.ZERO);
                 loadsByPos.put(pos, load.withAbsorbed(absorbedPower, absorption));
@@ -102,14 +106,14 @@ public final class GainMediumOverloadMonitor {
             return loadsByPos;
         }
 
-        for (Map.Entry<PortGraphNode, BlockPos> entry : rubyInputNodePositions.entrySet()) {
+        for (Map.Entry<PortGraphNode, BlockPos> entry : gainMediumInputNodePositions.entrySet()) {
             double power = solution.powerAt(entry.getKey());
 
             if (power <= 0.0D) {
                 continue;
             }
 
-            double absorption = rubyAbsorption(level, entry.getValue(), FrequencyKey.DEBUG_VISIBLE);
+            double absorption = gainMediumAbsorption(level, entry.getValue(), FrequencyKey.DEBUG_VISIBLE);
             double absorbedPower = power * absorption;
             MaterialLoad load = loadsByPos.getOrDefault(entry.getValue(), MaterialLoad.ZERO);
             loadsByPos.put(entry.getValue(), load.withAbsorbed(absorbedPower, absorption));
@@ -118,7 +122,7 @@ public final class GainMediumOverloadMonitor {
         return loadsByPos;
     }
 
-    private static Map<BlockPos, MaterialLoad> rubyRawPortLoads(
+    private static Map<BlockPos, MaterialLoad> gainMediumRawPortLoads(
             ServerLevel level,
             CompiledPortGraph graph,
             ScalarPowerSolution solution
@@ -126,7 +130,7 @@ public final class GainMediumOverloadMonitor {
         Map<BlockPos, MaterialLoad> loadsByPos = new HashMap<>();
 
         for (PortGraphNode node : graph.nodes()) {
-            if (!isLoadedRuby(level, node.pos())) {
+            if (!isLoadedGainMedium(level, node.pos())) {
                 continue;
             }
 
@@ -146,11 +150,11 @@ public final class GainMediumOverloadMonitor {
         return loadsByPos;
     }
 
-    private static Map<PortGraphNode, BlockPos> rubyInputNodePositions(ServerLevel level, CompiledPortGraph graph) {
+    private static Map<PortGraphNode, BlockPos> gainMediumInputNodePositions(ServerLevel level, CompiledPortGraph graph) {
         Map<PortGraphNode, BlockPos> inputNodePositions = new HashMap<>();
 
         for (PortGraphEdge edge : graph.edges()) {
-            if (!isRubyLocalMaterialEdge(level, edge)) {
+            if (!isGainMediumLocalMaterialEdge(level, edge)) {
                 continue;
             }
 
@@ -160,19 +164,19 @@ public final class GainMediumOverloadMonitor {
         return inputNodePositions;
     }
 
-    private static boolean isRubyLocalMaterialEdge(ServerLevel level, PortGraphEdge edge) {
+    private static boolean isGainMediumLocalMaterialEdge(ServerLevel level, PortGraphEdge edge) {
         return edge.kind() == PortGraphEdgeKind.LOCAL_SCATTERING
                 && edge.from().waveKind() == PortWaveKind.INCOMING
                 && edge.to().waveKind() == PortWaveKind.OUTGOING
                 && edge.from().pos().equals(edge.to().pos())
-                && isLoadedRuby(level, edge.from().pos());
+                && isLoadedGainMedium(level, edge.from().pos());
     }
 
-    private static boolean isLoadedRuby(ServerLevel level, BlockPos pos) {
-        return level.isLoaded(pos) && level.getBlockState(pos).is(Spectralization.RUBY_BLOCK.get());
+    private static boolean isLoadedGainMedium(ServerLevel level, BlockPos pos) {
+        return level.isLoaded(pos) && Double.isFinite(OpticalMaterialProfiles.handlingLimitFor(level.getBlockState(pos)));
     }
 
-    private static double rubyAbsorption(ServerLevel level, BlockPos pos, FrequencyKey frequency) {
+    private static double gainMediumAbsorption(ServerLevel level, BlockPos pos, FrequencyKey frequency) {
         BlockState state = level.getBlockState(pos);
         return OpticalMaterialProfiles.profileFor(level, pos, state).responseAt(frequency).absorption();
     }

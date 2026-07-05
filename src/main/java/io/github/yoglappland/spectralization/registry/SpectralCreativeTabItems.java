@@ -125,6 +125,11 @@ public final class SpectralCreativeTabItems {
         output.accept(Spectralization.ADVANCED_LED_ITEM.get());
         output.accept(Spectralization.AUTO_CAPACITOR_ITEM.get());
         output.accept(Spectralization.PUMP_MAGMA_BLOCK_ITEM.get());
+        output.accept(Spectralization.HIGH_DENSITY_PUMP_MAGMA_BLOCK_ITEM.get());
+        output.accept(Spectralization.DIODE_PUMP_ITEM.get());
+        output.accept(Spectralization.LIGHT_SEED_GLOWSTONE_BLOCK_ITEM.get());
+        output.accept(Spectralization.HIGH_DENSITY_LIGHT_SEED_GLOWSTONE_BLOCK_ITEM.get());
+        output.accept(Spectralization.DIODE_LIGHT_SEED_ITEM.get());
         output.accept(Spectralization.RUBY_BLOCK_ITEM.get());
         output.accept(Spectralization.SILVER_BLOCK_ITEM.get());
         output.accept(Spectralization.SILVER_GLASS_ITEM.get());

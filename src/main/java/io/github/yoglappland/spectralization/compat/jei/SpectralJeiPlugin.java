@@ -109,6 +109,14 @@ public final class SpectralJeiPlugin implements IModPlugin {
         registration.addRecipeCatalyst(new ItemStack(Spectralization.LIGHT_SOURCE_GENERATOR_ITEM.get()), LIGHT_SOURCE_GENERATOR);
         registration.addRecipeCatalyst(new ItemStack(Spectralization.PHOTOTHERMAL_GENERATOR_ITEM.get()), PHOTOTHERMAL_GENERATOR);
         registration.addRecipeCatalyst(new ItemStack(Spectralization.RUBY_BLOCK_ITEM.get()), LASER);
+        registration.addRecipeCatalyst(new ItemStack(Spectralization.CE_YAG_CRYSTAL_BLOCK_ITEM.get()), LASER);
+        registration.addRecipeCatalyst(new ItemStack(Spectralization.ND_YAG_CRYSTAL_BLOCK_ITEM.get()), LASER);
+        registration.addRecipeCatalyst(new ItemStack(Spectralization.YB_YAG_CRYSTAL_BLOCK_ITEM.get()), LASER);
+        registration.addRecipeCatalyst(new ItemStack(Spectralization.ER_YAG_CRYSTAL_BLOCK_ITEM.get()), LASER);
+        registration.addRecipeCatalyst(new ItemStack(Spectralization.CE_FLUORITE_CRYSTAL_BLOCK_ITEM.get()), LASER);
+        registration.addRecipeCatalyst(new ItemStack(Spectralization.ND_FLUORITE_CRYSTAL_BLOCK_ITEM.get()), LASER);
+        registration.addRecipeCatalyst(new ItemStack(Spectralization.YB_FLUORITE_CRYSTAL_BLOCK_ITEM.get()), LASER);
+        registration.addRecipeCatalyst(new ItemStack(Spectralization.ER_FLUORITE_CRYSTAL_BLOCK_ITEM.get()), LASER);
         registration.addRecipeCatalyst(new ItemStack(Spectralization.FIBER_LASER_ITEM.get()), LASER);
     }
 

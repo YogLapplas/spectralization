@@ -1,19 +1,74 @@
 {
-  "variants": {
-    "facing=north": {
-      "model": "spectralization:block/crystal_cultivator"
+  "multipart": [
+    {
+      "when": {
+        "facing": "north"
+      },
+      "apply": {
+        "model": "spectralization:block/crystal_cultivator_base"
+      }
     },
-    "facing=east": {
-      "model": "spectralization:block/crystal_cultivator",
-      "y": 90
+    {
+      "when": {
+        "facing": "north"
+      },
+      "apply": {
+        "model": "spectralization:block/crystal_cultivator_body"
+      }
     },
-    "facing=south": {
-      "model": "spectralization:block/crystal_cultivator",
-      "y": 180
+    {
+      "when": {
+        "facing": "east"
+      },
+      "apply": {
+        "model": "spectralization:block/crystal_cultivator_base",
+        "y": 90
+      }
     },
-    "facing=west": {
-      "model": "spectralization:block/crystal_cultivator",
-      "y": 270
+    {
+      "when": {
+        "facing": "east"
+      },
+      "apply": {
+        "model": "spectralization:block/crystal_cultivator_body",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "facing": "south"
+      },
+      "apply": {
+        "model": "spectralization:block/crystal_cultivator_base",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "facing": "south"
+      },
+      "apply": {
+        "model": "spectralization:block/crystal_cultivator_body",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "facing": "west"
+      },
+      "apply": {
+        "model": "spectralization:block/crystal_cultivator_base",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "facing": "west"
+      },
+      "apply": {
+        "model": "spectralization:block/crystal_cultivator_body",
+        "y": 270
+      }
     }
-  }
+  ]
 }

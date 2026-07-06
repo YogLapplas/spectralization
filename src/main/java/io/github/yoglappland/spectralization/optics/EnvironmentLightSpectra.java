@@ -38,69 +38,69 @@ public final class EnvironmentLightSpectra {
     );
     private static final SpectrumProfile WARM_WHITE = profile(
             band(SpectralRegion.INFRARED, 12.0, 8.0, 0.12, 0, 31, 3),
-            band(SpectralRegion.VISIBLE, 10.0, 8.5, 0.25, 0, 31, 1),
-            band(SpectralRegion.VISIBLE, 20.0, 8.0, 0.70, 0, 31, 1),
-            band(SpectralRegion.VISIBLE, 27.0, 5.0, 0.45, 0, 31, 1)
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_RED_BIN, 8.5, 0.25, 0, 24, 1),
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_YELLOW_BIN, 8.0, 0.70, 0, 28, 1),
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_GREEN_BIN, 5.0, 0.45, 0, 31, 1)
     );
     private static final SpectrumProfile COOL_WHITE = profile(
             band(SpectralRegion.INFRARED, 12.0, 6.0, 0.02, 0, 31, 4),
-            band(SpectralRegion.VISIBLE, 5.0, 6.0, 0.52, 0, 31, 1),
-            band(SpectralRegion.VISIBLE, 12.0, 7.0, 0.60, 0, 31, 1),
-            band(SpectralRegion.VISIBLE, 18.0, 8.0, 0.35, 0, 31, 1),
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_LIME_BIN, 6.0, 0.52, 0, 31, 1),
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_CYAN_BIN, 7.0, 0.60, 0, 31, 1),
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_BLUE_BIN, 8.0, 0.35, 0, 31, 1),
             band(SpectralRegion.ULTRAVIOLET, 4.0, 3.5, 0.08, 0, 14, 2)
     );
     private static final SpectrumProfile WHITE_LED = profile(
-            band(SpectralRegion.VISIBLE, 4.5, 2.0, 0.58, 0, 12, 1),
-            band(SpectralRegion.VISIBLE, 16.5, 7.2, 0.78, 4, 30, 1),
-            band(SpectralRegion.VISIBLE, 25.0, 5.4, 0.34, 12, 31, 1)
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_BLUE_BIN, 2.0, 0.58, 14, 31, 1),
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_GREEN_BIN, 7.2, 0.78, 2, 30, 1),
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_YELLOW_BIN, 5.4, 0.34, 0, 20, 1)
     );
     private static final SpectrumProfile WARM_COMBUSTION = profile(
             band(SpectralRegion.THZ, 8.0, 5.5, 0.05, 0, 15, 3),
             band(SpectralRegion.INFRARED, 11.0, 9.0, 0.46, 0, 31, 2),
-            band(SpectralRegion.VISIBLE, 17.0, 5.5, 0.16, 8, 31, 1),
-            band(SpectralRegion.VISIBLE, 24.0, 4.8, 0.26, 8, 31, 1),
-            band(SpectralRegion.VISIBLE, 29.0, 2.8, 0.07, 18, 31, 1)
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_YELLOW_BIN, 5.5, 0.16, 0, 18, 1),
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_ORANGE_BIN, 4.8, 0.26, 0, 18, 1),
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_RED_BIN, 2.8, 0.07, 0, 14, 1)
     );
     private static final SpectrumProfile HOT_MOLTEN = profile(
             band(SpectralRegion.THZ, 9.0, 5.5, 0.05, 0, 15, 3),
             band(SpectralRegion.INFRARED, 14.0, 9.5, 0.55, 0, 31, 2),
-            band(SpectralRegion.VISIBLE, 20.0, 5.0, 0.18, 10, 31, 1),
-            band(SpectralRegion.VISIBLE, 27.0, 4.0, 0.22, 14, 31, 1)
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_ORANGE_BIN, 5.0, 0.18, 0, 18, 1),
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_RED_BIN, 4.0, 0.22, 0, 14, 1)
     );
     private static final SpectrumProfile REDSTONE_GLOW = profile(
             band(SpectralRegion.MICROWAVE, 8.0, 4.0, 0.03, 0, 15, 4),
             band(SpectralRegion.THZ, 8.0, 5.0, 0.07, 0, 15, 3),
             band(SpectralRegion.INFRARED, 21.0, 7.0, 0.25, 5, 31, 2),
-            band(SpectralRegion.VISIBLE, 25.5, 4.0, 0.65, 15, 31, 1)
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_RED_BIN, 4.0, 0.65, 0, 14, 1)
     );
     private static final SpectrumProfile SOUL_LIGHT = profile(
             band(SpectralRegion.INFRARED, 6.0, 4.0, 0.03, 0, 20, 4),
-            band(SpectralRegion.VISIBLE, 4.0, 5.0, 0.45, 0, 18, 1),
-            band(SpectralRegion.VISIBLE, 10.0, 4.5, 0.45, 0, 22, 1),
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_CYAN_BIN, 5.0, 0.45, 8, 31, 1),
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_LIGHT_BLUE_BIN, 4.5, 0.45, 10, 31, 1),
             band(SpectralRegion.ULTRAVIOLET, 5.0, 4.0, 0.12, 0, 16, 2)
     );
     private static final SpectrumProfile BIOLUMINESCENT = profile(
             band(SpectralRegion.INFRARED, 8.0, 5.0, 0.02, 0, 20, 4),
-            band(SpectralRegion.VISIBLE, 8.0, 5.5, 0.45, 0, 22, 1),
-            band(SpectralRegion.VISIBLE, 14.0, 5.5, 0.55, 2, 26, 1),
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_GREEN_BIN, 5.5, 0.45, 0, 28, 1),
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_CYAN_BIN, 5.5, 0.55, 2, 31, 1),
             band(SpectralRegion.ULTRAVIOLET, 3.0, 3.0, 0.03, 0, 12, 3)
     );
     private static final SpectrumProfile ARCANE_PURPLE = profile(
-            band(SpectralRegion.VISIBLE, 3.0, 4.0, 0.42, 0, 14, 1),
-            band(SpectralRegion.VISIBLE, 28.0, 3.0, 0.22, 20, 31, 1),
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_PURPLE_BIN, 4.0, 0.42, 16, 31, 1),
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_MAGENTA_BIN, 3.0, 0.22, 20, 31, 1),
             band(SpectralRegion.ULTRAVIOLET, 6.0, 4.0, 0.26, 0, 18, 2),
             band(SpectralRegion.FAR_ULTRAVIOLET, 4.0, 3.0, 0.07, 0, 12, 3)
     );
     private static final SpectrumProfile TECHNOLOGY_CYAN = profile(
             band(SpectralRegion.INFRARED, 10.0, 5.0, 0.04, 0, 24, 4),
-            band(SpectralRegion.VISIBLE, 7.0, 5.5, 0.46, 0, 24, 1),
-            band(SpectralRegion.VISIBLE, 13.0, 5.5, 0.46, 0, 28, 1),
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_CYAN_BIN, 5.5, 0.46, 6, 31, 1),
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_LIGHT_BLUE_BIN, 5.5, 0.46, 8, 31, 1),
             band(SpectralRegion.ULTRAVIOLET, 5.0, 3.8, 0.10, 0, 16, 2)
     );
     private static final SpectrumProfile TECHNOLOGY_BLUE = profile(
             band(SpectralRegion.INFRARED, 9.0, 5.0, 0.03, 0, 24, 4),
-            band(SpectralRegion.VISIBLE, 4.0, 4.8, 0.56, 0, 20, 1),
-            band(SpectralRegion.VISIBLE, 10.0, 5.5, 0.38, 0, 24, 1),
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_LIGHT_BLUE_BIN, 4.8, 0.56, 8, 31, 1),
+            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_BLUE_BIN, 5.5, 0.38, 10, 31, 1),
             band(SpectralRegion.ULTRAVIOLET, 4.0, 3.5, 0.11, 0, 14, 2)
     );
     private static volatile Map<ResourceLocation, SpectrumProfile> editorSpectrumOverrides = Map.of();

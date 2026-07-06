@@ -5,6 +5,7 @@ import io.github.yoglappland.spectralization.optics.FrequencyKey;
 import io.github.yoglappland.spectralization.optics.OpticalMaterialProfile;
 import io.github.yoglappland.spectralization.optics.OpticalMaterialResponse;
 import io.github.yoglappland.spectralization.optics.OpticalMaterialSample;
+import io.github.yoglappland.spectralization.optics.SpectralColorMap;
 import io.github.yoglappland.spectralization.optics.SpectralRegion;
 import io.github.yoglappland.spectralization.optics.medium.OpticalMediumProfiles;
 import java.util.Objects;
@@ -18,8 +19,8 @@ public final class SurfaceTreatments {
     );
     private static final OpticalMaterialProfile GOLDING_PROFILE = OpticalMaterialProfile.of(
             sample(SpectralRegion.INFRARED, 16, 0.0, 0.960, 0.025),
-            sample(SpectralRegion.VISIBLE, 4, 0.0, 0.420, 0.480),
-            sample(SpectralRegion.VISIBLE, 26, 0.0, 0.930, 0.050),
+            sample(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_ORANGE_BIN, 0.0, 0.930, 0.050),
+            sample(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_PURPLE_BIN, 0.0, 0.420, 0.480),
             sample(SpectralRegion.ULTRAVIOLET, 16, 0.0, 0.320, 0.580)
     );
 

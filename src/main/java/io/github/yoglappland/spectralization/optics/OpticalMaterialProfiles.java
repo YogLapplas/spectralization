@@ -67,14 +67,14 @@ public final class OpticalMaterialProfiles {
     );
     private static final OpticalMaterialProfile COPPER = OpticalMaterialProfile.of(
             sample(SpectralRegion.INFRARED, 16, 0.0, 0.89, 0.07),
-            sample(SpectralRegion.VISIBLE, 4, 0.0, 0.80, 0.15),
-            sample(SpectralRegion.VISIBLE, 26, 0.0, 0.45, 0.45),
+            sample(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_ORANGE_BIN, 0.0, 0.80, 0.15),
+            sample(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_PURPLE_BIN, 0.0, 0.45, 0.45),
             sample(SpectralRegion.ULTRAVIOLET, 16, 0.0, 0.24, 0.65)
     );
     private static final OpticalMaterialProfile GOLD = OpticalMaterialProfile.of(
             sample(SpectralRegion.INFRARED, 16, 0.0, 0.96, 0.025),
-            sample(SpectralRegion.VISIBLE, 4, 0.0, 0.42, 0.48),
-            sample(SpectralRegion.VISIBLE, 26, 0.0, 0.93, 0.05),
+            sample(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_ORANGE_BIN, 0.0, 0.93, 0.05),
+            sample(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_PURPLE_BIN, 0.0, 0.42, 0.48),
             sample(SpectralRegion.ULTRAVIOLET, 16, 0.0, 0.32, 0.58)
     );
     private static final OpticalMaterialProfile POLISHED_SILVER = OpticalMaterialProfile.of(
@@ -102,9 +102,9 @@ public final class OpticalMaterialProfiles {
             sample(SpectralRegion.VISIBLE, 16, 0.965, 0.015, 0.006),
             sample(SpectralRegion.ULTRAVIOLET, 16, 0.550, 0.030, 0.350)
     );
-    private static final FrequencyKey CE_LINE = FrequencyKey.visible(14);
-    private static final FrequencyKey ND_LINE = FrequencyKey.visible(26);
-    private static final FrequencyKey YB_LINE = FrequencyKey.visible(5);
+    private static final FrequencyKey CE_LINE = FrequencyKey.visible(SpectralColorMap.VISIBLE_LIME_BIN);
+    private static final FrequencyKey ND_LINE = FrequencyKey.visible(SpectralColorMap.VISIBLE_RED_BIN);
+    private static final FrequencyKey YB_LINE = FrequencyKey.visible(SpectralColorMap.VISIBLE_BLUE_BIN);
     private static final FrequencyKey ER_LINE = new FrequencyKey(SpectralRegion.INFRARED, 18);
     private static final OpticalMaterialProfile CE_YAG_UNPUMPED = rareEarthYagProfile(CE_LINE, false);
     private static final OpticalMaterialProfile CE_YAG_PUMPED = rareEarthYagProfile(CE_LINE, true);
@@ -124,18 +124,20 @@ public final class OpticalMaterialProfiles {
     private static final OpticalMaterialProfile ER_FLUORITE_PUMPED = rareEarthFluoriteProfile(ER_LINE, true);
     private static final OpticalMaterialProfile RUBY_UNPUMPED = OpticalMaterialProfile.of(
             sample(SpectralRegion.INFRARED, 16, 0.60, 0.03, 0.24),
-            sample(SpectralRegion.VISIBLE, 2, 0.18, 0.04, 0.65),
+            sample(SpectralRegion.VISIBLE, 0, 0.82, 0.05, 0.08),
+            sample(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_RED_BIN, 0.929, 0.031, 0.04),
             sample(SpectralRegion.VISIBLE, 16, 0.35, 0.04, 0.50),
-            sample(SpectralRegion.VISIBLE, 26, 0.929, 0.031, 0.04),
-            sample(SpectralRegion.VISIBLE, 31, 0.82, 0.05, 0.08),
+            sample(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_PURPLE_BIN, 0.18, 0.04, 0.65),
+            sample(SpectralRegion.VISIBLE, 31, 0.16, 0.04, 0.68),
             sample(SpectralRegion.ULTRAVIOLET, 16, 0.05, 0.05, 0.80)
     );
     private static final OpticalMaterialProfile RUBY_PUMPED = OpticalMaterialProfile.of(
             sample(SpectralRegion.INFRARED, 16, 0.64, 0.03, 0.20),
-            sample(SpectralRegion.VISIBLE, 2, 0.18, 0.04, 0.65),
+            sample(SpectralRegion.VISIBLE, 0, 0.88, 0.04, 0.07),
+            sample(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_RED_BIN, 0.929, 0.031, 0.04),
             sample(SpectralRegion.VISIBLE, 16, 0.38, 0.04, 0.46),
-            sample(SpectralRegion.VISIBLE, 26, 0.929, 0.031, 0.04),
-            sample(SpectralRegion.VISIBLE, 31, 0.88, 0.04, 0.07),
+            sample(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_PURPLE_BIN, 0.18, 0.04, 0.65),
+            sample(SpectralRegion.VISIBLE, 31, 0.16, 0.04, 0.68),
             sample(SpectralRegion.ULTRAVIOLET, 16, 0.05, 0.05, 0.80)
     );
     private static final OpticalMaterialProfile WATER = OpticalMaterialProfile.of(
@@ -144,6 +146,9 @@ public final class OpticalMaterialProfiles {
             sample(SpectralRegion.ULTRAVIOLET, 16, 0.35, 0.02, 0.55)
     );
     private static final int RUBY_DOMAIN_MAX_BLOCKS = 512;
+    private static final int GAIN_LUT_REGION_BINS = 32;
+    private static final int GAIN_LUT_REGIONS = 3;
+    private static final int GAIN_LUT_SIZE = GAIN_LUT_REGION_BINS * GAIN_LUT_REGIONS;
     private static final double RUBY_MAX_EFFECTIVE_PUMP = 4.0;
     private static final double RUBY_SINGLE_PASS_GAIN_PER_PU = 0.07;
     private static final double RUBY_MATERIAL_SATURATION_POWER = 120.0;
@@ -166,39 +171,48 @@ public final class OpticalMaterialProfiles {
             1.0,
             RUBY_GAIN_MATERIAL_WEIGHT,
             12.0,
+            smoothGainLut(RubyBlock.RUBY_LINE, RUBY_SINGLE_PASS_GAIN_PER_PU, 12.0),
             RUBY_UNPUMPED,
             RUBY_PUMPED
     );
     private static final GainMediumSpec CE_YAG_GAIN_MEDIUM = new GainMediumSpec(
             CE_LINE, 6.0, false, 0.062, 820.0, 2600.0, 28.0, 1.30, 1.18, 1.05, 1.45, 1.18, 1.04, 2.3, 4.0,
+            smoothGainLut(CE_LINE, 0.062, 4.0),
             CE_YAG_UNPUMPED, CE_YAG_PUMPED
     );
     private static final GainMediumSpec ND_YAG_GAIN_MEDIUM = new GainMediumSpec(
             ND_LINE, 8.0, false, 0.053, 1550.0, 4200.0, 22.0, 1.18, 1.32, 1.12, 1.16, 1.35, 1.18, 2.6, 4.0,
+            smoothGainLut(ND_LINE, 0.053, 4.0),
             ND_YAG_UNPUMPED, ND_YAG_PUMPED
     );
     private static final GainMediumSpec YB_YAG_GAIN_MEDIUM = new GainMediumSpec(
             YB_LINE, 10.0, false, 0.044, 2700.0, 6400.0, 12.0, 0.96, 1.05, 1.16, 0.98, 1.04, 1.08, 2.8, 4.0,
+            smoothGainLut(YB_LINE, 0.044, 4.0),
             YB_YAG_UNPUMPED, YB_YAG_PUMPED
     );
     private static final GainMediumSpec ER_YAG_GAIN_MEDIUM = new GainMediumSpec(
             ER_LINE, 8.0, false, 0.046, 2100.0, 6200.0, 15.0, 1.10, 1.22, 1.36, 1.06, 1.22, 1.45, 2.1, 4.0,
+            smoothGainLut(ER_LINE, 0.046, 4.0),
             ER_YAG_UNPUMPED, ER_YAG_PUMPED
     );
     private static final GainMediumSpec CE_FLUORITE_GAIN_MEDIUM = new GainMediumSpec(
             CE_LINE, 6.0, false, 0.050, 800.0, 2800.0, 26.0, 1.35, 1.20, 1.06, 1.50, 1.22, 1.08, 1.8, 3.0,
+            smoothGainLut(CE_LINE, 0.050, 3.0),
             CE_FLUORITE_UNPUMPED, CE_FLUORITE_PUMPED
     );
     private static final GainMediumSpec ND_FLUORITE_GAIN_MEDIUM = new GainMediumSpec(
             ND_LINE, 8.0, false, 0.044, 1400.0, 3800.0, 20.0, 1.22, 1.34, 1.14, 1.22, 1.40, 1.20, 2.0, 3.0,
+            smoothGainLut(ND_LINE, 0.044, 3.0),
             ND_FLUORITE_UNPUMPED, ND_FLUORITE_PUMPED
     );
     private static final GainMediumSpec YB_FLUORITE_GAIN_MEDIUM = new GainMediumSpec(
             YB_LINE, 10.0, false, 0.038, 2300.0, 6100.0, 15.0, 1.08, 1.12, 1.12, 1.10, 1.16, 1.12, 2.1, 3.0,
+            smoothGainLut(YB_LINE, 0.038, 3.0),
             YB_FLUORITE_UNPUMPED, YB_FLUORITE_PUMPED
     );
     private static final GainMediumSpec ER_FLUORITE_GAIN_MEDIUM = new GainMediumSpec(
             ER_LINE, 8.0, false, 0.038, 1900.0, 5400.0, 13.0, 1.12, 1.25, 1.42, 1.08, 1.25, 1.52, 1.7, 3.0,
+            smoothGainLut(ER_LINE, 0.038, 3.0),
             ER_FLUORITE_UNPUMPED, ER_FLUORITE_PUMPED
     );
 
@@ -244,34 +258,34 @@ public final class OpticalMaterialProfiles {
     private static final Map<Block, OpticalMaterialProfile> STAINED_GLASS_BLOCKS = Map.ofEntries(
             Map.entry(Blocks.WHITE_STAINED_GLASS, neutralGlass(0.86)),
             Map.entry(Blocks.WHITE_STAINED_GLASS_PANE, neutralGlass(0.86)),
-            Map.entry(Blocks.ORANGE_STAINED_GLASS, coloredGlass(5)),
-            Map.entry(Blocks.ORANGE_STAINED_GLASS_PANE, coloredGlass(5)),
-            Map.entry(Blocks.MAGENTA_STAINED_GLASS, coloredGlass(29)),
-            Map.entry(Blocks.MAGENTA_STAINED_GLASS_PANE, coloredGlass(29)),
-            Map.entry(Blocks.LIGHT_BLUE_STAINED_GLASS, coloredGlass(20)),
-            Map.entry(Blocks.LIGHT_BLUE_STAINED_GLASS_PANE, coloredGlass(20)),
-            Map.entry(Blocks.YELLOW_STAINED_GLASS, coloredGlass(8)),
-            Map.entry(Blocks.YELLOW_STAINED_GLASS_PANE, coloredGlass(8)),
-            Map.entry(Blocks.LIME_STAINED_GLASS, coloredGlass(14)),
-            Map.entry(Blocks.LIME_STAINED_GLASS_PANE, coloredGlass(14)),
-            Map.entry(Blocks.PINK_STAINED_GLASS, coloredGlass(30)),
-            Map.entry(Blocks.PINK_STAINED_GLASS_PANE, coloredGlass(30)),
+            Map.entry(Blocks.ORANGE_STAINED_GLASS, coloredGlass(SpectralColorMap.VISIBLE_ORANGE_BIN)),
+            Map.entry(Blocks.ORANGE_STAINED_GLASS_PANE, coloredGlass(SpectralColorMap.VISIBLE_ORANGE_BIN)),
+            Map.entry(Blocks.MAGENTA_STAINED_GLASS, coloredGlass(SpectralColorMap.VISIBLE_MAGENTA_BIN)),
+            Map.entry(Blocks.MAGENTA_STAINED_GLASS_PANE, coloredGlass(SpectralColorMap.VISIBLE_MAGENTA_BIN)),
+            Map.entry(Blocks.LIGHT_BLUE_STAINED_GLASS, coloredGlass(SpectralColorMap.VISIBLE_LIGHT_BLUE_BIN)),
+            Map.entry(Blocks.LIGHT_BLUE_STAINED_GLASS_PANE, coloredGlass(SpectralColorMap.VISIBLE_LIGHT_BLUE_BIN)),
+            Map.entry(Blocks.YELLOW_STAINED_GLASS, coloredGlass(SpectralColorMap.VISIBLE_YELLOW_BIN)),
+            Map.entry(Blocks.YELLOW_STAINED_GLASS_PANE, coloredGlass(SpectralColorMap.VISIBLE_YELLOW_BIN)),
+            Map.entry(Blocks.LIME_STAINED_GLASS, coloredGlass(SpectralColorMap.VISIBLE_LIME_BIN)),
+            Map.entry(Blocks.LIME_STAINED_GLASS_PANE, coloredGlass(SpectralColorMap.VISIBLE_LIME_BIN)),
+            Map.entry(Blocks.PINK_STAINED_GLASS, coloredGlass(SpectralColorMap.VISIBLE_PINK_BIN)),
+            Map.entry(Blocks.PINK_STAINED_GLASS_PANE, coloredGlass(SpectralColorMap.VISIBLE_PINK_BIN)),
             Map.entry(Blocks.GRAY_STAINED_GLASS, neutralGlass(0.34)),
             Map.entry(Blocks.GRAY_STAINED_GLASS_PANE, neutralGlass(0.34)),
             Map.entry(Blocks.LIGHT_GRAY_STAINED_GLASS, neutralGlass(0.58)),
             Map.entry(Blocks.LIGHT_GRAY_STAINED_GLASS_PANE, neutralGlass(0.58)),
-            Map.entry(Blocks.CYAN_STAINED_GLASS, coloredGlass(18)),
-            Map.entry(Blocks.CYAN_STAINED_GLASS_PANE, coloredGlass(18)),
-            Map.entry(Blocks.PURPLE_STAINED_GLASS, coloredGlass(26)),
-            Map.entry(Blocks.PURPLE_STAINED_GLASS_PANE, coloredGlass(26)),
-            Map.entry(Blocks.BLUE_STAINED_GLASS, coloredGlass(23)),
-            Map.entry(Blocks.BLUE_STAINED_GLASS_PANE, coloredGlass(23)),
-            Map.entry(Blocks.BROWN_STAINED_GLASS, coloredGlass(4)),
-            Map.entry(Blocks.BROWN_STAINED_GLASS_PANE, coloredGlass(4)),
-            Map.entry(Blocks.GREEN_STAINED_GLASS, coloredGlass(13)),
-            Map.entry(Blocks.GREEN_STAINED_GLASS_PANE, coloredGlass(13)),
-            Map.entry(Blocks.RED_STAINED_GLASS, coloredGlass(2)),
-            Map.entry(Blocks.RED_STAINED_GLASS_PANE, coloredGlass(2)),
+            Map.entry(Blocks.CYAN_STAINED_GLASS, coloredGlass(SpectralColorMap.VISIBLE_CYAN_BIN)),
+            Map.entry(Blocks.CYAN_STAINED_GLASS_PANE, coloredGlass(SpectralColorMap.VISIBLE_CYAN_BIN)),
+            Map.entry(Blocks.PURPLE_STAINED_GLASS, coloredGlass(SpectralColorMap.VISIBLE_PURPLE_BIN)),
+            Map.entry(Blocks.PURPLE_STAINED_GLASS_PANE, coloredGlass(SpectralColorMap.VISIBLE_PURPLE_BIN)),
+            Map.entry(Blocks.BLUE_STAINED_GLASS, coloredGlass(SpectralColorMap.VISIBLE_BLUE_BIN)),
+            Map.entry(Blocks.BLUE_STAINED_GLASS_PANE, coloredGlass(SpectralColorMap.VISIBLE_BLUE_BIN)),
+            Map.entry(Blocks.BROWN_STAINED_GLASS, coloredGlass(SpectralColorMap.VISIBLE_ORANGE_BIN)),
+            Map.entry(Blocks.BROWN_STAINED_GLASS_PANE, coloredGlass(SpectralColorMap.VISIBLE_ORANGE_BIN)),
+            Map.entry(Blocks.GREEN_STAINED_GLASS, coloredGlass(SpectralColorMap.VISIBLE_GREEN_BIN)),
+            Map.entry(Blocks.GREEN_STAINED_GLASS_PANE, coloredGlass(SpectralColorMap.VISIBLE_GREEN_BIN)),
+            Map.entry(Blocks.RED_STAINED_GLASS, coloredGlass(SpectralColorMap.VISIBLE_RED_BIN)),
+            Map.entry(Blocks.RED_STAINED_GLASS_PANE, coloredGlass(SpectralColorMap.VISIBLE_RED_BIN)),
             Map.entry(Blocks.BLACK_STAINED_GLASS, neutralGlass(0.08)),
             Map.entry(Blocks.BLACK_STAINED_GLASS_PANE, neutralGlass(0.08))
     );
@@ -458,6 +472,16 @@ public final class OpticalMaterialProfiles {
         return spec.gainPerPumpUnit();
     }
 
+    public static double spectralGainPerPumpUnitFor(BlockState state, FrequencyKey frequency) {
+        GainMediumSpec spec = gainMediumSpec(state);
+
+        if (spec == null || frequency == null) {
+            return 0.0D;
+        }
+
+        return gainFromLut(spec.gainResponseLut(), frequency);
+    }
+
     public static double referencePumpFor(BlockState state) {
         GainMediumSpec spec = gainMediumSpec(state);
 
@@ -529,16 +553,16 @@ public final class OpticalMaterialProfiles {
             return 1.0;
         }
 
-        double spectralCoupling = emissionCoupling(spec, frequency);
+        double spectralGainPerPumpUnit = spectralGainPerPumpUnitFor(state, frequency);
 
-        if (spectralCoupling <= 0.0) {
+        if (spectralGainPerPumpUnit <= 0.0) {
             return 1.0;
         }
 
         double effectivePump = spec.pumpLimited()
                 ? Math.min(spec.referencePump(), Math.max(0.0, pumpDensity))
                 : Math.max(0.0, pumpDensity);
-        return 1.0 + spec.gainPerPumpUnit() * effectivePump * spectralCoupling;
+        return 1.0 + spectralGainPerPumpUnit * effectivePump;
     }
 
     public static double saturatedCoherentExtraOutputFor(Level level, BlockPos pos, BlockState state, FrequencyKey frequency) {
@@ -564,9 +588,7 @@ public final class OpticalMaterialProfiles {
             return 0.0;
         }
 
-        double spectralCoupling = emissionCoupling(spec, frequency);
-
-        if (spectralCoupling <= 0.0) {
+        if (spectralGainPerPumpUnitFor(state, frequency) <= 0.0) {
             return 0.0;
         }
 
@@ -766,6 +788,66 @@ public final class OpticalMaterialProfiles {
         return Math.max(0.0, 1.0 - distance / spec.couplingHalfWidth());
     }
 
+    private static double[] smoothGainLut(FrequencyKey line, double peakGainPerPumpUnit, double halfWidth) {
+        double[] lut = new double[GAIN_LUT_SIZE];
+
+        for (int sample = 0; sample < lut.length; sample++) {
+            FrequencyKey frequency = frequencyFromGainLutIndex(sample);
+
+            if (frequency.region() != line.region()) {
+                continue;
+            }
+
+            double distance = Math.abs(frequency.bin() - line.bin());
+
+            if (distance >= halfWidth) {
+                continue;
+            }
+
+            double t = Math.max(0.0D, Math.min(1.0D, distance / halfWidth));
+            double smooth = t * t * t * (t * (t * 6.0D - 15.0D) + 10.0D);
+            lut[sample] = peakGainPerPumpUnit * (1.0D - smooth);
+        }
+
+        return lut;
+    }
+
+    private static double gainFromLut(double[] lut, FrequencyKey frequency) {
+        int index = gainLutIndex(frequency);
+
+        if (index < 0 || index >= lut.length) {
+            return 0.0D;
+        }
+
+        return lut[index];
+    }
+
+    private static int gainLutIndex(FrequencyKey frequency) {
+        int region = switch (frequency.region()) {
+            case INFRARED -> 0;
+            case VISIBLE -> 1;
+            case ULTRAVIOLET -> 2;
+            default -> -1;
+        };
+
+        if (region < 0 || frequency.bin() < 0 || frequency.bin() >= GAIN_LUT_REGION_BINS) {
+            return -1;
+        }
+
+        return region * GAIN_LUT_REGION_BINS + frequency.bin();
+    }
+
+    private static FrequencyKey frequencyFromGainLutIndex(int index) {
+        int region = Math.max(0, Math.min(GAIN_LUT_REGIONS - 1, index / GAIN_LUT_REGION_BINS));
+        int bin = Math.max(0, Math.min(GAIN_LUT_REGION_BINS - 1, index % GAIN_LUT_REGION_BINS));
+
+        return switch (region) {
+            case 0 -> new FrequencyKey(SpectralRegion.INFRARED, bin);
+            case 1 -> new FrequencyKey(SpectralRegion.VISIBLE, bin);
+            default -> new FrequencyKey(SpectralRegion.ULTRAVIOLET, bin);
+        };
+    }
+
     private static GainMediumSpec gainMediumSpec(BlockState state) {
         if (state == null) {
             return null;
@@ -908,6 +990,7 @@ public final class OpticalMaterialProfiles {
             double tunedSeedDiodeAffinity,
             double materialWeight,
             double couplingHalfWidth,
+            double[] gainResponseLut,
             OpticalMaterialProfile unpumpedProfile,
             OpticalMaterialProfile pumpedProfile
     ) {
@@ -924,7 +1007,9 @@ public final class OpticalMaterialProfiles {
                     || basicSeedDiodeAffinity <= 0.0D
                     || tunedSeedDiodeAffinity <= 0.0D
                     || materialWeight <= 0.0D
-                    || couplingHalfWidth <= 0.0D) {
+                    || couplingHalfWidth <= 0.0D
+                    || gainResponseLut == null
+                    || gainResponseLut.length != GAIN_LUT_SIZE) {
                 throw new IllegalArgumentException("Gain medium spec values must be positive");
             }
         }

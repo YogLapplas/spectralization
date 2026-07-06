@@ -7,6 +7,7 @@ import io.github.yoglappland.spectralization.network.CreativeLightSpectrumPayloa
 import io.github.yoglappland.spectralization.optics.BeamPacket;
 import io.github.yoglappland.spectralization.optics.BeamModel;
 import io.github.yoglappland.spectralization.optics.CoherenceKind;
+import io.github.yoglappland.spectralization.optics.FrequencyKey;
 import io.github.yoglappland.spectralization.optics.SpectralColorMap;
 import io.github.yoglappland.spectralization.optics.SpectralRegion;
 import java.util.Locale;
@@ -379,9 +380,7 @@ public class CreativeLightSourceScreen extends AbstractContainerScreen<CreativeL
     }
 
     private int barColor(int bin) {
-        return activeRegion() == SpectralRegion.VISIBLE
-                ? SpectralColorMap.visibleRgbForBin(bin)
-                : 0x8992A3;
+        return SpectralColorMap.displayRgbFor(new FrequencyKey(activeRegion(), bin));
     }
 
     private String coherenceName() {

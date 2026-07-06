@@ -24,9 +24,10 @@ public class SpectrometerBlockEntity extends BlockEntity {
     public static final int DATA_RELIABLE = 1;
     public static final int DATA_TOTAL_POWER = 2;
     public static final int DATA_PEAK_BIN = 3;
-    public static final int DATA_SPECTRUM_START = 4;
+    public static final int DATA_REGION_POWER = 4;
+    public static final int DATA_SPECTRUM_START = 5;
     public static final int DATA_COUNT = DATA_SPECTRUM_START + MAX_DISPLAY_BINS;
-    private static final int DISPLAY_PEAK_WEIGHT = 900;
+    public static final int POWER_SCALE = 100;
 
     private static final long SAMPLE_HOLD_TICKS = 1L;
     private static final double EPSILON = 1.0E-6;
@@ -119,14 +120,8 @@ public class SpectrometerBlockEntity extends BlockEntity {
                 return 0;
             }
 
-            double maxPower = selectedRegionMaxPower();
-
-            if (maxPower <= 0.0) {
-                return 0;
-            }
-
             double power = committedSample.powerByFrequency().getOrDefault(new FrequencyKey(selectedRegion, bin), 0.0);
-            return Mth.clamp((int) Math.round(power / maxPower * DISPLAY_PEAK_WEIGHT), 0, DISPLAY_PEAK_WEIGHT);
+            return scalePowerForDisplay(power);
         }
 
         return switch (index) {
@@ -134,6 +129,7 @@ public class SpectrometerBlockEntity extends BlockEntity {
             case DATA_RELIABLE -> reliable ? 1 : 0;
             case DATA_TOTAL_POWER -> scalePowerForDisplay(committedSample.totalPower());
             case DATA_PEAK_BIN -> selectedRegionPeakBin();
+            case DATA_REGION_POWER -> scalePowerForDisplay(selectedRegionPower());
             default -> 0;
         };
     }
@@ -152,17 +148,14 @@ public class SpectrometerBlockEntity extends BlockEntity {
         }
     }
 
-    private double selectedRegionMaxPower() {
-        double maxPower = 0.0;
+    private double selectedRegionPower() {
+        double power = 0.0;
 
         for (int bin = 0; bin < selectedRegion.defaultBins(); bin++) {
-            maxPower = Math.max(
-                    maxPower,
-                    committedSample.powerByFrequency().getOrDefault(new FrequencyKey(selectedRegion, bin), 0.0)
-            );
+            power += committedSample.powerByFrequency().getOrDefault(new FrequencyKey(selectedRegion, bin), 0.0);
         }
 
-        return maxPower;
+        return power;
     }
 
     private int selectedRegionPeakBin() {
@@ -255,7 +248,7 @@ public class SpectrometerBlockEntity extends BlockEntity {
             return 0;
         }
 
-        return Mth.clamp((int) Math.round(power), 0, 1_000_000);
+        return Mth.clamp((int) Math.round(power * POWER_SCALE), 0, 1_000_000_000);
     }
 
     @Override

@@ -1,7 +1,7 @@
 package io.github.yoglappland.spectralization.compat.jei;
 
 import io.github.yoglappland.spectralization.Spectralization;
-import io.github.yoglappland.spectralization.blockentity.FiberLaserBlockEntity;
+import io.github.yoglappland.spectralization.optics.FrequencyKey;
 import io.github.yoglappland.spectralization.optics.OpticalMaterialProfiles;
 import java.util.List;
 import net.minecraft.world.item.ItemStack;
@@ -9,11 +9,11 @@ import net.minecraft.world.level.block.state.BlockState;
 
 public record LaserDeviceRecipe(
         ItemStack stack,
+        BlockState state,
         double gainPerPumpUnit,
-        double referencePump,
-        double nominalSinglePassGain,
         double saturationPower,
-        double handlingLimit
+        double handlingLimit,
+        FrequencyKey emissionLine
 ) {
     public static List<LaserDeviceRecipe> recipes() {
         return List.of(
@@ -52,30 +52,18 @@ public record LaserDeviceRecipe(
                 gainMedium(
                         new ItemStack(Spectralization.ER_FLUORITE_CRYSTAL_BLOCK_ITEM.get()),
                         Spectralization.ER_FLUORITE_CRYSTAL_BLOCK.get().defaultBlockState()
-                ),
-                fiberLaser()
+                )
         );
     }
 
     private static LaserDeviceRecipe gainMedium(ItemStack stack, BlockState state) {
         return new LaserDeviceRecipe(
                 stack,
+                state,
                 OpticalMaterialProfiles.gainPerPumpUnitFor(state),
-                OpticalMaterialProfiles.referencePumpFor(state),
-                OpticalMaterialProfiles.maximumEffectiveSinglePassGainFor(state),
                 OpticalMaterialProfiles.saturationPowerFor(state),
-                OpticalMaterialProfiles.handlingLimitFor(state)
-        );
-    }
-
-    private static LaserDeviceRecipe fiberLaser() {
-        return new LaserDeviceRecipe(
-                new ItemStack(Spectralization.FIBER_LASER_ITEM.get()),
-                Double.NaN,
-                Double.NaN,
-                FiberLaserBlockEntity.maximumScheduledCoherentBaseGain(),
-                FiberLaserBlockEntity.maximumSaturatedCoherentExtraOutput(),
-                Double.NaN
+                OpticalMaterialProfiles.handlingLimitFor(state),
+                OpticalMaterialProfiles.gainMediumEmissionLine(state)
         );
     }
 }

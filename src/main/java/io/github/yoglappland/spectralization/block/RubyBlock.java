@@ -9,6 +9,7 @@ import io.github.yoglappland.spectralization.optics.OpticalMaterialProfiles;
 import io.github.yoglappland.spectralization.optics.OpticalSource;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.PlaneWaveComponent;
+import io.github.yoglappland.spectralization.optics.SpectralColorMap;
 import java.util.ArrayList;
 import java.util.List;
 import javax.annotation.Nullable;
@@ -21,7 +22,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
 public class RubyBlock extends Block implements EntityBlock, OpticalSource {
-    public static final FrequencyKey RUBY_LINE = FrequencyKey.visible(26);
+    public static final FrequencyKey RUBY_LINE = FrequencyKey.visible(SpectralColorMap.VISIBLE_RED_BIN);
 
     public RubyBlock(Properties properties) {
         super(properties);

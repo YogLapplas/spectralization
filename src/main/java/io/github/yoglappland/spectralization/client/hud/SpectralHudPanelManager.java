@@ -30,10 +30,7 @@ public final class SpectralHudPanelManager {
 
     private static final List<PanelDefinition> PANELS = List.of(
             new PanelDefinition("world_info", "hud.spectralization.panel.world", "hud.spectralization.panel.world.button", 172, 72, Anchor.TOP_LEFT, SpectralHudPanelManager::renderWorldInfo),
-            new PanelDefinition("entity_scan", "hud.spectralization.panel.entities", "hud.spectralization.panel.entities.button", 178, 78, Anchor.TOP_RIGHT, SpectralHudPanelManager::renderEntityScan),
-            new PanelDefinition("optical_net", "hud.spectralization.panel.optical", "hud.spectralization.panel.optical.button", 184, 78, Anchor.BOTTOM_LEFT, SpectralHudPanelManager::renderOpticalNet),
-            new PanelDefinition("beam_display", "hud.spectralization.panel.beam_display", "hud.spectralization.panel.beam_display.button", 184, 76, Anchor.CENTER_RIGHT, SpectralHudPanelManager::renderBeamDisplay),
-            new PanelDefinition("targeting", "hud.spectralization.panel.target", "hud.spectralization.panel.target.button", 184, 64, Anchor.BOTTOM_RIGHT, SpectralHudPanelManager::renderTargeting)
+            new PanelDefinition("optical_net", "hud.spectralization.panel.optical", "hud.spectralization.panel.optical.button", 184, 78, Anchor.BOTTOM_LEFT, SpectralHudPanelManager::renderOpticalNet)
     );
 
     private static DragState dragState;

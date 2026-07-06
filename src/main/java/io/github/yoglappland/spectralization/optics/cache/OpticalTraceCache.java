@@ -1498,6 +1498,7 @@ public final class OpticalTraceCache {
                 readoutLayer,
                 scalarPowerSolution,
                 BeamPathOverlayTracker.topologySegments(
+                        level,
                         portGraph,
                         coherentHudIntent || BeamPathOverlayTracker.hasCoherentSignal(scalarPowerSolution),
                         scalarPowerSolution
@@ -1920,6 +1921,7 @@ public final class OpticalTraceCache {
                 boolean coherentHudIntent = solvedChannels.coherentHudIntent()
                         || BeamPathOverlayTracker.hasCoherentSignal(solution);
                 List<BeamPathOverlayPayload.Segment> hudSegments = BeamPathOverlayTracker.topologySegments(
+                        level,
                         solvedChannels.coherentGraph(),
                         coherentHudIntent,
                         solution
@@ -1989,6 +1991,7 @@ public final class OpticalTraceCache {
         boolean coherentHudIntent = solvedChannels.coherentHudIntent()
                 || BeamPathOverlayTracker.hasCoherentSignal(solution);
         List<BeamPathOverlayPayload.Segment> hudSegments = BeamPathOverlayTracker.topologySegments(
+                level,
                 coherentGraph,
                 coherentHudIntent,
                 solution

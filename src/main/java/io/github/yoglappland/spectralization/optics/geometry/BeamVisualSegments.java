@@ -47,6 +47,8 @@ public final class BeamVisualSegments {
                 edge.from().pos(),
                 edge.to().pos(),
                 direction,
+                edge.from().side(),
+                edge.to().side(),
                 coherence,
                 visibilityKind,
                 strongerGeometry(startGeometry, endGeometry),

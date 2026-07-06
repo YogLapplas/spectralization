@@ -5,10 +5,12 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.client.ClientHudState;
 import io.github.yoglappland.spectralization.network.BeamPathOverlayPayload;
+import io.github.yoglappland.spectralization.network.BeamPathOverlayPayload.EndpointPlacement;
 import io.github.yoglappland.spectralization.optics.SpectralColorMap;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.Items;
@@ -25,17 +27,18 @@ public final class BeamPathRenderEvents {
     private static final int FIBER_SHADOW_COLOR = 0x0B171A;
     private static final int FIBER_HIGHLIGHT_COLOR = 0x7FA49D;
     private static final int FIBER_CORE_COLOR = 0x9FFFF2;
-    private static final double EDGE_OFFSET = 0.0D;
     private static final double MIN_RENDER_RADIUS = 0.75D / 16.0D;
     private static final double MAX_RENDER_RADIUS = 3.0D;
     private static final double RING_THICKNESS = 0.5D / 16.0D;
     private static final double FIBER_CABLE_RADIUS = 1.45D / 16.0D;
-    private static final double FIBER_STRAND_RADIUS = 0.26D / 16.0D;
+    private static final double FIBER_CORE_HALF_WIDTH = 0.26D / 16.0D;
+    private static final double MAX_SEGMENT_RENDER_DISTANCE = 96.0D;
+    private static final double MAX_SEGMENT_RENDER_DISTANCE_SQUARED = MAX_SEGMENT_RENDER_DISTANCE * MAX_SEGMENT_RENDER_DISTANCE;
     private static final double FIBER_MAX_SAG = 0.42D;
     private static final double FIBER_SAG_PER_HORIZONTAL_BLOCK = 0.026D;
     private static final int CYLINDER_SIDES = 12;
     private static final int FIBER_CABLE_SIDES = 9;
-    private static final int FIBER_CURVE_STEPS = 8;
+    private static final int FIBER_CURVE_STEPS = 3;
 
     @SubscribeEvent
     public static void renderBeamPaths(RenderLevelStageEvent event) {
@@ -68,6 +71,10 @@ public final class BeamPathRenderEvents {
         PoseStack.Pose pose = poseStack.last();
 
         for (ClientBeamPathCache.RenderedSegment renderedSegment : segments) {
+            if (!isNearCamera(cameraPosition, renderedSegment.segment())) {
+                continue;
+            }
+
             if (renderedSegment.ownerId() == FIBER_OWNER_ID) {
                 renderFiberCable(consumer, pose, renderedSegment.segment());
             } else if (diagnosticOverlayVisible) {
@@ -80,21 +87,16 @@ public final class BeamPathRenderEvents {
     }
 
     private static void renderSegment(VertexConsumer consumer, PoseStack.Pose pose, BeamPathOverlayPayload.Segment segment) {
-        Direction direction = segment.direction();
-        double sx = segment.from().getX() + 0.5D + direction.getStepX() * EDGE_OFFSET;
-        double sy = segment.from().getY() + 0.5D + direction.getStepY() * EDGE_OFFSET;
-        double sz = segment.from().getZ() + 0.5D + direction.getStepZ() * EDGE_OFFSET;
-        double ex = segment.to().getX() + 0.5D - direction.getStepX() * EDGE_OFFSET;
-        double ey = segment.to().getY() + 0.5D - direction.getStepY() * EDGE_OFFSET;
-        double ez = segment.to().getZ() + 0.5D - direction.getStepZ() * EDGE_OFFSET;
+        Vec3 start = segmentStart(segment);
+        Vec3 end = segmentEnd(segment);
         int color = segment.colorRgb();
         int shellAlpha = shellAlpha(segment);
         int ringAlpha = ringAlpha(segment, shellAlpha);
         renderBeamVolume(
                 consumer,
                 pose,
-                new Vec3(sx, sy, sz),
-                new Vec3(ex, ey, ez),
+                start,
+                end,
                 renderRadius(segment.startRadius(), segment.widthLevel()),
                 renderRadius(segment.endRadius(), segment.widthLevel()),
                 color,
@@ -112,49 +114,15 @@ public final class BeamPathRenderEvents {
             return;
         }
 
-        Vec3 side = stableSide(axis);
         double sag = cableSag(axis);
         Vec3 previous = cablePoint(start, end, 0.0D, sag);
 
         for (int step = 1; step <= FIBER_CURVE_STEPS; step++) {
             double t = step / (double) FIBER_CURVE_STEPS;
             Vec3 current = cablePoint(start, end, t, sag);
-            renderCableOuterVolume(consumer, pose, previous, current, FIBER_CABLE_RADIUS, 238);
-            renderCableStrand(
-                    consumer,
-                    pose,
-                    previous,
-                    current,
-                    side.scale(FIBER_CABLE_RADIUS * 0.68D),
-                    FIBER_STRAND_RADIUS,
-                    FIBER_HIGHLIGHT_COLOR,
-                    185
-            );
-            renderCableStrand(
-                    consumer,
-                    pose,
-                    previous,
-                    current,
-                    side.scale(-FIBER_CABLE_RADIUS * 0.74D).add(0.0D, -FIBER_CABLE_RADIUS * 0.18D, 0.0D),
-                    FIBER_STRAND_RADIUS * 0.8D,
-                    FIBER_SHADOW_COLOR,
-                    210
-            );
-            renderCableStrand(
-                    consumer,
-                    pose,
-                    previous,
-                    current,
-                    side.scale(FIBER_CABLE_RADIUS * 0.18D).add(0.0D, FIBER_CABLE_RADIUS * 0.24D, 0.0D),
-                    FIBER_STRAND_RADIUS * 0.72D,
-                    FIBER_CORE_COLOR,
-                    Math.min(170, 62 + Math.max(1, segment.visualLevel()) * 12)
-            );
+            renderCableRibbonSet(consumer, pose, previous, current, Math.min(170, 62 + Math.max(1, segment.visualLevel()) * 12));
             previous = current;
         }
-
-        renderFiberClamp(consumer, pose, start, axis.normalize(), FIBER_CABLE_RADIUS, 220);
-        renderFiberClamp(consumer, pose, end, axis.normalize().scale(-1.0D), FIBER_CABLE_RADIUS, 220);
     }
 
     private static int shellAlpha(BeamPathOverlayPayload.Segment segment) {
@@ -255,6 +223,73 @@ public final class BeamPathRenderEvents {
         renderSimpleCylinder(consumer, pose, start.add(offset), end.add(offset), radius, color, alpha, 6);
     }
 
+    private static void renderCableRibbonSet(
+            VertexConsumer consumer,
+            PoseStack.Pose pose,
+            Vec3 start,
+            Vec3 end,
+            int coreAlpha
+    ) {
+        Vec3 axis = end.subtract(start);
+
+        if (axis.lengthSqr() < 1.0E-8D) {
+            return;
+        }
+
+        Vec3 forward = axis.normalize();
+        Vec3 side = stableSide(axis);
+        Vec3 verticalSide = forward.cross(side).normalize();
+        renderRibbon(consumer, pose, start, end, side.scale(FIBER_CABLE_RADIUS), FIBER_SHELL_COLOR, 226);
+        renderRibbon(consumer, pose, start, end, verticalSide.scale(FIBER_CABLE_RADIUS * 0.72D), FIBER_SHADOW_COLOR, 178);
+        renderRibbon(consumer, pose, start, end, side.scale(FIBER_CORE_HALF_WIDTH), FIBER_CORE_COLOR, coreAlpha);
+        renderOffsetRibbon(
+                consumer,
+                pose,
+                start,
+                end,
+                side.scale(FIBER_CABLE_RADIUS * 0.74D),
+                verticalSide.scale(FIBER_CORE_HALF_WIDTH * 0.72D),
+                FIBER_HIGHLIGHT_COLOR,
+                156
+        );
+    }
+
+    private static void renderRibbon(
+            VertexConsumer consumer,
+            PoseStack.Pose pose,
+            Vec3 start,
+            Vec3 end,
+            Vec3 halfWidth,
+            int color,
+            int alpha
+    ) {
+        renderOffsetRibbon(consumer, pose, start, end, Vec3.ZERO, halfWidth, color, alpha);
+    }
+
+    private static void renderOffsetRibbon(
+            VertexConsumer consumer,
+            PoseStack.Pose pose,
+            Vec3 start,
+            Vec3 end,
+            Vec3 offset,
+            Vec3 halfWidth,
+            int color,
+            int alpha
+    ) {
+        Vec3 startCenter = start.add(offset);
+        Vec3 endCenter = end.add(offset);
+        addQuad(
+                consumer,
+                pose,
+                startCenter.subtract(halfWidth),
+                endCenter.subtract(halfWidth),
+                endCenter.add(halfWidth),
+                startCenter.add(halfWidth),
+                color,
+                alpha
+        );
+    }
+
     private static void renderFiberClamp(
             VertexConsumer consumer,
             PoseStack.Pose pose,
@@ -340,21 +375,46 @@ public final class BeamPathRenderEvents {
     }
 
     private static Vec3 segmentStart(BeamPathOverlayPayload.Segment segment) {
-        Direction direction = segment.direction();
-        return new Vec3(
-                segment.from().getX() + 0.5D + direction.getStepX() * EDGE_OFFSET,
-                segment.from().getY() + 0.5D + direction.getStepY() * EDGE_OFFSET,
-                segment.from().getZ() + 0.5D + direction.getStepZ() * EDGE_OFFSET
-        );
+        return endpoint(segment.from(), segment.startPlacement(), segment.startSide());
     }
 
     private static Vec3 segmentEnd(BeamPathOverlayPayload.Segment segment) {
-        Direction direction = segment.direction();
+        return endpoint(segment.to(), segment.endPlacement(), segment.endSide());
+    }
+
+    private static Vec3 endpoint(BlockPos pos, EndpointPlacement placement, Direction side) {
+        double offset = placement == EndpointPlacement.BLOCK_FACE ? 0.5D : 0.0D;
         return new Vec3(
-                segment.to().getX() + 0.5D - direction.getStepX() * EDGE_OFFSET,
-                segment.to().getY() + 0.5D - direction.getStepY() * EDGE_OFFSET,
-                segment.to().getZ() + 0.5D - direction.getStepZ() * EDGE_OFFSET
+                pos.getX() + 0.5D + side.getStepX() * offset,
+                pos.getY() + 0.5D + side.getStepY() * offset,
+                pos.getZ() + 0.5D + side.getStepZ() * offset
         );
+    }
+
+    private static boolean isNearCamera(Vec3 cameraPosition, BeamPathOverlayPayload.Segment segment) {
+        Vec3 start = segmentStart(segment);
+        Vec3 end = segmentEnd(segment);
+        double ax = start.x;
+        double ay = start.y;
+        double az = start.z;
+        double bx = end.x;
+        double by = end.y;
+        double bz = end.z;
+        double vx = bx - ax;
+        double vy = by - ay;
+        double vz = bz - az;
+        double lengthSquared = vx * vx + vy * vy + vz * vz;
+        double t = lengthSquared <= 0.0D
+                ? 0.0D
+                : ((cameraPosition.x - ax) * vx + (cameraPosition.y - ay) * vy + (cameraPosition.z - az) * vz) / lengthSquared;
+        double clampedT = Math.max(0.0D, Math.min(1.0D, t));
+        double cx = ax + vx * clampedT;
+        double cy = ay + vy * clampedT;
+        double cz = az + vz * clampedT;
+        double dx = cameraPosition.x - cx;
+        double dy = cameraPosition.y - cy;
+        double dz = cameraPosition.z - cz;
+        return dx * dx + dy * dy + dz * dz <= MAX_SEGMENT_RENDER_DISTANCE_SQUARED;
     }
 
     private static Vec3 cablePoint(Vec3 start, Vec3 end, double t, double sag) {

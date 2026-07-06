@@ -23,6 +23,7 @@ import net.neoforged.neoforge.client.event.ViewportEvent;
 
 @EventBusSubscriber(modid = Spectralization.MODID, value = Dist.CLIENT)
 public final class SpectralHudEntityOverlayEvents {
+    private static final boolean ENTITY_TRACKING_ENABLED = false;
     private static final double RANGE = 48.0D;
     private static final double RANGE_SQUARED = RANGE * RANGE;
     private static final int MAX_BOXES = 96;
@@ -54,6 +55,10 @@ public final class SpectralHudEntityOverlayEvents {
     }
 
     public static boolean hasTrackingAction() {
+        if (!ENTITY_TRACKING_ENABLED) {
+            return false;
+        }
+
         Minecraft minecraft = Minecraft.getInstance();
         return minecraft.level != null && minecraft.player != null && (trackedEntity() != null || targetUnderCrosshair() != null);
     }
@@ -116,6 +121,13 @@ public final class SpectralHudEntityOverlayEvents {
 
     @SubscribeEvent
     public static void clientTick(ClientTickEvent.Post event) {
+        if (!ENTITY_TRACKING_ENABLED) {
+            clearTracking();
+            nearbyEntityCount = 0;
+            highlightedEntityCount = 0;
+            return;
+        }
+
         Minecraft minecraft = Minecraft.getInstance();
 
         if (minecraft.level == null || minecraft.player == null || trackedEntityId == null) {
@@ -135,6 +147,10 @@ public final class SpectralHudEntityOverlayEvents {
 
     @SubscribeEvent
     public static void computeCameraAngles(ViewportEvent.ComputeCameraAngles event) {
+        if (!ENTITY_TRACKING_ENABLED) {
+            return;
+        }
+
         Minecraft minecraft = Minecraft.getInstance();
 
         if (minecraft.level == null || minecraft.player == null || trackedEntityId == null || !aimInitialized) {
@@ -156,6 +172,12 @@ public final class SpectralHudEntityOverlayEvents {
 
     @SubscribeEvent
     public static void renderEntityBoxes(RenderLevelStageEvent event) {
+        if (!ENTITY_TRACKING_ENABLED) {
+            nearbyEntityCount = 0;
+            highlightedEntityCount = 0;
+            return;
+        }
+
         Minecraft minecraft = Minecraft.getInstance();
 
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS

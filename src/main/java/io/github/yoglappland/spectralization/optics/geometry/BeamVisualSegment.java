@@ -9,6 +9,8 @@ public record BeamVisualSegment(
         BlockPos from,
         BlockPos to,
         Direction direction,
+        Direction startSide,
+        Direction endSide,
         CoherenceKind coherence,
         BeamVisibilityKind visibilityKind,
         BeamGeometrySample geometry,
@@ -21,6 +23,8 @@ public record BeamVisualSegment(
         Objects.requireNonNull(from, "from");
         Objects.requireNonNull(to, "to");
         Objects.requireNonNull(direction, "direction");
+        Objects.requireNonNull(startSide, "startSide");
+        Objects.requireNonNull(endSide, "endSide");
         Objects.requireNonNull(coherence, "coherence");
         Objects.requireNonNull(visibilityKind, "visibilityKind");
         Objects.requireNonNull(geometry, "geometry");

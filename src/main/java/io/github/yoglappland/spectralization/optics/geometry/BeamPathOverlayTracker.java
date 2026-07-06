@@ -1,7 +1,12 @@
 package io.github.yoglappland.spectralization.optics.geometry;
 
 import io.github.yoglappland.spectralization.Spectralization;
+import io.github.yoglappland.spectralization.block.BeamProfilerBlock;
+import io.github.yoglappland.spectralization.block.CmosSensorBlock;
+import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
+import io.github.yoglappland.spectralization.block.SpectrometerBlock;
 import io.github.yoglappland.spectralization.network.BeamPathOverlayPayload;
+import io.github.yoglappland.spectralization.network.BeamPathOverlayPayload.EndpointPlacement;
 import io.github.yoglappland.spectralization.optics.CoherenceKind;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalTrace;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledPortGraph;
@@ -20,6 +25,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 public final class BeamPathOverlayTracker {
@@ -31,6 +38,12 @@ public final class BeamPathOverlayTracker {
     private static final int TOPOLOGY_VISUAL_LEVEL = 5;
     private static final double TOPOLOGY_RADIUS = 1.0D / 16.0D;
     private static final double HUD_COHERENT_POWER_THRESHOLD = 1.0E-6D;
+
+    private enum ReceiverBodyDisplay {
+        NONE,
+        TO_CENTER,
+        THROUGH_BLOCK
+    }
 
     public static boolean hasHudViewerNear(ServerLevel level, BlockPos pos) {
         double sx = pos.getX() + 0.5D;
@@ -72,6 +85,10 @@ public final class BeamPathOverlayTracker {
             signature = mix(signature, segment.from().asLong());
             signature = mix(signature, segment.to().asLong());
             signature = mix(signature, segment.direction().ordinal());
+            signature = mix(signature, segment.startPlacement().ordinal());
+            signature = mix(signature, segment.startSide().ordinal());
+            signature = mix(signature, segment.endPlacement().ordinal());
+            signature = mix(signature, segment.endSide().ordinal());
             signature = mix(signature, segment.coherent() ? 1 : 0);
             signature = mix(signature, segment.colorRgb());
             signature = mix(signature, segment.widthLevel());
@@ -103,13 +120,15 @@ public final class BeamPathOverlayTracker {
     }
 
     public static List<BeamPathOverlayPayload.Segment> topologySegments(
+            Level level,
             CompiledPortGraph graph,
             ScalarPowerSolution solution
     ) {
-        return topologySegments(graph, hasCoherentSignal(solution), solution);
+        return topologySegments(level, graph, hasCoherentSignal(solution), solution);
     }
 
     public static List<BeamPathOverlayPayload.Segment> topologySegments(
+            Level level,
             CompiledPortGraph graph,
             boolean hasCoherentIntensity,
             ScalarPowerSolution solution
@@ -120,6 +139,7 @@ public final class BeamPathOverlayTracker {
 
         List<BeamPathOverlayPayload.Segment> segments = new ArrayList<>();
         Set<PortGraphNode> outgoingNodesWithPropagation = new HashSet<>();
+        Set<PortGraphNode> incomingNodesWithLocalScattering = new HashSet<>();
 
         for (PortGraphEdge edge : graph.edges()) {
             if (edge.kind() != PortGraphEdgeKind.PROPAGATION || samePos(edge.from(), edge.to())) {
@@ -129,11 +149,40 @@ public final class BeamPathOverlayTracker {
             double coherentPower = topologyPower(solution, edge.from());
 
             outgoingNodesWithPropagation.add(edge.from());
-            segments.add(toTopologyPayloadSegment(edge.from(), edge.to(), edge.from().side(), coherentPower, solution));
+            segments.add(toTopologyPayloadSegment(
+                    edge.from(),
+                    edge.to(),
+                    edge.from().side(),
+                    EndpointPlacement.BLOCK_FACE,
+                    edge.from().side(),
+                    EndpointPlacement.BLOCK_FACE,
+                    edge.to().side(),
+                    coherentPower,
+                    solution
+            ));
 
             if (segments.size() >= MAX_SEGMENTS) {
                 return List.copyOf(segments);
             }
+        }
+
+        for (PortGraphEdge edge : graph.edges()) {
+            if (edge.kind() != PortGraphEdgeKind.LOCAL_SCATTERING || !samePos(edge.from(), edge.to())) {
+                continue;
+            }
+
+            incomingNodesWithLocalScattering.add(edge.from());
+            addLocalScatteringSegments(level, edge, solution, segments);
+
+            if (segments.size() >= MAX_SEGMENTS) {
+                return List.copyOf(segments);
+            }
+        }
+
+        addReceiverBodySegments(level, graph, solution, incomingNodesWithLocalScattering, segments);
+
+        if (segments.size() >= MAX_SEGMENTS) {
+            return List.copyOf(segments.subList(0, MAX_SEGMENTS));
         }
 
         for (PortGraphNode node : graph.nodes()) {
@@ -148,6 +197,10 @@ public final class BeamPathOverlayTracker {
                     node,
                     new PortGraphNode(to, node.side().getOpposite(), PortWaveKind.INCOMING),
                     node.side(),
+                    EndpointPlacement.BLOCK_FACE,
+                    node.side(),
+                    EndpointPlacement.BLOCK_CENTER,
+                    node.side().getOpposite(),
                     coherentPower,
                     solution
             ));
@@ -158,6 +211,21 @@ public final class BeamPathOverlayTracker {
         }
 
         return List.copyOf(segments);
+    }
+
+    public static List<BeamPathOverlayPayload.Segment> topologySegments(
+            CompiledPortGraph graph,
+            ScalarPowerSolution solution
+    ) {
+        return topologySegments(null, graph, solution);
+    }
+
+    public static List<BeamPathOverlayPayload.Segment> topologySegments(
+            CompiledPortGraph graph,
+            boolean hasCoherentIntensity,
+            ScalarPowerSolution solution
+    ) {
+        return topologySegments(null, graph, hasCoherentIntensity, solution);
     }
 
     public static boolean hasCoherentSignal(ScalarPowerSolution solution) {
@@ -176,6 +244,145 @@ public final class BeamPathOverlayTracker {
         }
 
         return Math.max(solution.coherentPowerAt(node), 1.0D);
+    }
+
+    private static void addLocalScatteringSegments(
+            Level level,
+            PortGraphEdge edge,
+            ScalarPowerSolution solution,
+            List<BeamPathOverlayPayload.Segment> segments
+    ) {
+        double coherentPower = topologyPower(solution, edge.from());
+
+        if (usesDirectFaceToFaceDisplay(level, edge)) {
+            segments.add(toTopologyPayloadSegment(
+                    edge.from(),
+                    edge.to(),
+                    edge.to().side(),
+                    EndpointPlacement.BLOCK_FACE,
+                    edge.from().side(),
+                    EndpointPlacement.BLOCK_FACE,
+                    edge.to().side(),
+                    coherentPower,
+                    solution
+            ));
+            return;
+        }
+
+        PortGraphNode centerNode = new PortGraphNode(edge.from().pos(), edge.from().side(), PortWaveKind.OUTGOING);
+        segments.add(toTopologyPayloadSegment(
+                edge.from(),
+                centerNode,
+                edge.from().side().getOpposite(),
+                EndpointPlacement.BLOCK_FACE,
+                edge.from().side(),
+                EndpointPlacement.BLOCK_CENTER,
+                edge.from().side().getOpposite(),
+                coherentPower,
+                solution
+        ));
+
+        if (segments.size() >= MAX_SEGMENTS) {
+            return;
+        }
+
+        segments.add(toTopologyPayloadSegment(
+                centerNode,
+                edge.to(),
+                edge.to().side(),
+                EndpointPlacement.BLOCK_CENTER,
+                edge.to().side(),
+                EndpointPlacement.BLOCK_FACE,
+                edge.to().side(),
+                coherentPower,
+                edge.from(),
+                solution
+        ));
+    }
+
+    private static boolean usesDirectFaceToFaceDisplay(Level level, PortGraphEdge edge) {
+        if (level == null || !level.isLoaded(edge.from().pos())) {
+            return false;
+        }
+
+        BlockState state = level.getBlockState(edge.from().pos());
+
+        return state.getBlock() instanceof PassThroughSensorBlock;
+    }
+
+    private static void addReceiverBodySegments(
+            Level level,
+            CompiledPortGraph graph,
+            ScalarPowerSolution solution,
+            Set<PortGraphNode> incomingNodesWithLocalScattering,
+            List<BeamPathOverlayPayload.Segment> segments
+    ) {
+        if (level == null || segments.size() >= MAX_SEGMENTS) {
+            return;
+        }
+
+        for (PortGraphNode node : graph.nodes()) {
+            ReceiverBodyDisplay display = receiverBodyDisplay(level, node);
+
+            if (node.waveKind() != PortWaveKind.INCOMING
+                    || incomingNodesWithLocalScattering.contains(node)
+                    || display == ReceiverBodyDisplay.NONE
+                    || !hasVisibleCoherentPower(solution, node)) {
+                continue;
+            }
+
+            Direction exitSide = node.side().getOpposite();
+            EndpointPlacement endPlacement = display == ReceiverBodyDisplay.THROUGH_BLOCK
+                    ? EndpointPlacement.BLOCK_FACE
+                    : EndpointPlacement.BLOCK_CENTER;
+            segments.add(toTopologyPayloadSegment(
+                    node,
+                    new PortGraphNode(node.pos(), exitSide, PortWaveKind.OUTGOING),
+                    exitSide,
+                    EndpointPlacement.BLOCK_FACE,
+                    node.side(),
+                    endPlacement,
+                    exitSide,
+                    topologyPower(solution, node),
+                    solution
+            ));
+
+            if (segments.size() >= MAX_SEGMENTS) {
+                return;
+            }
+        }
+    }
+
+    private static ReceiverBodyDisplay receiverBodyDisplay(Level level, PortGraphNode node) {
+        if (!level.isLoaded(node.pos())) {
+            return ReceiverBodyDisplay.NONE;
+        }
+
+        BlockState state = level.getBlockState(node.pos());
+
+        if (state.getBlock() instanceof BeamProfilerBlock) {
+            return node.side() == BeamProfilerBlock.getReceivingSide(state)
+                    ? ReceiverBodyDisplay.THROUGH_BLOCK
+                    : ReceiverBodyDisplay.NONE;
+        }
+
+        if (state.getBlock() instanceof CmosSensorBlock) {
+            return node.side() == state.getValue(CmosSensorBlock.FACING).getOpposite()
+                    ? ReceiverBodyDisplay.THROUGH_BLOCK
+                    : ReceiverBodyDisplay.NONE;
+        }
+
+        if (state.getBlock() instanceof SpectrometerBlock) {
+            return node.side() == SpectrometerBlock.getReceivingSide(state)
+                    ? ReceiverBodyDisplay.TO_CENTER
+                    : ReceiverBodyDisplay.NONE;
+        }
+
+        return ReceiverBodyDisplay.NONE;
+    }
+
+    private static boolean hasVisibleCoherentPower(ScalarPowerSolution solution, PortGraphNode node) {
+        return solution == null || solution.coherentPowerAt(node) > HUD_COHERENT_POWER_THRESHOLD;
     }
 
     public static int publish(
@@ -262,6 +469,10 @@ public final class BeamPathOverlayTracker {
                 segment.from(),
                 segment.to(),
                 segment.direction(),
+                EndpointPlacement.BLOCK_FACE,
+                segment.startSide(),
+                EndpointPlacement.BLOCK_FACE,
+                segment.endSide(),
                 segment.coherence() == CoherenceKind.COHERENT,
                 segment.colorRgb(),
                 Math.max(1, Math.min(8, BeamGeometryOps.widthLevel(segment.geometry().envelope()))),
@@ -275,15 +486,49 @@ public final class BeamPathOverlayTracker {
             PortGraphNode from,
             PortGraphNode to,
             Direction direction,
+            EndpointPlacement startPlacement,
+            Direction startSide,
+            EndpointPlacement endPlacement,
+            Direction endSide,
             double coherentPower,
+            ScalarPowerSolution solution
+    ) {
+        return toTopologyPayloadSegment(
+                from,
+                to,
+                direction,
+                startPlacement,
+                startSide,
+                endPlacement,
+                endSide,
+                coherentPower,
+                from,
+                solution
+        );
+    }
+
+    private static BeamPathOverlayPayload.Segment toTopologyPayloadSegment(
+            PortGraphNode from,
+            PortGraphNode to,
+            Direction direction,
+            EndpointPlacement startPlacement,
+            Direction startSide,
+            EndpointPlacement endPlacement,
+            Direction endSide,
+            double coherentPower,
+            PortGraphNode colorNode,
             ScalarPowerSolution solution
     ) {
         return new BeamPathOverlayPayload.Segment(
                 from.pos(),
                 to.pos(),
                 direction,
+                startPlacement,
+                startSide,
+                endPlacement,
+                endSide,
                 true,
-                solutionColorRgb(solution, from),
+                solutionColorRgb(solution, colorNode),
                 TOPOLOGY_WIDTH_LEVEL,
                 topologyVisualLevel(coherentPower),
                 TOPOLOGY_RADIUS,
@@ -327,7 +572,7 @@ public final class BeamPathOverlayTracker {
         }
 
         for (BeamPathOverlayPayload.Segment segment : segments) {
-            if (distanceToSegmentSqr(px, py, pz, segment.from(), segment.to()) <= SEND_RADIUS_SQUARED) {
+            if (distanceToSegmentSqr(px, py, pz, segment) <= SEND_RADIUS_SQUARED) {
                 return true;
             }
         }
@@ -342,13 +587,13 @@ public final class BeamPathOverlayTracker {
         return dx * dx + dy * dy + dz * dz;
     }
 
-    private static double distanceToSegmentSqr(double px, double py, double pz, BlockPos from, BlockPos to) {
-        double ax = from.getX() + 0.5D;
-        double ay = from.getY() + 0.5D;
-        double az = from.getZ() + 0.5D;
-        double bx = to.getX() + 0.5D;
-        double by = to.getY() + 0.5D;
-        double bz = to.getZ() + 0.5D;
+    private static double distanceToSegmentSqr(double px, double py, double pz, BeamPathOverlayPayload.Segment segment) {
+        double ax = endpointX(segment.from(), segment.startPlacement(), segment.startSide());
+        double ay = endpointY(segment.from(), segment.startPlacement(), segment.startSide());
+        double az = endpointZ(segment.from(), segment.startPlacement(), segment.startSide());
+        double bx = endpointX(segment.to(), segment.endPlacement(), segment.endSide());
+        double by = endpointY(segment.to(), segment.endPlacement(), segment.endSide());
+        double bz = endpointZ(segment.to(), segment.endPlacement(), segment.endSide());
         double vx = bx - ax;
         double vy = by - ay;
         double vz = bz - az;
@@ -364,6 +609,22 @@ public final class BeamPathOverlayTracker {
         double dy = py - cy;
         double dz = pz - cz;
         return dx * dx + dy * dy + dz * dz;
+    }
+
+    private static double endpointX(BlockPos pos, EndpointPlacement placement, Direction side) {
+        return pos.getX() + 0.5D + endpointOffset(placement, side.getStepX());
+    }
+
+    private static double endpointY(BlockPos pos, EndpointPlacement placement, Direction side) {
+        return pos.getY() + 0.5D + endpointOffset(placement, side.getStepY());
+    }
+
+    private static double endpointZ(BlockPos pos, EndpointPlacement placement, Direction side) {
+        return pos.getZ() + 0.5D + endpointOffset(placement, side.getStepZ());
+    }
+
+    private static double endpointOffset(EndpointPlacement placement, int step) {
+        return placement == EndpointPlacement.BLOCK_FACE ? step * 0.5D : 0.0D;
     }
 
     private static long mix(long seed, long value) {

@@ -2012,6 +2012,441 @@ tasks.register('verifyMachineContentDropContracts') {
     }
 }
 
+tasks.register('verifySpectralOntology') {
+    def frequencyKeySourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/FrequencyKey.java')
+    def spectralRegionSourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/SpectralRegion.java')
+    def spectralColorMapSourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/SpectralColorMap.java')
+    def spectralParameterChartSourceFile = file('src/main/java/io/github/yoglappland/spectralization/compat/jei/SpectralParameterChart.java')
+    def opticalMaterialProfilesSourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/OpticalMaterialProfiles.java')
+    inputs.files(
+            frequencyKeySourceFile,
+            spectralRegionSourceFile,
+            spectralColorMapSourceFile,
+            spectralParameterChartSourceFile,
+            opticalMaterialProfilesSourceFile
+    )
+
+    doLast {
+        def frequencyKeySource = frequencyKeySourceFile.text
+        def regionSource = spectralRegionSourceFile.text
+        def colorSource = spectralColorMapSourceFile.text
+        def chartSource = spectralParameterChartSourceFile.exists() ? spectralParameterChartSourceFile.text : ''
+        def materialProfilesSource = opticalMaterialProfilesSourceFile.text
+
+        if (!(frequencyKeySource =~ /bin\s*>=\s*region\.defaultBins\(\)/).find()) {
+            throw new GradleException('FrequencyKey must reject bins outside the owning SpectralRegion default bin count.')
+        }
+
+        def regions = []
+        def regionPattern = ~/^\s*([A-Z_]+)\("([^"]+)",\s*([0-9]+)\)/
+        regionSource.eachLine { line ->
+            def matcher = line =~ regionPattern
+            if (matcher.find()) {
+                regions.add([name: matcher.group(1), id: matcher.group(2), bins: matcher.group(3) as int])
+            }
+        }
+
+        def expectedRegionOrder = [
+                'RADIO',
+                'MICROWAVE',
+                'THZ',
+                'INFRARED',
+                'VISIBLE',
+                'ULTRAVIOLET',
+                'FAR_ULTRAVIOLET',
+                'XRAY',
+                'GAMMA'
+        ]
+        if (regions*.name != expectedRegionOrder) {
+            throw new GradleException("SpectralRegion order changed. Expected ${expectedRegionOrder.join(' -> ')} but found ${(regions*.name).join(' -> ')}.")
+        }
+        if ((regions*.id).toSet().size() != regions.size()) {
+            throw new GradleException('SpectralRegion ids must be unique.')
+        }
+        def badRegion = regions.find { it.bins <= 0 }
+        if (badRegion != null) {
+            throw new GradleException("SpectralRegion ${badRegion.name} must have a positive bin count.")
+        }
+
+        def regionByName = regions.collectEntries { [(it.name): it] }
+        int visibleBins = regionByName.VISIBLE.bins as int
+        if (!(colorSource =~ /public\s+static\s+final\s+int\s+VISIBLE_BINS\s*=\s*SpectralRegion\.VISIBLE\.defaultBins\(\)\s*;/).find()) {
+            throw new GradleException('SpectralColorMap.VISIBLE_BINS must be derived from SpectralRegion.VISIBLE.defaultBins().')
+        }
+
+        def parseIntLiteral = { String literal ->
+            literal.startsWith('0x')
+                    ? Integer.parseInt(literal.substring(2), 16)
+                    : Integer.parseInt(literal)
+        }
+        def intConstant = { String name ->
+            def pattern = java.util.regex.Pattern.compile(
+                    '(?m)(?:public|private)\\s+static\\s+final\\s+int\\s+'
+                            + java.util.regex.Pattern.quote(name)
+                            + '\\s*=\\s*(0x[0-9A-Fa-f]{6}|[0-9]+);'
+            )
+            def matcher = pattern.matcher(colorSource)
+            if (!matcher.find()) {
+                throw new GradleException("Missing integer spectral color constant ${name}.")
+            }
+            parseIntLiteral(matcher.group(1))
+        }
+        def red = { int rgb -> (rgb >> 16) & 255 }
+        def green = { int rgb -> (rgb >> 8) & 255 }
+        def blue = { int rgb -> rgb & 255 }
+        def assertRedDominant = { String name, int rgb ->
+            if (red(rgb) <= green(rgb) || red(rgb) <= blue(rgb)) {
+                throw new GradleException("${name} must be red-dominant in the spectral color ontology.")
+            }
+        }
+        def assertGreenDominant = { String name, int rgb ->
+            if (green(rgb) <= red(rgb) || green(rgb) <= blue(rgb)) {
+                throw new GradleException("${name} must be green-dominant in the spectral color ontology.")
+            }
+        }
+        def assertBlueDominant = { String name, int rgb ->
+            if (blue(rgb) <= red(rgb) || blue(rgb) <= green(rgb)) {
+                throw new GradleException("${name} must be blue-dominant in the spectral color ontology.")
+            }
+        }
+
+        def visibleOrder = [
+                'VISIBLE_RED_BIN',
+                'VISIBLE_ORANGE_BIN',
+                'VISIBLE_YELLOW_BIN',
+                'VISIBLE_GREEN_BIN',
+                'VISIBLE_LIME_BIN',
+                'VISIBLE_CYAN_BIN',
+                'VISIBLE_LIGHT_BLUE_BIN',
+                'VISIBLE_BLUE_BIN',
+                'VISIBLE_PURPLE_BIN',
+                'VISIBLE_MAGENTA_BIN',
+                'VISIBLE_PINK_BIN'
+        ]
+        int previousBin = -1
+        def visibleBinByName = [:]
+        visibleOrder.each { name ->
+            int bin = intConstant(name)
+            if (bin <= previousBin) {
+                throw new GradleException("Visible spectral bins must stay in red-to-violet order; ${name}=${bin} follows ${previousBin}.")
+            }
+            if (bin < 0 || bin >= visibleBins) {
+                throw new GradleException("${name}=${bin} is outside visible bin count ${visibleBins}.")
+            }
+            visibleBinByName[name] = bin
+            previousBin = bin
+        }
+
+        def arrayMatcher = colorSource =~ /(?s)private\s+static\s+final\s+int\[\]\s+VISIBLE_SRGB\s*=\s*\{(.*?)\};/
+        if (!arrayMatcher.find()) {
+            throw new GradleException('SpectralColorMap must define the VISIBLE_SRGB lookup table.')
+        }
+        def visibleColors = []
+        def hexMatcher = arrayMatcher.group(1) =~ /0x[0-9A-Fa-f]{6}/
+        while (hexMatcher.find()) {
+            visibleColors.add(parseIntLiteral(hexMatcher.group()))
+        }
+        if (visibleColors.size() != visibleBins) {
+            throw new GradleException("VISIBLE_SRGB has ${visibleColors.size()} entries but SpectralRegion.VISIBLE has ${visibleBins} bins.")
+        }
+
+        assertRedDominant('visible bin 0', visibleColors.first() as int)
+        assertRedDominant('VISIBLE_RED_BIN', visibleColors[visibleBinByName.VISIBLE_RED_BIN] as int)
+        assertGreenDominant('VISIBLE_GREEN_BIN', visibleColors[visibleBinByName.VISIBLE_GREEN_BIN] as int)
+        assertBlueDominant('VISIBLE_BLUE_BIN', visibleColors[visibleBinByName.VISIBLE_BLUE_BIN] as int)
+        assertBlueDominant('VISIBLE_PURPLE_BIN', visibleColors[visibleBinByName.VISIBLE_PURPLE_BIN] as int)
+        assertBlueDominant('last visible bin', visibleColors.last() as int)
+        assertRedDominant('INFRARED_HIGH_RGB', intConstant('INFRARED_HIGH_RGB'))
+        assertBlueDominant('ULTRAVIOLET_LOW_RGB', intConstant('ULTRAVIOLET_LOW_RGB'))
+        assertBlueDominant('ULTRAVIOLET_HIGH_RGB', intConstant('ULTRAVIOLET_HIGH_RGB'))
+
+        if (!(colorSource =~ /case\s+INFRARED\s*->\s*interpolateRegionRgb\(INFRARED_LOW_RGB,\s*INFRARED_HIGH_RGB,\s*frequency\)/).find()) {
+            throw new GradleException('Infrared display colors must interpolate from infrared low to infrared high.')
+        }
+        if (!(colorSource =~ /case\s+VISIBLE\s*->\s*visibleRgbForBin\(frequency\.bin\(\)\)/).find()) {
+            throw new GradleException('Visible display colors must come directly from the visible LUT.')
+        }
+        if (!(colorSource =~ /case\s+ULTRAVIOLET\s*->\s*interpolateRegionRgb\(ULTRAVIOLET_LOW_RGB,\s*ULTRAVIOLET_HIGH_RGB,\s*frequency\)/).find()) {
+            throw new GradleException('Ultraviolet display colors must interpolate from ultraviolet low to ultraviolet high.')
+        }
+
+        if ((chartSource =~ /BINS_PER_REGION/).find()) {
+            throw new GradleException('SpectralParameterChart must sample each region using SpectralRegion.defaultBins(), not a fixed bin count.')
+        }
+
+        def gainLutMatcher = materialProfilesSource =~ /private\s+static\s+final\s+int\s+GAIN_LUT_REGION_BINS\s*=\s*([0-9]+);/
+        if (gainLutMatcher.find()) {
+            int gainLutBins = gainLutMatcher.group(1) as int
+            ['INFRARED', 'VISIBLE', 'ULTRAVIOLET'].each { name ->
+                int bins = regionByName[name].bins as int
+                if (gainLutBins > bins) {
+                    throw new GradleException("OpticalMaterialProfiles GAIN_LUT_REGION_BINS=${gainLutBins} exceeds ${name} bin count ${bins}.")
+                }
+            }
+        }
+    }
+}
+
+tasks.register('verifyOpticalAuthority') {
+    def javaSourceRoot = file('src/main/java')
+    def cachedOpticalTraceSourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/cache/CachedOpticalTrace.java')
+    def cachedOpticalSystemSourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/cache/CachedOpticalSystem.java')
+    def opticalTraceCacheSourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/cache/OpticalTraceCache.java')
+    def debugLoggerSourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/compiler/OpticalCompilerDebugLogger.java')
+    inputs.dir(javaSourceRoot)
+
+    doLast {
+        def read = { File sourceFile -> sourceFile.text }
+        def cachedTraceSource = read(cachedOpticalTraceSourceFile)
+        def cachedSystemSource = read(cachedOpticalSystemSourceFile)
+        def traceCacheSource = read(opticalTraceCacheSourceFile)
+        def debugLoggerSource = read(debugLoggerSourceFile)
+
+        def javaFiles
+        java.nio.file.Files.walk(javaSourceRoot.toPath()).withCloseable { paths ->
+            javaFiles = paths
+                    .filter { path -> java.nio.file.Files.isRegularFile(path) }
+                    .filter { path -> path.fileName.toString().endsWith('.java') }
+                    .map { path -> path.toFile() }
+                    .toList()
+        }
+        def relativePath = { File sourceFile ->
+            javaSourceRoot.toPath().relativize(sourceFile.toPath()).toString().replace('\\', '/')
+        }
+        def sourceByPath = javaFiles.collectEntries { sourceFile -> [(relativePath(sourceFile)): sourceFile.text] }
+        def expect = { boolean condition, String message ->
+            if (!condition) {
+                throw new GradleException(message)
+            }
+        }
+
+        expect(
+                (cachedSystemSource =~ /(?s)if\s*\(\s*reliable\s*&&\s*!\s*usableForGameplay\s*\)\s*\{\s*return;\s*\}/).find(),
+                'CachedOpticalSystem.applyOutputs must reject reliable application when usableForGameplay is false.'
+        )
+        expect(
+                cachedSystemSource.contains('boolean sampleReliable = reliable && usableForGameplay;'),
+                'CachedOpticalSystem.applyOutputs must combine reliable with usableForGameplay before ReceiverOutput.apply.'
+        )
+
+        expect(
+                !cachedTraceSource.contains('receiverOutput.apply('),
+                'CachedOpticalTrace must not apply ReceiverOutput directly; direct trace readout authority belongs in OpticalTraceCache.'
+        )
+        expect(
+                !cachedTraceSource.contains('applyCompiledOutputs(') && !cachedTraceSource.contains('applyOutputs(Level'),
+                'CachedOpticalTrace must not expose direct readout apply helpers.'
+        )
+
+        expect(
+                (traceCacheSource =~ /private\s+static\s+void\s+applyReceiverOutputs\s*\(/).find(),
+                'OpticalTraceCache.applyReceiverOutputs must remain private to the cache authority boundary.'
+        )
+        expect(
+                !traceCacheSource.contains('void applyPendingCachedOutputs(Level level, boolean reliable)'),
+                'Interrupted pending direct traces must not keep a boolean path that can become reliable by caller choice.'
+        )
+        expect(
+                traceCacheSource.contains('void applyPendingCachedOutputsAsInterrupted(Level level)'),
+                'Pending cached outputs must be applied through the interrupted/unreliable authority path.'
+        )
+        expect(
+                (traceCacheSource =~ /boolean\s+reliable\s*=\s*!cache\.hasSystemAuthorityForNetwork\(networkId\)\s*&&\s*cachedTrace\.scalarPowerSolution\(\)\.reliableForReadout\(\)\s*;/).find(),
+                'Direct trace readout can be reliable only when no system has authority and the scalar solution is reliable.'
+        )
+        expect(
+                (traceCacheSource =~ /return\s+system\s*!=\s*null\s*&&\s*system\.usableForGameplay\(\)\s*&&\s*system\.solution\(\)\.reliableForReadout\(\)\s*;/).find(),
+                'System readout reliability must require both usableForGameplay and solution.reliableForReadout().'
+        )
+        expect(
+                (traceCacheSource =~ /(?s)void\s+applySystemOutputs\s*\([^)]*\)\s*\{.*if\s*\(\s*system\s*==\s*null\s*\|\|\s*\(\s*reliable\s*&&\s*!\s*system\.usableForGameplay\(\)\s*\)\s*\)\s*\{\s*return;\s*\}.*boolean\s+sampleReliable\s*=\s*reliable\s*&&\s*system\.usableForGameplay\(\)\s*;/).find(),
+                'LevelTraceCache.applySystemOutputs must guard reliable output with system.usableForGameplay().'
+        )
+
+        def receiverApplyCallers = sourceByPath.findAll { path, source ->
+            source.contains('receiverOutput.apply(')
+        }.keySet().sort()
+        def allowedReceiverApplyCallers = [
+                'io/github/yoglappland/spectralization/optics/cache/CachedOpticalSystem.java',
+                'io/github/yoglappland/spectralization/optics/cache/OpticalTraceCache.java'
+        ] as Set
+        def illegalReceiverApplyCallers = receiverApplyCallers.findAll { !allowedReceiverApplyCallers.contains(it) }
+        expect(
+                illegalReceiverApplyCallers.isEmpty(),
+                'ReceiverOutput.apply may only be called by cache authority wrappers, found: ' + illegalReceiverApplyCallers.join(', ')
+        )
+
+        def symbolAllowList = [
+                'OpticalPathTracer'       : [
+                        'io/github/yoglappland/spectralization/optics/OpticalPathTracer.java',
+                        'io/github/yoglappland/spectralization/optics/cache/OpticalTraceCache.java'
+                ] as Set,
+                'OpticalTraceValidator'   : [
+                        'io/github/yoglappland/spectralization/optics/validation/OpticalTraceValidator.java',
+                        'io/github/yoglappland/spectralization/optics/cache/OpticalTraceCache.java'
+                ] as Set,
+                'DebugOracleScalarSolver' : [
+                        'io/github/yoglappland/spectralization/optics/compiler/DebugOracleScalarSolver.java',
+                        'io/github/yoglappland/spectralization/optics/compiler/OpticalCompilerDebugLogger.java'
+                ] as Set
+        ]
+        symbolAllowList.each { symbol, allowedPaths ->
+            def illegalUsers = sourceByPath.findAll { path, source ->
+                source.contains(symbol) && !allowedPaths.contains(path)
+            }.keySet().sort()
+            expect(
+                    illegalUsers.isEmpty(),
+                    "${symbol} is reference/debug authority and may only be used in ${allowedPaths.join(', ')}; found: ${illegalUsers.join(', ')}"
+            )
+        }
+
+        [
+                'private static final String AUTH_GAMEPLAY = "gameplay";',
+                'private static final String AUTH_REFERENCE = "reference";',
+                'private static final String AUTH_DEBUG_ORACLE = "debug_oracle";',
+                'private static final String AUTH_LEGACY_COMPARE = "legacy_compare";',
+                'append("authority=").append(usableForGameplay ? AUTH_GAMEPLAY : AUTH_REFERENCE)',
+                'append("authority=").append(reliable ? AUTH_GAMEPLAY : AUTH_REFERENCE)',
+                'networkUsableForGameplay ? AUTH_REFERENCE : AUTH_GAMEPLAY'
+        ].each { required ->
+            expect(
+                    debugLoggerSource.contains(required),
+                    "OpticalCompilerDebugLogger must preserve authority marker contract: ${required}"
+            )
+        }
+    }
+}
+
+tasks.register('verifyPassiveOptics') {
+    def opticalExampleValidatorSourceFile = file('src/main/java/io/github/yoglappland/spectralization/command/OpticalExampleValidator.java')
+    def profileLanePowerSolverSourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/compiler/ProfileLanePowerSolver.java')
+    inputs.files(
+            opticalExampleValidatorSourceFile,
+            profileLanePowerSolverSourceFile
+    )
+
+    doLast {
+        def exampleSource = opticalExampleValidatorSourceFile.text
+        def solverSource = profileLanePowerSolverSourceFile.text
+        def expect = { boolean condition, String message ->
+            if (!condition) {
+                throw new GradleException(message)
+            }
+        }
+
+        [
+                'splitter_lens_splitter',
+                'lens_aperture_clip',
+                'fiber_radius_coupling',
+                'feedback_fiber_radius_loss',
+                'parallel_fiber_same_endpoint',
+                'beam_expander_fiber_coupling'
+        ].each { testName ->
+            expect(
+                    exampleSource.contains("Commands.literal(\"${testName}\")"),
+                    "opticaltest must keep the passive optics regression command ${testName}."
+            )
+        }
+
+        expect(
+                (exampleSource =~ /if\s*\(\s*output\.power\(\)\s*>\s*SOURCE_POWER\s*\+\s*POWER_TOLERANCE\s*\)/).find(),
+                'OpticalExampleValidator.commonProfilerFailures must reject passive output above source power.'
+        )
+        expect(
+                exampleSource.contains('Math.abs(output.coherentPower() - output.power()) > POWER_TOLERANCE'),
+                'OpticalExampleValidator.commonProfilerFailures must keep coherent and total power aligned for coherent passive tests.'
+        )
+        expect(
+                exampleSource.contains('output.strayPower() > POWER_TOLERANCE'),
+                'OpticalExampleValidator.commonProfilerFailures must reject stray power in coherent passive tests.'
+        )
+
+        [
+                'expectFeedback(sample, true, failures);',
+                'expectFeedbackCollapsedEquivalence(sample, failures);',
+                'expectPowerClose(sample.actualPower(), expectedPower, "profiler power", failures);',
+                'double expectedPower = expectedSplitterLensSplitterPower();',
+                'double[] solution = solveFourByFour(matrix, rhs);'
+        ].each { required ->
+            expect(
+                    exampleSource.contains(required),
+                    "splitter_lens_splitter must preserve passive feedback expectation: ${required}"
+            )
+        }
+
+        [
+                'expectFeedback(sample, false, failures);',
+                'expectSolver(sample, ScalarSolverKind.PROFILE_STATE_EXACT, failures);',
+                'expectNoProfileDegradation(sample, failures);',
+                'apertureGain > 0.0D && apertureGain < 1.0D'
+        ].each { required ->
+            expect(
+                    exampleSource.contains(required),
+                    "lens_aperture_clip must preserve finite passive clipping expectation: ${required}"
+            )
+        }
+
+        [
+                'expectFeedback(narrow, false, failures);',
+                'expectFeedback(wide, false, failures);',
+                'expectSolver(narrow, ScalarSolverKind.PROFILE_STATE_EXACT, failures);',
+                'expectSolver(wide, ScalarSolverKind.PROFILE_STATE_EXACT, failures);',
+                'wide.actualPower() < narrow.actualPower()',
+                'ratio > 0.18D && ratio < 0.36D'
+        ].each { required ->
+            expect(
+                    exampleSource.contains(required),
+                    "fiber_radius_coupling must preserve passive coupling-loss expectation: ${required}"
+            )
+        }
+
+        [
+                'expectFeedback(narrow, true, failures);',
+                'expectFeedback(wide, true, failures);',
+                'expectFeedbackCollapsedEquivalence(narrow, failures);',
+                'expectFeedbackCollapsedEquivalence(wide, failures);',
+                'wide.actualPower() < narrow.actualPower() * 0.6D',
+                'ratio > 0.05D && ratio < 0.6D'
+        ].each { required ->
+            expect(
+                    exampleSource.contains(required),
+                    "feedback_fiber_radius_loss must preserve passive feedback-loss expectation: ${required}"
+            )
+        }
+
+        [
+                'double expectedParallel = Math.min(SOURCE_POWER, single.actualPower() * 2.0D);',
+                'expectPowerClose(parallel.actualPower(), expectedParallel, "parallel route power", failures);',
+                'parallel.actualPower() + POWER_TOLERANCE < single.actualPower()'
+        ].each { required ->
+            expect(
+                    exampleSource.contains(required),
+                    "parallel_fiber_same_endpoint must preserve passive linear-merge expectation: ${required}"
+            )
+        }
+
+        [
+                'expectFeedback(expanded, true, failures);',
+                'expectFeedbackCollapsedEquivalence(expanded, failures);',
+                'ratio < BEAM_EXPANDER_MAX_IMPROVEMENT'
+        ].each { required ->
+            expect(
+                    exampleSource.contains(required),
+                    "beam_expander_fiber_coupling must preserve bounded passive feedback expectation: ${required}"
+            )
+        }
+
+        expect(
+                solverSource.contains('return BeamGeometryOps.clamp01(transfer.gain());'),
+                'ProfileLanePowerSolver must clamp collapsed passive profile gain to [0, 1].'
+        )
+        expect(
+                (solverSource =~ /double\s+baseGain\s*=\s*Math\.max\(0\.0D,\s*edge\.sampleGainFor\(lane\.frequency\(\)\)\)/).find(),
+                'ProfileLanePowerSolver must discard negative sampled passive gains before solving.'
+        )
+    }
+}
+
 tasks.named('check') {
     dependsOn tasks.named('verifyThermalSmelterUiLayout')
     dependsOn tasks.named('verifyLensGrindingBenchUiLayout')
@@ -2022,6 +2457,9 @@ tasks.named('check') {
     dependsOn tasks.named('verifyHolographicStorageUiLayout')
     dependsOn tasks.named('verifyMicrolizerCoreUiLayout')
     dependsOn tasks.named('verifyMachineContentDropContracts')
+    dependsOn tasks.named('verifySpectralOntology')
+    dependsOn tasks.named('verifyOpticalAuthority')
+    dependsOn tasks.named('verifyPassiveOptics')
 }
 
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.

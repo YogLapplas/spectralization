@@ -9,7 +9,6 @@ import io.github.yoglappland.spectralization.network.BeamPathOverlayPayload;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import java.util.List;
 import java.util.Objects;
-import net.minecraft.world.level.Level;
 
 public record CachedOpticalTrace(
         int networkId,
@@ -41,21 +40,7 @@ public record CachedOpticalTrace(
         return sourceOutput.equals(outputBeam);
     }
 
-    public void applyOutputs(Level level, boolean reliable, long step) {
-        if (readoutLayer.size() == 0) {
-            return;
-        }
-
-        applyCompiledOutputs(level, reliable && scalarPowerSolution.reliableForReadout(), step);
-    }
-
     public List<ReceiverOutput> sampleCompiledOutputs() {
         return readoutLayer.sample(scalarPowerSolution);
-    }
-
-    public void applyCompiledOutputs(Level level, boolean reliable, long step) {
-        for (ReceiverOutput receiverOutput : sampleCompiledOutputs()) {
-            receiverOutput.apply(level, reliable, step);
-        }
     }
 }

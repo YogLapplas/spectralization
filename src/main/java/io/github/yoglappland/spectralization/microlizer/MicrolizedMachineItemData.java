@@ -663,7 +663,7 @@ public final class MicrolizedMachineItemData {
                 continue;
             }
 
-            components.add(new PlaneWaveComponent(new FrequencyKey(region, bin), power, direction, coherence));
+            components.add(new PlaneWaveComponent(FrequencyKey.clamped(region, bin), power, direction, coherence));
         }
 
         List<PlaneWaveComponent> normalized = normalizeComponents(components);

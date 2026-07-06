@@ -314,7 +314,7 @@ public final class OpticalTraceCache {
         pruneInactiveSources(level, cache);
 
         if (!OpticalWorldIndex.canRunDerived(level)) {
-            cache.applyPendingCachedOutputs(level, false);
+            cache.applyPendingCachedOutputsAsInterrupted(level);
             return;
         }
 
@@ -3245,7 +3245,7 @@ public final class OpticalTraceCache {
             return nextReadoutStep++;
         }
 
-        void applyPendingCachedOutputs(Level level, boolean reliable) {
+        void applyPendingCachedOutputsAsInterrupted(Level level) {
             long readoutStep = nextReadoutStep();
             Set<Integer> appliedNetworkIds = new HashSet<>();
 
@@ -3257,17 +3257,13 @@ public final class OpticalTraceCache {
                 CachedOpticalTrace cachedTrace = cachedTracesByNetwork.get(request.networkId());
 
                 if (cachedTrace != null) {
-                    if (reliable) {
-                        cachedTrace.applyOutputs(level, true, readoutStep);
-                    } else {
-                        applyInterruptedAuthoritativeOutputs(
-                                level,
-                                this,
-                                request.networkId(),
-                                cachedTrace,
-                                "pending_global_interrupted"
-                        );
-                    }
+                    applyInterruptedAuthoritativeOutputs(
+                            level,
+                            this,
+                            request.networkId(),
+                            cachedTrace,
+                            "pending_global_interrupted"
+                    );
                 }
             }
         }

@@ -61,12 +61,6 @@ public final class EnvironmentLightSpectra {
             band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_ORANGE_BIN, 4.8, 0.26, 0, 18, 1),
             band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_RED_BIN, 2.8, 0.07, 0, 14, 1)
     );
-    private static final SpectrumProfile HOT_MOLTEN = profile(
-            band(SpectralRegion.THZ, 9.0, 5.5, 0.05, 0, 15, 3),
-            band(SpectralRegion.INFRARED, 14.0, 9.5, 0.55, 0, 31, 2),
-            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_ORANGE_BIN, 5.0, 0.18, 0, 18, 1),
-            band(SpectralRegion.VISIBLE, SpectralColorMap.VISIBLE_RED_BIN, 4.0, 0.22, 0, 14, 1)
-    );
     private static final SpectrumProfile REDSTONE_GLOW = profile(
             band(SpectralRegion.MICROWAVE, 8.0, 4.0, 0.03, 0, 15, 4),
             band(SpectralRegion.THZ, 8.0, 5.0, 0.07, 0, 15, 3),
@@ -340,10 +334,6 @@ public final class EnvironmentLightSpectra {
     }
 
     private static SpectrumProfile profileFor(Block block, ResourceLocation blockId) {
-        if (isSpectralization(blockId, "molten_")) {
-            return HOT_MOLTEN;
-        }
-
         if (isSpectralization(blockId, "holographic_storage_")
                 || isSpectralization(blockId, "stable_holographic_storage_")) {
             return TECHNOLOGY_CYAN;

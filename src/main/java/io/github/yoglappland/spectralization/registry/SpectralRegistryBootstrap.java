@@ -8,7 +8,6 @@ public final class SpectralRegistryBootstrap {
     }
 
     public static void register(IEventBus modEventBus) {
-        SpectralFluids.register(modEventBus);
         Spectralization.BLOCKS.register(modEventBus);
         Spectralization.ITEMS.register(modEventBus);
         Spectralization.RECIPE_SERIALIZERS.register(modEventBus);

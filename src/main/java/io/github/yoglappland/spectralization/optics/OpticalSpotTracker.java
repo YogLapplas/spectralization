@@ -4,6 +4,7 @@ import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.network.SpotOverlayPayload;
 import io.github.yoglappland.spectralization.network.SpotUpdatePayload;
 import io.github.yoglappland.spectralization.optics.compiler.OpticalCompilerDebugLogger;
+import io.github.yoglappland.spectralization.optics.projection.SpotProjectionAllocation;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -32,13 +33,44 @@ public final class OpticalSpotTracker {
     private static final double MIN_SPOT_RADIUS = 0.08;
     private static final double MIN_VISIBLE_SPOT_POWER = 0.125;
     private static final double SPOT_POWER_PER_ALPHA_LEVEL = 8.0;
+    private static final int TEMPORARY_FIXED_SPOT_ALPHA_LEVEL =
+            Integer.getInteger("spectralization.fixedSpotAlphaLevel", 8);
     private static final double DEFAULT_OPTICAL_DIFFUSE_YIELD = 0.85;
     private static final int DEFAULT_SPOT_RGB = 0xFF4630;
     private static final Comparator<SpotRecord> SPOT_COMPARATOR = Comparator
             .comparingInt((SpotRecord spot) -> spot.pos().getX())
             .thenComparingInt(spot -> spot.pos().getY())
             .thenComparingInt(spot -> spot.pos().getZ())
-            .thenComparingInt(spot -> spot.face().ordinal());
+            .thenComparingInt(spot -> projectionSendPriority(spot.projectionMode()))
+            .thenComparingInt(spot -> spot.face().ordinal())
+            .thenComparingInt(SpotRecord::clipMinU)
+            .thenComparingInt(SpotRecord::clipMinV)
+            .thenComparingInt(SpotRecord::clipMaxU)
+            .thenComparingInt(SpotRecord::clipMaxV)
+            .thenComparingInt(SpotRecord::textureMinU)
+            .thenComparingInt(SpotRecord::textureMinV)
+            .thenComparingInt(SpotRecord::textureMaxU)
+            .thenComparingInt(SpotRecord::textureMaxV)
+            .thenComparingInt(SpotRecord::quadX0)
+            .thenComparingInt(SpotRecord::quadY0)
+            .thenComparingInt(SpotRecord::quadZ0)
+            .thenComparingInt(SpotRecord::quadTextureU0)
+            .thenComparingInt(SpotRecord::quadTextureV0)
+            .thenComparingInt(SpotRecord::quadX1)
+            .thenComparingInt(SpotRecord::quadY1)
+            .thenComparingInt(SpotRecord::quadZ1)
+            .thenComparingInt(SpotRecord::quadTextureU1)
+            .thenComparingInt(SpotRecord::quadTextureV1)
+            .thenComparingInt(SpotRecord::quadX2)
+            .thenComparingInt(SpotRecord::quadY2)
+            .thenComparingInt(SpotRecord::quadZ2)
+            .thenComparingInt(SpotRecord::quadTextureU2)
+            .thenComparingInt(SpotRecord::quadTextureV2)
+            .thenComparingInt(SpotRecord::quadX3)
+            .thenComparingInt(SpotRecord::quadY3)
+            .thenComparingInt(SpotRecord::quadZ3)
+            .thenComparingInt(SpotRecord::quadTextureU3)
+            .thenComparingInt(SpotRecord::quadTextureV3);
 
     private static final Map<Level, Map<Integer, SpotOwnerSnapshot>> SPOTS_BY_OWNER = new WeakHashMap<>();
     private static final Map<Level, Map<UUID, Map<Integer, SentSpotSnapshot>>> SENT_SNAPSHOTS_BY_PLAYER = new WeakHashMap<>();
@@ -176,7 +208,12 @@ public final class OpticalSpotTracker {
         mark(level, pos, face, beam, spotPower);
     }
 
-    public static void publishCompiledSpots(ServerLevel level, int ownerId, List<SpotRecord> spots) {
+    public static void publishCompiledSpots(
+            ServerLevel level,
+            int ownerId,
+            List<SpotRecord> spots,
+            List<SpotProjectionAllocation> allocations
+    ) {
         if (!SpectralizationConfig.surfaceSpotsVisible()) {
             clear(level);
             return;
@@ -185,6 +222,7 @@ public final class OpticalSpotTracker {
         Map<Integer, SpotOwnerSnapshot> ownerSnapshots = SPOTS_BY_OWNER.computeIfAbsent(level, ignored -> new HashMap<>());
         long gameTime = level.getGameTime();
         List<SpotRecord> visibleSpots = visibleSnapshot(spots);
+        List<SpotProjectionAllocation> visibleAllocations = List.copyOf(allocations);
 
         if (visibleSpots.isEmpty()) {
             SpotOwnerSnapshot removed = ownerSnapshots.remove(ownerId);
@@ -194,14 +232,17 @@ public final class OpticalSpotTracker {
             return;
         }
 
-        long signature = spotSnapshotSignature(visibleSpots);
+        long signature = 31L * spotSnapshotSignature(visibleSpots) + allocationSnapshotSignature(visibleAllocations);
         SpotOwnerSnapshot previous = ownerSnapshots.get(ownerId);
 
-        if (previous != null && previous.signature() == signature && previous.spots().equals(visibleSpots)) {
+        if (previous != null
+                && previous.signature() == signature
+                && previous.spots().equals(visibleSpots)
+                && previous.allocations().equals(visibleAllocations)) {
             return;
         }
 
-        SpotOwnerSnapshot snapshot = new SpotOwnerSnapshot(ownerId, visibleSpots, signature, gameTime);
+        SpotOwnerSnapshot snapshot = new SpotOwnerSnapshot(ownerId, visibleSpots, visibleAllocations, signature, gameTime);
         ownerSnapshots.put(ownerId, snapshot);
         sendSnapshotToNearby(level, snapshot, true);
     }
@@ -314,25 +355,34 @@ public final class OpticalSpotTracker {
         int sentSpots = 0;
         int sentPlayers = 0;
         List<SpotRecord> activeSpotRecords = new ArrayList<>();
+        List<SpotProjectionAllocation> activeAllocations = new ArrayList<>();
 
         for (SpotOwnerSnapshot snapshot : ownerSnapshots.values()) {
             SnapshotSendResult result = sendSnapshotToNearby(level, snapshot, false);
             sentSpots += result.sentSpots();
             sentPlayers += result.sentPlayers();
             activeSpotRecords.addAll(snapshot.spots());
+            activeAllocations.addAll(snapshot.allocations());
         }
 
         long lastLog = LAST_LOG.getOrDefault(level, (long) -LOG_INTERVAL_TICKS);
         if (gameTime - lastLog >= LOG_INTERVAL_TICKS) {
             LAST_LOG.put(level, gameTime);
-            OpticalCompilerDebugLogger.logSpotOverlay(level, activeSpotRecords, sentSpots, sentPlayers, gameTime);
+            OpticalCompilerDebugLogger.logSpotOverlay(
+                    level,
+                    activeSpotRecords,
+                    activeAllocations,
+                    sentSpots,
+                    sentPlayers,
+                    gameTime
+            );
         }
     }
 
     private static boolean shouldSend(Level level, SpotRecord spot) {
         long gameTime = level.getGameTime();
         Map<SpotKey, ActiveSpot> levelSpots = LEGACY_ACTIVE_SPOTS.computeIfAbsent(level, ignored -> new HashMap<>());
-        SpotKey key = new SpotKey(spot.pos(), spot.face());
+        SpotKey key = spotKey(spot);
         ActiveSpot lastSent = levelSpots.get(key);
 
         if (lastSent != null && gameTime - lastSent.lastSentGameTime() < SEND_INTERVAL_TICKS && lastSent.spot().equals(spot)) {
@@ -467,6 +517,55 @@ public final class OpticalSpotTracker {
             signature = mix(signature, spot.strayGreen());
             signature = mix(signature, spot.strayBlue());
             signature = mix(signature, spot.ringAlphaLevel());
+            signature = mix(signature, spot.projectionMode().ordinal());
+            signature = mix(signature, spot.clipMinU());
+            signature = mix(signature, spot.clipMinV());
+            signature = mix(signature, spot.clipMaxU());
+            signature = mix(signature, spot.clipMaxV());
+            signature = mix(signature, spot.textureMinU());
+            signature = mix(signature, spot.textureMinV());
+            signature = mix(signature, spot.textureMaxU());
+            signature = mix(signature, spot.textureMaxV());
+            signature = mix(signature, spot.quadX0());
+            signature = mix(signature, spot.quadY0());
+            signature = mix(signature, spot.quadZ0());
+            signature = mix(signature, spot.quadTextureU0());
+            signature = mix(signature, spot.quadTextureV0());
+            signature = mix(signature, spot.quadX1());
+            signature = mix(signature, spot.quadY1());
+            signature = mix(signature, spot.quadZ1());
+            signature = mix(signature, spot.quadTextureU1());
+            signature = mix(signature, spot.quadTextureV1());
+            signature = mix(signature, spot.quadX2());
+            signature = mix(signature, spot.quadY2());
+            signature = mix(signature, spot.quadZ2());
+            signature = mix(signature, spot.quadTextureU2());
+            signature = mix(signature, spot.quadTextureV2());
+            signature = mix(signature, spot.quadX3());
+            signature = mix(signature, spot.quadY3());
+            signature = mix(signature, spot.quadZ3());
+            signature = mix(signature, spot.quadTextureU3());
+            signature = mix(signature, spot.quadTextureV3());
+        }
+
+        return signature;
+    }
+
+    private static long allocationSnapshotSignature(List<SpotProjectionAllocation> allocations) {
+        long signature = 0x84222325CBF29CE4L;
+        signature = mix(signature, allocations.size());
+
+        for (SpotProjectionAllocation allocation : allocations) {
+            signature = mix(signature, allocation.pos().asLong());
+            signature = mix(signature, allocation.face().ordinal());
+            signature = mix(signature, allocation.kind().hashCode());
+            signature = mix(signature, Double.doubleToLongBits(allocation.candidateArea()));
+            signature = mix(signature, Double.doubleToLongBits(allocation.assignedArea()));
+            signature = mix(signature, Double.doubleToLongBits(allocation.emittedArea()));
+            signature = mix(signature, Double.doubleToLongBits(allocation.assignedPowerFraction()));
+            signature = mix(signature, Double.doubleToLongBits(allocation.emittedPowerFraction()));
+            signature = mix(signature, allocation.emittedQuads());
+            signature = mix(signature, allocation.result().hashCode());
         }
 
         return signature;
@@ -499,7 +598,20 @@ public final class OpticalSpotTracker {
         return state.isCollisionShapeFullBlock(level, pos);
     }
 
+    private static int projectionSendPriority(SpotRecord.ProjectionMode projectionMode) {
+        return projectionMode == SpotRecord.ProjectionMode.FOOTPRINT_QUAD ? 1 : 0;
+    }
+
     private static int alphaLevel(double spotPower, BeamEnvelope envelope) {
+        if (spotPower <= 0.0D) {
+            return 0;
+        }
+
+        // Temporary projection-debug mode: geometry coverage must not disappear because of brightness.
+        if (TEMPORARY_FIXED_SPOT_ALPHA_LEVEL > 0) {
+            return TEMPORARY_FIXED_SPOT_ALPHA_LEVEL;
+        }
+
         if (spotPower < MIN_VISIBLE_SPOT_POWER) {
             return 0;
         }
@@ -573,15 +685,90 @@ public final class OpticalSpotTracker {
         };
     }
 
-    private record SpotKey(BlockPos pos, Direction face) {
+    private static SpotKey spotKey(SpotRecord spot) {
+        return new SpotKey(
+                spot.pos(),
+                spot.face(),
+                spot.projectionMode().ordinal(),
+                spot.clipMinU(),
+                spot.clipMinV(),
+                spot.clipMaxU(),
+                spot.clipMaxV(),
+                spot.textureMinU(),
+                spot.textureMinV(),
+                spot.textureMaxU(),
+                spot.textureMaxV(),
+                spot.quadX0(),
+                spot.quadY0(),
+                spot.quadZ0(),
+                spot.quadTextureU0(),
+                spot.quadTextureV0(),
+                spot.quadX1(),
+                spot.quadY1(),
+                spot.quadZ1(),
+                spot.quadTextureU1(),
+                spot.quadTextureV1(),
+                spot.quadX2(),
+                spot.quadY2(),
+                spot.quadZ2(),
+                spot.quadTextureU2(),
+                spot.quadTextureV2(),
+                spot.quadX3(),
+                spot.quadY3(),
+                spot.quadZ3(),
+                spot.quadTextureU3(),
+                spot.quadTextureV3()
+        );
+    }
+
+    private record SpotKey(
+            BlockPos pos,
+            Direction face,
+            int projectionMode,
+            int clipMinU,
+            int clipMinV,
+            int clipMaxU,
+            int clipMaxV,
+            int textureMinU,
+            int textureMinV,
+            int textureMaxU,
+            int textureMaxV,
+            int quadX0,
+            int quadY0,
+            int quadZ0,
+            int quadTextureU0,
+            int quadTextureV0,
+            int quadX1,
+            int quadY1,
+            int quadZ1,
+            int quadTextureU1,
+            int quadTextureV1,
+            int quadX2,
+            int quadY2,
+            int quadZ2,
+            int quadTextureU2,
+            int quadTextureV2,
+            int quadX3,
+            int quadY3,
+            int quadZ3,
+            int quadTextureU3,
+            int quadTextureV3
+    ) {
     }
 
     private record ActiveSpot(long lastSentGameTime, SpotRecord spot) {
     }
 
-    private record SpotOwnerSnapshot(int ownerId, List<SpotRecord> spots, long signature, long gameTime) {
+    private record SpotOwnerSnapshot(
+            int ownerId,
+            List<SpotRecord> spots,
+            List<SpotProjectionAllocation> allocations,
+            long signature,
+            long gameTime
+    ) {
         private SpotOwnerSnapshot {
             spots = List.copyOf(spots);
+            allocations = List.copyOf(allocations);
         }
     }
 

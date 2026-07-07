@@ -2447,6 +2447,102 @@ tasks.register('verifyPassiveOptics') {
     }
 }
 
+tasks.register('verifySpotProjectionContinuity') {
+    def spotRecordSourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/SpotRecord.java')
+    def projectorSourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/projection/VoxelSpotProjector.java')
+    def patchSourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/projection/SpotProjectionPatch.java')
+    def formalProofSourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/projection/SpotProjectionFormalProof.java')
+    def continuitySourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/projection/SpotProjectionContinuity.java')
+    def overlayPayloadSourceFile = file('src/main/java/io/github/yoglappland/spectralization/network/SpotOverlayPayload.java')
+    def updatePayloadSourceFile = file('src/main/java/io/github/yoglappland/spectralization/network/SpotUpdatePayload.java')
+    def spotRenderSourceFile = file('src/main/java/io/github/yoglappland/spectralization/client/spot/SpotRenderEvents.java')
+    inputs.files(
+            spotRecordSourceFile,
+            projectorSourceFile,
+            patchSourceFile,
+            formalProofSourceFile,
+            continuitySourceFile,
+            overlayPayloadSourceFile,
+            updatePayloadSourceFile,
+            spotRenderSourceFile
+    )
+
+    doLast {
+        def spotRecordSource = spotRecordSourceFile.text
+        def projectorSource = projectorSourceFile.text
+        def patchSource = patchSourceFile.text
+        def formalProofSource = formalProofSourceFile.text
+        def continuitySource = continuitySourceFile.text
+        def overlayPayloadSource = overlayPayloadSourceFile.text
+        def updatePayloadSource = updatePayloadSourceFile.text
+        def spotRenderSource = spotRenderSourceFile.text
+        def expect = { boolean condition, String message ->
+            if (!condition) {
+                throw new GradleException(message)
+            }
+        }
+
+        expect(
+                spotRecordSource.contains('public static final int QUAD_QUANTIZATION_LEVEL = 65535;'),
+                'SpotRecord quad projection coordinates must keep 16-bit quantization.'
+        )
+        expect(
+                projectorSource.contains('quantizeQuadUnit(')
+                        && projectorSource.contains('SpotRecord.QUAD_QUANTIZATION_LEVEL'),
+                'VoxelSpotProjector must quantize footprint quads with the shared 16-bit quad scale.'
+        )
+        expect(
+                projectorSource.contains('SpotProjectionPatch.oriented('),
+                'VoxelSpotProjector must normalize footprint quad winding through SpotProjectionPatch.oriented.'
+        )
+        expect(
+                projectorSource.contains('for (CanonicalRect visibleSideWindow : visibleSideWindows)')
+                        && projectorSource.contains('sideBlockersAtDepth.add(visibleSideWindow)')
+                        && projectorSource.contains('clippedUSidePatch(')
+                        && projectorSource.contains('clippedVSidePatch('),
+                'VoxelSpotProjector must clip side geometry and reserve the same visible canonical window it renders.'
+        )
+        expect(
+                patchSource.contains('faceNormalDot(')
+                        && patchSource.contains('return new Patch(p1, t1, p0, t0, p3, t3, p2, t2);'),
+                'SpotProjectionPatch must reverse negative-winding quads with their texture coordinates.'
+        )
+        expect(
+                formalProofSource.contains('rawNegativePatches == 0')
+                        && formalProofSource.contains('direction symmetry failed')
+                        && formalProofSource.contains('clippedGeometryChecks == 0'),
+                'SpotProjectionFormalProof must exercise negative winding, direction symmetry, and clipped side geometry.'
+        )
+        expect(
+                continuitySource.contains('PROOF_SCALE = SpotRecord.QUAD_QUANTIZATION_LEVEL'),
+                'SpotProjectionContinuity must prove boundaries in the same scale used by quad rendering.'
+        )
+        expect(
+                overlayPayloadSource.contains('buffer.writeVarInt(spot.quadX0())')
+                        && overlayPayloadSource.contains('buffer.writeVarInt(spot.quadTextureV3())')
+                        && (overlayPayloadSource.count('buffer.readVarInt()') >= 20),
+                'SpotOverlayPayload must transmit quad geometry and texture coordinates without byte truncation.'
+        )
+        expect(
+                updatePayloadSource.contains('buffer.writeVarInt(quadX0)')
+                        && updatePayloadSource.contains('buffer.writeVarInt(quadTextureV3)')
+                        && (updatePayloadSource.count('buffer.readVarInt()') >= 20),
+                'SpotUpdatePayload must transmit quad geometry and texture coordinates without byte truncation.'
+        )
+        expect(
+                spotRenderSource.contains('normalizedQuadUnit(')
+                        && spotRenderSource.contains('normalizedQuadUnitFloat('),
+                'SpotRenderEvents must decode footprint quad geometry and UVs using the 16-bit quad scale.'
+        )
+    }
+}
+
+tasks.register('verifySpotProjectionFormalProof', JavaExec) {
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'io.github.yoglappland.spectralization.optics.projection.SpotProjectionFormalProof'
+}
+
 tasks.named('check') {
     dependsOn tasks.named('verifyThermalSmelterUiLayout')
     dependsOn tasks.named('verifyLensGrindingBenchUiLayout')
@@ -2460,6 +2556,8 @@ tasks.named('check') {
     dependsOn tasks.named('verifySpectralOntology')
     dependsOn tasks.named('verifyOpticalAuthority')
     dependsOn tasks.named('verifyPassiveOptics')
+    dependsOn tasks.named('verifySpotProjectionContinuity')
+    dependsOn tasks.named('verifySpotProjectionFormalProof')
 }
 
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.

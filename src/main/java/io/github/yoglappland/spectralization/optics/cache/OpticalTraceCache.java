@@ -15,6 +15,7 @@ import io.github.yoglappland.spectralization.optics.IntrinsicOpticalSources;
 import io.github.yoglappland.spectralization.optics.OpticalPort;
 import io.github.yoglappland.spectralization.optics.OpticalElement;
 import io.github.yoglappland.spectralization.optics.OpticalPathTracer;
+import io.github.yoglappland.spectralization.optics.OpticalReceiver;
 import io.github.yoglappland.spectralization.optics.OpticalSource;
 import io.github.yoglappland.spectralization.optics.PlaneWaveComponent;
 import io.github.yoglappland.spectralization.optics.OpticalTraceStep;
@@ -61,6 +62,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -93,9 +95,12 @@ public final class OpticalTraceCache {
     private static final long HUD_OVERLAY_SEND_INTERVAL_TICKS = 2L;
     private static final long HUD_OVERLAY_REFRESH_INTERVAL_TICKS = 80L;
     private static final int DORMANT_SOURCE_WAKE_BUDGET_PER_TICK = 64;
+    private static final int GAIN_SOURCE_PRIORITY_SCAN_BLOCKS = 32;
     private static final double POSITIVE_SOURCE_MIN_POWER = 1.0E-6D;
     private static final int SPECTRAL_LANE_PARALLEL_MIN_LANES = 2;
     private static final int SPECTRAL_LANE_PARALLEL_MIN_WORK = 32;
+    private static final List<Direction.Axis> GAIN_SOURCE_AXIS_ORDER =
+            List.of(Direction.Axis.X, Direction.Axis.Y, Direction.Axis.Z);
     private static final Comparator<SourceTraceKey> SOURCE_TRACE_KEY_COMPARATOR = Comparator
             .comparingInt((SourceTraceKey key) -> key.sourcePos().getX())
             .thenComparingInt(key -> key.sourcePos().getY())
@@ -226,15 +231,15 @@ public final class OpticalTraceCache {
                         continue;
                     }
 
-                    for (OutputBeam outputBeam : IntrinsicOpticalSources.builtInOutputBeams(state, level, pos)) {
-                        if (outputBeam.beam().isEmpty()) {
-                            continue;
-                        }
-
-                        SourceTraceKey key = new SourceTraceKey(pos, outputBeam.outgoingDirection());
-                        int networkId = cache.networkIdFor(key);
-                        cache.enqueuePriority(new TraceRequest(networkId, pos, outputBeam), gameTime);
-                    }
+                    enqueueIntrinsicSourceOutputs(
+                            level,
+                            cache,
+                            pos,
+                            state,
+                            IntrinsicOpticalSources.builtInOutputBeams(state, level, pos),
+                            gameTime,
+                            true
+                    );
                 }
             }
         }
@@ -256,15 +261,15 @@ public final class OpticalTraceCache {
         LevelTraceCache cache = cacheFor(level);
         long gameTime = level.getGameTime();
 
-        for (OutputBeam outputBeam : IntrinsicOpticalSources.outputBeams(state, level, pos)) {
-            if (outputBeam.beam().isEmpty()) {
-                continue;
-            }
-
-            SourceTraceKey key = new SourceTraceKey(pos, outputBeam.outgoingDirection());
-            int networkId = cache.networkIdFor(key);
-            cache.enqueuePriority(new TraceRequest(networkId, pos, outputBeam), gameTime);
-        }
+        enqueueIntrinsicSourceOutputs(
+                level,
+                cache,
+                pos,
+                state,
+                IntrinsicOpticalSources.outputBeams(state, level, pos),
+                gameTime,
+                true
+        );
     }
 
     public static void rememberSourceState(LevelAccessor accessor, BlockPos pos) {
@@ -322,6 +327,7 @@ public final class OpticalTraceCache {
         int maxRequests = SpectralizationConfig.opticalSolverMaxRequestsPerTick();
         IntSet processedNetworkIds = new IntOpenHashSet();
         IntSet fastSystemRefreshNetworkIds = new IntOpenHashSet();
+        IntSet projectionRefreshedNetworkIds = new IntOpenHashSet();
         int initialRequestCount = cache.pendingRequests.size();
         boolean deferredDirectWork = false;
         int processed = 0;
@@ -435,7 +441,7 @@ public final class OpticalTraceCache {
 
             List<ReceiverOutput> directReceiverOutputs = directReadoutLayer.sample(scalarPowerSolution);
             boolean directReadoutDemand = hasReadoutDemand(directReadoutLayer, directReceiverOutputs);
-            CompiledOpticalTrace trace = traceLegacyIfNeeded(
+            CompiledOpticalTrace trace = traceLegacyOracleIfNeeded(
                     level,
                     request,
                     directGraph,
@@ -598,6 +604,10 @@ public final class OpticalTraceCache {
             cache.cachedTracesByNetwork.put(request.networkId(), cachedTrace);
             cache.dependencyIndex.replaceDependencies(request.networkId(), cachedTrace.dependencies());
             cache.dependencyIndex.clearDirty(request.networkId());
+            cache.projectionDependencyIndex.replaceDependencies(request.networkId(), cachedTrace.projectionDependencies());
+            cache.projectionDependencyIndex.clearDirty(request.networkId());
+            cache.queuedProjectionRefreshNetworkIds.remove(request.networkId());
+            cache.pendingProjectionRefreshes.removeIf(queuedNetworkId -> queuedNetworkId == request.networkId());
             if (cachedSystem != null && trace != null) {
                 OpticalTraceValidator.validate(level, request.sourcePos(), request.sourceOutput(), trace);
             }
@@ -617,6 +627,10 @@ public final class OpticalTraceCache {
             processedNetworkIds.addAll(processPendingSystemRebuilds(level, cache, deadlineNanos));
         }
 
+        if (!deferredDirectWork && (processed == 0 || cache.pendingRequests.isEmpty())) {
+            projectionRefreshedNetworkIds.addAll(processPendingProjectionRefreshes(level, cache, deadlineNanos));
+        }
+
         for (int processedNetworkId : processedNetworkIds) {
             CachedOpticalTrace cachedTrace = cache.cachedTracesByNetwork.get(processedNetworkId);
 
@@ -625,7 +639,7 @@ public final class OpticalTraceCache {
             }
         }
 
-        if (processed > 0 || !processedNetworkIds.isEmpty()) {
+        if (processed > 0 || !processedNetworkIds.isEmpty() || !projectionRefreshedNetworkIds.isEmpty()) {
             OpticalWorldIndex.markDerivedCommitted(level);
         }
 
@@ -686,6 +700,63 @@ public final class OpticalTraceCache {
                 rebuiltSystem == null ? null : rebuiltSystem.coherentGraph()
         );
         return rebuiltNetworkIds;
+    }
+
+    private static IntSet processPendingProjectionRefreshes(
+            ServerLevel level,
+            LevelTraceCache cache,
+            long deadlineNanos
+    ) {
+        IntSet refreshedNetworkIds = new IntOpenHashSet();
+        int maxRefreshes = SpectralizationConfig.opticalSolverMaxRequestsPerTick();
+
+        while (cache.hasPendingProjectionRefreshes() && refreshedNetworkIds.size() < maxRefreshes) {
+            if (!refreshedNetworkIds.isEmpty() && System.nanoTime() >= deadlineNanos) {
+                break;
+            }
+
+            Integer networkId = cache.pollPendingProjectionRefreshNetworkId();
+            if (networkId == null) {
+                break;
+            }
+
+            if (cache.dependencyIndex.isDirty(networkId) || cache.queuedNetworkIds.contains(networkId)) {
+                continue;
+            }
+
+            CachedOpticalTrace cachedTrace = cache.cachedTracesByNetwork.get(networkId);
+            if (cachedTrace == null) {
+                cache.projectionDependencyIndex.removeNetwork(networkId);
+                continue;
+            }
+
+            CachedOpticalTrace refreshedTrace = refreshSpotProjection(level, cachedTrace);
+            cache.cachedTracesByNetwork.put(networkId, refreshedTrace);
+            cache.projectionDependencyIndex.replaceDependencies(networkId, refreshedTrace.projectionDependencies());
+            cache.projectionDependencyIndex.clearDirty(networkId);
+            publishCompiledSpotLayer(
+                    level,
+                    networkId,
+                    refreshedTrace,
+                    refreshedTrace.scalarPowerSolution().reliableForReadout()
+            );
+            refreshedNetworkIds.add(networkId);
+        }
+
+        return refreshedNetworkIds;
+    }
+
+    private static CachedOpticalTrace refreshSpotProjection(ServerLevel level, CachedOpticalTrace cachedTrace) {
+        CompiledSpotLayer.SpotLayer spotLayer = cachedTrace.scalarPowerSolution().reliableForReadout()
+                ? CompiledSpotLayer.sample(
+                        level,
+                        cachedTrace.portGraph(),
+                        cachedTrace.scalarPowerSolution(),
+                        cachedTrace.sourceOutput()
+                )
+                : CompiledSpotLayer.EMPTY;
+
+        return cachedTrace.withSpotLayer(spotLayer.spots(), spotLayer.projectionDependencies(), spotLayer.allocations());
     }
 
     private static IntSet processFastSystemRefreshes(
@@ -789,7 +860,7 @@ public final class OpticalTraceCache {
         return true;
     }
 
-    private static CompiledOpticalTrace traceLegacyIfNeeded(
+    private static CompiledOpticalTrace traceLegacyOracleIfNeeded(
             ServerLevel level,
             TraceRequest request,
             CompiledPortGraph directGraph,
@@ -799,15 +870,6 @@ public final class OpticalTraceCache {
 
         if (maxStates <= 0) {
             return null;
-        }
-
-        if (shouldRunLegacyEffects(directGraph)) {
-            return OpticalPathTracer.traceEffects(
-                    level,
-                    request.sourcePos(),
-                    request.sourceOutput(),
-                    maxStates
-            );
         }
 
         if (shouldLogCompilerDebug
@@ -822,20 +884,6 @@ public final class OpticalTraceCache {
         }
 
         return null;
-    }
-
-    private static boolean shouldRunLegacyEffects(CompiledPortGraph directGraph) {
-        if (!SpectralizationConfig.lightPathsVisible()
-                && !SpectralizationConfig.laserDamage()
-                && !SpectralizationConfig.laserBlindness()) {
-            return false;
-        }
-
-        int maxGraphNodes = SpectralizationConfig.opticalCompilerLegacyEffectMaxGraphNodes();
-
-        return directGraph.feedbackSccCount() == 0
-                && maxGraphNodes > 0
-                && directGraph.nodes().size() <= maxGraphNodes;
     }
 
     private static boolean applyInterruptedAuthoritativeOutputs(
@@ -1125,7 +1173,8 @@ public final class OpticalTraceCache {
         OpticalSpotTracker.publishCompiledSpots(
                 serverLevel,
                 networkId,
-                reliable ? cachedTrace.spotRecords() : List.of()
+                reliable ? cachedTrace.spotRecords() : List.of(),
+                reliable ? cachedTrace.spotAllocations() : List.of()
         );
     }
 
@@ -1485,9 +1534,9 @@ public final class OpticalTraceCache {
         }
 
         addGraphDependencies(portGraph, dependencies);
-        List<SpotRecord> spotRecords = scalarPowerSolution.reliableForReadout()
+        CompiledSpotLayer.SpotLayer spotLayer = scalarPowerSolution.reliableForReadout()
                 ? CompiledSpotLayer.sample(level, portGraph, scalarPowerSolution, request.sourceOutput())
-                : List.of();
+                : CompiledSpotLayer.EMPTY;
 
         return new CachedOpticalTrace(
                 request.networkId(),
@@ -1503,7 +1552,9 @@ public final class OpticalTraceCache {
                         coherentHudIntent || BeamPathOverlayTracker.hasCoherentSignal(scalarPowerSolution),
                         scalarPowerSolution
                 ),
-                spotRecords,
+                spotLayer.spots(),
+                spotLayer.projectionDependencies(),
+                spotLayer.allocations(),
                 trace == null ? !scalarPowerSolution.reliableForReadout() : isUnstable(trace)
         );
     }
@@ -2525,6 +2576,138 @@ public final class OpticalTraceCache {
         return networkIds;
     }
 
+    private static void enqueueIntrinsicSourceOutputs(
+            ServerLevel level,
+            LevelTraceCache cache,
+            BlockPos pos,
+            BlockState state,
+            List<OutputBeam> outputBeams,
+            long gameTime,
+            boolean priority
+    ) {
+        if (state.is(SpectralBlockTags.LASER_GAIN_MEDIUM)) {
+            enqueueGainMediumSourceOutputs(level, cache, pos, outputBeams, gameTime, priority);
+            return;
+        }
+
+        for (OutputBeam outputBeam : outputBeams) {
+            enqueueIntrinsicSourceOutput(cache, pos, outputBeam, gameTime, priority);
+        }
+    }
+
+    private static void enqueueGainMediumSourceOutputs(
+            ServerLevel level,
+            LevelTraceCache cache,
+            BlockPos pos,
+            List<OutputBeam> outputBeams,
+            long gameTime,
+            boolean priority
+    ) {
+        EnumMap<Direction.Axis, List<OutputBeam>> outputsByAxis = new EnumMap<>(Direction.Axis.class);
+
+        for (OutputBeam outputBeam : outputBeams) {
+            if (outputBeam.beam().isEmpty()) {
+                continue;
+            }
+
+            outputsByAxis
+                    .computeIfAbsent(outputBeam.outgoingDirection().getAxis(), ignored -> new ArrayList<>(2))
+                    .add(outputBeam);
+        }
+
+        if (outputsByAxis.isEmpty()) {
+            return;
+        }
+
+        EnumMap<Direction.Axis, Boolean> axisHasReadoutDemand = new EnumMap<>(Direction.Axis.class);
+
+        for (Direction.Axis axis : GAIN_SOURCE_AXIS_ORDER) {
+            if (outputsByAxis.containsKey(axis)) {
+                axisHasReadoutDemand.put(axis, hasGainMediumAxisReadoutDemand(level, pos, axis));
+            }
+        }
+
+        for (Direction.Axis axis : GAIN_SOURCE_AXIS_ORDER) {
+            List<OutputBeam> axisOutputs = outputsByAxis.get(axis);
+
+            if (axisOutputs == null) {
+                continue;
+            }
+
+            boolean axisPriority = priority && Boolean.TRUE.equals(axisHasReadoutDemand.get(axis));
+
+            for (OutputBeam outputBeam : axisOutputs) {
+                enqueueIntrinsicSourceOutput(cache, pos, outputBeam, gameTime, axisPriority);
+            }
+        }
+    }
+
+    private static void enqueueIntrinsicSourceOutput(
+            LevelTraceCache cache,
+            BlockPos pos,
+            OutputBeam outputBeam,
+            long gameTime,
+            boolean priority
+    ) {
+        if (outputBeam.beam().isEmpty()) {
+            return;
+        }
+
+        SourceTraceKey key = new SourceTraceKey(pos, outputBeam.outgoingDirection());
+        int networkId = cache.networkIdFor(key);
+        TraceRequest request = new TraceRequest(networkId, pos, outputBeam);
+
+        if (priority) {
+            cache.enqueuePriority(request, gameTime);
+        } else {
+            cache.enqueue(request, gameTime);
+        }
+    }
+
+    private static boolean hasGainMediumAxisReadoutDemand(ServerLevel level, BlockPos pos, Direction.Axis axis) {
+        for (Direction direction : Direction.values()) {
+            if (direction.getAxis() == axis && hasGainMediumReadoutDemandToward(level, pos, direction)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static boolean hasGainMediumReadoutDemandToward(ServerLevel level, BlockPos pos, Direction direction) {
+        BlockPos.MutableBlockPos cursor = pos.mutable();
+
+        for (int distance = 1; distance <= GAIN_SOURCE_PRIORITY_SCAN_BLOCKS; distance++) {
+            cursor.move(direction);
+
+            if (!level.isLoaded(cursor)) {
+                return false;
+            }
+
+            BlockState state = level.getBlockState(cursor);
+
+            if (isOpticalReadoutDemandBlock(state)) {
+                return true;
+            }
+
+            if (state.isAir()
+                    || state.getBlock() instanceof OpticalElement
+                    || state.is(SpectralBlockTags.LASER_GAIN_MEDIUM)
+                    || !state.canOcclude()) {
+                continue;
+            }
+
+            return false;
+        }
+
+        return false;
+    }
+
+    private static boolean isOpticalReadoutDemandBlock(BlockState state) {
+        return state.getBlock() instanceof OpticalReceiver
+                || state.getBlock() instanceof PassThroughSensorBlock;
+    }
+
     private static int directGeometryCacheLimitFor(int signaturePositions) {
         int extraEntries = Math.max(0, signaturePositions + GEOMETRY_POSITIONS_PER_EXTRA_CACHE_ENTRY - 1)
                 / GEOMETRY_POSITIONS_PER_EXTRA_CACHE_ENTRY;
@@ -2606,15 +2789,15 @@ public final class OpticalTraceCache {
 
             cache.awakenedDormantSourcePositions.add(encodedPos);
 
-            for (OutputBeam outputBeam : IntrinsicOpticalSources.outputBeams(state, level, pos)) {
-                if (outputBeam.beam().isEmpty()) {
-                    continue;
-                }
-
-                SourceTraceKey key = new SourceTraceKey(pos, outputBeam.outgoingDirection());
-                int networkId = cache.networkIdFor(key);
-                cache.enqueuePriority(new TraceRequest(networkId, pos, outputBeam), gameTime);
-            }
+            enqueueIntrinsicSourceOutputs(
+                    level,
+                    cache,
+                    pos,
+                    state,
+                    IntrinsicOpticalSources.outputBeams(state, level, pos),
+                    gameTime,
+                    true
+            );
         }
 
         cache.dormantSourceWakeCursor = cursor;
@@ -2925,6 +3108,7 @@ public final class OpticalTraceCache {
 
     private static final class LevelTraceCache {
         private final OpticalDependencyIndex dependencyIndex = new OpticalDependencyIndex();
+        private final OpticalDependencyIndex projectionDependencyIndex = new OpticalDependencyIndex();
         private final Map<SourceTraceKey, Integer> networkIdsBySource = new HashMap<>();
         private final Map<Integer, CachedOpticalTrace> cachedTracesByNetwork = new HashMap<>();
         private final Map<Integer, CachedOpticalSystem> cachedSystemsBySystem = new HashMap<>();
@@ -2965,6 +3149,8 @@ public final class OpticalTraceCache {
         private final IntSet queuedNetworkIds = new IntOpenHashSet();
         private final ArrayDeque<Integer> pendingSystemRebuilds = new ArrayDeque<>();
         private final IntSet queuedSystemRebuildNetworkIds = new IntOpenHashSet();
+        private final ArrayDeque<Integer> pendingProjectionRefreshes = new ArrayDeque<>();
+        private final IntSet queuedProjectionRefreshNetworkIds = new IntOpenHashSet();
         private final IntSet appliedSystemIdsThisTick = new IntOpenHashSet();
         private final Set<ReadoutSignature> appliedHeldReadoutsThisTick = new HashSet<>();
         private int nextNetworkId = 1;
@@ -3014,6 +3200,12 @@ public final class OpticalTraceCache {
         void enqueueSystemRebuild(int networkId) {
             if (queuedSystemRebuildNetworkIds.add(networkId)) {
                 pendingSystemRebuilds.addLast(networkId);
+            }
+        }
+
+        void enqueueProjectionRefresh(int networkId) {
+            if (queuedProjectionRefreshNetworkIds.add(networkId)) {
+                pendingProjectionRefreshes.addLast(networkId);
             }
         }
 
@@ -3068,6 +3260,9 @@ public final class OpticalTraceCache {
             cachedTracesByNetwork.remove(networkId);
             geometrySignaturePositionsByNetwork.remove(networkId);
             dependencyIndex.removeNetwork(networkId);
+            projectionDependencyIndex.removeNetwork(networkId);
+            queuedProjectionRefreshNetworkIds.remove(networkId);
+            pendingProjectionRefreshes.removeIf(queuedNetworkId -> queuedNetworkId == networkId);
             retiredHudOwnerIds.add(networkId);
             lastHudOverlaySentByNetwork.remove(networkId);
             lastHudOverlayDebugTickByNetwork.remove(networkId);
@@ -3135,6 +3330,20 @@ public final class OpticalTraceCache {
 
             int networkId = pendingSystemRebuilds.removeFirst();
             queuedSystemRebuildNetworkIds.remove(networkId);
+            return networkId;
+        }
+
+        boolean hasPendingProjectionRefreshes() {
+            return !pendingProjectionRefreshes.isEmpty();
+        }
+
+        Integer pollPendingProjectionRefreshNetworkId() {
+            if (pendingProjectionRefreshes.isEmpty()) {
+                return null;
+            }
+
+            int networkId = pendingProjectionRefreshes.removeFirst();
+            queuedProjectionRefreshNetworkIds.remove(networkId);
             return networkId;
         }
 
@@ -3394,6 +3603,7 @@ public final class OpticalTraceCache {
                 pumpRatesByPos.remove(pos.asLong());
             }
 
+            markProjectionChanged(level, pos);
             IntSet affectedNetworkIds = dependencyIndex.markChangedAndGet(pos);
 
             if (affectedNetworkIds.isEmpty()) {
@@ -3416,6 +3626,26 @@ public final class OpticalTraceCache {
                 markSystemDirty(networkId, dirtyKind);
                 retireHudOwner(networkId);
                 enqueueKnownSourceRefresh(level, networkId, gameTime, dirtyKind != OpticalDirtyKind.SOURCE);
+            }
+
+            return true;
+        }
+
+        private boolean markProjectionChanged(ServerLevel level, BlockPos pos) {
+            IntSet affectedNetworkIds = projectionDependencyIndex.markChangedAndGet(pos);
+
+            if (affectedNetworkIds.isEmpty()) {
+                return false;
+            }
+
+            for (int networkId : affectedNetworkIds) {
+                if (!cachedTracesByNetwork.containsKey(networkId)
+                        || dependencyIndex.isDirty(networkId)
+                        || queuedNetworkIds.contains(networkId)) {
+                    continue;
+                }
+
+                enqueueProjectionRefresh(networkId);
             }
 
             return true;

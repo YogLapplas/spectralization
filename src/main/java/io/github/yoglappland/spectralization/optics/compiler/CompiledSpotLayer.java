@@ -2,12 +2,15 @@ package io.github.yoglappland.spectralization.optics.compiler;
 
 import io.github.yoglappland.spectralization.optics.BeamEnvelope;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
-import io.github.yoglappland.spectralization.optics.PlaneWaveComponent;
-import io.github.yoglappland.spectralization.optics.OpticalMaterialProfiles;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
+import io.github.yoglappland.spectralization.optics.PlaneWaveComponent;
 import io.github.yoglappland.spectralization.optics.SpotRecord;
-import io.github.yoglappland.spectralization.optics.OpticalSpotTracker;
 import io.github.yoglappland.spectralization.optics.geometry.BeamGeometryOps;
+import io.github.yoglappland.spectralization.optics.projection.SpotProjectionAllocation;
+import io.github.yoglappland.spectralization.optics.projection.SpotProjectionResult;
+import io.github.yoglappland.spectralization.optics.projection.VoxelSpotProjector;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import it.unimi.dsi.fastutil.longs.LongSet;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -15,36 +18,37 @@ import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.level.block.state.BlockState;
 
 public final class CompiledSpotLayer {
     private static final double MIN_SPOT_POWER = 1.0E-4;
-    private static final int MAX_SPOTS_PER_SAMPLE = 768;
+    private static final int MAX_SPOTS_PER_SAMPLE = 1024;
+    public static final SpotLayer EMPTY = new SpotLayer(List.of(), new LongOpenHashSet(), List.of());
 
-    public static List<SpotRecord> sample(
+    public static SpotLayer sample(
             ServerLevel level,
             CompiledPortGraph graph,
             ScalarPowerSolution solution,
             OutputBeam sourceOutput
     ) {
         if (!solution.reliableForReadout() || graph.nodes().isEmpty()) {
-            return List.of();
+            return EMPTY;
         }
 
-        Map<PortGraphNode, List<PortGraphEdge>> localEdgesByInput = localEdgesByInput(graph);
         Map<PortGraphNode, Integer> distanceByNode = propagationDistanceByNode(graph);
-        List<SpotRecord> spots = new ArrayList<>();
+        List<SpotRecord> primarySpots = new ArrayList<>();
+        List<SpotRecord> sideSpots = new ArrayList<>();
+        List<SpotProjectionAllocation> allocations = new ArrayList<>();
+        LongSet projectionDependencies = new LongOpenHashSet();
 
         for (PortGraphNode node : graph.nodes()) {
-            if (node.waveKind() != PortWaveKind.INCOMING) {
+            if (node.waveKind() != PortWaveKind.OUTGOING) {
                 continue;
             }
 
-            double incomingPower = solution.powerAt(node);
+            double outgoingPower = solution.powerAt(node);
 
-            if (incomingPower <= MIN_SPOT_POWER) {
+            if (outgoingPower <= MIN_SPOT_POWER) {
                 continue;
             }
 
@@ -52,71 +56,23 @@ public final class CompiledSpotLayer {
                 continue;
             }
 
-            BlockState state = level.getBlockState(node.pos());
-
-            if (OpticalMaterialProfiles.isAirLike(state) || !state.isCollisionShapeFullBlock(level, node.pos())) {
-                continue;
-            }
-
-            double coherentIncomingPower = Math.min(incomingPower, solution.coherentPowerAt(node));
-            BeamPacket profileTemplate = templateAt(sourceOutput, distanceByNode.getOrDefault(node, 0), solution, node);
-            List<PortGraphEdge> localEdges = localEdgesByInput.getOrDefault(node, List.of());
-            SpotRecord incidentSpot = OpticalSpotTracker.createCompiledSurfaceSpot(
+            double coherentOutgoingPower = Math.min(outgoingPower, solution.coherentPowerAt(node));
+            BeamPacket profileTemplate = templateAt(sourceOutput, distanceByNode.getOrDefault(node, 0), solution, node)
+                    .withDirection(node.side());
+            if (addVisibleSpots(primarySpots, sideSpots, allocations, VoxelSpotProjector.projectLightConeSpots(
                     level,
                     node.pos(),
                     node.side(),
-                    state,
+                    node.side(),
                     profileTemplate,
-                    incomingPower,
-                    coherentIncomingPower
-            );
-
-            if (addVisibleSpot(spots, incidentSpot)) {
-                return List.copyOf(spots);
-            }
-
-            for (PortGraphEdge edge : localEdges) {
-                if (edge.to().side() == node.side()) {
-                    continue;
-                }
-
-                double transmittedPower = incomingPower * edge.sampleGain();
-
-                if (transmittedPower <= MIN_SPOT_POWER) {
-                    continue;
-                }
-
-                SpotRecord exitSpot = OpticalSpotTracker.createCompiledSurfaceSpot(
-                        level,
-                        node.pos(),
-                        edge.to().side(),
-                        state,
-                        profileTemplate,
-                        transmittedPower,
-                        scaledCoherentPower(transmittedPower, incomingPower, coherentIncomingPower)
-                );
-
-                if (addVisibleSpot(spots, exitSpot)) {
-                    return List.copyOf(spots);
-                }
+                    outgoingPower,
+                    coherentOutgoingPower
+            ), projectionDependencies)) {
+                break;
             }
         }
 
-        return List.copyOf(spots);
-    }
-
-    private static Map<PortGraphNode, List<PortGraphEdge>> localEdgesByInput(CompiledPortGraph graph) {
-        Map<PortGraphNode, List<PortGraphEdge>> localEdgesByInput = new HashMap<>();
-
-        for (PortGraphEdge edge : graph.edges()) {
-            if (edge.kind() != PortGraphEdgeKind.LOCAL_SCATTERING) {
-                continue;
-            }
-
-            localEdgesByInput.computeIfAbsent(edge.from(), ignored -> new ArrayList<>()).add(edge);
-        }
-
-        return localEdgesByInput;
+        return new SpotLayer(cappedSpots(primarySpots, sideSpots), projectionDependencies, allocations);
     }
 
     private static Map<PortGraphNode, Integer> propagationDistanceByNode(CompiledPortGraph graph) {
@@ -152,13 +108,74 @@ public final class CompiledSpotLayer {
         return distanceByNode;
     }
 
-    private static boolean addVisibleSpot(List<SpotRecord> spots, SpotRecord spot) {
+    private static boolean addVisibleSpot(List<SpotRecord> primarySpots, List<SpotRecord> sideSpots, SpotRecord spot) {
         if (!spot.visible()) {
             return false;
         }
 
-        spots.add(spot);
-        return spots.size() >= MAX_SPOTS_PER_SAMPLE;
+        if (spot.projectionMode() == SpotRecord.ProjectionMode.FOOTPRINT_QUAD
+                || spot.projectionMode() == SpotRecord.ProjectionMode.DEBUG_FACE_CENTER) {
+            if (sideSpots.size() < MAX_SPOTS_PER_SAMPLE) {
+                sideSpots.add(spot);
+            }
+            return false;
+        }
+
+        primarySpots.add(spot);
+        return primarySpots.size() >= MAX_SPOTS_PER_SAMPLE;
+    }
+
+    private static boolean addVisibleSpots(
+            List<SpotRecord> primarySpots,
+            List<SpotRecord> sideSpots,
+            List<SpotProjectionAllocation> allocations,
+            SpotProjectionResult projectionResult,
+            LongSet projectionDependencies
+    ) {
+        projectionDependencies.addAll(projectionResult.dependencies());
+        allocations.addAll(projectionResult.allocations());
+
+        for (SpotRecord spot : projectionResult.spots()) {
+            if (addVisibleSpot(primarySpots, sideSpots, spot)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static List<SpotRecord> cappedSpots(List<SpotRecord> primarySpots, List<SpotRecord> sideSpots) {
+        List<SpotRecord> spots = new ArrayList<>(Math.min(MAX_SPOTS_PER_SAMPLE, primarySpots.size() + sideSpots.size()));
+
+        for (SpotRecord spot : primarySpots) {
+            if (spots.size() >= MAX_SPOTS_PER_SAMPLE) {
+                return spots;
+            }
+
+            spots.add(spot);
+        }
+
+        for (SpotRecord spot : sideSpots) {
+            if (spots.size() >= MAX_SPOTS_PER_SAMPLE) {
+                return spots;
+            }
+
+            spots.add(spot);
+        }
+
+        return spots;
+    }
+
+    public record SpotLayer(
+            List<SpotRecord> spots,
+            LongSet projectionDependencies,
+            List<SpotProjectionAllocation> allocations
+    ) {
+        public SpotLayer {
+            spots = List.copyOf(spots);
+            projectionDependencies = new LongOpenHashSet(projectionDependencies);
+            allocations = List.copyOf(allocations);
+        }
     }
 
     private static BeamPacket templateAt(
@@ -213,14 +230,6 @@ public final class CompiledSpotLayer {
         }
 
         return strongestEnvelope;
-    }
-
-    private static double scaledCoherentPower(double targetPower, double sourceTotalPower, double sourceCoherentPower) {
-        if (targetPower <= 0.0 || sourceTotalPower <= 0.0 || sourceCoherentPower <= 0.0) {
-            return 0.0;
-        }
-
-        return targetPower * Math.min(1.0, sourceCoherentPower / sourceTotalPower);
     }
 
     private record NodeDistance(PortGraphNode node, int distance) {

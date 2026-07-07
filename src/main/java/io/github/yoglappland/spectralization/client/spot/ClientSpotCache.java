@@ -1,6 +1,8 @@
 package io.github.yoglappland.spectralization.client.spot;
 
 import io.github.yoglappland.spectralization.optics.SpotRecord;
+import io.github.yoglappland.spectralization.optics.SpotRecord.ProjectionMode;
+import io.github.yoglappland.spectralization.optics.projection.SpotSurfaceFrame;
 import io.github.yoglappland.spectralization.network.SpotOverlayPayload;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -23,7 +25,70 @@ public final class ClientSpotCache {
             .comparingInt((SpotKey key) -> key.pos().getX())
             .thenComparingInt(key -> key.pos().getY())
             .thenComparingInt(key -> key.pos().getZ())
-            .thenComparingInt(key -> key.face().ordinal());
+            .thenComparingInt(key -> key.projectionMode().ordinal())
+            .thenComparingInt(key -> key.face().ordinal())
+            .thenComparingInt(SpotKey::clipMinU)
+            .thenComparingInt(SpotKey::clipMinV)
+            .thenComparingInt(SpotKey::clipMaxU)
+            .thenComparingInt(SpotKey::clipMaxV)
+            .thenComparingInt(SpotKey::textureMinU)
+            .thenComparingInt(SpotKey::textureMinV)
+            .thenComparingInt(SpotKey::textureMaxU)
+            .thenComparingInt(SpotKey::textureMaxV)
+            .thenComparingInt(SpotKey::quadX0)
+            .thenComparingInt(SpotKey::quadY0)
+            .thenComparingInt(SpotKey::quadZ0)
+            .thenComparingInt(SpotKey::quadTextureU0)
+            .thenComparingInt(SpotKey::quadTextureV0)
+            .thenComparingInt(SpotKey::quadX1)
+            .thenComparingInt(SpotKey::quadY1)
+            .thenComparingInt(SpotKey::quadZ1)
+            .thenComparingInt(SpotKey::quadTextureU1)
+            .thenComparingInt(SpotKey::quadTextureV1)
+            .thenComparingInt(SpotKey::quadX2)
+            .thenComparingInt(SpotKey::quadY2)
+            .thenComparingInt(SpotKey::quadZ2)
+            .thenComparingInt(SpotKey::quadTextureU2)
+            .thenComparingInt(SpotKey::quadTextureV2)
+            .thenComparingInt(SpotKey::quadX3)
+            .thenComparingInt(SpotKey::quadY3)
+            .thenComparingInt(SpotKey::quadZ3)
+            .thenComparingInt(SpotKey::quadTextureU3)
+            .thenComparingInt(SpotKey::quadTextureV3);
+    private static final Comparator<RenderedSpot> RENDERED_SPOT_ORDER = Comparator
+            .comparingInt((RenderedSpot spot) -> projectionRenderPriority(spot.projectionMode()))
+            .thenComparingInt(spot -> spot.pos().getX())
+            .thenComparingInt(spot -> spot.pos().getY())
+            .thenComparingInt(spot -> spot.pos().getZ())
+            .thenComparingInt(spot -> spot.face().ordinal())
+            .thenComparingInt(RenderedSpot::clipMinU)
+            .thenComparingInt(RenderedSpot::clipMinV)
+            .thenComparingInt(RenderedSpot::clipMaxU)
+            .thenComparingInt(RenderedSpot::clipMaxV)
+            .thenComparingInt(RenderedSpot::textureMinU)
+            .thenComparingInt(RenderedSpot::textureMinV)
+            .thenComparingInt(RenderedSpot::textureMaxU)
+            .thenComparingInt(RenderedSpot::textureMaxV)
+            .thenComparingInt(RenderedSpot::quadX0)
+            .thenComparingInt(RenderedSpot::quadY0)
+            .thenComparingInt(RenderedSpot::quadZ0)
+            .thenComparingInt(RenderedSpot::quadTextureU0)
+            .thenComparingInt(RenderedSpot::quadTextureV0)
+            .thenComparingInt(RenderedSpot::quadX1)
+            .thenComparingInt(RenderedSpot::quadY1)
+            .thenComparingInt(RenderedSpot::quadZ1)
+            .thenComparingInt(RenderedSpot::quadTextureU1)
+            .thenComparingInt(RenderedSpot::quadTextureV1)
+            .thenComparingInt(RenderedSpot::quadX2)
+            .thenComparingInt(RenderedSpot::quadY2)
+            .thenComparingInt(RenderedSpot::quadZ2)
+            .thenComparingInt(RenderedSpot::quadTextureU2)
+            .thenComparingInt(RenderedSpot::quadTextureV2)
+            .thenComparingInt(RenderedSpot::quadX3)
+            .thenComparingInt(RenderedSpot::quadY3)
+            .thenComparingInt(RenderedSpot::quadZ3)
+            .thenComparingInt(RenderedSpot::quadTextureU3)
+            .thenComparingInt(RenderedSpot::quadTextureV3);
     private static List<RenderedSpot> activeSpots = List.of();
     private static Object lastLevel;
 
@@ -34,7 +99,7 @@ public final class ClientSpotCache {
         }
 
         clearIfLevelChanged(Minecraft.getInstance().level);
-        SpotKey key = new SpotKey(spot.pos(), spot.face());
+        SpotKey key = spotKey(spot);
         Map<SpotKey, RenderedSpot> legacySpots = SPOTS_BY_OWNER.computeIfAbsent(LEGACY_OWNER_ID, ignored -> new HashMap<>());
 
         if (!spot.visible()) {
@@ -67,7 +132,7 @@ public final class ClientSpotCache {
         Map<SpotKey, RenderedSpot> ownerSpots = new HashMap<>();
         for (SpotRecord spot : payload.spots()) {
             if (spot.visible()) {
-                ownerSpots.put(new SpotKey(spot.pos(), spot.face()), renderedSpot(spot));
+                ownerSpots.put(spotKey(spot), renderedSpot(spot));
             }
         }
 
@@ -115,7 +180,9 @@ public final class ClientSpotCache {
             }
         }
 
-        activeSpots = List.copyOf(new ArrayList<>(mergedSpots.values()));
+        List<RenderedSpot> sortedSpots = new ArrayList<>(mergedSpots.values());
+        sortedSpots.sort(RENDERED_SPOT_ORDER);
+        activeSpots = List.copyOf(sortedSpots);
     }
 
     public static void clear() {
@@ -136,9 +203,25 @@ public final class ClientSpotCache {
     private static RenderedSpot renderedSpot(SpotRecord spot) {
         BlockPos pos = spot.pos();
         Direction face = spot.face();
-        double centerX = pos.getX() + 0.5D + face.getStepX() * (0.5D + SURFACE_OFFSET);
-        double centerY = pos.getY() + 0.5D + face.getStepY() * (0.5D + SURFACE_OFFSET);
-        double centerZ = pos.getZ() + 0.5D + face.getStepZ() * (0.5D + SURFACE_OFFSET);
+        double localCenterU = (normalizedByte(spot.clipMinU()) + normalizedByte(spot.clipMaxU())) * 0.5D;
+        double localCenterV = (normalizedByte(spot.clipMinV()) + normalizedByte(spot.clipMaxV())) * 0.5D;
+        boolean sliced = spot.projectionMode() == ProjectionMode.FOOTPRINT_SLICE;
+        boolean quad = spot.projectionMode() == ProjectionMode.FOOTPRINT_QUAD;
+        double centerX = quad
+                ? quadCenterX(pos, face, spot)
+                : sliced
+                ? faceCenterX(pos, face, localCenterU, localCenterV)
+                : pos.getX() + 0.5D + face.getStepX() * (0.5D + SURFACE_OFFSET);
+        double centerY = quad
+                ? quadCenterY(pos, face, spot)
+                : sliced
+                ? faceCenterY(pos, face, localCenterU, localCenterV)
+                : pos.getY() + 0.5D + face.getStepY() * (0.5D + SURFACE_OFFSET);
+        double centerZ = quad
+                ? quadCenterZ(pos, face, spot)
+                : sliced
+                ? faceCenterZ(pos, face, localCenterU, localCenterV)
+                : pos.getZ() + 0.5D + face.getStepZ() * (0.5D + SURFACE_OFFSET);
         int ringRed = spot.coherentAlphaLevel() > 0 ? spot.coherentRed() : spot.strayRed();
         int ringGreen = spot.coherentAlphaLevel() > 0 ? spot.coherentGreen() : spot.strayGreen();
         int ringBlue = spot.coherentAlphaLevel() > 0 ? spot.coherentBlue() : spot.strayBlue();
@@ -167,12 +250,49 @@ public final class ClientSpotCache {
                 alphaFor(spot.ringAlphaLevel(), 0.72D),
                 ringRed,
                 ringGreen,
-                ringBlue
+                ringBlue,
+                spot.projectionMode(),
+                spot.clipMinU(),
+                spot.clipMinV(),
+                spot.clipMaxU(),
+                spot.clipMaxV(),
+                spot.textureMinU(),
+                spot.textureMinV(),
+                spot.textureMaxU(),
+                spot.textureMaxV(),
+                spot.quadX0(),
+                spot.quadY0(),
+                spot.quadZ0(),
+                spot.quadTextureU0(),
+                spot.quadTextureV0(),
+                spot.quadX1(),
+                spot.quadY1(),
+                spot.quadZ1(),
+                spot.quadTextureU1(),
+                spot.quadTextureV1(),
+                spot.quadX2(),
+                spot.quadY2(),
+                spot.quadZ2(),
+                spot.quadTextureU2(),
+                spot.quadTextureV2(),
+                spot.quadX3(),
+                spot.quadY3(),
+                spot.quadZ3(),
+                spot.quadTextureU3(),
+                spot.quadTextureV3()
         );
     }
 
     private static double renderRadius(int radiusLevel, double multiplier) {
         return (0.075D + Math.max(1, radiusLevel) * 0.048D) * multiplier;
+    }
+
+    private static int projectionRenderPriority(ProjectionMode projectionMode) {
+        return switch (projectionMode) {
+            case CENTERED_QUAD, FOOTPRINT_SLICE -> 0;
+            case FOOTPRINT_QUAD -> 1;
+            case DEBUG_FACE_CENTER -> 2;
+        };
     }
 
     private static int alphaFor(int alphaLevel, double multiplier) {
@@ -207,11 +327,152 @@ public final class ClientSpotCache {
                 Math.max(first.ringAlpha(), second.ringAlpha()),
                 ringColor.ringRed(),
                 ringColor.ringGreen(),
-                ringColor.ringBlue()
+                ringColor.ringBlue(),
+                first.projectionMode(),
+                first.clipMinU(),
+                first.clipMinV(),
+                first.clipMaxU(),
+                first.clipMaxV(),
+                first.textureMinU(),
+                first.textureMinV(),
+                first.textureMaxU(),
+                first.textureMaxV(),
+                first.quadX0(),
+                first.quadY0(),
+                first.quadZ0(),
+                first.quadTextureU0(),
+                first.quadTextureV0(),
+                first.quadX1(),
+                first.quadY1(),
+                first.quadZ1(),
+                first.quadTextureU1(),
+                first.quadTextureV1(),
+                first.quadX2(),
+                first.quadY2(),
+                first.quadZ2(),
+                first.quadTextureU2(),
+                first.quadTextureV2(),
+                first.quadX3(),
+                first.quadY3(),
+                first.quadZ3(),
+                first.quadTextureU3(),
+                first.quadTextureV3()
         );
     }
 
-    private record SpotKey(BlockPos pos, Direction face) {
+    private static SpotKey spotKey(SpotRecord spot) {
+        return new SpotKey(
+                spot.pos(),
+                spot.face(),
+                spot.projectionMode(),
+                spot.clipMinU(),
+                spot.clipMinV(),
+                spot.clipMaxU(),
+                spot.clipMaxV(),
+                spot.textureMinU(),
+                spot.textureMinV(),
+                spot.textureMaxU(),
+                spot.textureMaxV(),
+                spot.quadX0(),
+                spot.quadY0(),
+                spot.quadZ0(),
+                spot.quadTextureU0(),
+                spot.quadTextureV0(),
+                spot.quadX1(),
+                spot.quadY1(),
+                spot.quadZ1(),
+                spot.quadTextureU1(),
+                spot.quadTextureV1(),
+                spot.quadX2(),
+                spot.quadY2(),
+                spot.quadZ2(),
+                spot.quadTextureU2(),
+                spot.quadTextureV2(),
+                spot.quadX3(),
+                spot.quadY3(),
+                spot.quadZ3(),
+                spot.quadTextureU3(),
+                spot.quadTextureV3()
+        );
+    }
+
+    private static double normalizedByte(int value) {
+        return value / 255.0D;
+    }
+
+    private static double normalizedQuadUnit(int value) {
+        return value / (double) SpotRecord.QUAD_QUANTIZATION_LEVEL;
+    }
+
+    private static double faceCenterX(BlockPos pos, Direction face, double localU, double localV) {
+        SpotSurfaceFrame.LocalCoordinates local = SpotSurfaceFrame.surfaceLocal(face, localU, localV, SURFACE_OFFSET);
+        return pos.getX() + local.x();
+    }
+
+    private static double faceCenterY(BlockPos pos, Direction face, double localU, double localV) {
+        SpotSurfaceFrame.LocalCoordinates local = SpotSurfaceFrame.surfaceLocal(face, localU, localV, SURFACE_OFFSET);
+        return pos.getY() + local.y();
+    }
+
+    private static double faceCenterZ(BlockPos pos, Direction face, double localU, double localV) {
+        SpotSurfaceFrame.LocalCoordinates local = SpotSurfaceFrame.surfaceLocal(face, localU, localV, SURFACE_OFFSET);
+        return pos.getZ() + local.z();
+    }
+
+    private static double quadCenterX(BlockPos pos, Direction face, SpotRecord spot) {
+        return pos.getX()
+                + (normalizedQuadUnit(spot.quadX0()) + normalizedQuadUnit(spot.quadX1())
+                + normalizedQuadUnit(spot.quadX2()) + normalizedQuadUnit(spot.quadX3())) * 0.25D
+                + face.getStepX() * SURFACE_OFFSET;
+    }
+
+    private static double quadCenterY(BlockPos pos, Direction face, SpotRecord spot) {
+        return pos.getY()
+                + (normalizedQuadUnit(spot.quadY0()) + normalizedQuadUnit(spot.quadY1())
+                + normalizedQuadUnit(spot.quadY2()) + normalizedQuadUnit(spot.quadY3())) * 0.25D
+                + face.getStepY() * SURFACE_OFFSET;
+    }
+
+    private static double quadCenterZ(BlockPos pos, Direction face, SpotRecord spot) {
+        return pos.getZ()
+                + (normalizedQuadUnit(spot.quadZ0()) + normalizedQuadUnit(spot.quadZ1())
+                + normalizedQuadUnit(spot.quadZ2()) + normalizedQuadUnit(spot.quadZ3())) * 0.25D
+                + face.getStepZ() * SURFACE_OFFSET;
+    }
+
+    private record SpotKey(
+            BlockPos pos,
+            Direction face,
+            ProjectionMode projectionMode,
+            int clipMinU,
+            int clipMinV,
+            int clipMaxU,
+            int clipMaxV,
+            int textureMinU,
+            int textureMinV,
+            int textureMaxU,
+            int textureMaxV,
+            int quadX0,
+            int quadY0,
+            int quadZ0,
+            int quadTextureU0,
+            int quadTextureV0,
+            int quadX1,
+            int quadY1,
+            int quadZ1,
+            int quadTextureU1,
+            int quadTextureV1,
+            int quadX2,
+            int quadY2,
+            int quadZ2,
+            int quadTextureU2,
+            int quadTextureV2,
+            int quadX3,
+            int quadY3,
+            int quadZ3,
+            int quadTextureU3,
+            int quadTextureV3
+    ) {
     }
 
     public record RenderedSpot(
@@ -237,7 +498,36 @@ public final class ClientSpotCache {
             int ringAlpha,
             int ringRed,
             int ringGreen,
-            int ringBlue
+            int ringBlue,
+            ProjectionMode projectionMode,
+            int clipMinU,
+            int clipMinV,
+            int clipMaxU,
+            int clipMaxV,
+            int textureMinU,
+            int textureMinV,
+            int textureMaxU,
+            int textureMaxV,
+            int quadX0,
+            int quadY0,
+            int quadZ0,
+            int quadTextureU0,
+            int quadTextureV0,
+            int quadX1,
+            int quadY1,
+            int quadZ1,
+            int quadTextureU1,
+            int quadTextureV1,
+            int quadX2,
+            int quadY2,
+            int quadZ2,
+            int quadTextureU2,
+            int quadTextureV2,
+            int quadX3,
+            int quadY3,
+            int quadZ3,
+            int quadTextureU3,
+            int quadTextureV3
     ) {
     }
 

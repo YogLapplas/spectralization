@@ -11,6 +11,8 @@ import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.SpotRecord;
 import io.github.yoglappland.spectralization.optics.cache.ReceiverOutput;
 import io.github.yoglappland.spectralization.optics.compiler.gain.GainSchedule;
+import io.github.yoglappland.spectralization.optics.projection.SpotProjectionAllocation;
+import io.github.yoglappland.spectralization.optics.projection.SpotProjectionContinuity;
 import io.github.yoglappland.spectralization.network.BeamPathOverlayPayload;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -733,6 +735,7 @@ public final class OpticalCompilerDebugLogger {
     public static void logSpotOverlay(
             Level level,
             List<SpotRecord> activeSpots,
+            List<SpotProjectionAllocation> allocations,
             int sentSpots,
             int sentPlayers,
             long gameTime
@@ -751,18 +754,60 @@ public final class OpticalCompilerDebugLogger {
                 .append(" active_spots=").append(activeSpots.size())
                 .append(" sent_spots=").append(sentSpots)
                 .append(" sent_players=").append(sentPlayers)
-                .append(" quantization_levels=16")
+                .append(" slice_quantization=").append(SpotRecord.SLICE_QUANTIZATION_LEVEL)
+                .append(" quad_quantization=").append(SpotRecord.QUAD_QUANTIZATION_LEVEL)
                 .append(" game_time=").append(gameTime)
                 .append('\n');
 
-        if (!verboseLog()) {
-            builder.append("spot_details=skipped_non_verbose\n\n");
+        if (activeSpots.isEmpty()) {
+            builder.append("spot_details: none\n\n");
             write(builder.toString());
             return;
         }
 
-        if (activeSpots.isEmpty()) {
-            builder.append("spot_details: none\n\n");
+        EnumMap<SpotRecord.ProjectionMode, Integer> projectionCounts =
+                new EnumMap<>(SpotRecord.ProjectionMode.class);
+        EnumMap<Direction, Integer> quadFaceCounts = new EnumMap<>(Direction.class);
+        for (SpotRecord spot : activeSpots) {
+            projectionCounts.merge(spot.projectionMode(), 1, Integer::sum);
+            if (spot.projectionMode() == SpotRecord.ProjectionMode.FOOTPRINT_QUAD) {
+                quadFaceCounts.merge(spot.face(), 1, Integer::sum);
+            }
+        }
+
+        builder.append("spot_projection_counts")
+                .append(" centered=").append(projectionCounts.getOrDefault(SpotRecord.ProjectionMode.CENTERED_QUAD, 0))
+                .append(" slice=").append(projectionCounts.getOrDefault(SpotRecord.ProjectionMode.FOOTPRINT_SLICE, 0))
+                .append(" quad=").append(projectionCounts.getOrDefault(SpotRecord.ProjectionMode.FOOTPRINT_QUAD, 0))
+                .append(" debug=").append(projectionCounts.getOrDefault(SpotRecord.ProjectionMode.DEBUG_FACE_CENTER, 0))
+                .append(" quad_faces=").append(formatDirectionCounts(quadFaceCounts))
+                .append('\n');
+
+        SpotProjectionContinuity.Report continuityReport = SpotProjectionContinuity.inspect(activeSpots, 8);
+        ProjectionMetricSummary metricSummary = summarizeProjectionMetrics(activeSpots);
+        builder.append("spot_projection_continuity")
+                .append(" surfaces=").append(continuityReport.surfaceCount())
+                .append(" shared_edges=").append(continuityReport.sharedEdges())
+                .append(" uv_mismatches=").append(continuityReport.mismatchCount())
+                .append(" texture_gap_max=").append(continuityReport.maxTextureGap())
+                .append('\n');
+        builder.append("spot_projection_metrics")
+                .append(" surfaces=").append(metricSummary.count())
+                .append(" original_area_sum=").append(formatDouble(metricSummary.originalAreaSum()))
+                .append(" world_area_sum=").append(formatDouble(metricSummary.worldAreaSum()))
+                .append(" stretch_min=").append(formatDouble(metricSummary.stretchMin()))
+                .append(" stretch_max=").append(formatDouble(metricSummary.stretchMax()))
+                .append(" stretch_avg=").append(formatDouble(metricSummary.stretchAverage()))
+                .append('\n');
+        appendProjectionFaceMetrics(builder, activeSpots);
+        appendProjectionAllocationMetrics(builder, allocations);
+
+        for (SpotProjectionContinuity.Mismatch mismatch : continuityReport.mismatches()) {
+            builder.append("  continuity_mismatch ").append(mismatch.format()).append('\n');
+        }
+
+        if (!verboseLog()) {
+            builder.append("spot_details=skipped_non_verbose\n\n");
             write(builder.toString());
             return;
         }
@@ -786,7 +831,36 @@ public final class OpticalCompilerDebugLogger {
                     .append(" stray_radius=").append(spot.strayRadiusLevel())
                     .append(" stray_rgb=").append(formatRgb(spot.strayRed(), spot.strayGreen(), spot.strayBlue()))
                     .append(" ring_alpha=").append(spot.ringAlphaLevel())
-                    .append('\n');
+                    .append(" projection=").append(spot.projectionMode())
+                    .append(" clip=").append(spot.clipMinU()).append(',')
+                    .append(spot.clipMinV()).append(',')
+                    .append(spot.clipMaxU()).append(',')
+                    .append(spot.clipMaxV())
+                    .append(" texture=").append(spot.textureMinU()).append(',')
+                    .append(spot.textureMinV()).append(',')
+                    .append(spot.textureMaxU()).append(',')
+                    .append(spot.textureMaxV());
+
+            if (spot.projectionMode() == SpotRecord.ProjectionMode.FOOTPRINT_QUAD) {
+                builder.append(" quad=")
+                        .append(formatQuadVertex(spot.quadX0(), spot.quadY0(), spot.quadZ0(), spot.quadTextureU0(), spot.quadTextureV0()))
+                        .append(';')
+                        .append(formatQuadVertex(spot.quadX1(), spot.quadY1(), spot.quadZ1(), spot.quadTextureU1(), spot.quadTextureV1()))
+                        .append(';')
+                        .append(formatQuadVertex(spot.quadX2(), spot.quadY2(), spot.quadZ2(), spot.quadTextureU2(), spot.quadTextureV2()))
+                        .append(';')
+                        .append(formatQuadVertex(spot.quadX3(), spot.quadY3(), spot.quadZ3(), spot.quadTextureU3(), spot.quadTextureV3()));
+            }
+
+            SpotProjectionContinuity.Metrics metrics = SpotProjectionContinuity.metrics(spot);
+            if (metrics.originalArea() > 0.0D) {
+                builder.append(" projection_metric=")
+                        .append("original_area=").append(formatDouble(metrics.originalArea()))
+                        .append(",world_area=").append(formatDouble(metrics.worldArea()))
+                        .append(",stretch_ratio=").append(formatDouble(metrics.stretchRatio()));
+            }
+
+            builder.append('\n');
             rowCount++;
         }
 
@@ -1943,6 +2017,165 @@ public final class OpticalCompilerDebugLogger {
         return frequency.region().name().toLowerCase(Locale.ROOT) + ":" + frequency.bin();
     }
 
+    private static ProjectionMetricSummary summarizeProjectionMetrics(List<SpotRecord> spots) {
+        int count = 0;
+        double originalAreaSum = 0.0D;
+        double worldAreaSum = 0.0D;
+        double stretchSum = 0.0D;
+        double stretchMin = Double.POSITIVE_INFINITY;
+        double stretchMax = 0.0D;
+
+        for (SpotRecord spot : spots) {
+            SpotProjectionContinuity.Metrics metrics = SpotProjectionContinuity.metrics(spot);
+
+            if (metrics.originalArea() <= 0.0D) {
+                continue;
+            }
+
+            count++;
+            originalAreaSum += metrics.originalArea();
+            worldAreaSum += metrics.worldArea();
+            stretchSum += metrics.stretchRatio();
+            stretchMin = Math.min(stretchMin, metrics.stretchRatio());
+            stretchMax = Math.max(stretchMax, metrics.stretchRatio());
+        }
+
+        if (count == 0) {
+            return new ProjectionMetricSummary(0, 0.0D, 0.0D, 0.0D, 0.0D, 0.0D);
+        }
+
+        return new ProjectionMetricSummary(
+                count,
+                originalAreaSum,
+                worldAreaSum,
+                stretchMin,
+                stretchMax,
+                stretchSum / count
+        );
+    }
+
+    private static void appendProjectionFaceMetrics(StringBuilder builder, List<SpotRecord> spots) {
+        builder.append("spot_projection_face_metrics:\n");
+        int count = 0;
+
+        for (SpotRecord spot : spots) {
+            SpotProjectionContinuity.Metrics metrics = SpotProjectionContinuity.metrics(spot);
+
+            if (metrics.originalArea() <= 0.0D) {
+                continue;
+            }
+
+            builder.append("  pos=").append(formatPos(spot.pos()))
+                    .append(" face=").append(spot.face().getSerializedName())
+                    .append(" projection=").append(spot.projectionMode().name().toLowerCase(Locale.ROOT))
+                    .append(" original_area=").append(formatDouble(metrics.originalArea()))
+                    .append(" world_area=").append(formatDouble(metrics.worldArea()))
+                    .append(" stretch_ratio=").append(formatDouble(metrics.stretchRatio()))
+                    .append('\n');
+            count++;
+        }
+
+        if (count == 0) {
+            builder.append("  none\n");
+        }
+    }
+
+    private static void appendProjectionAllocationMetrics(
+            StringBuilder builder,
+            List<SpotProjectionAllocation> allocations
+    ) {
+        if (allocations.isEmpty()) {
+            builder.append("spot_projection_allocation_summary allocations=0\n");
+            builder.append("spot_projection_allocation_metrics: none\n");
+            return;
+        }
+
+        double candidateAreaSum = 0.0D;
+        double assignedAreaSum = 0.0D;
+        double emittedAreaSum = 0.0D;
+        double assignedPowerSum = 0.0D;
+        double emittedPowerSum = 0.0D;
+        int emittedQuads = 0;
+        int assignedButNotEmitted = 0;
+        Map<String, Integer> resultCounts = new HashMap<>();
+
+        for (SpotProjectionAllocation allocation : allocations) {
+            candidateAreaSum += allocation.candidateArea();
+            assignedAreaSum += allocation.assignedArea();
+            emittedAreaSum += allocation.emittedArea();
+            assignedPowerSum += allocation.assignedPowerFraction();
+            emittedPowerSum += allocation.emittedPowerFraction();
+            emittedQuads += allocation.emittedQuads();
+            resultCounts.merge(allocation.result(), 1, Integer::sum);
+
+            if (allocation.assignedArea() > 0.0D && allocation.emittedQuads() == 0) {
+                assignedButNotEmitted++;
+            }
+        }
+
+        builder.append("spot_projection_allocation_summary")
+                .append(" allocations=").append(allocations.size())
+                .append(" candidate_area_sum=").append(formatDouble(candidateAreaSum))
+                .append(" assigned_area_sum=").append(formatDouble(assignedAreaSum))
+                .append(" emitted_area_sum=").append(formatDouble(emittedAreaSum))
+                .append(" missing_assigned_area=").append(formatDouble(Math.max(0.0D, assignedAreaSum - emittedAreaSum)))
+                .append(" assigned_power_fraction_sum=").append(formatDouble(assignedPowerSum))
+                .append(" emitted_power_fraction_sum=").append(formatDouble(emittedPowerSum))
+                .append(" emitted_quads=").append(emittedQuads)
+                .append(" assigned_but_not_emitted=").append(assignedButNotEmitted)
+                .append(" results=").append(formatStringCounts(resultCounts))
+                .append('\n');
+
+        builder.append("spot_projection_allocation_metrics:\n");
+        List<SpotProjectionAllocation> sortedAllocations = new ArrayList<>(allocations);
+        sortedAllocations.sort(Comparator
+                .comparingInt((SpotProjectionAllocation allocation) -> allocationPriority(allocation))
+                .thenComparingInt(allocation -> allocation.pos().getX())
+                .thenComparingInt(allocation -> allocation.pos().getY())
+                .thenComparingInt(allocation -> allocation.pos().getZ())
+                .thenComparing(allocation -> allocation.face().getSerializedName())
+                .thenComparing(SpotProjectionAllocation::kind));
+
+        int maxRows = Math.max(96, Math.min(512, SpectralizationConfig.opticalCompilerDebugMaxEdges() * 4));
+        int count = 0;
+
+        for (SpotProjectionAllocation allocation : sortedAllocations) {
+            if (count >= maxRows) {
+                builder.append("  ... ").append(sortedAllocations.size() - count).append(" more allocations\n");
+                break;
+            }
+
+            builder.append("  pos=").append(formatPos(allocation.pos()))
+                    .append(" face=").append(allocation.face().getSerializedName())
+                    .append(" kind=").append(allocation.kind())
+                    .append(" candidate_area=").append(formatDouble(allocation.candidateArea()))
+                    .append(" assigned_area=").append(formatDouble(allocation.assignedArea()))
+                    .append(" emitted_area=").append(formatDouble(allocation.emittedArea()))
+                    .append(" assigned_power_fraction=").append(formatDouble(allocation.assignedPowerFraction()))
+                    .append(" emitted_power_fraction=").append(formatDouble(allocation.emittedPowerFraction()))
+                    .append(" emitted_quads=").append(allocation.emittedQuads())
+                    .append(" result=").append(allocation.result())
+                    .append('\n');
+            count++;
+        }
+    }
+
+    private static int allocationPriority(SpotProjectionAllocation allocation) {
+        if (allocation.assignedArea() > 0.0D && allocation.emittedQuads() == 0) {
+            return 0;
+        }
+
+        if ("occluded".equals(allocation.result())) {
+            return 2;
+        }
+
+        if ("emitted".equals(allocation.result())) {
+            return 3;
+        }
+
+        return 1;
+    }
+
     private static String formatPos(BlockPos pos) {
         return pos.getX() + "," + pos.getY() + "," + pos.getZ();
     }
@@ -1955,6 +2188,10 @@ public final class OpticalCompilerDebugLogger {
         return String.format(Locale.ROOT, "%.6f", power);
     }
 
+    private static String formatDouble(double value) {
+        return formatPower(value);
+    }
+
     private static String formatRgb(int red, int green, int blue) {
         return String.format(Locale.ROOT, "#%02X%02X%02X", red, green, blue);
     }
@@ -1963,8 +2200,63 @@ public final class OpticalCompilerDebugLogger {
         return String.format(Locale.ROOT, "#%06X", rgb & 0xFFFFFF);
     }
 
+    private static String formatStringCounts(Map<String, Integer> counts) {
+        if (counts.isEmpty()) {
+            return "none";
+        }
+
+        StringBuilder builder = new StringBuilder();
+        counts.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> {
+                    if (!builder.isEmpty()) {
+                        builder.append(',');
+                    }
+
+                    builder.append(entry.getKey()).append(':').append(entry.getValue());
+                });
+
+        return builder.toString();
+    }
+
+    private static String formatDirectionCounts(EnumMap<Direction, Integer> counts) {
+        if (counts.isEmpty()) {
+            return "none";
+        }
+
+        StringBuilder builder = new StringBuilder();
+        for (Direction direction : Direction.values()) {
+            int count = counts.getOrDefault(direction, 0);
+            if (count <= 0) {
+                continue;
+            }
+
+            if (!builder.isEmpty()) {
+                builder.append(',');
+            }
+
+            builder.append(direction.getSerializedName()).append(':').append(count);
+        }
+
+        return builder.toString();
+    }
+
+    private static String formatQuadVertex(int x, int y, int z, int u, int v) {
+        return String.format(Locale.ROOT, "%d,%d,%d@%d,%d", x, y, z, u, v);
+    }
+
     private static void write(String content) {
         SpectralDiagnostics.appendLog(LOG_RELATIVE_PATH, content, "optical compiler debug");
+    }
+
+    private record ProjectionMetricSummary(
+            int count,
+            double originalAreaSum,
+            double worldAreaSum,
+            double stretchMin,
+            double stretchMax,
+            double stretchAverage
+    ) {
     }
 
     private OpticalCompilerDebugLogger() {

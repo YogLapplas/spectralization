@@ -32,7 +32,6 @@ public final class SpectralizationConfig {
     private static final ModConfigSpec.IntValue OPTICAL_COMPILER_LARGE_DIRECT_GRAPH_NODES;
     private static final ModConfigSpec.IntValue OPTICAL_COMPILER_DIRECT_RECOMPILE_QUIET_TICKS;
     private static final ModConfigSpec.BooleanValue OPTICAL_COMPILER_LEGACY_DEBUG_ORACLE;
-    private static final ModConfigSpec.IntValue OPTICAL_COMPILER_LEGACY_EFFECT_MAX_GRAPH_NODES;
     private static final ModConfigSpec.IntValue OPTICAL_COMPILER_SYSTEM_CACHE_MAX_ENTRIES;
 
     static {
@@ -90,7 +89,7 @@ public final class SpectralizationConfig {
                 .comment("Soft server-tick budget for dirty optical trace processing, in microseconds.")
                 .defineInRange("budget_micros", 8000, 100, 50_000);
         OPTICAL_EFFECT_TRACE_MAX_STATES = builder
-                .comment("Maximum legacy effect-trace states per dirty source. The compiler solver is not limited by this; it only caps particles, spots, entity exposure, and debug observed traces.")
+                .comment("Maximum old recursive trace states when the explicit compiler debug oracle is enabled. The compiler solver is not limited by this.")
                 .defineInRange("effect_trace_max_states", 384, 0, 4096);
         builder.pop();
 
@@ -131,9 +130,6 @@ public final class SpectralizationConfig {
         OPTICAL_COMPILER_LEGACY_DEBUG_ORACLE = builder
                 .comment("Whether compiler debug logging may run the old recursive tracer as an observed oracle. Keep this off for performance tests.")
                 .define("legacy_debug_oracle", false);
-        OPTICAL_COMPILER_LEGACY_EFFECT_MAX_GRAPH_NODES = builder
-                .comment("Maximum direct graph nodes allowed to run the old tracer for particles, spots, entity exposure, and other temporary effects.")
-                .defineInRange("legacy_effect_max_graph_nodes", 128, 0, 4096);
         OPTICAL_COMPILER_SYSTEM_CACHE_MAX_ENTRIES = builder
                 .comment("Maximum cached compiled optical systems keyed by repeated source geometry states.")
                 .defineInRange("system_cache_max_entries", 256, 0, 8192);
@@ -270,10 +266,6 @@ public final class SpectralizationConfig {
 
     public static boolean opticalCompilerLegacyDebugOracle() {
         return OPTICAL_COMPILER_LEGACY_DEBUG_ORACLE.get();
-    }
-
-    public static int opticalCompilerLegacyEffectMaxGraphNodes() {
-        return OPTICAL_COMPILER_LEGACY_EFFECT_MAX_GRAPH_NODES.get();
     }
 
     public static int opticalCompilerSystemCacheMaxEntries() {

@@ -2,6 +2,7 @@ package io.github.yoglappland.spectralization.network;
 
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.optics.SpotRecord;
+import io.github.yoglappland.spectralization.optics.SpotRecord.ProjectionMode;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.core.Direction;
@@ -58,7 +59,36 @@ public record SpotOverlayPayload(int ownerId, List<SpotRecord> spots) implements
                 buffer.readUnsignedByte(),
                 buffer.readUnsignedByte(),
                 buffer.readUnsignedByte(),
-                buffer.readUnsignedByte()
+                buffer.readUnsignedByte(),
+                buffer.readEnum(ProjectionMode.class),
+                buffer.readUnsignedByte(),
+                buffer.readUnsignedByte(),
+                buffer.readUnsignedByte(),
+                buffer.readUnsignedByte(),
+                buffer.readUnsignedByte(),
+                buffer.readUnsignedByte(),
+                buffer.readUnsignedByte(),
+                buffer.readUnsignedByte(),
+                buffer.readVarInt(),
+                buffer.readVarInt(),
+                buffer.readVarInt(),
+                buffer.readVarInt(),
+                buffer.readVarInt(),
+                buffer.readVarInt(),
+                buffer.readVarInt(),
+                buffer.readVarInt(),
+                buffer.readVarInt(),
+                buffer.readVarInt(),
+                buffer.readVarInt(),
+                buffer.readVarInt(),
+                buffer.readVarInt(),
+                buffer.readVarInt(),
+                buffer.readVarInt(),
+                buffer.readVarInt(),
+                buffer.readVarInt(),
+                buffer.readVarInt(),
+                buffer.readVarInt(),
+                buffer.readVarInt()
         );
     }
 
@@ -76,6 +106,35 @@ public record SpotOverlayPayload(int ownerId, List<SpotRecord> spots) implements
         buffer.writeByte(spot.strayGreen());
         buffer.writeByte(spot.strayBlue());
         buffer.writeByte(spot.ringAlphaLevel());
+        buffer.writeEnum(spot.projectionMode());
+        buffer.writeByte(spot.clipMinU());
+        buffer.writeByte(spot.clipMinV());
+        buffer.writeByte(spot.clipMaxU());
+        buffer.writeByte(spot.clipMaxV());
+        buffer.writeByte(spot.textureMinU());
+        buffer.writeByte(spot.textureMinV());
+        buffer.writeByte(spot.textureMaxU());
+        buffer.writeByte(spot.textureMaxV());
+        buffer.writeVarInt(spot.quadX0());
+        buffer.writeVarInt(spot.quadY0());
+        buffer.writeVarInt(spot.quadZ0());
+        buffer.writeVarInt(spot.quadTextureU0());
+        buffer.writeVarInt(spot.quadTextureV0());
+        buffer.writeVarInt(spot.quadX1());
+        buffer.writeVarInt(spot.quadY1());
+        buffer.writeVarInt(spot.quadZ1());
+        buffer.writeVarInt(spot.quadTextureU1());
+        buffer.writeVarInt(spot.quadTextureV1());
+        buffer.writeVarInt(spot.quadX2());
+        buffer.writeVarInt(spot.quadY2());
+        buffer.writeVarInt(spot.quadZ2());
+        buffer.writeVarInt(spot.quadTextureU2());
+        buffer.writeVarInt(spot.quadTextureV2());
+        buffer.writeVarInt(spot.quadX3());
+        buffer.writeVarInt(spot.quadY3());
+        buffer.writeVarInt(spot.quadZ3());
+        buffer.writeVarInt(spot.quadTextureU3());
+        buffer.writeVarInt(spot.quadTextureV3());
     }
 
     @Override

@@ -25,7 +25,7 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 
 @EventBusSubscriber(modid = Spectralization.MODID, value = Dist.CLIENT)
 public final class SpotRenderEvents {
-    private static final int MAX_RENDERED_SPOTS = 1024;
+    private static final int MAX_RENDERED_SPOTS = 8192;
     private static final double MAX_RENDER_DISTANCE = 48.0D;
     private static final double MAX_RENDER_DISTANCE_SQUARED = MAX_RENDER_DISTANCE * MAX_RENDER_DISTANCE;
     private static final double SURFACE_OFFSET = 0.003D;

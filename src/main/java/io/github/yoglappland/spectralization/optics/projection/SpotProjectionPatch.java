@@ -30,7 +30,7 @@ final class SpotProjectionPatch {
             return new Patch(p0, t0, p1, t1, p2, t2, p3, t3);
         }
 
-        return new Patch(p1, t1, p0, t0, p3, t3, p2, t2);
+        return new Patch(p0, t0, p3, t3, p2, t2, p1, t1);
     }
 
     static LocalPoint localPoint(

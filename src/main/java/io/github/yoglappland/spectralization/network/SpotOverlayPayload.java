@@ -12,7 +12,7 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
 public record SpotOverlayPayload(int ownerId, List<SpotRecord> spots) implements CustomPacketPayload {
-    private static final int MAX_SPOTS = 1024;
+    private static final int MAX_SPOTS = 8192;
     public static final Type<SpotOverlayPayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "spot_overlay")
     );

@@ -21,6 +21,9 @@ import net.minecraft.world.level.block.state.BlockState;
 public final class VoxelSpotProjector {
     private static final double MIN_FRAGMENT_POWER = 0.0D;
     private static final double SIDE_FACE_VISUAL_FACTOR = 0.35D;
+    private static final int MAX_SIDE_PATCH_TRAVEL_SUBDIVISIONS = 8;
+    private static final double SIDE_PATCH_RADIUS_RATIO_PER_SEGMENT = 1.18D;
+    private static final double SIDE_PATCH_RADIUS_DELTA_PER_SEGMENT = 0.35D;
     private static final double EDGE_TOUCH_EPSILON = 1.0E-4D;
     private static final double CONE_SIDE_EPSILON = 1.0E-6D;
     private static final double VISUAL_DISTANCE_FADE_LINEAR = 0.08D;
@@ -72,6 +75,7 @@ public final class VoxelSpotProjector {
             int tileRadius = Math.min(MAX_PROJECTED_TILE_RADIUS, (int) Math.ceil(Math.max(radius, exitRadius) + 0.5D));
             BeamPacket targetTemplate = profileTemplate.withEnvelope(envelope);
             List<CanonicalRect> frontBlockersAtDepth = new ArrayList<>();
+            List<CanonicalRect> frontFaceWindowsAtDepth = new ArrayList<>();
             List<CanonicalRect> sideBlockersAtDepth = new ArrayList<>();
             BlockPos depthOrigin = sourcePos.relative(travelDirection, depth);
 
@@ -105,6 +109,10 @@ public final class VoxelSpotProjector {
 
                     if (depth > 0 && sweptWindow != null) {
                         frontBlockersAtDepth.add(sweptWindow);
+                    }
+
+                    if (depth > 0 && rect != null) {
+                        frontFaceWindowsAtDepth.add(rect.canonicalRect());
                     }
 
                     if (rect == null) {
@@ -159,6 +167,10 @@ public final class VoxelSpotProjector {
 
             if (depth > 0) {
                 double visualDistanceFactor = visualDistanceFactor(depth);
+                List<CanonicalRect> sideOcclusionWindows = sameDepthSideOcclusionWindows(
+                        occupiedRayWindows,
+                        frontFaceWindowsAtDepth
+                );
 
                 addIndependentSideQuads(
                         level,
@@ -171,7 +183,7 @@ public final class VoxelSpotProjector {
                         beamPower,
                         coherentBeamPower,
                         visualDistanceFactor,
-                        occupiedRayWindows,
+                        sideOcclusionWindows,
                         sideBlockersAtDepth,
                         dependencies,
                         allocations,
@@ -471,7 +483,7 @@ public final class VoxelSpotProjector {
     }
 
     private static void addDebugFaceCenter(BlockPos targetPos, Direction face, List<SpotRecord> fragments) {
-        fragments.add(SpotRecord.debugFaceCenter(targetPos, face));
+        // fragments.add(SpotRecord.debugFaceCenter(targetPos, face));
     }
 
     private static void addUSideStrip(
@@ -1035,34 +1047,55 @@ public final class VoxelSpotProjector {
             CanonicalRect visibleWindow,
             List<SpotRecord> fragments
     ) {
-        Patch patch = clippedUSidePatch(
-                sideFace,
-                travelDirection,
-                uDirection,
-                vDirection,
-                fixedULocal,
-                travel0,
-                travel1,
-                cross0,
-                cross1,
-                visibleWindow
-        );
+        double totalFraction = Math.max(EDGE_TOUCH_EPSILON, integratedFraction(visibleWindow));
+        PatchEmission result = PatchEmission.PATCH_NULL;
+        boolean emitted = false;
 
-        if (patch == null) {
-            return PatchEmission.PATCH_NULL;
+        for (CanonicalRect subWindow : splitUSideWindow(visibleWindow, targetTemplate.envelope(), travel0, travel1)) {
+            double subFraction = integratedFraction(subWindow);
+
+            if (subFraction <= 0.0D) {
+                continue;
+            }
+
+            Patch patch = clippedUSidePatch(
+                    sideFace,
+                    travelDirection,
+                    uDirection,
+                    vDirection,
+                    fixedULocal,
+                    travel0,
+                    travel1,
+                    cross0,
+                    cross1,
+                    subWindow
+            );
+
+            if (patch == null) {
+                continue;
+            }
+
+            double weight = subFraction / totalFraction;
+            PatchEmission emission = addPatchSpot(
+                    level,
+                    targetPos,
+                    targetState,
+                    sideFace,
+                    targetTemplate,
+                    sidePower * weight,
+                    sideCoherentPower * weight,
+                    patch,
+                    fragments
+            );
+
+            if (emission.emitted()) {
+                emitted = true;
+            }
+
+            result = emission;
         }
 
-        return addPatchSpot(
-                level,
-                targetPos,
-                targetState,
-                sideFace,
-                targetTemplate,
-                sidePower,
-                sideCoherentPower,
-                patch,
-                fragments
-        );
+        return emitted ? PatchEmission.EMITTED : result;
     }
 
     private static PatchEmission addVSideChartSpot(
@@ -1084,34 +1117,155 @@ public final class VoxelSpotProjector {
             CanonicalRect visibleWindow,
             List<SpotRecord> fragments
     ) {
-        Patch patch = clippedVSidePatch(
-                sideFace,
-                travelDirection,
-                uDirection,
-                vDirection,
-                fixedVLocal,
-                travel0,
-                travel1,
-                cross0,
-                cross1,
-                visibleWindow
-        );
+        double totalFraction = Math.max(EDGE_TOUCH_EPSILON, integratedFraction(visibleWindow));
+        PatchEmission result = PatchEmission.PATCH_NULL;
+        boolean emitted = false;
 
-        if (patch == null) {
-            return PatchEmission.PATCH_NULL;
+        for (CanonicalRect subWindow : splitVSideWindow(visibleWindow, targetTemplate.envelope(), travel0, travel1)) {
+            double subFraction = integratedFraction(subWindow);
+
+            if (subFraction <= 0.0D) {
+                continue;
+            }
+
+            Patch patch = clippedVSidePatch(
+                    sideFace,
+                    travelDirection,
+                    uDirection,
+                    vDirection,
+                    fixedVLocal,
+                    travel0,
+                    travel1,
+                    cross0,
+                    cross1,
+                    subWindow
+            );
+
+            if (patch == null) {
+                continue;
+            }
+
+            double weight = subFraction / totalFraction;
+            PatchEmission emission = addPatchSpot(
+                    level,
+                    targetPos,
+                    targetState,
+                    sideFace,
+                    targetTemplate,
+                    sidePower * weight,
+                    sideCoherentPower * weight,
+                    patch,
+                    fragments
+            );
+
+            if (emission.emitted()) {
+                emitted = true;
+            }
+
+            result = emission;
         }
 
-        return addPatchSpot(
-                level,
-                targetPos,
-                targetState,
-                sideFace,
-                targetTemplate,
-                sidePower,
-                sideCoherentPower,
-                patch,
-                fragments
-        );
+        return emitted ? PatchEmission.EMITTED : result;
+    }
+
+    private static List<CanonicalRect> splitUSideWindow(
+            CanonicalRect window,
+            BeamEnvelope envelope,
+            double travel0,
+            double travel1
+    ) {
+        return splitSideWindow(window, true, envelope, travel0, travel1);
+    }
+
+    private static List<CanonicalRect> splitVSideWindow(
+            CanonicalRect window,
+            BeamEnvelope envelope,
+            double travel0,
+            double travel1
+    ) {
+        return splitSideWindow(window, false, envelope, travel0, travel1);
+    }
+
+    private static List<CanonicalRect> splitSideWindow(
+            CanonicalRect window,
+            boolean travelAxisIsU,
+            BeamEnvelope envelope,
+            double travel0,
+            double travel1
+    ) {
+        int travelSteps = adaptiveSideTravelSubdivisionCount(envelope, travel0, travel1);
+
+        if (travelSteps <= 1) {
+            return List.of(window);
+        }
+
+        List<CanonicalRect> windows = new ArrayList<>(travelSteps);
+
+        for (int travelIndex = 0; travelIndex < travelSteps; travelIndex++) {
+            double travelMin = travelIndex / (double) travelSteps;
+            double travelMax = (travelIndex + 1) / (double) travelSteps;
+
+            if (travelAxisIsU) {
+                addCanonicalRect(
+                        windows,
+                        lerp(window.minU(), window.maxU(), travelMin),
+                        window.minV(),
+                        lerp(window.minU(), window.maxU(), travelMax),
+                        window.maxV()
+                );
+            } else {
+                addCanonicalRect(
+                        windows,
+                        window.minU(),
+                        lerp(window.minV(), window.maxV(), travelMin),
+                        window.maxU(),
+                        lerp(window.minV(), window.maxV(), travelMax)
+                );
+            }
+        }
+
+        return windows;
+    }
+
+    private static int adaptiveSideTravelSubdivisionCount(
+            BeamEnvelope envelope,
+            double travel0,
+            double travel1
+    ) {
+        if (envelope == null || travel1 - travel0 <= EDGE_TOUCH_EPSILON) {
+            return 1;
+        }
+
+        double minRadius = Double.POSITIVE_INFINITY;
+        double maxRadius = 0.0D;
+
+        for (int sample = 0; sample <= 4; sample++) {
+            double travel = lerp(travel0, travel1, sample / 4.0D);
+            double radius = envelopeAtOffset(envelope, travel).radius();
+
+            if (!Double.isFinite(radius) || radius <= EDGE_TOUCH_EPSILON) {
+                return MAX_SIDE_PATCH_TRAVEL_SUBDIVISIONS;
+            }
+
+            minRadius = Math.min(minRadius, radius);
+            maxRadius = Math.max(maxRadius, radius);
+        }
+
+        if (!Double.isFinite(minRadius) || !Double.isFinite(maxRadius) || minRadius <= EDGE_TOUCH_EPSILON) {
+            return MAX_SIDE_PATCH_TRAVEL_SUBDIVISIONS;
+        }
+
+        double radiusRatio = maxRadius / minRadius;
+        double radiusDelta = maxRadius - minRadius;
+        int ratioSteps = radiusRatio <= 1.0D + EDGE_TOUCH_EPSILON
+                ? 1
+                : (int) Math.ceil(Math.log(radiusRatio) / Math.log(SIDE_PATCH_RADIUS_RATIO_PER_SEGMENT));
+        int deltaSteps = radiusDelta <= EDGE_TOUCH_EPSILON
+                ? 1
+                : (int) Math.ceil(radiusDelta / SIDE_PATCH_RADIUS_DELTA_PER_SEGMENT);
+        int steps = Math.max(ratioSteps, deltaSteps);
+
+        return Math.max(1, Math.min(MAX_SIDE_PATCH_TRAVEL_SUBDIVISIONS, steps));
     }
 
     private static SpotProjectionAllocation sideAllocation(
@@ -1772,6 +1926,20 @@ public final class VoxelSpotProjector {
                 EDGE_TOUCH_EPSILON * EDGE_TOUCH_EPSILON,
                 (rayWindow.maxU() - rayWindow.minU()) * (rayWindow.maxV() - rayWindow.minV())
         );
+    }
+
+    private static List<CanonicalRect> sameDepthSideOcclusionWindows(
+            List<CanonicalRect> occupiedRayWindows,
+            List<CanonicalRect> frontFaceWindowsAtDepth
+    ) {
+        if (frontFaceWindowsAtDepth.isEmpty()) {
+            return occupiedRayWindows;
+        }
+
+        List<CanonicalRect> occlusionWindows = new ArrayList<>(occupiedRayWindows.size() + frontFaceWindowsAtDepth.size());
+        occlusionWindows.addAll(occupiedRayWindows);
+        occlusionWindows.addAll(frontFaceWindowsAtDepth);
+        return occlusionWindows;
     }
 
     private static List<CanonicalRect> subtractOccupied(CanonicalRect source, List<CanonicalRect> occupiedRayWindows) {

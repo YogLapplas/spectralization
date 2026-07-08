@@ -34,7 +34,7 @@ public final class OpticalSpotTracker {
     private static final double MIN_VISIBLE_SPOT_POWER = 0.125;
     private static final double SPOT_POWER_PER_ALPHA_LEVEL = 8.0;
     private static final int TEMPORARY_FIXED_SPOT_ALPHA_LEVEL =
-            Integer.getInteger("spectralization.fixedSpotAlphaLevel", 8);
+            Integer.getInteger("spectralization.fixedSpotAlphaLevel", 0);
     private static final double DEFAULT_OPTICAL_DIFFUSE_YIELD = 0.85;
     private static final int DEFAULT_SPOT_RGB = 0xFF4630;
     private static final Comparator<SpotRecord> SPOT_COMPARATOR = Comparator

@@ -140,8 +140,8 @@ public final class VoxelSpotProjector {
                             continue;
                         }
 
-                        double fragmentPower = beamPower * fraction;
-                        double visualFragmentPower = fragmentPower * visualDistanceFactor;
+                        // Region area allocates texture; brightness is per-pattern and must not shrink with clipping.
+                        double visualFragmentPower = visualSurfacePower(beamPower, visualDistanceFactor);
 
                         if (visualFragmentPower <= MIN_FRAGMENT_POWER) {
                             continue;
@@ -154,7 +154,7 @@ public final class VoxelSpotProjector {
                                 targetState,
                                 targetTemplate,
                                 visualFragmentPower,
-                                coherentBeamPower * fraction * visualDistanceFactor,
+                                visualSurfacePower(coherentBeamPower, visualDistanceFactor),
                                 radius,
                                 du,
                                 dv,
@@ -673,7 +673,7 @@ public final class VoxelSpotProjector {
         for (CanonicalRect visibleSideWindow : visibleSideWindows) {
             double assignedArea = canonicalArea(visibleSideWindow);
             double sideFraction = integratedFraction(visibleSideWindow);
-            double sidePower = beamPower * SIDE_FACE_VISUAL_FACTOR * visualDistanceFactor * sideFraction;
+            double sidePower = visualSidePower(beamPower, visualDistanceFactor);
 
             if (sidePower <= MIN_FRAGMENT_POWER) {
                 allocations.add(sideAllocation(
@@ -701,7 +701,7 @@ public final class VoxelSpotProjector {
                     vDirection,
                     targetTemplate,
                     sidePower,
-                    coherentBeamPower * SIDE_FACE_VISUAL_FACTOR * visualDistanceFactor * sideFraction,
+                    visualSidePower(coherentBeamPower, visualDistanceFactor),
                     fixedULocal,
                     travel0,
                     travel1,
@@ -815,7 +815,7 @@ public final class VoxelSpotProjector {
         for (CanonicalRect visibleSideWindow : visibleSideWindows) {
             double assignedArea = canonicalArea(visibleSideWindow);
             double sideFraction = integratedFraction(visibleSideWindow);
-            double sidePower = beamPower * SIDE_FACE_VISUAL_FACTOR * visualDistanceFactor * sideFraction;
+            double sidePower = visualSidePower(beamPower, visualDistanceFactor);
 
             if (sidePower <= MIN_FRAGMENT_POWER) {
                 allocations.add(sideAllocation(
@@ -843,7 +843,7 @@ public final class VoxelSpotProjector {
                     vDirection,
                     targetTemplate,
                     sidePower,
-                    coherentBeamPower * SIDE_FACE_VISUAL_FACTOR * visualDistanceFactor * sideFraction,
+                    visualSidePower(coherentBeamPower, visualDistanceFactor),
                     fixedVLocal,
                     travel0,
                     travel1,
@@ -1726,7 +1726,17 @@ public final class VoxelSpotProjector {
         }
 
         double d = depth;
-        return 1.0D / (1.0D + VISUAL_DISTANCE_FADE_LINEAR * d + VISUAL_DISTANCE_FADE_QUADRATIC * d * d);
+        double propagationFade = 1.0D / (1.0D + VISUAL_DISTANCE_FADE_LINEAR * d);
+        double sourceDistanceFade = 1.0D / Math.sqrt(1.0D + VISUAL_DISTANCE_FADE_QUADRATIC * d * d);
+        return propagationFade * sourceDistanceFade;
+    }
+
+    private static double visualSurfacePower(double beamPower, double visualDistanceFactor) {
+        return beamPower * visualDistanceFactor;
+    }
+
+    private static double visualSidePower(double beamPower, double visualDistanceFactor) {
+        return beamPower * visualDistanceFactor * SIDE_FACE_VISUAL_FACTOR;
     }
 
     private static double lerp(double start, double end, double t) {

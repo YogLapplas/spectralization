@@ -29,15 +29,16 @@ public final class SpotRenderEvents {
     private static final double MAX_RENDER_DISTANCE = 48.0D;
     private static final double MAX_RENDER_DISTANCE_SQUARED = MAX_RENDER_DISTANCE * MAX_RENDER_DISTANCE;
     private static final double SURFACE_OFFSET = 0.003D;
+    private static final double OVERLAP_LAYER_OFFSET = 0.00003D;
     private static final ResourceLocation CORE_TEXTURE =
             ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "textures/effect/spot_core.png");
     private static final ResourceLocation HALO_TEXTURE =
             ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "textures/effect/spot_halo.png");
     private static final ResourceLocation RING_TEXTURE =
             ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "textures/effect/spot_ring.png");
-    private static final RenderType CORE_RENDER_TYPE = RenderType.entityTranslucent(CORE_TEXTURE);
-    private static final RenderType HALO_RENDER_TYPE = RenderType.entityTranslucent(HALO_TEXTURE);
-    private static final RenderType RING_RENDER_TYPE = RenderType.entityTranslucent(RING_TEXTURE);
+    private static final RenderType CORE_RENDER_TYPE = RenderType.entityTranslucentEmissive(CORE_TEXTURE);
+    private static final RenderType HALO_RENDER_TYPE = RenderType.entityTranslucentEmissive(HALO_TEXTURE);
+    private static final RenderType RING_RENDER_TYPE = RenderType.entityTranslucentEmissive(RING_TEXTURE);
 
     @SubscribeEvent
     public static void renderSpots(RenderLevelStageEvent event) {
@@ -183,21 +184,25 @@ public final class SpotRenderEvents {
         double x = spot.centerX();
         double y = spot.centerY();
         double z = spot.centerZ();
+        double overlapOffset = overlapLayerOffset(spot);
+        double offsetX = face.getStepX() * overlapOffset;
+        double offsetY = face.getStepY() * overlapOffset;
+        double offsetZ = face.getStepZ() * overlapOffset;
 
         switch (face.getAxis()) {
             case X -> addQuad(
                     consumer,
                     pose,
-                    x,
+                    x + offsetX,
                     y - radius,
                     z - radius,
-                    x,
+                    x + offsetX,
                     y + radius,
                     z - radius,
-                    x,
+                    x + offsetX,
                     y + radius,
                     z + radius,
-                    x,
+                    x + offsetX,
                     y - radius,
                     z + radius,
                     red,
@@ -209,16 +214,16 @@ public final class SpotRenderEvents {
                     consumer,
                     pose,
                     x - radius,
-                    y,
+                    y + offsetY,
                     z - radius,
                     x - radius,
-                    y,
+                    y + offsetY,
                     z + radius,
                     x + radius,
-                    y,
+                    y + offsetY,
                     z + radius,
                     x + radius,
-                    y,
+                    y + offsetY,
                     z - radius,
                     red,
                     green,
@@ -230,16 +235,16 @@ public final class SpotRenderEvents {
                     pose,
                     x - radius,
                     y - radius,
-                    z,
+                    z + offsetZ,
                     x + radius,
                     y - radius,
-                    z,
+                    z + offsetZ,
                     x + radius,
                     y + radius,
-                    z,
+                    z + offsetZ,
                     x - radius,
                     y + radius,
-                    z,
+                    z + offsetZ,
                     red,
                     green,
                     blue,
@@ -258,9 +263,10 @@ public final class SpotRenderEvents {
             int blue
     ) {
         Direction face = spot.face();
-        double offsetX = face.getStepX() * SURFACE_OFFSET;
-        double offsetY = face.getStepY() * SURFACE_OFFSET;
-        double offsetZ = face.getStepZ() * SURFACE_OFFSET;
+        double surfaceOffset = surfaceOffset(spot);
+        double offsetX = face.getStepX() * surfaceOffset;
+        double offsetY = face.getStepY() * surfaceOffset;
+        double offsetZ = face.getStepZ() * surfaceOffset;
         double baseX = spot.pos().getX();
         double baseY = spot.pos().getY();
         double baseZ = spot.pos().getZ();
@@ -313,10 +319,11 @@ public final class SpotRenderEvents {
         float textureMinV = normalizedByteFloat(spot.textureMinV());
         float textureMaxU = normalizedByteFloat(spot.textureMaxU());
         float textureMaxV = normalizedByteFloat(spot.textureMaxV());
-        SpotSurfaceFrame.LocalCoordinates p0 = SpotSurfaceFrame.surfaceLocal(face, minU, minV, SURFACE_OFFSET);
-        SpotSurfaceFrame.LocalCoordinates p1 = SpotSurfaceFrame.surfaceLocal(face, minU, maxV, SURFACE_OFFSET);
-        SpotSurfaceFrame.LocalCoordinates p2 = SpotSurfaceFrame.surfaceLocal(face, maxU, maxV, SURFACE_OFFSET);
-        SpotSurfaceFrame.LocalCoordinates p3 = SpotSurfaceFrame.surfaceLocal(face, maxU, minV, SURFACE_OFFSET);
+        double surfaceOffset = surfaceOffset(spot);
+        SpotSurfaceFrame.LocalCoordinates p0 = SpotSurfaceFrame.surfaceLocal(face, minU, minV, surfaceOffset);
+        SpotSurfaceFrame.LocalCoordinates p1 = SpotSurfaceFrame.surfaceLocal(face, minU, maxV, surfaceOffset);
+        SpotSurfaceFrame.LocalCoordinates p2 = SpotSurfaceFrame.surfaceLocal(face, maxU, maxV, surfaceOffset);
+        SpotSurfaceFrame.LocalCoordinates p3 = SpotSurfaceFrame.surfaceLocal(face, maxU, minV, surfaceOffset);
         double baseX = spot.pos().getX();
         double baseY = spot.pos().getY();
         double baseZ = spot.pos().getZ();
@@ -549,6 +556,43 @@ public final class SpotRenderEvents {
     private static float normalizedQuadUnitFloat(int value) {
         return value / (float) SpotRecord.QUAD_QUANTIZATION_LEVEL;
     }
+
+    private static double surfaceOffset(ClientSpotCache.RenderedSpot spot) {
+        return SURFACE_OFFSET + overlapLayerOffset(spot);
+    }
+
+    private static double overlapLayerOffset(ClientSpotCache.RenderedSpot spot) {
+        return (1 + Math.floorMod(stableSpotHash(spot), 7)) * OVERLAP_LAYER_OFFSET;
+    }
+
+    private static int stableSpotHash(ClientSpotCache.RenderedSpot spot) {
+        int hash = 17;
+        hash = 31 * hash + spot.pos().hashCode();
+        hash = 31 * hash + spot.face().ordinal();
+        hash = 31 * hash + spot.projectionMode().ordinal();
+        hash = 31 * hash + spot.clipMinU();
+        hash = 31 * hash + spot.clipMinV();
+        hash = 31 * hash + spot.clipMaxU();
+        hash = 31 * hash + spot.clipMaxV();
+        hash = 31 * hash + spot.textureMinU();
+        hash = 31 * hash + spot.textureMinV();
+        hash = 31 * hash + spot.textureMaxU();
+        hash = 31 * hash + spot.textureMaxV();
+        hash = 31 * hash + spot.quadX0();
+        hash = 31 * hash + spot.quadY0();
+        hash = 31 * hash + spot.quadZ0();
+        hash = 31 * hash + spot.quadX1();
+        hash = 31 * hash + spot.quadY1();
+        hash = 31 * hash + spot.quadZ1();
+        hash = 31 * hash + spot.quadX2();
+        hash = 31 * hash + spot.quadY2();
+        hash = 31 * hash + spot.quadZ2();
+        hash = 31 * hash + spot.quadX3();
+        hash = 31 * hash + spot.quadY3();
+        hash = 31 * hash + spot.quadZ3();
+        return hash;
+    }
+
 
     private SpotRenderEvents() {
     }

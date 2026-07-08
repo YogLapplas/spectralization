@@ -1,5 +1,6 @@
 package io.github.yoglappland.spectralization.optics.compiler;
 
+import io.github.yoglappland.spectralization.blockentity.LensHolderBlockEntity;
 import io.github.yoglappland.spectralization.optics.BeamEnvelope;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
@@ -56,6 +57,10 @@ public final class CompiledSpotLayer {
                 continue;
             }
 
+            if (isTransparentProjectionPassThrough(level, node)) {
+                continue;
+            }
+
             double coherentOutgoingPower = Math.min(outgoingPower, solution.coherentPowerAt(node));
             BeamPacket profileTemplate = templateAt(sourceOutput, distanceByNode.getOrDefault(node, 0), solution, node)
                     .withDirection(node.side());
@@ -73,6 +78,10 @@ public final class CompiledSpotLayer {
         }
 
         return new SpotLayer(cappedSpots(primarySpots, sideSpots), projectionDependencies, allocations);
+    }
+
+    private static boolean isTransparentProjectionPassThrough(ServerLevel level, PortGraphNode node) {
+        return level.getBlockEntity(node.pos()) instanceof LensHolderBlockEntity lensHolder && !lensHolder.hasLens();
     }
 
     private static Map<PortGraphNode, Integer> propagationDistanceByNode(CompiledPortGraph graph) {

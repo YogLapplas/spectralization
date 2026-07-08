@@ -1,0 +1,1098 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spectralization Spot Projection Area Demo</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #10141b;
+      --panel: #171f2a;
+      --panel2: #202a37;
+      --line: #354456;
+      --text: #dfe8ef;
+      --muted: #91a1ad;
+      --front: #ff5c6c;
+      --side: #39d8ff;
+      --screen: #b6f06a;
+      --edge: #ffd166;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 330px 1fr;
+      min-height: 100vh;
+    }
+
+    aside {
+      padding: 18px;
+      border-right: 1px solid var(--line);
+      background: var(--panel);
+      overflow: auto;
+    }
+
+    section {
+      padding: 18px;
+      overflow: auto;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 18px 0 8px;
+      font-size: 13px;
+      color: var(--muted);
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 8px 0;
+      color: var(--muted);
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      margin: 12px 0;
+    }
+
+    input[type="range"] {
+      width: 100%;
+    }
+
+    button {
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel2);
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    button:hover {
+      border-color: #65778b;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 4px;
+      background:
+        linear-gradient(45deg, #141b23 25%, transparent 25%),
+        linear-gradient(-45deg, #141b23 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #141b23 75%),
+        linear-gradient(-45deg, transparent 75%, #141b23 75%);
+      background-size: 18px 18px;
+      background-position: 0 0, 0 9px, 9px -9px, -9px 0;
+      image-rendering: pixelated;
+    }
+
+    code {
+      color: #a9d9ff;
+    }
+
+    .value {
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin: 8px 0;
+    }
+
+    .row input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+    }
+
+    .block-list {
+      display: grid;
+      gap: 6px;
+      margin: 10px 0;
+    }
+
+    .block-row {
+      display: grid;
+      grid-template-columns: 28px 1fr auto;
+      align-items: center;
+      gap: 6px;
+      padding: 6px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #121820;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .block-row.selected {
+      border-color: var(--edge);
+      background: #1f2630;
+    }
+
+    .block-row button {
+      padding: 4px 7px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 4px 12px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #121820;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .legend {
+      display: grid;
+      grid-template-columns: 14px 1fr;
+      gap: 6px 8px;
+      align-items: center;
+      margin-top: 12px;
+    }
+
+    .swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(360px, 1fr));
+      gap: 16px;
+      align-items: start;
+    }
+
+    .card {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    .card h2 {
+      margin-top: 0;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <aside>
+    <h1>Spot projection area demo</h1>
+    <p>This demo uses unit blocks. Every face is projected into the same texture domain, then a conservative Fresnel-like LUT turns hard edges into soft density masks.</p>
+
+    <h2>Model switches</h2>
+    <div class="row">
+      <input id="includeSides" type="checkbox" checked>
+      <label for="includeSides" style="display:block;margin:0;">Side faces consume the same texture-domain mask</label>
+    </div>
+    <div class="row">
+      <input id="drawCells" type="checkbox">
+      <label for="drawCells" style="display:block;margin:0;">Draw cell grid</label>
+    </div>
+    <div class="row">
+      <input id="softEdges" type="checkbox" checked>
+      <label for="softEdges" style="display:block;margin:0;">Use LUT Fresnel-like edges</label>
+    </div>
+
+    <h2>Fresnel-like edge</h2>
+    <label>
+      edge width <span id="edgeWidthValue" class="value"></span>
+      <input id="edgeWidth" type="range" min="0.25" max="10" step="0.25" value="2.75">
+    </label>
+
+    <h2>Texture-domain resolution</h2>
+    <label>
+      cells <span id="resolutionValue" class="value"></span>
+      <input id="resolution" type="range" min="24" max="256" step="8" value="96">
+    </label>
+
+    <h2>Blocks</h2>
+    <div id="blockList" class="block-list"></div>
+    <div class="row">
+      <button id="addBlock">add block</button>
+      <button id="duplicateBlock">duplicate</button>
+      <button id="removeBlock">remove</button>
+    </div>
+
+    <h2>Selected unit block position</h2>
+    <label>
+      block center X <span id="blockXValue" class="value"></span>
+      <input id="blockX" type="range" min="-3" max="3" step="0.05" value="0.95">
+    </label>
+    <label>
+      block center Y <span id="blockYValue" class="value"></span>
+      <input id="blockY" type="range" min="-3" max="3" step="0.05" value="-0.60">
+    </label>
+    <label>
+      front depth Z <span id="frontZValue" class="value"></span>
+      <input id="frontZ" type="range" min="0.1" max="10" step="0.1" value="3.0">
+    </label>
+
+    <h2>Light cone</h2>
+    <label>
+      waist radius <span id="radius0Value" class="value"></span>
+      <input id="radius0" type="range" min="1" max="8" step="0.05" value="2.9">
+    </label>
+    <label>
+      divergence per block <span id="divergenceValue" class="value"></span>
+      <input id="divergence" type="range" min="-0.25" max="0.55" step="0.01" value="0.14">
+    </label>
+
+    <h2>Presets</h2>
+    <div class="row">
+      <button id="presetFrontOnly">front only</button>
+      <button id="presetOffset">offset cube</button>
+    </div>
+    <div class="row">
+      <button id="presetSymmetric">axis-centered</button>
+      <button id="presetThin">thin side test</button>
+    </div>
+
+    <h2>Density accounting</h2>
+    <div id="stats" class="stats"></div>
+
+    <div class="legend">
+      <span class="swatch" style="background: var(--front);"></span><span>front face density</span>
+      <span class="swatch" style="background: var(--side);"></span><span>side face density</span>
+      <span class="swatch" style="background: var(--screen);"></span><span>screen / infinity remainder</span>
+      <span class="swatch" style="background: var(--edge);"></span><span>hard footprint boundary</span>
+    </div>
+
+    <p>Texture: <code>../src/main/resources/assets/spectralization/textures/effect/spot_core.png</code></p>
+  </aside>
+
+  <section>
+    <div class="cards">
+      <div class="card">
+        <h2>Texture domain density</h2>
+        <canvas id="domainCanvas" width="660" height="660"></canvas>
+      </div>
+      <div class="card">
+        <h2>Same texture split into receivers</h2>
+        <canvas id="resultCanvas" width="920" height="660"></canvas>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const texturePath = "../src/main/resources/assets/spectralization/textures/effect/spot_core.png";
+const image = new Image();
+image.src = texturePath;
+const EDGE_LUT_MIN = -4.0;
+const EDGE_LUT_MAX = 4.0;
+const EDGE_LUT = makeFresnelLikeEdgeLut(1024);
+
+const controls = {
+  includeSides: document.getElementById("includeSides"),
+  drawCells: document.getElementById("drawCells"),
+  softEdges: document.getElementById("softEdges"),
+  edgeWidth: document.getElementById("edgeWidth"),
+  resolution: document.getElementById("resolution"),
+  blockX: document.getElementById("blockX"),
+  blockY: document.getElementById("blockY"),
+  frontZ: document.getElementById("frontZ"),
+  radius0: document.getElementById("radius0"),
+  divergence: document.getElementById("divergence")
+};
+
+const labels = {
+  edgeWidthValue: document.getElementById("edgeWidthValue"),
+  resolutionValue: document.getElementById("resolutionValue"),
+  blockXValue: document.getElementById("blockXValue"),
+  blockYValue: document.getElementById("blockYValue"),
+  frontZValue: document.getElementById("frontZValue"),
+  radius0Value: document.getElementById("radius0Value"),
+  divergenceValue: document.getElementById("divergenceValue")
+};
+
+const domainCanvas = document.getElementById("domainCanvas");
+const resultCanvas = document.getElementById("resultCanvas");
+const domainCtx = domainCanvas.getContext("2d");
+const resultCtx = resultCanvas.getContext("2d");
+const stats = document.getElementById("stats");
+const blockList = document.getElementById("blockList");
+
+let blocks = [
+  {x: 0.95, y: -0.60, z: 3.0}
+];
+let selectedBlockIndex = 0;
+
+controls.includeSides.addEventListener("input", draw);
+controls.drawCells.addEventListener("input", draw);
+controls.softEdges.addEventListener("input", draw);
+controls.edgeWidth.addEventListener("input", draw);
+controls.resolution.addEventListener("input", draw);
+controls.radius0.addEventListener("input", draw);
+controls.divergence.addEventListener("input", draw);
+controls.blockX.addEventListener("input", updateSelectedBlockFromControls);
+controls.blockY.addEventListener("input", updateSelectedBlockFromControls);
+controls.frontZ.addEventListener("input", updateSelectedBlockFromControls);
+
+document.getElementById("addBlock").addEventListener("click", () => {
+  const source = blocks[selectedBlockIndex] ?? {x: 0, y: 0, z: 3};
+  blocks.push({
+    x: source.x + 1.0,
+    y: source.y,
+    z: source.z
+  });
+  selectedBlockIndex = blocks.length - 1;
+  syncSelectedBlockControls();
+  draw();
+});
+
+document.getElementById("duplicateBlock").addEventListener("click", () => {
+  const source = blocks[selectedBlockIndex] ?? {x: 0, y: 0, z: 3};
+  blocks.splice(selectedBlockIndex + 1, 0, {
+    x: source.x + 0.35,
+    y: source.y + 0.35,
+    z: source.z + 0.5
+  });
+  selectedBlockIndex++;
+  syncSelectedBlockControls();
+  draw();
+});
+
+document.getElementById("removeBlock").addEventListener("click", () => {
+  if (blocks.length <= 1) {
+    return;
+  }
+
+  blocks.splice(selectedBlockIndex, 1);
+  selectedBlockIndex = Math.max(0, Math.min(selectedBlockIndex, blocks.length - 1));
+  syncSelectedBlockControls();
+  draw();
+});
+
+document.getElementById("presetFrontOnly").addEventListener("click", () => {
+  controls.includeSides.checked = false;
+  blocks = [{x: 0.95, y: -0.60, z: 3.0}];
+  selectedBlockIndex = 0;
+  controls.radius0.value = 2.9;
+  controls.divergence.value = 0.14;
+  syncSelectedBlockControls();
+  draw();
+});
+
+document.getElementById("presetOffset").addEventListener("click", () => {
+  controls.includeSides.checked = true;
+  blocks = [
+    {x: 0.95, y: -0.60, z: 3.0},
+    {x: -0.55, y: 0.75, z: 4.4}
+  ];
+  selectedBlockIndex = 0;
+  controls.radius0.value = 2.9;
+  controls.divergence.value = 0.14;
+  syncSelectedBlockControls();
+  draw();
+});
+
+document.getElementById("presetSymmetric").addEventListener("click", () => {
+  controls.includeSides.checked = true;
+  blocks = [
+    {x: -0.65, y: -0.65, z: 3.0},
+    {x: 0.65, y: -0.65, z: 3.0},
+    {x: -0.65, y: 0.65, z: 3.0},
+    {x: 0.65, y: 0.65, z: 3.0}
+  ];
+  selectedBlockIndex = 0;
+  controls.radius0.value = 2.9;
+  controls.divergence.value = 0.14;
+  syncSelectedBlockControls();
+  draw();
+});
+
+document.getElementById("presetThin").addEventListener("click", () => {
+  controls.includeSides.checked = true;
+  blocks = [
+    {x: 1.15, y: -0.35, z: 5.8},
+    {x: -1.00, y: 0.25, z: 6.4}
+  ];
+  selectedBlockIndex = 0;
+  controls.radius0.value = 4.6;
+  controls.divergence.value = 0.03;
+  syncSelectedBlockControls();
+  draw();
+});
+
+image.onload = draw;
+image.onerror = draw;
+
+function updateSelectedBlockFromControls() {
+  const block = blocks[selectedBlockIndex];
+
+  if (!block) {
+    return;
+  }
+
+  block.x = Number(controls.blockX.value);
+  block.y = Number(controls.blockY.value);
+  block.z = Number(controls.frontZ.value);
+  draw();
+}
+
+function syncSelectedBlockControls() {
+  const block = blocks[selectedBlockIndex] ?? blocks[0];
+
+  if (!block) {
+    return;
+  }
+
+  controls.blockX.value = block.x;
+  controls.blockY.value = block.y;
+  controls.frontZ.value = block.z;
+}
+
+function renderBlockList() {
+  blockList.innerHTML = "";
+
+  blocks.forEach((block, index) => {
+    const row = document.createElement("div");
+    row.className = "block-row" + (index === selectedBlockIndex ? " selected" : "");
+
+    const number = document.createElement("strong");
+    number.textContent = String(index + 1);
+
+    const text = document.createElement("span");
+    text.textContent = `x=${block.x.toFixed(2)} y=${block.y.toFixed(2)} z=${block.z.toFixed(1)}`;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "edit";
+    button.addEventListener("click", () => {
+      selectedBlockIndex = index;
+      syncSelectedBlockControls();
+      draw();
+    });
+
+    row.append(number, text, button);
+    blockList.append(row);
+  });
+}
+
+function params() {
+  return {
+    res: Number(controls.resolution.value),
+    includeSides: controls.includeSides.checked,
+    drawCells: controls.drawCells.checked,
+    softEdges: controls.softEdges.checked,
+    edgeWidth: Number(controls.edgeWidth.value),
+    blocks: blocks.map(block => ({x: block.x, y: block.y, z: block.z})),
+    radius0: Number(controls.radius0.value),
+    divergence: Number(controls.divergence.value)
+  };
+}
+
+function makeFresnelLikeEdgeLut(size) {
+  const table = new Float32Array(size);
+  let monotone = 0;
+
+  for (let i = 0; i < size; i++) {
+    const x = EDGE_LUT_MIN + (EDGE_LUT_MAX - EDGE_LUT_MIN) * i / (size - 1);
+    const {c, s} = fresnelCS(x * 0.78);
+    const knifeEdge = 0.5 * ((0.5 + c) * (0.5 + c) + (0.5 + s) * (0.5 + s));
+    const smoothEnvelope = 1 / (1 + Math.exp(-1.85 * x));
+    const conservative = clamp01(0.62 * clamp01(knifeEdge) + 0.38 * smoothEnvelope);
+    monotone = Math.max(monotone, conservative);
+    table[i] = monotone;
+  }
+
+  table[0] = 0;
+  table[table.length - 1] = 1;
+  return table;
+}
+
+function fresnelCS(x) {
+  if (x === 0) {
+    return {c: 0, s: 0};
+  }
+
+  const sign = x < 0 ? -1 : 1;
+  const limit = Math.abs(x);
+  const steps = Math.max(24, Math.ceil(limit * 48));
+  const h = limit / steps;
+  let c = 0;
+  let s = 0;
+
+  for (let i = 0; i < steps; i++) {
+    const t = (i + 0.5) * h;
+    const phase = 0.5 * Math.PI * t * t;
+    c += Math.cos(phase) * h;
+    s += Math.sin(phase) * h;
+  }
+
+  return {c: c * sign, s: s * sign};
+}
+
+function edgeFromLut(normalizedDistance) {
+  if (normalizedDistance <= EDGE_LUT_MIN) return 0;
+  if (normalizedDistance >= EDGE_LUT_MAX) return 1;
+
+  const t = (normalizedDistance - EDGE_LUT_MIN) / (EDGE_LUT_MAX - EDGE_LUT_MIN);
+  const scaled = t * (EDGE_LUT.length - 1);
+  const index = Math.floor(scaled);
+  const frac = scaled - index;
+  return EDGE_LUT[index] * (1 - frac) + EDGE_LUT[index + 1] * frac;
+}
+
+function radiusAt(p, z) {
+  return Math.max(0.05, p.radius0 + p.divergence * z);
+}
+
+function toTexturePoint(p, x, y, z) {
+  const r = radiusAt(p, z);
+  return {
+    u: (x + r) / (2 * r),
+    v: (y + r) / (2 * r),
+    z
+  };
+}
+
+function cubeCorners(p, block) {
+  const x0 = block.x - 0.5;
+  const x1 = block.x + 0.5;
+  const y0 = block.y - 0.5;
+  const y1 = block.y + 0.5;
+  const z0 = block.z;
+  const z1 = block.z + 1.0;
+
+  return {
+    front: [
+      toTexturePoint(p, x0, y0, z0),
+      toTexturePoint(p, x1, y0, z0),
+      toTexturePoint(p, x1, y1, z0),
+      toTexturePoint(p, x0, y1, z0)
+    ],
+    back: [
+      toTexturePoint(p, x0, y0, z1),
+      toTexturePoint(p, x1, y0, z1),
+      toTexturePoint(p, x1, y1, z1),
+      toTexturePoint(p, x0, y1, z1)
+    ]
+  };
+}
+
+function buildFaces(p) {
+  const faces = [];
+  const referenceBacks = [];
+
+  p.blocks.forEach((block, blockIndex) => {
+    const c = cubeCorners(p, block);
+    referenceBacks.push(c.back);
+    faces.push({
+      name: `block ${blockIndex + 1} front`,
+      kind: "front",
+      color: "#ff5c6c",
+      blockIndex,
+      order: block.z,
+      poly: c.front
+    });
+
+    if (p.includeSides) {
+      const openPositiveX = !hasNeighbor(p.blocks, blockIndex, 1, 0);
+      const openPositiveY = !hasNeighbor(p.blocks, blockIndex, 0, 1);
+      const openNegativeX = !hasNeighbor(p.blocks, blockIndex, -1, 0);
+      const openNegativeY = !hasNeighbor(p.blocks, blockIndex, 0, -1);
+
+      if (openPositiveX) {
+      faces.push({name: `block ${blockIndex + 1} side +X`, kind: "side", color: "#39d8ff", blockIndex, order: block.z + 0.0001, poly: [c.front[1], c.front[2], c.back[2], c.back[1]]});
+      }
+      if (openPositiveY) {
+      faces.push({name: `block ${blockIndex + 1} side +Y`, kind: "side", color: "#39d8ff", blockIndex, order: block.z + 0.0002, poly: [c.front[2], c.front[3], c.back[3], c.back[2]]});
+      }
+      if (openNegativeX) {
+      faces.push({name: `block ${blockIndex + 1} side -X`, kind: "side", color: "#39d8ff", blockIndex, order: block.z + 0.0003, poly: [c.front[3], c.front[0], c.back[0], c.back[3]]});
+      }
+      if (openNegativeY) {
+      faces.push({name: `block ${blockIndex + 1} side -Y`, kind: "side", color: "#39d8ff", blockIndex, order: block.z + 0.0004, poly: [c.front[0], c.front[1], c.back[1], c.back[0]]});
+      }
+    }
+  });
+
+  faces.sort((a, b) => a.order - b.order || a.blockIndex - b.blockIndex || a.name.localeCompare(b.name));
+  return {faces, referenceBacks};
+}
+
+function hasNeighbor(blocks, blockIndex, dx, dy) {
+  const block = blocks[blockIndex];
+  const epsilon = 1e-6;
+
+  return blocks.some((other, otherIndex) => {
+    if (otherIndex === blockIndex) {
+      return false;
+    }
+
+    return Math.abs(other.x - block.x - dx) <= epsilon
+        && Math.abs(other.y - block.y - dy) <= epsilon
+        && Math.abs(other.z - block.z) <= epsilon;
+  });
+}
+
+function allocate(p) {
+  const res = p.res;
+  const total = res * res;
+  const remaining = new Float32Array(total);
+  const frontDensity = new Float32Array(total);
+  const sideDensity = new Float32Array(total);
+  remaining.fill(1);
+  const {faces, referenceBacks} = buildFaces(p);
+  const densityByFace = new Array(faces.length).fill(0);
+
+  faces.forEach((face, index) => {
+    forEachSoftCoveredCell(face.poly, p, (x, y, mask) => {
+      const id = y * res + x;
+      const assigned = remaining[id] * mask;
+
+      if (assigned <= 0.00001) {
+        return;
+      }
+
+      remaining[id] = Math.max(0, remaining[id] - assigned);
+      densityByFace[index] += assigned;
+
+      if (face.kind === "front") {
+        frontDensity[id] += assigned;
+      } else {
+        sideDensity[id] += assigned;
+      }
+    });
+  });
+
+  let screen = 0;
+  for (let i = 0; i < remaining.length; i++) {
+    screen += remaining[i];
+  }
+
+  return {frontDensity, sideDensity, screenDensity: remaining, faces, referenceBacks, densityByFace, screen, total};
+}
+
+function forEachSoftCoveredCell(poly, p, callback) {
+  const res = p.res;
+  const b = bounds(poly);
+  const margin = p.softEdges ? p.edgeWidth * EDGE_LUT_MAX / res : 0;
+  const minX = clampInt(Math.floor((b.minU - margin) * res), 0, res - 1);
+  const maxX = clampInt(Math.ceil((b.maxU + margin) * res), 1, res);
+  const minY = clampInt(Math.floor((b.minV - margin) * res), 0, res - 1);
+  const maxY = clampInt(Math.ceil((b.maxV + margin) * res), 1, res);
+  const orientation = polygonArea(poly) >= 0 ? 1 : -1;
+
+  for (let y = minY; y < maxY; y++) {
+    for (let x = minX; x < maxX; x++) {
+      const point = {u: (x + 0.5) / res, v: (y + 0.5) / res};
+      const mask = p.softEdges
+        ? softPolygonMask(poly, point, orientation, p.edgeWidth, res)
+        : (pointInConvexPoly(point, poly) ? 1 : 0);
+
+      if (mask > 0.00001) {
+        callback(x, y, mask);
+      }
+    }
+  }
+}
+
+function softPolygonMask(poly, point, orientation, edgeWidth, res) {
+  let mask = 1;
+
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    const edgeLength = Math.hypot(b.u - a.u, b.v - a.v);
+
+    if (edgeLength <= 1e-9) {
+      continue;
+    }
+
+    const signedDistance = orientation * cross(a, b, point) / edgeLength;
+    const distanceInCells = signedDistance * res;
+    mask = Math.min(mask, edgeFromLut(distanceInCells / edgeWidth));
+
+    if (mask <= 0.00001) {
+      return 0;
+    }
+  }
+
+  return clamp01(mask);
+}
+
+function polygonArea(poly) {
+  let area = 0;
+
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    area += a.u * b.v - b.u * a.v;
+  }
+
+  return area * 0.5;
+}
+
+function bounds(poly) {
+  return {
+    minU: Math.min(...poly.map(p => p.u)),
+    maxU: Math.max(...poly.map(p => p.u)),
+    minV: Math.min(...poly.map(p => p.v)),
+    maxV: Math.max(...poly.map(p => p.v))
+  };
+}
+
+function polyIntersectsCell(poly, x, y, res) {
+  const minU = x / res;
+  const minV = y / res;
+  const maxU = (x + 1) / res;
+  const maxV = (y + 1) / res;
+  const center = {u: (minU + maxU) * 0.5, v: (minV + maxV) * 0.5};
+  const corners = [
+    {u: minU, v: minV},
+    {u: maxU, v: minV},
+    {u: maxU, v: maxV},
+    {u: minU, v: maxV}
+  ];
+
+  if (pointInConvexPoly(center, poly) || corners.some(c => pointInConvexPoly(c, poly))) {
+    return true;
+  }
+
+  if (poly.some(p => p.u >= minU && p.u <= maxU && p.v >= minV && p.v <= maxV)) {
+    return true;
+  }
+
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    for (let j = 0; j < corners.length; j++) {
+      const c = corners[j];
+      const d = corners[(j + 1) % corners.length];
+      if (segmentsIntersect(a, b, c, d)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function pointInConvexPoly(point, poly) {
+  let positive = false;
+  let negative = false;
+
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    const c = cross(a, b, point);
+    if (c > 1e-10) positive = true;
+    if (c < -1e-10) negative = true;
+    if (positive && negative) return false;
+  }
+
+  return true;
+}
+
+function cross(a, b, p) {
+  return (b.u - a.u) * (p.v - a.v) - (b.v - a.v) * (p.u - a.u);
+}
+
+function segmentsIntersect(a, b, c, d) {
+  const o1 = orient(a, b, c);
+  const o2 = orient(a, b, d);
+  const o3 = orient(c, d, a);
+  const o4 = orient(c, d, b);
+
+  if (o1 * o2 < 0 && o3 * o4 < 0) return true;
+  return onSegment(a, b, c, o1)
+      || onSegment(a, b, d, o2)
+      || onSegment(c, d, a, o3)
+      || onSegment(c, d, b, o4);
+}
+
+function orient(a, b, c) {
+  return (b.u - a.u) * (c.v - a.v) - (b.v - a.v) * (c.u - a.u);
+}
+
+function onSegment(a, b, p, orientation) {
+  return Math.abs(orientation) < 1e-10
+      && p.u >= Math.min(a.u, b.u) - 1e-10
+      && p.u <= Math.max(a.u, b.u) + 1e-10
+      && p.v >= Math.min(a.v, b.v) - 1e-10
+      && p.v <= Math.max(a.v, b.v) + 1e-10;
+}
+
+function draw() {
+  const p = params();
+  const allocation = allocate(p);
+  const selectedBlock = blocks[selectedBlockIndex] ?? blocks[0] ?? {x: 0, y: 0, z: 0};
+
+  labels.resolutionValue.textContent = `${p.res} x ${p.res}`;
+  labels.edgeWidthValue.textContent = p.softEdges ? `${p.edgeWidth.toFixed(2)} cells` : "hard";
+  labels.blockXValue.textContent = selectedBlock.x.toFixed(2);
+  labels.blockYValue.textContent = selectedBlock.y.toFixed(2);
+  labels.frontZValue.textContent = selectedBlock.z.toFixed(1);
+  labels.radius0Value.textContent = p.radius0.toFixed(2);
+  labels.divergenceValue.textContent = p.divergence.toFixed(2);
+
+  renderBlockList();
+  drawDomain(p, allocation);
+  drawResults(p, allocation);
+  drawStats(allocation);
+}
+
+function drawDomain(p, allocation) {
+  const ctx = domainCtx;
+  const w = domainCanvas.width;
+  const h = domainCanvas.height;
+  ctx.clearRect(0, 0, w, h);
+  drawTexture(ctx, 0, 0, w, h);
+  drawAllocationCells(ctx, allocation, 0, 0, w, h, true);
+  drawFaceOutlines(ctx, allocation, 0, 0, w, h);
+
+  if (p.drawCells) {
+    drawGrid(ctx, p.res, 0, 0, w, h);
+  }
+
+  ctx.fillStyle = "#dfe8ef";
+  ctx.font = "15px system-ui, sans-serif";
+  ctx.fillText("Omega: one texture-domain density partition", 16, 24);
+}
+
+function drawResults(p, allocation) {
+  const ctx = resultCtx;
+  ctx.clearRect(0, 0, resultCanvas.width, resultCanvas.height);
+
+  drawPanel(ctx, 28, 44, 250, 250, "front face");
+  drawOwnedTexture(ctx, allocation, "front", 28, 44, 250, 250);
+
+  drawPanel(ctx, 326, 44, 250, 250, "side faces");
+  drawOwnedTexture(ctx, allocation, "side", 326, 44, 250, 250);
+
+  drawPanel(ctx, 624, 44, 250, 250, "screen / infinity");
+  drawOwnedTexture(ctx, allocation, "screen", 624, 44, 250, 250);
+
+  drawPanel(ctx, 28, 356, 846, 240, "shadow mask in Omega");
+  drawTexture(ctx, 28, 356, 240, 240);
+  drawOwnedTexture(ctx, allocation, "screen", 28, 356, 240, 240);
+  drawAllocationCells(ctx, allocation, 326, 356, 240, 240, false);
+  drawFaceOutlines(ctx, allocation, 326, 356, 240, 240);
+
+  ctx.fillStyle = "#91a1ad";
+  ctx.font = "14px system-ui, sans-serif";
+  ctx.fillText("The cube is unit-sized in world space. Position and the cone radius function create the texture-domain footprints.", 584, 470);
+  ctx.fillText("The back square is only a reference section for the volume. It does not receive light as an independent face.", 584, 494);
+}
+
+function drawPanel(ctx, x, y, w, h, title) {
+  ctx.strokeStyle = "#354456";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x, y, w, h);
+  ctx.fillStyle = "#dfe8ef";
+  ctx.font = "14px system-ui, sans-serif";
+  ctx.fillText(title, x, y - 10);
+}
+
+function drawTexture(ctx, x, y, w, h) {
+  if (image.complete && image.naturalWidth > 0) {
+    ctx.drawImage(image, x, y, w, h);
+    return;
+  }
+
+  const gradient = ctx.createRadialGradient(x + w * 0.5, y + h * 0.5, 0, x + w * 0.5, y + h * 0.5, w * 0.5);
+  gradient.addColorStop(0, "rgba(220,255,255,1)");
+  gradient.addColorStop(0.35, "rgba(100,210,255,0.65)");
+  gradient.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(x, y, w, h);
+}
+
+function drawAllocationCells(ctx, allocation, x, y, w, h, translucent) {
+  const res = params().res;
+  const cellW = w / res;
+  const cellH = h / res;
+
+  for (let yy = 0; yy < res; yy++) {
+    for (let xx = 0; xx < res; xx++) {
+      const id = yy * res + xx;
+      const screen = allocation.screenDensity[id];
+      const front = allocation.frontDensity[id];
+      const side = allocation.sideDensity[id];
+      const dx = x + xx * cellW;
+      const dy = y + yy * cellH;
+      const dw = Math.ceil(cellW);
+      const dh = Math.ceil(cellH);
+
+      if (screen > 0.001) {
+        ctx.fillStyle = `rgba(182,240,106,${(translucent ? 0.08 : 0.28) * screen})`;
+        ctx.fillRect(dx, dy, dw, dh);
+      }
+      if (front > 0.001) {
+        ctx.fillStyle = `rgba(255,92,108,${(translucent ? 0.48 : 0.78) * Math.min(1, front)})`;
+        ctx.fillRect(dx, dy, dw, dh);
+      }
+      if (side > 0.001) {
+        ctx.fillStyle = `rgba(57,216,255,${(translucent ? 0.44 : 0.72) * Math.min(1, side)})`;
+        ctx.fillRect(dx, dy, dw, dh);
+      }
+    }
+  }
+}
+
+function drawOwnedTexture(ctx, allocation, selector, x, y, w, h) {
+  const res = params().res;
+  const cellW = w / res;
+  const cellH = h / res;
+
+  ctx.save();
+
+  for (let yy = 0; yy < res; yy++) {
+    for (let xx = 0; xx < res; xx++) {
+      const id = yy * res + xx;
+      let alpha = 0;
+
+      if (selector === "screen") {
+        alpha = allocation.screenDensity[id];
+      } else if (selector === "front") {
+        alpha = allocation.frontDensity[id];
+      } else if (selector === "side") {
+        alpha = allocation.sideDensity[id];
+      }
+
+      if (alpha <= 0.001) {
+        continue;
+      }
+
+      const dx = x + xx * cellW;
+      const dy = y + yy * cellH;
+      const dw = Math.ceil(cellW);
+      const dh = Math.ceil(cellH);
+
+      ctx.globalAlpha = Math.min(1, alpha);
+      drawTextureCell(ctx, xx, yy, res, dx, dy, dw, dh);
+    }
+  }
+
+  ctx.restore();
+}
+
+function drawTextureCell(ctx, cellX, cellY, res, x, y, w, h) {
+  if (image.complete && image.naturalWidth > 0) {
+    ctx.drawImage(
+      image,
+      cellX * image.naturalWidth / res,
+      cellY * image.naturalHeight / res,
+      image.naturalWidth / res,
+      image.naturalHeight / res,
+      x,
+      y,
+      w,
+      h
+    );
+    return;
+  }
+
+  const u = (cellX + 0.5) / res - 0.5;
+  const v = (cellY + 0.5) / res - 0.5;
+  const radial = clamp01(1 - Math.hypot(u, v) * 2);
+  ctx.fillStyle = `rgba(180,245,255,${radial})`;
+  ctx.fillRect(x, y, w, h);
+}
+
+function drawFaceOutlines(ctx, allocation, x, y, w, h) {
+  ctx.save();
+  ctx.lineWidth = 2;
+
+  for (const face of allocation.faces) {
+    ctx.strokeStyle = face.kind === "front" ? "#ff5c6c" : "#ffd166";
+    drawPoly(ctx, face.poly, x, y, w, h);
+  }
+
+  ctx.setLineDash([5, 4]);
+  ctx.strokeStyle = "rgba(255,255,255,0.45)";
+  for (const referenceBack of allocation.referenceBacks) {
+    drawPoly(ctx, referenceBack, x, y, w, h);
+  }
+  ctx.restore();
+}
+
+function drawPoly(ctx, poly, x, y, w, h) {
+  ctx.beginPath();
+  poly.forEach((p, index) => {
+    const px = x + p.u * w;
+    const py = y + p.v * h;
+    if (index === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  });
+  ctx.closePath();
+  ctx.stroke();
+}
+
+function drawGrid(ctx, res, x, y, w, h) {
+  ctx.save();
+  ctx.strokeStyle = "rgba(255,255,255,0.10)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= res; i++) {
+    const gx = x + i * w / res;
+    const gy = y + i * h / res;
+    ctx.beginPath();
+    ctx.moveTo(gx, y);
+    ctx.lineTo(gx, y + h);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, gy);
+    ctx.lineTo(x + w, gy);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawStats(allocation) {
+  let front = 0;
+  let side = 0;
+
+  allocation.densityByFace.forEach((density, index) => {
+    if (allocation.faces[index].kind === "front") front += density;
+    else side += density;
+  });
+
+  const sum = front + side + allocation.screen;
+  const error = Math.abs(sum - allocation.total);
+  const ok = error <= 0.02;
+  stats.innerHTML = `
+    <span>front density</span><strong style="color:var(--front)">${front.toFixed(2)}</strong>
+    <span>side density</span><strong style="color:var(--side)">${side.toFixed(2)}</strong>
+    <span>screen density</span><strong style="color:var(--screen)">${allocation.screen.toFixed(2)}</strong>
+    <span>sum</span><strong>${sum.toFixed(2)} / ${allocation.total}</strong>
+    <span>density invariant</span><strong style="color:${ok ? "var(--screen)" : "var(--edge)"}">${ok ? "OK" : error.toExponential(2)}</strong>
+  `;
+}
+
+function clampInt(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, value));
+}
+
+draw();
+</script>
+</body>
+</html>

@@ -296,13 +296,17 @@ public final class ClientSpotCache {
     }
 
     private static int alphaFor(int alphaLevel, double multiplier) {
+        if (alphaLevel <= 0) {
+            return 0;
+        }
+
         return Math.max(0, Math.min(240, (int) Math.round((88 + alphaLevel * 10) * multiplier)));
     }
 
     private static RenderedSpot mergeSpot(RenderedSpot first, RenderedSpot second) {
-        RenderedSpot coherentColor = first.coherentAlpha() >= second.coherentAlpha() ? first : second;
-        RenderedSpot strayColor = first.strayAlpha() >= second.strayAlpha() ? first : second;
-        RenderedSpot ringColor = first.ringAlpha() >= second.ringAlpha() ? first : second;
+        int coherentAlpha = composeAlpha(first.coherentAlpha(), second.coherentAlpha());
+        int strayAlpha = composeAlpha(first.strayAlpha(), second.strayAlpha());
+        int ringAlpha = composeAlpha(first.ringAlpha(), second.ringAlpha());
 
         return new RenderedSpot(
                 first.pos(),
@@ -312,22 +316,22 @@ public final class ClientSpotCache {
                 first.centerZ(),
                 Math.max(first.coherentAlphaLevel(), second.coherentAlphaLevel()),
                 Math.max(first.coherentRadius(), second.coherentRadius()),
-                Math.max(first.coherentAlpha(), second.coherentAlpha()),
-                coherentColor.coherentRed(),
-                coherentColor.coherentGreen(),
-                coherentColor.coherentBlue(),
+                coherentAlpha,
+                mixChannel(first.coherentRed(), first.coherentAlpha(), second.coherentRed(), second.coherentAlpha()),
+                mixChannel(first.coherentGreen(), first.coherentAlpha(), second.coherentGreen(), second.coherentAlpha()),
+                mixChannel(first.coherentBlue(), first.coherentAlpha(), second.coherentBlue(), second.coherentAlpha()),
                 Math.max(first.strayAlphaLevel(), second.strayAlphaLevel()),
                 Math.max(first.strayRadius(), second.strayRadius()),
-                Math.max(first.strayAlpha(), second.strayAlpha()),
-                strayColor.strayRed(),
-                strayColor.strayGreen(),
-                strayColor.strayBlue(),
+                strayAlpha,
+                mixChannel(first.strayRed(), first.strayAlpha(), second.strayRed(), second.strayAlpha()),
+                mixChannel(first.strayGreen(), first.strayAlpha(), second.strayGreen(), second.strayAlpha()),
+                mixChannel(first.strayBlue(), first.strayAlpha(), second.strayBlue(), second.strayAlpha()),
                 Math.max(first.ringAlphaLevel(), second.ringAlphaLevel()),
                 Math.max(first.ringRadius(), second.ringRadius()),
-                Math.max(first.ringAlpha(), second.ringAlpha()),
-                ringColor.ringRed(),
-                ringColor.ringGreen(),
-                ringColor.ringBlue(),
+                ringAlpha,
+                mixChannel(first.ringRed(), first.ringAlpha(), second.ringRed(), second.ringAlpha()),
+                mixChannel(first.ringGreen(), first.ringAlpha(), second.ringGreen(), second.ringAlpha()),
+                mixChannel(first.ringBlue(), first.ringAlpha(), second.ringBlue(), second.ringAlpha()),
                 first.projectionMode(),
                 first.clipMinU(),
                 first.clipMinV(),
@@ -357,6 +361,29 @@ public final class ClientSpotCache {
                 first.quadZ3(),
                 first.quadTextureU3(),
                 first.quadTextureV3()
+        );
+    }
+
+    private static int composeAlpha(int first, int second) {
+        double firstOpacity = first / 255.0D;
+        double secondOpacity = second / 255.0D;
+        double opacity = 1.0D - (1.0D - firstOpacity) * (1.0D - secondOpacity);
+        return Math.max(0, Math.min(240, (int) Math.round(opacity * 255.0D)));
+    }
+
+    private static int mixChannel(int firstChannel, int firstAlpha, int secondChannel, int secondAlpha) {
+        int weight = firstAlpha + secondAlpha;
+
+        if (weight <= 0) {
+            return Math.max(0, Math.min(255, firstChannel));
+        }
+
+        return Math.max(
+                0,
+                Math.min(
+                        255,
+                        (int) Math.round((firstChannel * firstAlpha + secondChannel * secondAlpha) / (double) weight)
+                )
         );
     }
 

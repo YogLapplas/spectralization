@@ -194,7 +194,7 @@ public record LensProfile(
     public BeamEnvelope transformTransmittedEnvelope(BeamEnvelope input) {
         Objects.requireNonNull(input, "input");
 
-        double apertureRadius = aperture / 100.0;
+        double apertureRadius = opticalApertureRadius();
         double qualityMultiplier = switch (quality) {
             case 1 -> 1.5;
             case 3 -> 1.0;
@@ -211,7 +211,7 @@ public record LensProfile(
     public BeamProfileTransfer transformTransmittedProfile(BeamProfileKey input) {
         Objects.requireNonNull(input, "input");
 
-        double apertureRadius = aperture / 100.0;
+        double apertureRadius = opticalApertureRadius();
         double qualityMultiplier = switch (quality) {
             case 1 -> 1.5;
             case 3 -> 1.0;
@@ -270,6 +270,10 @@ public record LensProfile(
 
         String normalized = tag.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_\\-]", "_");
         return normalized.isBlank() ? "standard" : normalized;
+    }
+
+    private double opticalApertureRadius() {
+        return Math.min(1.0D, aperture / 100.0D);
     }
 
     private static int clamp(int value, int min, int max) {

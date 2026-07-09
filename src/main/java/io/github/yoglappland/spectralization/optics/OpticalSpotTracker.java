@@ -70,7 +70,8 @@ public final class OpticalSpotTracker {
             .thenComparingInt(SpotRecord::quadY3)
             .thenComparingInt(SpotRecord::quadZ3)
             .thenComparingInt(SpotRecord::quadTextureU3)
-            .thenComparingInt(SpotRecord::quadTextureV3);
+            .thenComparingInt(SpotRecord::quadTextureV3)
+            .thenComparingInt(SpotRecord::debugMarker);
 
     private static final Map<Level, Map<Integer, SpotOwnerSnapshot>> SPOTS_BY_OWNER = new WeakHashMap<>();
     private static final Map<Level, Map<UUID, Map<Integer, SentSpotSnapshot>>> SENT_SNAPSHOTS_BY_PLAYER = new WeakHashMap<>();
@@ -546,6 +547,7 @@ public final class OpticalSpotTracker {
             signature = mix(signature, spot.quadZ3());
             signature = mix(signature, spot.quadTextureU3());
             signature = mix(signature, spot.quadTextureV3());
+            signature = mix(signature, spot.debugMarker());
         }
 
         return signature;
@@ -566,6 +568,7 @@ public final class OpticalSpotTracker {
             signature = mix(signature, Double.doubleToLongBits(allocation.emittedPowerFraction()));
             signature = mix(signature, allocation.emittedQuads());
             signature = mix(signature, allocation.result().hashCode());
+            signature = mix(signature, allocation.detail().hashCode());
         }
 
         return signature;

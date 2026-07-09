@@ -782,6 +782,7 @@ public final class OpticalCompilerDebugLogger {
                 .append(" debug=").append(projectionCounts.getOrDefault(SpotRecord.ProjectionMode.DEBUG_FACE_CENTER, 0))
                 .append(" quad_faces=").append(formatDirectionCounts(quadFaceCounts))
                 .append('\n');
+        appendDebugFaceMarkers(builder, activeSpots);
 
         SpotProjectionContinuity.Report continuityReport = SpotProjectionContinuity.inspect(activeSpots, 8);
         ProjectionMetricSummary metricSummary = summarizeProjectionMetrics(activeSpots);
@@ -832,6 +833,7 @@ public final class OpticalCompilerDebugLogger {
                     .append(" stray_rgb=").append(formatRgb(spot.strayRed(), spot.strayGreen(), spot.strayBlue()))
                     .append(" ring_alpha=").append(spot.ringAlphaLevel())
                     .append(" projection=").append(spot.projectionMode())
+                    .append(" debug_marker=").append(formatDebugMarker(spot.debugMarker()))
                     .append(" clip=").append(spot.clipMinU()).append(',')
                     .append(spot.clipMinV()).append(',')
                     .append(spot.clipMaxU()).append(',')
@@ -2080,6 +2082,27 @@ public final class OpticalCompilerDebugLogger {
         }
     }
 
+    private static void appendDebugFaceMarkers(StringBuilder builder, List<SpotRecord> spots) {
+        builder.append("spot_projection_debug_markers:\n");
+        int count = 0;
+
+        for (SpotRecord spot : spots) {
+            if (spot.projectionMode() != SpotRecord.ProjectionMode.DEBUG_FACE_CENTER) {
+                continue;
+            }
+
+            builder.append("  marker=").append(formatDebugMarker(spot.debugMarker()))
+                    .append(" pos=").append(formatPos(spot.pos()))
+                    .append(" face=").append(spot.face().getSerializedName())
+                    .append('\n');
+            count++;
+        }
+
+        if (count == 0) {
+            builder.append("  none\n");
+        }
+    }
+
     private static void appendProjectionAllocationMetrics(
             StringBuilder builder,
             List<SpotProjectionAllocation> allocations
@@ -2154,8 +2177,13 @@ public final class OpticalCompilerDebugLogger {
                     .append(" assigned_power_fraction=").append(formatDouble(allocation.assignedPowerFraction()))
                     .append(" emitted_power_fraction=").append(formatDouble(allocation.emittedPowerFraction()))
                     .append(" emitted_quads=").append(allocation.emittedQuads())
-                    .append(" result=").append(allocation.result())
-                    .append('\n');
+                    .append(" result=").append(allocation.result());
+
+            if (!allocation.detail().isEmpty()) {
+                builder.append(" detail=").append(allocation.detail());
+            }
+
+            builder.append('\n');
             count++;
         }
     }
@@ -2198,6 +2226,10 @@ public final class OpticalCompilerDebugLogger {
 
     private static String formatRgb(int rgb) {
         return String.format(Locale.ROOT, "#%06X", rgb & 0xFFFFFF);
+    }
+
+    private static String formatDebugMarker(int marker) {
+        return marker < 0 ? "---" : String.format(Locale.ROOT, "%03X", marker & 0xFFF);
     }
 
     private static String formatStringCounts(Map<String, Integer> counts) {

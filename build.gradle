@@ -2453,6 +2453,7 @@ tasks.register('verifySpotProjectionContinuity') {
     def patchSourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/projection/SpotProjectionPatch.java')
     def formalProofSourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/projection/SpotProjectionFormalProof.java')
     def continuitySourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/projection/SpotProjectionContinuity.java')
+    def compiledSpotLayerSourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/compiler/CompiledSpotLayer.java')
     def overlayPayloadSourceFile = file('src/main/java/io/github/yoglappland/spectralization/network/SpotOverlayPayload.java')
     def updatePayloadSourceFile = file('src/main/java/io/github/yoglappland/spectralization/network/SpotUpdatePayload.java')
     def spotRenderSourceFile = file('src/main/java/io/github/yoglappland/spectralization/client/spot/SpotRenderEvents.java')
@@ -2462,6 +2463,7 @@ tasks.register('verifySpotProjectionContinuity') {
             patchSourceFile,
             formalProofSourceFile,
             continuitySourceFile,
+            compiledSpotLayerSourceFile,
             overlayPayloadSourceFile,
             updatePayloadSourceFile,
             spotRenderSourceFile
@@ -2473,6 +2475,7 @@ tasks.register('verifySpotProjectionContinuity') {
         def patchSource = patchSourceFile.text
         def formalProofSource = formalProofSourceFile.text
         def continuitySource = continuitySourceFile.text
+        def compiledSpotLayerSource = compiledSpotLayerSourceFile.text
         def overlayPayloadSource = overlayPayloadSourceFile.text
         def updatePayloadSource = updatePayloadSourceFile.text
         def spotRenderSource = spotRenderSourceFile.text
@@ -2518,6 +2521,12 @@ tasks.register('verifySpotProjectionContinuity') {
                 'SpotProjectionContinuity must prove boundaries in the same scale used by quad rendering.'
         )
         expect(
+                compiledSpotLayerSource.contains('PROJECTED_OPTICAL_SOURCE_MAX_RADIUS = 0.5D')
+                        && compiledSpotLayerSource.contains('return envelope.withRadius(PROJECTED_OPTICAL_SOURCE_MAX_RADIUS);')
+                        && !compiledSpotLayerSource.contains('apertureClip(1.0D).outputProfile().toEnvelope()'),
+                'CompiledSpotLayer must cap projected one-block optical source radius at 0.5 without treating it as optical aperture loss.'
+        )
+        expect(
                 overlayPayloadSource.contains('buffer.writeVarInt(spot.quadX0())')
                         && overlayPayloadSource.contains('buffer.writeVarInt(spot.quadTextureV3())')
                         && (overlayPayloadSource.count('buffer.readVarInt()') >= 20),
@@ -2543,6 +2552,12 @@ tasks.register('verifySpotProjectionFormalProof', JavaExec) {
     mainClass = 'io.github.yoglappland.spectralization.optics.projection.SpotProjectionFormalProof'
 }
 
+tasks.register('verifyBeamProfileQuantization', JavaExec) {
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'io.github.yoglappland.spectralization.optics.validation.BeamProfileQuantizationVerifier'
+}
+
 tasks.named('check') {
     dependsOn tasks.named('verifyThermalSmelterUiLayout')
     dependsOn tasks.named('verifyLensGrindingBenchUiLayout')
@@ -2558,6 +2573,7 @@ tasks.named('check') {
     dependsOn tasks.named('verifyPassiveOptics')
     dependsOn tasks.named('verifySpotProjectionContinuity')
     dependsOn tasks.named('verifySpotProjectionFormalProof')
+    dependsOn tasks.named('verifyBeamProfileQuantization')
 }
 
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.

@@ -10,9 +10,12 @@ import io.github.yoglappland.spectralization.compat.ldlib2.ThermalSmelterLdLibUi
 import io.github.yoglappland.spectralization.network.NetworkOverlayPayload;
 import io.github.yoglappland.spectralization.optics.OpticalEntityInteractions;
 import io.github.yoglappland.spectralization.optics.OpticalPathVisualization;
+import io.github.yoglappland.spectralization.optics.OpticalSpotTracker;
+import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
 import io.github.yoglappland.spectralization.optics.lens.LensProfile;
 import io.github.yoglappland.spectralization.optics.metasurface.MetamaterialTemplateData;
 import io.github.yoglappland.spectralization.optics.metasurface.MetamaterialVector;
+import io.github.yoglappland.spectralization.optics.projection.VoxelSpotProjector;
 import io.github.yoglappland.spectralization.optics.topology.OpticalNetworkIndex;
 import io.github.yoglappland.spectralization.optics.topology.OpticalNetworkSnapshot;
 import java.io.File;
@@ -83,6 +86,18 @@ public final class SpectralCommands {
                                         context.getSource(),
                                         !SpectralizationConfig.opticalCompilerDebugLog()
                                 ))))
+                .then(Commands.literal("spotdebug")
+                        .then(Commands.literal("centers")
+                                .executes(context -> reportSpotDebugCentersState(context.getSource()))
+                                .then(Commands.literal("on")
+                                        .executes(context -> setSpotDebugCenters(context.getSource(), true)))
+                                .then(Commands.literal("off")
+                                        .executes(context -> setSpotDebugCenters(context.getSource(), false)))
+                                .then(Commands.literal("toggle")
+                                        .executes(context -> setSpotDebugCenters(
+                                                context.getSource(),
+                                                !VoxelSpotProjector.debugFaceCentersEnabled()
+                                        )))))
                 .then(OpticalExampleValidator.command())
                 .then(Commands.literal("uidebug")
                         .executes(context -> reportUiDebugState(context.getSource()))
@@ -317,6 +332,20 @@ public final class SpectralCommands {
     private static int reportCompilerDebugState(CommandSourceStack source) {
         String state = SpectralizationConfig.opticalCompilerDebugLog() ? "on" : "off";
         source.sendSuccess(() -> Component.literal("Spectralization optical compiler debug log: " + state), true);
+        return 1;
+    }
+
+    private static int setSpotDebugCenters(CommandSourceStack source, boolean enabled) {
+        VoxelSpotProjector.setDebugFaceCentersEnabled(enabled);
+        OpticalSpotTracker.clear(source.getLevel());
+        OpticalTraceCache.clear(source.getLevel());
+        OpticalNetworkIndex.markDirty(source.getLevel());
+        return reportSpotDebugCentersState(source);
+    }
+
+    private static int reportSpotDebugCentersState(CommandSourceStack source) {
+        String state = VoxelSpotProjector.debugFaceCentersEnabled() ? "on" : "off";
+        source.sendSuccess(() -> Component.literal("Spectralization spot face-center debug markers: " + state), true);
         return 1;
     }
 

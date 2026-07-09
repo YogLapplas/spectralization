@@ -63,4 +63,15 @@ public class BeamSplitterBlock extends MirrorBlock {
     protected double reflectance(BlockState state, BeamPacket input, Direction incomingDirection) {
         return DEFAULT_REFLECTANCE;
     }
+
+    @Override
+    protected boolean shouldApplyOpticalAperture(
+            BlockState state,
+            Direction incomingDirection,
+            Direction outgoingDirection
+    ) {
+        return getConnectedDirections(state).contains(incomingDirection)
+                && (outgoingDirection == incomingDirection.getOpposite()
+                || outgoingDirection == getReflectedDirection(state, incomingDirection));
+    }
 }

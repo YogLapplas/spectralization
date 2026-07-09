@@ -481,14 +481,14 @@ public final class SpotProjectionFormalProof {
             LocalPoint p3,
             TexturePoint t3
     ) {
-        double rawDot = SpotProjectionPatch.faceNormalDot(sideFace, p0, p1, p2);
+        double rawDot = SpotProjectionPatch.faceNormalDot(sideFace, p0, p1, p2, p3);
         Patch patch = SpotProjectionPatch.oriented(sideFace, p0, t0, p1, t1, p2, t2, p3, t3);
 
         if (patch == null) {
             return new SideCheck(label, true, rawDot, Double.NaN, false, false);
         }
 
-        double orientedDot = SpotProjectionPatch.faceNormalDot(sideFace, patch.p0(), patch.p1(), patch.p2());
+        double orientedDot = SpotProjectionPatch.faceNormalDot(sideFace, patch.p0(), patch.p1(), patch.p2(), patch.p3());
         boolean onFace = SpotProjectionPatch.liesOnFace(sideFace, patch.p0(), patch.p1(), patch.p2(), patch.p3());
         boolean textureInUnitSquare = textureInUnitSquare(patch.t0())
                 && textureInUnitSquare(patch.t1())

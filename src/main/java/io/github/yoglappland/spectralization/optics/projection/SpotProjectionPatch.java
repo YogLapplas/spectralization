@@ -3,7 +3,7 @@ package io.github.yoglappland.spectralization.optics.projection;
 import net.minecraft.core.Direction;
 
 final class SpotProjectionPatch {
-    private static final double FACE_EPSILON = 1.0E-6D;
+    private static final double FACE_EPSILON = 1.0E-9D;
 
     static Patch oriented(
             Direction face,
@@ -20,7 +20,7 @@ final class SpotProjectionPatch {
             return null;
         }
 
-        double dot = faceNormalDot(face, p0, p1, p2);
+        double dot = faceNormalDot(face, p0, p1, p2, p3);
 
         if (Math.abs(dot) <= FACE_EPSILON) {
             return null;
@@ -90,6 +90,23 @@ final class SpotProjectionPatch {
         double nx = ay * bz - az * by;
         double ny = az * bx - ax * bz;
         double nz = ax * by - ay * bx;
+        return nx * face.getStepX() + ny * face.getStepY() + nz * face.getStepZ();
+    }
+
+    static double faceNormalDot(Direction face, LocalPoint p0, LocalPoint p1, LocalPoint p2, LocalPoint p3) {
+        LocalPoint[] points = {p0, p1, p2, p3};
+        double nx = 0.0D;
+        double ny = 0.0D;
+        double nz = 0.0D;
+
+        for (int index = 0; index < points.length; index++) {
+            LocalPoint current = points[index];
+            LocalPoint next = points[(index + 1) % points.length];
+            nx += (current.y() - next.y()) * (current.z() + next.z());
+            ny += (current.z() - next.z()) * (current.x() + next.x());
+            nz += (current.x() - next.x()) * (current.y() + next.y());
+        }
+
         return nx * face.getStepX() + ny * face.getStepY() + nz * face.getStepZ();
     }
 

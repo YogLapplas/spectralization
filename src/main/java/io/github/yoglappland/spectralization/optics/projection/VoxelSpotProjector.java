@@ -1,8 +1,12 @@
 package io.github.yoglappland.spectralization.optics.projection;
 
+import io.github.yoglappland.spectralization.block.LensHolderBlock;
+import io.github.yoglappland.spectralization.blockentity.LensHolderBlockEntity;
+import io.github.yoglappland.spectralization.optics.OpticalElement;
 import io.github.yoglappland.spectralization.optics.BeamEnvelope;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
 import io.github.yoglappland.spectralization.optics.OpticalMaterialProfiles;
+import io.github.yoglappland.spectralization.optics.OpticalSource;
 import io.github.yoglappland.spectralization.optics.OpticalSpotTracker;
 import io.github.yoglappland.spectralization.optics.SpotRecord;
 import io.github.yoglappland.spectralization.optics.geometry.BeamGeometryOps;
@@ -13,6 +17,7 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
@@ -24,13 +29,22 @@ public final class VoxelSpotProjector {
     private static final int MAX_SIDE_PATCH_TRAVEL_SUBDIVISIONS = 8;
     private static final double SIDE_PATCH_RADIUS_RATIO_PER_SEGMENT = 1.18D;
     private static final double SIDE_PATCH_RADIUS_DELTA_PER_SEGMENT = 0.35D;
-    private static final double EDGE_TOUCH_EPSILON = 1.0E-4D;
-    private static final double CONE_SIDE_EPSILON = 1.0E-6D;
+    private static final double EDGE_TOUCH_EPSILON = 1.0E-6D;
+    private static final double CONE_SIDE_EPSILON = 1.0E-8D;
     private static final double VISUAL_DISTANCE_FADE_LINEAR = 0.08D;
     private static final double VISUAL_DISTANCE_FADE_QUADRATIC = 0.004D;
-    private static final int MAX_PROJECTED_TILE_RADIUS = 6;
     private static final int MAX_PROJECTED_DEPTH = 32;
+    private static final int CONE_TRAVEL_SAMPLES = 16;
     private static final CanonicalRect FULL_FOOTPRINT = new CanonicalRect(0.0D, 0.0D, 1.0D, 1.0D);
+    private static volatile boolean debugFaceCentersEnabled = false;
+
+    public static boolean debugFaceCentersEnabled() {
+        return debugFaceCentersEnabled;
+    }
+
+    public static void setDebugFaceCentersEnabled(boolean enabled) {
+        debugFaceCentersEnabled = enabled;
+    }
 
     public static SpotProjectionResult projectLightConeSpots(
             Level level,
@@ -52,11 +66,11 @@ public final class VoxelSpotProjector {
         LongSet dependencies = new LongOpenHashSet();
         List<SpotRecord> fragments = new ArrayList<>();
         List<SpotProjectionAllocation> allocations = new ArrayList<>();
-        // Occupancy lives in canonical ray coordinates; each block face maps that window back to local surface coordinates.
         List<CanonicalRect> occupiedRayWindows = new ArrayList<>();
+        BeamPacket projectionTemplate = profileTemplate;
 
-        for (int depth = 0; depth <= MAX_PROJECTED_DEPTH; depth++) {
-            BeamEnvelope envelope = envelopeAtDepth(profileTemplate.envelope(), depth);
+        for (int depth = 1; depth <= MAX_PROJECTED_DEPTH; depth++) {
+            BeamEnvelope envelope = envelopeAtDepth(projectionTemplate.envelope(), depth);
             double radius = envelope.radius();
 
             if (!Double.isFinite(radius) || radius <= 0.0D) {
@@ -69,11 +83,11 @@ public final class VoxelSpotProjector {
                 exitRadius = radius;
             }
 
-            Direction displayFace = depth == 0 ? sourceFace : travelDirection.getOpposite();
+            Direction displayFace = travelDirection.getOpposite();
             Direction uDirection = SpotSurfaceFrame.uDirection(displayFace);
             Direction vDirection = SpotSurfaceFrame.vDirection(displayFace);
-            int tileRadius = Math.min(MAX_PROJECTED_TILE_RADIUS, (int) Math.ceil(Math.max(radius, exitRadius) + 0.5D));
-            BeamPacket targetTemplate = profileTemplate.withEnvelope(envelope);
+            int tileRadius = projectedTileRadius(maxEnvelopeRadiusOverUnit(envelope));
+            BeamPacket targetTemplate = projectionTemplate.withEnvelope(envelope);
             List<CanonicalRect> frontBlockersAtDepth = new ArrayList<>();
             List<CanonicalRect> frontFaceWindowsAtDepth = new ArrayList<>();
             List<CanonicalRect> sideBlockersAtDepth = new ArrayList<>();
@@ -103,15 +117,12 @@ public final class VoxelSpotProjector {
                         continue;
                     }
 
-                    if (!isProjectableFullSurface(level, targetPos, targetState)) {
+                    if (!isProjectableSurface(level, targetPos, targetState)) {
                         continue;
                     }
 
-                    if (depth > 0 && sweptWindow != null) {
-                        frontBlockersAtDepth.add(sweptWindow);
-                    }
-
                     if (depth > 0 && rect != null) {
+                        frontBlockersAtDepth.add(rect.canonicalRect());
                         frontFaceWindowsAtDepth.add(rect.canonicalRect());
                     }
 
@@ -129,18 +140,6 @@ public final class VoxelSpotProjector {
 
                     for (ProjectionRect visibleRect : visibleRects) {
                         double visualDistanceFactor = visualDistanceFactor(depth);
-                        double fraction = SpotFootprintKernel.DEFAULT.integral(
-                                visibleRect.kernelMinU(),
-                                visibleRect.kernelMinV(),
-                                visibleRect.kernelMaxU(),
-                                visibleRect.kernelMaxV()
-                        );
-
-                        if (fraction <= 0.0D) {
-                            continue;
-                        }
-
-                        // Region area allocates texture; brightness is per-pattern and must not shrink with clipping.
                         double visualFragmentPower = visualSurfacePower(beamPower, visualDistanceFactor);
 
                         if (visualFragmentPower <= MIN_FRAGMENT_POWER) {
@@ -239,7 +238,7 @@ public final class VoxelSpotProjector {
 
                 BlockState targetState = level.getBlockState(targetPos);
 
-                if (!isProjectableFullSurface(level, targetPos, targetState)) {
+                if (!isProjectableSurface(level, targetPos, targetState)) {
                     continue;
                 }
 
@@ -288,124 +287,115 @@ public final class VoxelSpotProjector {
         double entryTravel = 0.0D;
         double exitTravel = 1.0D;
 
-        if (openTileFacesCanonicalInterior(tileU, tileV, tileU - 1, tileV)) {
-            addUSideStrip(
-                    level,
-                    targetPos,
-                    targetState,
-                    uDirection.getOpposite(),
-                    travelDirection,
-                    uDirection,
-                    vDirection,
-                    entryTravel,
-                    exitTravel,
-                    tileU - 0.5D,
-                    0.0D,
-                    tileV,
-                    targetTemplate,
-                    beamPower,
-                    coherentBeamPower,
-                    visualDistanceFactor,
-                    occupiedRayWindows,
-                    sideBlockersAtDepth,
-                    dependencies,
-                    allocations,
-                    fragments
-            );
-        }
+        addUSideStrip(
+                level,
+                targetPos,
+                targetState,
+                uDirection.getOpposite(),
+                travelDirection,
+                uDirection,
+                vDirection,
+                entryTravel,
+                exitTravel,
+                tileU - 0.5D,
+                0.0D,
+                tileV,
+                targetTemplate,
+                beamPower,
+                coherentBeamPower,
+                visualDistanceFactor,
+                occupiedRayWindows,
+                sideBlockersAtDepth,
+                dependencies,
+                allocations,
+                fragments
+        );
 
-        if (openTileFacesCanonicalInterior(tileU, tileV, tileU + 1, tileV)) {
-            addUSideStrip(
-                    level,
-                    targetPos,
-                    targetState,
-                    uDirection,
-                    travelDirection,
-                    uDirection,
-                    vDirection,
-                    entryTravel,
-                    exitTravel,
-                    tileU + 0.5D,
-                    1.0D,
-                    tileV,
-                    targetTemplate,
-                    beamPower,
-                    coherentBeamPower,
-                    visualDistanceFactor,
-                    occupiedRayWindows,
-                    sideBlockersAtDepth,
-                    dependencies,
-                    allocations,
-                    fragments
-            );
-        }
+        addUSideStrip(
+                level,
+                targetPos,
+                targetState,
+                uDirection,
+                travelDirection,
+                uDirection,
+                vDirection,
+                entryTravel,
+                exitTravel,
+                tileU + 0.5D,
+                1.0D,
+                tileV,
+                targetTemplate,
+                beamPower,
+                coherentBeamPower,
+                visualDistanceFactor,
+                occupiedRayWindows,
+                sideBlockersAtDepth,
+                dependencies,
+                allocations,
+                fragments
+        );
 
-        if (openTileFacesCanonicalInterior(tileU, tileV, tileU, tileV - 1)) {
-            addVSideStrip(
-                    level,
-                    targetPos,
-                    targetState,
-                    vDirection.getOpposite(),
-                    travelDirection,
-                    uDirection,
-                    vDirection,
-                    entryTravel,
-                    exitTravel,
-                    tileV - 0.5D,
-                    0.0D,
-                    tileU,
-                    targetTemplate,
-                    beamPower,
-                    coherentBeamPower,
-                    visualDistanceFactor,
-                    occupiedRayWindows,
-                    sideBlockersAtDepth,
-                    dependencies,
-                    allocations,
-                    fragments
-            );
-        }
+        addVSideStrip(
+                level,
+                targetPos,
+                targetState,
+                vDirection.getOpposite(),
+                travelDirection,
+                uDirection,
+                vDirection,
+                entryTravel,
+                exitTravel,
+                tileV - 0.5D,
+                0.0D,
+                tileU,
+                targetTemplate,
+                beamPower,
+                coherentBeamPower,
+                visualDistanceFactor,
+                occupiedRayWindows,
+                sideBlockersAtDepth,
+                dependencies,
+                allocations,
+                fragments
+        );
 
-        if (openTileFacesCanonicalInterior(tileU, tileV, tileU, tileV + 1)) {
-            addVSideStrip(
-                    level,
-                    targetPos,
-                    targetState,
-                    vDirection,
-                    travelDirection,
-                    uDirection,
-                    vDirection,
-                    entryTravel,
-                    exitTravel,
-                    tileV + 0.5D,
-                    1.0D,
-                    tileU,
-                    targetTemplate,
-                    beamPower,
-                    coherentBeamPower,
-                    visualDistanceFactor,
-                    occupiedRayWindows,
-                    sideBlockersAtDepth,
-                    dependencies,
-                    allocations,
-                    fragments
-            );
-        }
-    }
-
-    private static boolean openTileFacesCanonicalInterior(int solidTileU, int solidTileV, int openTileU, int openTileV) {
-        return tileDistanceFromAxis(openTileU, openTileV) + EDGE_TOUCH_EPSILON < tileDistanceFromAxis(solidTileU, solidTileV);
-    }
-
-    private static double tileDistanceFromAxis(int tileU, int tileV) {
-        return Math.hypot(
-                intervalDistanceFromAxis(tileU - 0.5D, tileU + 0.5D),
-                intervalDistanceFromAxis(tileV - 0.5D, tileV + 0.5D)
+        addVSideStrip(
+                level,
+                targetPos,
+                targetState,
+                vDirection,
+                travelDirection,
+                uDirection,
+                vDirection,
+                entryTravel,
+                exitTravel,
+                tileV + 0.5D,
+                1.0D,
+                tileU,
+                targetTemplate,
+                beamPower,
+                coherentBeamPower,
+                visualDistanceFactor,
+                occupiedRayWindows,
+                sideBlockersAtDepth,
+                dependencies,
+                allocations,
+                fragments
         );
     }
 
-    private static boolean isProjectableFullSurface(Level level, BlockPos pos, BlockState state) {
-        return !OpticalMaterialProfiles.isAirLike(state) && state.isCollisionShapeFullBlock(level, pos);
+    private static boolean isProjectableSurface(Level level, BlockPos pos, BlockState state) {
+        if (OpticalMaterialProfiles.isAirLike(state)) {
+            return false;
+        }
+
+        if (state.getBlock() instanceof LensHolderBlock) {
+            return level.getBlockEntity(pos) instanceof LensHolderBlockEntity lensHolder && lensHolder.hasLens();
+        }
+
+        return state.isCollisionShapeFullBlock(level, pos)
+                || state.getBlock() instanceof OpticalElement
+                || state.getBlock() instanceof OpticalSource;
     }
 
     private static boolean isSideOpen(
@@ -483,7 +473,9 @@ public final class VoxelSpotProjector {
     }
 
     private static void addDebugFaceCenter(BlockPos targetPos, Direction face, List<SpotRecord> fragments) {
-        // fragments.add(SpotRecord.debugFaceCenter(targetPos, face));
+        if (debugFaceCentersEnabled) {
+            fragments.add(SpotRecord.debugFaceCenter(targetPos, face));
+        }
     }
 
     private static void addUSideStrip(
@@ -610,123 +602,146 @@ public final class VoxelSpotProjector {
             List<SpotProjectionAllocation> allocations,
             List<SpotRecord> fragments
     ) {
-        double requiredRadius = Math.hypot(
-                boundaryWorldU,
-                intervalDistanceFromAxis(tileV - 0.5D, tileV + 0.5D)
-        );
-        TravelInterval visibleTravel = clipTravelByRadius(targetTemplate.envelope(), 0.0D, 1.0D, requiredRadius);
+        List<TravelInterval> visibleTravels = uSideTravelIntervals(targetTemplate.envelope(), boundaryWorldU, tileV);
 
-        if (visibleTravel == null) {
+        if (visibleTravels.isEmpty()) {
             return;
         }
 
-        double crossTravel0 = nudgeVisibleTravelEndpoint(targetTemplate.envelope(), visibleTravel.min(), visibleTravel.max(), requiredRadius);
-        double crossTravel1 = nudgeVisibleTravelEndpoint(targetTemplate.envelope(), visibleTravel.max(), visibleTravel.min(), requiredRadius);
-        BeamEnvelope envelope0 = envelopeAtOffset(targetTemplate.envelope(), crossTravel0);
-        BeamEnvelope envelope1 = envelopeAtOffset(targetTemplate.envelope(), crossTravel1);
-        SideCrossSection cross0 = uSideCrossSection(envelope0.radius(), boundaryWorldU, tileV);
-        SideCrossSection cross1 = uSideCrossSection(envelope1.radius(), boundaryWorldU, tileV);
+        boolean addedDebugCenter = false;
 
-        if (cross0 == null || cross1 == null) {
-            return;
-        }
-
-        CanonicalRect sideWindow = sideCanonicalWindow(
-                cross0.axisCanonical(),
-                cross0.axisCanonical(),
-                cross1.axisCanonical(),
-                cross1.axisCanonical(),
-                cross0.minCanonical(),
-                cross0.maxCanonical(),
-                cross1.minCanonical(),
-                cross1.maxCanonical()
-        );
-
-        if (sideWindow == null) {
-            return;
-        }
-
-        List<CanonicalRect> visibleSideWindows = subtractOccupied(sideWindow, occupiedRayWindows);
-        double candidateArea = canonicalArea(sideWindow);
-
-        if (visibleSideWindows.isEmpty()) {
-            allocations.add(sideAllocation(
-                    targetPos,
-                    sideFace,
-                    "u-side",
-                    candidateArea,
-                    0.0D,
-                    0.0D,
-                    0.0D,
-                    0.0D,
-                    0,
-                    "occluded"
-            ));
-            return;
-        }
-
-        addDebugFaceCenter(targetPos, sideFace, fragments);
-
-        double travel0 = lerp(entryTravel, exitTravel, crossTravel0);
-        double travel1 = lerp(entryTravel, exitTravel, crossTravel1);
-
-        for (CanonicalRect visibleSideWindow : visibleSideWindows) {
-            double assignedArea = canonicalArea(visibleSideWindow);
-            double sideFraction = integratedFraction(visibleSideWindow);
-            double sidePower = visualSidePower(beamPower, visualDistanceFactor);
-
-            if (sidePower <= MIN_FRAGMENT_POWER) {
-                allocations.add(sideAllocation(
-                        targetPos,
-                        sideFace,
-                        "u-side",
-                        candidateArea,
-                        assignedArea,
-                        0.0D,
-                        sideFraction,
-                        0.0D,
-                        0,
-                        "low_power"
-                ));
-                continue;
-            }
-
-            PatchEmission emission = addUSideChartSpot(
-                    level,
-                    targetPos,
-                    targetState,
-                    sideFace,
-                    travelDirection,
-                    uDirection,
-                    vDirection,
-                    targetTemplate,
-                    sidePower,
-                    visualSidePower(coherentBeamPower, visualDistanceFactor),
-                    fixedULocal,
-                    travel0,
-                    travel1,
-                    cross0,
-                    cross1,
-                    visibleSideWindow,
-                    fragments
+        for (TravelInterval visibleTravel : visibleTravels) {
+            List<TravelInterval> chartTravels = splitSideTravelAtCrossBoundaries(
+                    targetTemplate.envelope(),
+                    visibleTravel,
+                    tileV - 0.5D,
+                    tileV + 0.5D
             );
 
-            if (emission.emitted()) {
-                sideBlockersAtDepth.add(visibleSideWindow);
-            }
+            for (TravelInterval chartTravel : chartTravels) {
+                int travelSteps = sideChartTravelSubdivisionCount(targetTemplate.envelope(), chartTravel.min(), chartTravel.max());
 
-            allocations.add(sideAllocation(
-                    targetPos,
-                    sideFace,
-                    "u-side",
-                    candidateArea,
-                    assignedArea,
-                    emission.emitted() ? assignedArea : 0.0D,
-                    sideFraction,
-                    emission.emitted() ? sideFraction : 0.0D,
-                    emission.emitted() ? 1 : 0,
-                    emission.result()
-            ));
+                for (int travelIndex = 0; travelIndex < travelSteps; travelIndex++) {
+                    double rawTravel0 = lerp(chartTravel.min(), chartTravel.max(), travelIndex / (double) travelSteps);
+                    double rawTravel1 = lerp(chartTravel.min(), chartTravel.max(), (travelIndex + 1) / (double) travelSteps);
+                double crossTravel0 = nudgeUSideTravelEndpoint(targetTemplate.envelope(), rawTravel0, rawTravel1, boundaryWorldU, tileV);
+                double crossTravel1 = nudgeUSideTravelEndpoint(targetTemplate.envelope(), rawTravel1, rawTravel0, boundaryWorldU, tileV);
+
+                if (crossTravel1 - crossTravel0 <= EDGE_TOUCH_EPSILON) {
+                    continue;
+                }
+
+                BeamEnvelope envelope0 = envelopeAtOffset(targetTemplate.envelope(), crossTravel0);
+                BeamEnvelope envelope1 = envelopeAtOffset(targetTemplate.envelope(), crossTravel1);
+                SideCrossSection cross0 = uSideCrossSection(envelope0.radius(), boundaryWorldU, tileV);
+                SideCrossSection cross1 = uSideCrossSection(envelope1.radius(), boundaryWorldU, tileV);
+
+                if (cross0 == null || cross1 == null) {
+                    continue;
+                }
+
+                CanonicalRect sideWindow = sideCanonicalWindow(
+                        cross0.axisCanonical(),
+                        cross0.axisCanonical(),
+                        cross1.axisCanonical(),
+                        cross1.axisCanonical(),
+                        cross0.minCanonical(),
+                        cross0.maxCanonical(),
+                        cross1.minCanonical(),
+                        cross1.maxCanonical()
+                );
+
+                if (sideWindow == null) {
+                    continue;
+                }
+
+                List<CanonicalRect> visibleSideWindows = subtractOccupied(sideWindow, occupiedRayWindows);
+                double candidateArea = canonicalArea(sideWindow);
+
+                if (visibleSideWindows.isEmpty()) {
+                    allocations.add(sideAllocation(
+                            targetPos,
+                            sideFace,
+                            "u-side",
+                            candidateArea,
+                            0.0D,
+                            0.0D,
+                            0.0D,
+                            0.0D,
+                            0,
+                            "occluded"
+                    ));
+                    continue;
+                }
+
+                if (!addedDebugCenter) {
+                    addDebugFaceCenter(targetPos, sideFace, fragments);
+                    addedDebugCenter = true;
+                }
+
+                double travel0 = lerp(entryTravel, exitTravel, crossTravel0);
+                double travel1 = lerp(entryTravel, exitTravel, crossTravel1);
+
+                for (CanonicalRect visibleSideWindow : visibleSideWindows) {
+                    double assignedArea = canonicalArea(visibleSideWindow);
+                    double sideFraction = integratedFraction(visibleSideWindow);
+                    double sidePower = visualSidePower(beamPower, visualDistanceFactor);
+
+                    if (sidePower <= MIN_FRAGMENT_POWER) {
+                        allocations.add(sideAllocation(
+                                targetPos,
+                                sideFace,
+                                "u-side",
+                                candidateArea,
+                                assignedArea,
+                                0.0D,
+                                sideFraction,
+                                0.0D,
+                                0,
+                                "low_power"
+                        ));
+                        continue;
+                    }
+
+                    PatchEmissionReport emission = addUSideChartSpot(
+                            level,
+                            targetPos,
+                            targetState,
+                            sideFace,
+                            travelDirection,
+                            uDirection,
+                            vDirection,
+                            targetTemplate,
+                            sidePower,
+                            visualSidePower(coherentBeamPower, visualDistanceFactor),
+                            fixedULocal,
+                            travel0,
+                            travel1,
+                            cross0,
+                            cross1,
+                            sideWindow,
+                            visibleSideWindow,
+                            fragments
+                    );
+
+                    sideBlockersAtDepth.add(visibleSideWindow);
+
+                    allocations.add(sideAllocation(
+                            targetPos,
+                            sideFace,
+                            "u-side",
+                            candidateArea,
+                            assignedArea,
+                            emission.emitted() ? assignedArea : 0.0D,
+                            sideFraction,
+                            emission.emitted() ? sideFraction : 0.0D,
+                            emission.emittedQuads(),
+                            emission.resultName(),
+                            emission.detail()
+                    ));
+                }
+            }
+            }
         }
     }
 
@@ -752,123 +767,146 @@ public final class VoxelSpotProjector {
             List<SpotProjectionAllocation> allocations,
             List<SpotRecord> fragments
     ) {
-        double requiredRadius = Math.hypot(
-                boundaryWorldV,
-                intervalDistanceFromAxis(tileU - 0.5D, tileU + 0.5D)
-        );
-        TravelInterval visibleTravel = clipTravelByRadius(targetTemplate.envelope(), 0.0D, 1.0D, requiredRadius);
+        List<TravelInterval> visibleTravels = vSideTravelIntervals(targetTemplate.envelope(), boundaryWorldV, tileU);
 
-        if (visibleTravel == null) {
+        if (visibleTravels.isEmpty()) {
             return;
         }
 
-        double crossTravel0 = nudgeVisibleTravelEndpoint(targetTemplate.envelope(), visibleTravel.min(), visibleTravel.max(), requiredRadius);
-        double crossTravel1 = nudgeVisibleTravelEndpoint(targetTemplate.envelope(), visibleTravel.max(), visibleTravel.min(), requiredRadius);
-        BeamEnvelope envelope0 = envelopeAtOffset(targetTemplate.envelope(), crossTravel0);
-        BeamEnvelope envelope1 = envelopeAtOffset(targetTemplate.envelope(), crossTravel1);
-        SideCrossSection cross0 = vSideCrossSection(envelope0.radius(), boundaryWorldV, tileU);
-        SideCrossSection cross1 = vSideCrossSection(envelope1.radius(), boundaryWorldV, tileU);
+        boolean addedDebugCenter = false;
 
-        if (cross0 == null || cross1 == null) {
-            return;
-        }
-
-        CanonicalRect sideWindow = sideCanonicalWindow(
-                cross0.minCanonical(),
-                cross0.maxCanonical(),
-                cross1.minCanonical(),
-                cross1.maxCanonical(),
-                cross0.axisCanonical(),
-                cross0.axisCanonical(),
-                cross1.axisCanonical(),
-                cross1.axisCanonical()
-        );
-
-        if (sideWindow == null) {
-            return;
-        }
-
-        List<CanonicalRect> visibleSideWindows = subtractOccupied(sideWindow, occupiedRayWindows);
-        double candidateArea = canonicalArea(sideWindow);
-
-        if (visibleSideWindows.isEmpty()) {
-            allocations.add(sideAllocation(
-                    targetPos,
-                    sideFace,
-                    "v-side",
-                    candidateArea,
-                    0.0D,
-                    0.0D,
-                    0.0D,
-                    0.0D,
-                    0,
-                    "occluded"
-            ));
-            return;
-        }
-
-        addDebugFaceCenter(targetPos, sideFace, fragments);
-
-        double travel0 = lerp(entryTravel, exitTravel, crossTravel0);
-        double travel1 = lerp(entryTravel, exitTravel, crossTravel1);
-
-        for (CanonicalRect visibleSideWindow : visibleSideWindows) {
-            double assignedArea = canonicalArea(visibleSideWindow);
-            double sideFraction = integratedFraction(visibleSideWindow);
-            double sidePower = visualSidePower(beamPower, visualDistanceFactor);
-
-            if (sidePower <= MIN_FRAGMENT_POWER) {
-                allocations.add(sideAllocation(
-                        targetPos,
-                        sideFace,
-                        "v-side",
-                        candidateArea,
-                        assignedArea,
-                        0.0D,
-                        sideFraction,
-                        0.0D,
-                        0,
-                        "low_power"
-                ));
-                continue;
-            }
-
-            PatchEmission emission = addVSideChartSpot(
-                    level,
-                    targetPos,
-                    targetState,
-                    sideFace,
-                    travelDirection,
-                    uDirection,
-                    vDirection,
-                    targetTemplate,
-                    sidePower,
-                    visualSidePower(coherentBeamPower, visualDistanceFactor),
-                    fixedVLocal,
-                    travel0,
-                    travel1,
-                    cross0,
-                    cross1,
-                    visibleSideWindow,
-                    fragments
+        for (TravelInterval visibleTravel : visibleTravels) {
+            List<TravelInterval> chartTravels = splitSideTravelAtCrossBoundaries(
+                    targetTemplate.envelope(),
+                    visibleTravel,
+                    tileU - 0.5D,
+                    tileU + 0.5D
             );
 
-            if (emission.emitted()) {
-                sideBlockersAtDepth.add(visibleSideWindow);
-            }
+            for (TravelInterval chartTravel : chartTravels) {
+                int travelSteps = sideChartTravelSubdivisionCount(targetTemplate.envelope(), chartTravel.min(), chartTravel.max());
 
-            allocations.add(sideAllocation(
-                    targetPos,
-                    sideFace,
-                    "v-side",
-                    candidateArea,
-                    assignedArea,
-                    emission.emitted() ? assignedArea : 0.0D,
-                    sideFraction,
-                    emission.emitted() ? sideFraction : 0.0D,
-                    emission.emitted() ? 1 : 0,
-                    emission.result()
-            ));
+                for (int travelIndex = 0; travelIndex < travelSteps; travelIndex++) {
+                    double rawTravel0 = lerp(chartTravel.min(), chartTravel.max(), travelIndex / (double) travelSteps);
+                    double rawTravel1 = lerp(chartTravel.min(), chartTravel.max(), (travelIndex + 1) / (double) travelSteps);
+                double crossTravel0 = nudgeVSideTravelEndpoint(targetTemplate.envelope(), rawTravel0, rawTravel1, boundaryWorldV, tileU);
+                double crossTravel1 = nudgeVSideTravelEndpoint(targetTemplate.envelope(), rawTravel1, rawTravel0, boundaryWorldV, tileU);
+
+                if (crossTravel1 - crossTravel0 <= EDGE_TOUCH_EPSILON) {
+                    continue;
+                }
+
+                BeamEnvelope envelope0 = envelopeAtOffset(targetTemplate.envelope(), crossTravel0);
+                BeamEnvelope envelope1 = envelopeAtOffset(targetTemplate.envelope(), crossTravel1);
+                SideCrossSection cross0 = vSideCrossSection(envelope0.radius(), boundaryWorldV, tileU);
+                SideCrossSection cross1 = vSideCrossSection(envelope1.radius(), boundaryWorldV, tileU);
+
+                if (cross0 == null || cross1 == null) {
+                    continue;
+                }
+
+                CanonicalRect sideWindow = sideCanonicalWindow(
+                        cross0.minCanonical(),
+                        cross0.maxCanonical(),
+                        cross1.minCanonical(),
+                        cross1.maxCanonical(),
+                        cross0.axisCanonical(),
+                        cross0.axisCanonical(),
+                        cross1.axisCanonical(),
+                        cross1.axisCanonical()
+                );
+
+                if (sideWindow == null) {
+                    continue;
+                }
+
+                List<CanonicalRect> visibleSideWindows = subtractOccupied(sideWindow, occupiedRayWindows);
+                double candidateArea = canonicalArea(sideWindow);
+
+                if (visibleSideWindows.isEmpty()) {
+                    allocations.add(sideAllocation(
+                            targetPos,
+                            sideFace,
+                            "v-side",
+                            candidateArea,
+                            0.0D,
+                            0.0D,
+                            0.0D,
+                            0.0D,
+                            0,
+                            "occluded"
+                    ));
+                    continue;
+                }
+
+                if (!addedDebugCenter) {
+                    addDebugFaceCenter(targetPos, sideFace, fragments);
+                    addedDebugCenter = true;
+                }
+
+                double travel0 = lerp(entryTravel, exitTravel, crossTravel0);
+                double travel1 = lerp(entryTravel, exitTravel, crossTravel1);
+
+                for (CanonicalRect visibleSideWindow : visibleSideWindows) {
+                    double assignedArea = canonicalArea(visibleSideWindow);
+                    double sideFraction = integratedFraction(visibleSideWindow);
+                    double sidePower = visualSidePower(beamPower, visualDistanceFactor);
+
+                    if (sidePower <= MIN_FRAGMENT_POWER) {
+                        allocations.add(sideAllocation(
+                                targetPos,
+                                sideFace,
+                                "v-side",
+                                candidateArea,
+                                assignedArea,
+                                0.0D,
+                                sideFraction,
+                                0.0D,
+                                0,
+                                "low_power"
+                        ));
+                        continue;
+                    }
+
+                    PatchEmissionReport emission = addVSideChartSpot(
+                            level,
+                            targetPos,
+                            targetState,
+                            sideFace,
+                            travelDirection,
+                            uDirection,
+                            vDirection,
+                            targetTemplate,
+                            sidePower,
+                            visualSidePower(coherentBeamPower, visualDistanceFactor),
+                            fixedVLocal,
+                            travel0,
+                            travel1,
+                            cross0,
+                            cross1,
+                            sideWindow,
+                            visibleSideWindow,
+                            fragments
+                    );
+
+                    sideBlockersAtDepth.add(visibleSideWindow);
+
+                    allocations.add(sideAllocation(
+                            targetPos,
+                            sideFace,
+                            "v-side",
+                            candidateArea,
+                            assignedArea,
+                            emission.emitted() ? assignedArea : 0.0D,
+                            sideFraction,
+                            emission.emitted() ? sideFraction : 0.0D,
+                            emission.emittedQuads(),
+                            emission.resultName(),
+                            emission.detail()
+                    ));
+                }
+            }
+            }
         }
     }
 
@@ -918,37 +956,328 @@ public final class VoxelSpotProjector {
             return null;
         }
 
-        double radius0 = envelopeAtOffset(envelope, t0).radius();
-        double radius1 = envelopeAtOffset(envelope, t1).radius();
-
-        if (!Double.isFinite(radius0) || !Double.isFinite(radius1) || radius0 <= 0.0D || radius1 <= 0.0D) {
+        if (t1 - t0 <= EDGE_TOUCH_EPSILON) {
             return null;
         }
 
-        boolean inside0 = radius0 + EDGE_TOUCH_EPSILON >= requiredRadius;
-        boolean inside1 = radius1 + EDGE_TOUCH_EPSILON >= requiredRadius;
+        double previousT = t0;
+        double previousRadius = envelopeAtOffset(envelope, previousT).radius();
 
-        if (inside0 && inside1) {
-            return new TravelInterval(t0, t1);
-        }
-
-        if (!inside0 && !inside1) {
+        if (!Double.isFinite(previousRadius) || previousRadius <= 0.0D) {
             return null;
         }
 
+        boolean previousInside = previousRadius + EDGE_TOUCH_EPSILON >= requiredRadius;
+        double firstInside = previousInside ? t0 : Double.NaN;
+        double lastInside = previousInside ? t0 : Double.NaN;
+
+        for (int sample = 1; sample <= CONE_TRAVEL_SAMPLES; sample++) {
+            double currentT = lerp(t0, t1, sample / (double) CONE_TRAVEL_SAMPLES);
+            double currentRadius = envelopeAtOffset(envelope, currentT).radius();
+
+            if (!Double.isFinite(currentRadius) || currentRadius <= 0.0D) {
+                previousT = currentT;
+                previousRadius = currentRadius;
+                previousInside = false;
+                continue;
+            }
+
+            boolean currentInside = currentRadius + EDGE_TOUCH_EPSILON >= requiredRadius;
+
+            if (previousInside != currentInside) {
+                double crossing = radiusCrossing(previousT, currentT, previousRadius, currentRadius, requiredRadius);
+
+                if (currentInside) {
+                    firstInside = Double.isNaN(firstInside) ? crossing : Math.min(firstInside, crossing);
+                    lastInside = Math.max(lastInsideOr(firstInside, lastInside), currentT);
+                } else if (!Double.isNaN(firstInside)) {
+                    lastInside = Math.max(lastInsideOr(firstInside, lastInside), crossing);
+                }
+            } else if (currentInside) {
+                if (Double.isNaN(firstInside)) {
+                    firstInside = currentT;
+                }
+
+                lastInside = currentT;
+            }
+
+            previousT = currentT;
+            previousRadius = currentRadius;
+            previousInside = currentInside;
+        }
+
+        if (Double.isNaN(firstInside) || Double.isNaN(lastInside) || lastInside - firstInside <= EDGE_TOUCH_EPSILON) {
+            return null;
+        }
+
+        return new TravelInterval(firstInside, lastInside);
+    }
+
+    private static List<TravelInterval> uSideTravelIntervals(
+            BeamEnvelope envelope,
+            double boundaryWorldU,
+            int tileV
+    ) {
+        return sideTravelIntervals(
+                travel -> uSideIntersectsAt(envelope, boundaryWorldU, tileV, travel)
+        );
+    }
+
+    private static List<TravelInterval> vSideTravelIntervals(
+            BeamEnvelope envelope,
+            double boundaryWorldV,
+            int tileU
+    ) {
+        return sideTravelIntervals(
+                travel -> vSideIntersectsAt(envelope, boundaryWorldV, tileU, travel)
+        );
+    }
+
+    private static List<TravelInterval> sideTravelIntervals(SideIntersectionPredicate predicate) {
+        List<TravelInterval> intervals = new ArrayList<>();
+        double previousT = 0.0D;
+        boolean previousInside = predicate.intersects(previousT);
+        double start = previousInside ? previousT : Double.NaN;
+
+        for (int sample = 1; sample <= CONE_TRAVEL_SAMPLES; sample++) {
+            double currentT = sample / (double) CONE_TRAVEL_SAMPLES;
+            boolean currentInside = predicate.intersects(currentT);
+
+            if (previousInside != currentInside) {
+                double boundary = sideIntersectionBoundary(predicate, previousT, currentT, previousInside);
+
+                if (currentInside) {
+                    start = boundary;
+                } else if (!Double.isNaN(start)) {
+                    addTravelInterval(intervals, start, boundary);
+                    start = Double.NaN;
+                }
+            } else if (currentInside && Double.isNaN(start)) {
+                start = previousT;
+            }
+
+            previousT = currentT;
+            previousInside = currentInside;
+        }
+
+        if (previousInside && !Double.isNaN(start)) {
+            addTravelInterval(intervals, start, 1.0D);
+        }
+
+        return intervals;
+    }
+
+    private static void addTravelInterval(List<TravelInterval> intervals, double min, double max) {
+        if (max - min > EDGE_TOUCH_EPSILON) {
+            intervals.add(new TravelInterval(min, max));
+        }
+    }
+
+    private static List<TravelInterval> splitSideTravelAtCrossBoundaries(
+            BeamEnvelope envelope,
+            TravelInterval interval,
+            double firstBoundary,
+            double secondBoundary
+    ) {
+        List<Double> cuts = new ArrayList<>();
+        cuts.add(interval.min());
+        cuts.add(interval.max());
+        addRadiusBoundaryCuts(cuts, envelope, interval, Math.abs(firstBoundary));
+        addRadiusBoundaryCuts(cuts, envelope, interval, Math.abs(secondBoundary));
+        cuts.sort(Double::compare);
+
+        List<TravelInterval> intervals = new ArrayList<>();
+        double previous = cuts.get(0);
+
+        for (int index = 1; index < cuts.size(); index++) {
+            double current = cuts.get(index);
+
+            if (current - previous <= EDGE_TOUCH_EPSILON) {
+                continue;
+            }
+
+            addTravelInterval(intervals, previous, current);
+            previous = current;
+        }
+
+        return intervals.isEmpty() ? List.of(interval) : intervals;
+    }
+
+    private static void addRadiusBoundaryCuts(
+            List<Double> cuts,
+            BeamEnvelope envelope,
+            TravelInterval interval,
+            double requiredRadius
+    ) {
+        if (!Double.isFinite(requiredRadius) || requiredRadius <= EDGE_TOUCH_EPSILON) {
+            return;
+        }
+
+        double previousT = interval.min();
+        boolean previousInside = radiusAt(envelope, previousT) + EDGE_TOUCH_EPSILON >= requiredRadius;
+
+        for (int sample = 1; sample <= CONE_TRAVEL_SAMPLES; sample++) {
+            double currentT = lerp(interval.min(), interval.max(), sample / (double) CONE_TRAVEL_SAMPLES);
+            boolean currentInside = radiusAt(envelope, currentT) + EDGE_TOUCH_EPSILON >= requiredRadius;
+
+            if (previousInside != currentInside) {
+                double crossing = radiusThresholdBoundary(envelope, previousT, currentT, previousInside, requiredRadius);
+
+                if (crossing > interval.min() + EDGE_TOUCH_EPSILON && crossing < interval.max() - EDGE_TOUCH_EPSILON) {
+                    cuts.add(crossing);
+                }
+            }
+
+            previousT = currentT;
+            previousInside = currentInside;
+        }
+    }
+
+    private static double radiusThresholdBoundary(
+            BeamEnvelope envelope,
+            double t0,
+            double t1,
+            boolean insideAtT0,
+            double requiredRadius
+    ) {
+        double valid = insideAtT0 ? t0 : t1;
+        double invalid = insideAtT0 ? t1 : t0;
+
+        for (int iteration = 0; iteration < 24; iteration++) {
+            double mid = (valid + invalid) * 0.5D;
+
+            if (radiusAt(envelope, mid) + EDGE_TOUCH_EPSILON >= requiredRadius) {
+                valid = mid;
+            } else {
+                invalid = mid;
+            }
+        }
+
+        return valid;
+    }
+
+    private static double radiusAt(BeamEnvelope envelope, double travel) {
+        double radius = envelopeAtOffset(envelope, travel).radius();
+        return Double.isFinite(radius) ? radius : 0.0D;
+    }
+
+    private static double sideIntersectionBoundary(
+            SideIntersectionPredicate predicate,
+            double t0,
+            double t1,
+            boolean insideAtT0
+    ) {
+        double valid = insideAtT0 ? t0 : t1;
+        double invalid = insideAtT0 ? t1 : t0;
+
+        for (int iteration = 0; iteration < 24; iteration++) {
+            double mid = (valid + invalid) * 0.5D;
+
+            if (predicate.intersects(mid)) {
+                valid = mid;
+            } else {
+                invalid = mid;
+            }
+        }
+
+        return valid;
+    }
+
+    private static double nudgeUSideTravelEndpoint(
+            BeamEnvelope envelope,
+            double endpoint,
+            double toward,
+            double boundaryWorldU,
+            int tileV
+    ) {
+        return nudgeSideTravelEndpoint(
+                endpoint,
+                toward,
+                travel -> uSideIntersectsAt(envelope, boundaryWorldU, tileV, travel)
+        );
+    }
+
+    private static double nudgeVSideTravelEndpoint(
+            BeamEnvelope envelope,
+            double endpoint,
+            double toward,
+            double boundaryWorldV,
+            int tileU
+    ) {
+        return nudgeSideTravelEndpoint(
+                endpoint,
+                toward,
+                travel -> vSideIntersectsAt(envelope, boundaryWorldV, tileU, travel)
+        );
+    }
+
+    private static double nudgeSideTravelEndpoint(
+            double endpoint,
+            double toward,
+            SideIntersectionPredicate predicate
+    ) {
+        if (predicate.intersects(endpoint)) {
+            return endpoint;
+        }
+
+        if (Math.abs(toward - endpoint) <= EDGE_TOUCH_EPSILON || !predicate.intersects(toward)) {
+            return endpoint;
+        }
+
+        double invalid = endpoint;
+        double valid = toward;
+
+        for (int iteration = 0; iteration < 24; iteration++) {
+            double mid = (invalid + valid) * 0.5D;
+
+            if (predicate.intersects(mid)) {
+                valid = mid;
+            } else {
+                invalid = mid;
+            }
+        }
+
+        return valid;
+    }
+
+    private static boolean uSideIntersectsAt(
+            BeamEnvelope envelope,
+            double boundaryWorldU,
+            int tileV,
+            double travel
+    ) {
+        double radius = envelopeAtOffset(envelope, travel).radius();
+        return uSideCrossSection(radius, boundaryWorldU, tileV) != null;
+    }
+
+    private static boolean vSideIntersectsAt(
+            BeamEnvelope envelope,
+            double boundaryWorldV,
+            int tileU,
+            double travel
+    ) {
+        double radius = envelopeAtOffset(envelope, travel).radius();
+        return vSideCrossSection(radius, boundaryWorldV, tileU) != null;
+    }
+
+    private static double radiusCrossing(
+            double t0,
+            double t1,
+            double radius0,
+            double radius1,
+            double requiredRadius
+    ) {
         double radiusDelta = radius1 - radius0;
 
         if (Math.abs(radiusDelta) <= CONE_SIDE_EPSILON) {
-            return null;
+            return t0;
         }
 
-        double crossing = lerp(t0, t1, clamp01((requiredRadius - radius0) / radiusDelta));
+        return lerp(t0, t1, clamp01((requiredRadius - radius0) / radiusDelta));
+    }
 
-        if (inside0) {
-            return crossing - t0 <= EDGE_TOUCH_EPSILON ? null : new TravelInterval(t0, crossing);
-        }
-
-        return t1 - crossing <= EDGE_TOUCH_EPSILON ? null : new TravelInterval(crossing, t1);
+    private static double lastInsideOr(double firstInside, double lastInside) {
+        return Double.isNaN(lastInside) ? firstInside : lastInside;
     }
 
     private static double nudgeVisibleTravelEndpoint(
@@ -977,15 +1306,10 @@ public final class VoxelSpotProjector {
             return null;
         }
 
-        double perpendicularLimit = perpendicularLimit(radius, boundaryWorldU);
-        if (perpendicularLimit <= EDGE_TOUCH_EPSILON) {
-            return null;
-        }
-
         double tileMinV = tileV - 0.5D;
         double tileMaxV = tileV + 0.5D;
-        double hitMinV = Math.max(tileMinV, -perpendicularLimit);
-        double hitMaxV = Math.min(tileMaxV, perpendicularLimit);
+        double hitMinV = Math.max(tileMinV, -radius);
+        double hitMaxV = Math.min(tileMaxV, radius);
 
         if (hitMaxV - hitMinV <= EDGE_TOUCH_EPSILON) {
             return null;
@@ -1005,15 +1329,10 @@ public final class VoxelSpotProjector {
             return null;
         }
 
-        double perpendicularLimit = perpendicularLimit(radius, boundaryWorldV);
-        if (perpendicularLimit <= EDGE_TOUCH_EPSILON) {
-            return null;
-        }
-
         double tileMinU = tileU - 0.5D;
         double tileMaxU = tileU + 0.5D;
-        double hitMinU = Math.max(tileMinU, -perpendicularLimit);
-        double hitMaxU = Math.min(tileMaxU, perpendicularLimit);
+        double hitMinU = Math.max(tileMinU, -radius);
+        double hitMaxU = Math.min(tileMaxU, radius);
 
         if (hitMaxU - hitMinU <= EDGE_TOUCH_EPSILON) {
             return null;
@@ -1028,7 +1347,7 @@ public final class VoxelSpotProjector {
         );
     }
 
-    private static PatchEmission addUSideChartSpot(
+    private static PatchEmissionReport addUSideChartSpot(
             Level level,
             BlockPos targetPos,
             BlockState targetState,
@@ -1044,61 +1363,54 @@ public final class VoxelSpotProjector {
             double travel1,
             SideCrossSection cross0,
             SideCrossSection cross1,
+            CanonicalRect sideWindow,
             CanonicalRect visibleWindow,
             List<SpotRecord> fragments
     ) {
-        double totalFraction = Math.max(EDGE_TOUCH_EPSILON, integratedFraction(visibleWindow));
         PatchEmission result = PatchEmission.PATCH_NULL;
-        boolean emitted = false;
+        int emittedQuads = 0;
+        List<Patch> patches = clippedUSidePatches(
+                sideFace,
+                travelDirection,
+                uDirection,
+                vDirection,
+                fixedULocal,
+                travel0,
+                travel1,
+                cross0,
+                cross1,
+                visibleWindow
+        );
 
-        for (CanonicalRect subWindow : splitUSideWindow(visibleWindow, targetTemplate.envelope(), travel0, travel1)) {
-            double subFraction = integratedFraction(subWindow);
-
-            if (subFraction <= 0.0D) {
-                continue;
-            }
-
-            Patch patch = clippedUSidePatch(
-                    sideFace,
-                    travelDirection,
-                    uDirection,
-                    vDirection,
-                    fixedULocal,
-                    travel0,
-                    travel1,
-                    cross0,
-                    cross1,
-                    subWindow
-            );
-
-            if (patch == null) {
-                continue;
-            }
-
-            double weight = subFraction / totalFraction;
+        for (Patch patch : patches) {
             PatchEmission emission = addPatchSpot(
                     level,
                     targetPos,
                     targetState,
                     sideFace,
                     targetTemplate,
-                    sidePower * weight,
-                    sideCoherentPower * weight,
+                    sidePower,
+                    sideCoherentPower,
                     patch,
                     fragments
             );
 
             if (emission.emitted()) {
-                emitted = true;
+                emittedQuads++;
             }
 
             result = emission;
         }
 
-        return emitted ? PatchEmission.EMITTED : result;
+        String detail = sidePatchDetail("u-side", sideWindow, visibleWindow, travel0, travel1, cross0, cross1, patches);
+        return new PatchEmissionReport(
+                emittedQuads > 0 ? PatchEmission.EMITTED : result,
+                emittedQuads,
+                detail
+        );
     }
 
-    private static PatchEmission addVSideChartSpot(
+    private static PatchEmissionReport addVSideChartSpot(
             Level level,
             BlockPos targetPos,
             BlockState targetState,
@@ -1114,58 +1426,51 @@ public final class VoxelSpotProjector {
             double travel1,
             SideCrossSection cross0,
             SideCrossSection cross1,
+            CanonicalRect sideWindow,
             CanonicalRect visibleWindow,
             List<SpotRecord> fragments
     ) {
-        double totalFraction = Math.max(EDGE_TOUCH_EPSILON, integratedFraction(visibleWindow));
         PatchEmission result = PatchEmission.PATCH_NULL;
-        boolean emitted = false;
+        int emittedQuads = 0;
+        List<Patch> patches = clippedVSidePatches(
+                sideFace,
+                travelDirection,
+                uDirection,
+                vDirection,
+                fixedVLocal,
+                travel0,
+                travel1,
+                cross0,
+                cross1,
+                visibleWindow
+        );
 
-        for (CanonicalRect subWindow : splitVSideWindow(visibleWindow, targetTemplate.envelope(), travel0, travel1)) {
-            double subFraction = integratedFraction(subWindow);
-
-            if (subFraction <= 0.0D) {
-                continue;
-            }
-
-            Patch patch = clippedVSidePatch(
-                    sideFace,
-                    travelDirection,
-                    uDirection,
-                    vDirection,
-                    fixedVLocal,
-                    travel0,
-                    travel1,
-                    cross0,
-                    cross1,
-                    subWindow
-            );
-
-            if (patch == null) {
-                continue;
-            }
-
-            double weight = subFraction / totalFraction;
+        for (Patch patch : patches) {
             PatchEmission emission = addPatchSpot(
                     level,
                     targetPos,
                     targetState,
                     sideFace,
                     targetTemplate,
-                    sidePower * weight,
-                    sideCoherentPower * weight,
+                    sidePower,
+                    sideCoherentPower,
                     patch,
                     fragments
             );
 
             if (emission.emitted()) {
-                emitted = true;
+                emittedQuads++;
             }
 
             result = emission;
         }
 
-        return emitted ? PatchEmission.EMITTED : result;
+        String detail = sidePatchDetail("v-side", sideWindow, visibleWindow, travel0, travel1, cross0, cross1, patches);
+        return new PatchEmissionReport(
+                emittedQuads > 0 ? PatchEmission.EMITTED : result,
+                emittedQuads,
+                detail
+        );
     }
 
     private static List<CanonicalRect> splitUSideWindow(
@@ -1268,6 +1573,14 @@ public final class VoxelSpotProjector {
         return Math.max(1, Math.min(MAX_SIDE_PATCH_TRAVEL_SUBDIVISIONS, steps));
     }
 
+    private static int sideChartTravelSubdivisionCount(
+            BeamEnvelope envelope,
+            double travel0,
+            double travel1
+    ) {
+        return 1;
+    }
+
     private static SpotProjectionAllocation sideAllocation(
             BlockPos targetPos,
             Direction sideFace,
@@ -1280,6 +1593,34 @@ public final class VoxelSpotProjector {
             int emittedQuads,
             String result
     ) {
+        return sideAllocation(
+                targetPos,
+                sideFace,
+                kind,
+                candidateArea,
+                assignedArea,
+                emittedArea,
+                assignedPowerFraction,
+                emittedPowerFraction,
+                emittedQuads,
+                result,
+                ""
+        );
+    }
+
+    private static SpotProjectionAllocation sideAllocation(
+            BlockPos targetPos,
+            Direction sideFace,
+            String kind,
+            double candidateArea,
+            double assignedArea,
+            double emittedArea,
+            double assignedPowerFraction,
+            double emittedPowerFraction,
+            int emittedQuads,
+            String result,
+            String detail
+    ) {
         return new SpotProjectionAllocation(
                 targetPos,
                 sideFace,
@@ -1290,8 +1631,85 @@ public final class VoxelSpotProjector {
                 assignedPowerFraction,
                 emittedPowerFraction,
                 emittedQuads,
-                result
+                result,
+                detail
         );
+    }
+
+    private static String sidePatchDetail(
+            String kind,
+            CanonicalRect sideWindow,
+            CanonicalRect visibleWindow,
+            double travel0,
+            double travel1,
+            SideCrossSection cross0,
+            SideCrossSection cross1,
+            List<Patch> patches
+    ) {
+        StringBuilder builder = new StringBuilder(192);
+        builder.append(kind)
+                .append(";side_window=").append(formatRect(sideWindow))
+                .append(";visible_window=").append(formatRect(visibleWindow))
+                .append(";travel=").append(formatDecimal(travel0)).append("..").append(formatDecimal(travel1))
+                .append(";cross0=").append(formatCross(cross0))
+                .append(";cross1=").append(formatCross(cross1))
+                .append(";patches=").append(patches.size());
+
+        int maxPatches = Math.min(4, patches.size());
+        for (int index = 0; index < maxPatches; index++) {
+            builder.append(";patch").append(index).append('=').append(formatPatch(patches.get(index)));
+        }
+
+        if (patches.size() > maxPatches) {
+            builder.append(";patches_omitted=").append(patches.size() - maxPatches);
+        }
+
+        return builder.toString();
+    }
+
+    private static String formatRect(CanonicalRect rect) {
+        return '['
+                + formatDecimal(rect.minU()) + ','
+                + formatDecimal(rect.minV()) + "->"
+                + formatDecimal(rect.maxU()) + ','
+                + formatDecimal(rect.maxV()) + ']';
+    }
+
+    private static String formatCross(SideCrossSection cross) {
+        return "[local="
+                + formatDecimal(cross.minLocal()) + ".."
+                + formatDecimal(cross.maxLocal()) + ",axis="
+                + formatDecimal(cross.axisCanonical()) + ",canon="
+                + formatDecimal(cross.minCanonical()) + ".."
+                + formatDecimal(cross.maxCanonical()) + ']';
+    }
+
+    private static String formatPatch(Patch patch) {
+        return "[p="
+                + formatLocal(patch.p0()) + '|'
+                + formatLocal(patch.p1()) + '|'
+                + formatLocal(patch.p2()) + '|'
+                + formatLocal(patch.p3()) + ",t="
+                + formatTexture(patch.t0()) + '|'
+                + formatTexture(patch.t1()) + '|'
+                + formatTexture(patch.t2()) + '|'
+                + formatTexture(patch.t3()) + ']';
+    }
+
+    private static String formatLocal(LocalPoint point) {
+        return formatDecimal(point.x()) + ',' + formatDecimal(point.y()) + ',' + formatDecimal(point.z());
+    }
+
+    private static String formatTexture(TexturePoint point) {
+        return formatDecimal(point.u()) + ',' + formatDecimal(point.v());
+    }
+
+    private static String formatDecimal(double value) {
+        if (!Double.isFinite(value)) {
+            return "nan";
+        }
+
+        return String.format(Locale.ROOT, "%.6f", value);
     }
 
     static Patch clippedUSidePatch(
@@ -1306,7 +1724,35 @@ public final class VoxelSpotProjector {
             SideCrossSection cross1,
             CanonicalRect visibleWindow
     ) {
-        ParameterRange travelRange = sideParameterRange(
+        List<Patch> patches = clippedUSidePatches(
+                sideFace,
+                travelDirection,
+                uDirection,
+                vDirection,
+                fixedULocal,
+                travel0,
+                travel1,
+                cross0,
+                cross1,
+                visibleWindow
+        );
+
+        return patches.isEmpty() ? null : patches.get(0);
+    }
+
+    private static List<Patch> clippedUSidePatches(
+            Direction sideFace,
+            Direction travelDirection,
+            Direction uDirection,
+            Direction vDirection,
+            double fixedULocal,
+            double travel0,
+            double travel1,
+            SideCrossSection cross0,
+            SideCrossSection cross1,
+            CanonicalRect visibleWindow
+    ) {
+        List<ParameterRange> ranges = sideParameterSubRanges(
                 cross0.axisCanonical(),
                 cross1.axisCanonical(),
                 visibleWindow.minU(),
@@ -1319,10 +1765,48 @@ public final class VoxelSpotProjector {
                 visibleWindow.maxV()
         );
 
-        if (travelRange == null) {
-            return null;
+        if (ranges.isEmpty()) {
+            return List.of();
         }
 
+        List<Patch> patches = new ArrayList<>(ranges.size());
+
+        for (ParameterRange range : ranges) {
+            Patch patch = clippedUSidePatchForRange(
+                    sideFace,
+                    travelDirection,
+                    uDirection,
+                    vDirection,
+                    fixedULocal,
+                    travel0,
+                    travel1,
+                    cross0,
+                    cross1,
+                    visibleWindow,
+                    range
+            );
+
+            if (patch != null) {
+                patches.add(patch);
+            }
+        }
+
+        return patches.isEmpty() ? List.of() : patches;
+    }
+
+    private static Patch clippedUSidePatchForRange(
+            Direction sideFace,
+            Direction travelDirection,
+            Direction uDirection,
+            Direction vDirection,
+            double fixedULocal,
+            double travel0,
+            double travel1,
+            SideCrossSection cross0,
+            SideCrossSection cross1,
+            CanonicalRect visibleWindow,
+            ParameterRange travelRange
+    ) {
         double mid = (travelRange.min() + travelRange.max()) * 0.5D;
         SideClipAt clip0 = clippedCrossSectionNear(cross0, cross1, travelRange.min(), mid, visibleWindow.minV(), visibleWindow.maxV());
         SideClipAt clip1 = clippedCrossSectionNear(cross0, cross1, travelRange.max(), mid, visibleWindow.minV(), visibleWindow.maxV());
@@ -1365,7 +1849,35 @@ public final class VoxelSpotProjector {
             SideCrossSection cross1,
             CanonicalRect visibleWindow
     ) {
-        ParameterRange travelRange = sideParameterRange(
+        List<Patch> patches = clippedVSidePatches(
+                sideFace,
+                travelDirection,
+                uDirection,
+                vDirection,
+                fixedVLocal,
+                travel0,
+                travel1,
+                cross0,
+                cross1,
+                visibleWindow
+        );
+
+        return patches.isEmpty() ? null : patches.get(0);
+    }
+
+    private static List<Patch> clippedVSidePatches(
+            Direction sideFace,
+            Direction travelDirection,
+            Direction uDirection,
+            Direction vDirection,
+            double fixedVLocal,
+            double travel0,
+            double travel1,
+            SideCrossSection cross0,
+            SideCrossSection cross1,
+            CanonicalRect visibleWindow
+    ) {
+        List<ParameterRange> ranges = sideParameterSubRanges(
                 cross0.axisCanonical(),
                 cross1.axisCanonical(),
                 visibleWindow.minV(),
@@ -1378,10 +1890,48 @@ public final class VoxelSpotProjector {
                 visibleWindow.maxU()
         );
 
-        if (travelRange == null) {
-            return null;
+        if (ranges.isEmpty()) {
+            return List.of();
         }
 
+        List<Patch> patches = new ArrayList<>(ranges.size());
+
+        for (ParameterRange range : ranges) {
+            Patch patch = clippedVSidePatchForRange(
+                    sideFace,
+                    travelDirection,
+                    uDirection,
+                    vDirection,
+                    fixedVLocal,
+                    travel0,
+                    travel1,
+                    cross0,
+                    cross1,
+                    visibleWindow,
+                    range
+            );
+
+            if (patch != null) {
+                patches.add(patch);
+            }
+        }
+
+        return patches.isEmpty() ? List.of() : patches;
+    }
+
+    private static Patch clippedVSidePatchForRange(
+            Direction sideFace,
+            Direction travelDirection,
+            Direction uDirection,
+            Direction vDirection,
+            double fixedVLocal,
+            double travel0,
+            double travel1,
+            SideCrossSection cross0,
+            SideCrossSection cross1,
+            CanonicalRect visibleWindow,
+            ParameterRange travelRange
+    ) {
         double mid = (travelRange.min() + travelRange.max()) * 0.5D;
         SideClipAt clip0 = clippedCrossSectionNear(cross0, cross1, travelRange.min(), mid, visibleWindow.minU(), visibleWindow.maxU());
         SideClipAt clip1 = clippedCrossSectionNear(cross0, cross1, travelRange.max(), mid, visibleWindow.minU(), visibleWindow.maxU());
@@ -1428,6 +1978,87 @@ public final class VoxelSpotProjector {
         range = intersect(range, rangeWhereLinearLess(crossMin0, crossMin1, windowCrossMax));
         range = intersect(range, rangeWhereLinearGreater(crossMax0, crossMax1, windowCrossMin));
         return range;
+    }
+
+    private static List<ParameterRange> sideParameterSubRanges(
+            double axis0,
+            double axis1,
+            double windowAxisMin,
+            double windowAxisMax,
+            double crossMin0,
+            double crossMin1,
+            double crossMax0,
+            double crossMax1,
+            double windowCrossMin,
+            double windowCrossMax
+    ) {
+        ParameterRange range = sideParameterRange(
+                axis0,
+                axis1,
+                windowAxisMin,
+                windowAxisMax,
+                crossMin0,
+                crossMin1,
+                crossMax0,
+                crossMax1,
+                windowCrossMin,
+                windowCrossMax
+        );
+
+        if (range == null) {
+            return List.of();
+        }
+
+        List<Double> cuts = new ArrayList<>();
+        cuts.add(range.min());
+        cuts.add(range.max());
+        addLinearCut(cuts, range, axis0, axis1, windowAxisMin);
+        addLinearCut(cuts, range, axis0, axis1, windowAxisMax);
+        addLinearCut(cuts, range, crossMin0, crossMin1, windowCrossMin);
+        addLinearCut(cuts, range, crossMin0, crossMin1, windowCrossMax);
+        addLinearCut(cuts, range, crossMax0, crossMax1, windowCrossMin);
+        addLinearCut(cuts, range, crossMax0, crossMax1, windowCrossMax);
+        cuts.sort(Double::compare);
+
+        List<ParameterRange> ranges = new ArrayList<>();
+        double previous = cuts.get(0);
+
+        for (int index = 1; index < cuts.size(); index++) {
+            double current = cuts.get(index);
+
+            if (current - previous <= EDGE_TOUCH_EPSILON) {
+                continue;
+            }
+
+            ranges.add(new ParameterRange(previous, current));
+            previous = current;
+        }
+
+        return ranges.isEmpty() ? List.of(range) : ranges;
+    }
+
+    private static void addLinearCut(
+            List<Double> cuts,
+            ParameterRange range,
+            double value0,
+            double value1,
+            double target
+    ) {
+        double delta = value1 - value0;
+
+        if (Math.abs(delta) <= CONE_SIDE_EPSILON) {
+            return;
+        }
+
+        double cut = (target - value0) / delta;
+
+        if (!Double.isFinite(cut)) {
+            return;
+        }
+
+        if (cut > range.min() + EDGE_TOUCH_EPSILON && cut < range.max() - EDGE_TOUCH_EPSILON) {
+            cuts.add(cut);
+        }
     }
 
     private static ParameterRange parameterRangeForInterval(
@@ -1516,6 +2147,17 @@ public final class VoxelSpotProjector {
             double windowMin,
             double windowMax
     ) {
+        return clippedCrossSectionAt(cross0, cross1, travelParameter, windowMin, windowMax, false);
+    }
+
+    private static CrossClip clippedCrossSectionAt(
+            SideCrossSection cross0,
+            SideCrossSection cross1,
+            double travelParameter,
+            double windowMin,
+            double windowMax,
+            boolean allowDegenerate
+    ) {
         double minCanonical = lerp(cross0.minCanonical(), cross1.minCanonical(), travelParameter);
         double maxCanonical = lerp(cross0.maxCanonical(), cross1.maxCanonical(), travelParameter);
         double minLocal = lerp(cross0.minLocal(), cross1.minLocal(), travelParameter);
@@ -1523,7 +2165,7 @@ public final class VoxelSpotProjector {
         double clippedMinCanonical = Math.max(minCanonical, windowMin);
         double clippedMaxCanonical = Math.min(maxCanonical, windowMax);
 
-        if (clippedMaxCanonical - clippedMinCanonical <= EDGE_TOUCH_EPSILON) {
+        if (clippedMaxCanonical < clippedMinCanonical - EDGE_TOUCH_EPSILON) {
             return null;
         }
 
@@ -1531,6 +2173,22 @@ public final class VoxelSpotProjector {
 
         if (canonicalSpan <= EDGE_TOUCH_EPSILON) {
             return null;
+        }
+
+        if (clippedMaxCanonical - clippedMinCanonical <= EDGE_TOUCH_EPSILON) {
+            if (!allowDegenerate) {
+                return null;
+            }
+
+            double clippedCanonical = (clippedMinCanonical + clippedMaxCanonical) * 0.5D;
+            double localT = clamp01((clippedCanonical - minCanonical) / canonicalSpan);
+            double clippedLocal = lerp(minLocal, maxLocal, localT);
+            return new CrossClip(
+                    clippedLocal,
+                    clippedLocal,
+                    clippedCanonical,
+                    clippedCanonical
+            );
         }
 
         double minT = clamp01((clippedMinCanonical - minCanonical) / canonicalSpan);
@@ -1551,7 +2209,7 @@ public final class VoxelSpotProjector {
             double windowMin,
             double windowMax
     ) {
-        CrossClip exact = clippedCrossSectionAt(cross0, cross1, travelParameter, windowMin, windowMax);
+        CrossClip exact = clippedCrossSectionAt(cross0, cross1, travelParameter, windowMin, windowMax, true);
 
         if (exact != null) {
             return new SideClipAt(travelParameter, exact);
@@ -1585,14 +2243,8 @@ public final class VoxelSpotProjector {
         return new SideClipAt(valid, towardClip);
     }
 
-    private static double perpendicularLimit(double radius, double fixedCoordinate) {
-        double remaining = radius * radius - fixedCoordinate * fixedCoordinate;
-
-        if (remaining <= 0.0D) {
-            return 0.0D;
-        }
-
-        return Math.sqrt(remaining);
+    private static double squareConeRequiredRadius(double fixedCoordinate, double crossMin, double crossMax) {
+        return Math.max(Math.abs(fixedCoordinate), intervalDistanceFromAxis(crossMin, crossMax));
     }
 
     private static double intervalDistanceFromAxis(double min, double max) {
@@ -1718,6 +2370,29 @@ public final class VoxelSpotProjector {
         }
 
         return BeamGeometryOps.propagate(sourceEnvelope, offset);
+    }
+
+    private static double maxEnvelopeRadiusOverUnit(BeamEnvelope envelope) {
+        double maxRadius = 0.0D;
+
+        for (int sample = 0; sample <= CONE_TRAVEL_SAMPLES; sample++) {
+            double offset = sample / (double) CONE_TRAVEL_SAMPLES;
+            double radius = envelopeAtOffset(envelope, offset).radius();
+
+            if (Double.isFinite(radius) && radius > maxRadius) {
+                maxRadius = radius;
+            }
+        }
+
+        return maxRadius;
+    }
+
+    private static int projectedTileRadius(double radius) {
+        if (!Double.isFinite(radius) || radius <= 0.0D) {
+            return 0;
+        }
+
+        return Math.max(0, (int) Math.ceil(radius + 0.5D));
     }
 
     private static double visualDistanceFactor(int depth) {
@@ -2032,6 +2707,11 @@ public final class VoxelSpotProjector {
         return Math.max(0.0D, Math.min(1.0D, value));
     }
 
+    @FunctionalInterface
+    private interface SideIntersectionPredicate {
+        boolean intersects(double travel);
+    }
+
     private record TravelInterval(double min, double max) {
         private TravelInterval {
             if (!Double.isFinite(min) || !Double.isFinite(max) || min < 0.0D || max > 1.0D || min >= max) {
@@ -2063,8 +2743,8 @@ public final class VoxelSpotProjector {
             minCanonical = clamp01(minCanonical);
             maxCanonical = clamp01(maxCanonical);
 
-            if (minLocal >= maxLocal || minCanonical >= maxCanonical) {
-                throw new IllegalArgumentException("Projection cross clip must have positive width");
+            if (minLocal > maxLocal || minCanonical > maxCanonical) {
+                throw new IllegalArgumentException("Projection cross clip must be ordered");
             }
         }
     }
@@ -2098,6 +2778,21 @@ public final class VoxelSpotProjector {
 
         private boolean emitted() {
             return emitted;
+        }
+    }
+
+    private record PatchEmissionReport(PatchEmission result, int emittedQuads, String detail) {
+        private PatchEmissionReport {
+            emittedQuads = Math.max(0, emittedQuads);
+            detail = detail == null ? "" : detail;
+        }
+
+        private boolean emitted() {
+            return emittedQuads > 0;
+        }
+
+        private String resultName() {
+            return result.result();
         }
     }
 

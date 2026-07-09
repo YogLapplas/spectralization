@@ -14,13 +14,42 @@ public record SpotProjectionAllocation(
         double assignedPowerFraction,
         double emittedPowerFraction,
         int emittedQuads,
-        String result
+        String result,
+        String detail
 ) {
+    public SpotProjectionAllocation(
+            BlockPos pos,
+            Direction face,
+            String kind,
+            double candidateArea,
+            double assignedArea,
+            double emittedArea,
+            double assignedPowerFraction,
+            double emittedPowerFraction,
+            int emittedQuads,
+            String result
+    ) {
+        this(
+                pos,
+                face,
+                kind,
+                candidateArea,
+                assignedArea,
+                emittedArea,
+                assignedPowerFraction,
+                emittedPowerFraction,
+                emittedQuads,
+                result,
+                ""
+        );
+    }
+
     public SpotProjectionAllocation {
         Objects.requireNonNull(pos, "pos");
         Objects.requireNonNull(face, "face");
         Objects.requireNonNull(kind, "kind");
         Objects.requireNonNull(result, "result");
+        detail = detail == null ? "" : detail;
         candidateArea = finiteNonNegative(candidateArea);
         assignedArea = finiteNonNegative(assignedArea);
         emittedArea = finiteNonNegative(emittedArea);

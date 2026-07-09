@@ -52,7 +52,8 @@ public record SpotUpdatePayload(
         int quadY3,
         int quadZ3,
         int quadTextureU3,
-        int quadTextureV3
+        int quadTextureV3,
+        int debugMarker
 ) implements CustomPacketPayload {
     public static final Type<SpotUpdatePayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "spot_update")
@@ -103,7 +104,8 @@ public record SpotUpdatePayload(
                 spot.quadY3(),
                 spot.quadZ3(),
                 spot.quadTextureU3(),
-                spot.quadTextureV3()
+                spot.quadTextureV3(),
+                spot.debugMarker()
         );
     }
 
@@ -150,7 +152,8 @@ public record SpotUpdatePayload(
                 quadY3,
                 quadZ3,
                 quadTextureU3,
-                quadTextureV3
+                quadTextureV3,
+                debugMarker
         );
     }
 
@@ -178,6 +181,7 @@ public record SpotUpdatePayload(
                     buffer.readUnsignedByte(),
                     buffer.readUnsignedByte(),
                     buffer.readUnsignedByte(),
+                    buffer.readVarInt(),
                     buffer.readVarInt(),
                     buffer.readVarInt(),
                     buffer.readVarInt(),
@@ -244,6 +248,7 @@ public record SpotUpdatePayload(
         buffer.writeVarInt(quadZ3);
         buffer.writeVarInt(quadTextureU3);
         buffer.writeVarInt(quadTextureV3);
+        buffer.writeVarInt(debugMarker);
     }
 
     @Override

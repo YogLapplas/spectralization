@@ -28,17 +28,32 @@ public final class SpotRenderEvents {
     private static final int MAX_RENDERED_SPOTS = 8192;
     private static final double MAX_RENDER_DISTANCE = 48.0D;
     private static final double MAX_RENDER_DISTANCE_SQUARED = MAX_RENDER_DISTANCE * MAX_RENDER_DISTANCE;
-    private static final double SURFACE_OFFSET = 0.003D;
-    private static final double OVERLAP_LAYER_OFFSET = 0.00003D;
+    private static final double SURFACE_OFFSET = 0.001D;
+    private static final double OVERLAP_LAYER_OFFSET = 0.00001D;
     private static final ResourceLocation CORE_TEXTURE =
-            ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "textures/effect/spot_core.png");
+            ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "textures/effect/spot_square_core.png");
     private static final ResourceLocation HALO_TEXTURE =
-            ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "textures/effect/spot_halo.png");
+            ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "textures/effect/spot_square_halo.png");
     private static final ResourceLocation RING_TEXTURE =
-            ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "textures/effect/spot_ring.png");
+            ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "textures/effect/spot_square_ring.png");
     private static final RenderType CORE_RENDER_TYPE = RenderType.entityTranslucentEmissive(CORE_TEXTURE);
     private static final RenderType HALO_RENDER_TYPE = RenderType.entityTranslucentEmissive(HALO_TEXTURE);
     private static final RenderType RING_RENDER_TYPE = RenderType.entityTranslucentEmissive(RING_TEXTURE);
+    private static final int[] HEX_SEGMENT_MASKS = {
+            0x3F, 0x06, 0x5B, 0x4F,
+            0x66, 0x6D, 0x7D, 0x07,
+            0x7F, 0x6F, 0x77, 0x7C,
+            0x39, 0x5E, 0x79, 0x71
+    };
+    private static final MarkerSegment[] MARKER_SEGMENTS = {
+            new MarkerSegment(0x01, 0.20D, 0.86D, 0.80D, 0.98D),
+            new MarkerSegment(0x02, 0.82D, 0.52D, 0.96D, 0.84D),
+            new MarkerSegment(0x04, 0.82D, 0.16D, 0.96D, 0.48D),
+            new MarkerSegment(0x08, 0.20D, 0.02D, 0.80D, 0.14D),
+            new MarkerSegment(0x10, 0.04D, 0.16D, 0.18D, 0.48D),
+            new MarkerSegment(0x20, 0.04D, 0.52D, 0.18D, 0.84D),
+            new MarkerSegment(0x40, 0.20D, 0.44D, 0.80D, 0.56D)
+    };
 
     @SubscribeEvent
     public static void renderSpots(RenderLevelStageEvent event) {
@@ -136,6 +151,11 @@ public final class SpotRenderEvents {
     }
 
     private static void renderDebugFaceCenter(VertexConsumer consumer, PoseStack.Pose pose, ClientSpotCache.RenderedSpot spot) {
+        if (spot.debugMarker() >= 0) {
+            renderDebugFaceMarker(consumer, pose, spot);
+            return;
+        }
+
         double half = 0.045D;
         double cx = spot.centerX();
         double cy = spot.centerY();
@@ -157,6 +177,112 @@ public final class SpotRenderEvents {
         addDebugQuad(consumer, pose, x1, y0, z0, x1, y1, z0, x0, y1, z0, x0, y0, z0, red, green, blue, alpha);
         addDebugQuad(consumer, pose, x0, y1, z1, x0, y1, z0, x1, y1, z0, x1, y1, z1, red, green, blue, alpha);
         addDebugQuad(consumer, pose, x0, y0, z0, x0, y0, z1, x1, y0, z1, x1, y0, z0, red, green, blue, alpha);
+    }
+
+    private static void renderDebugFaceMarker(VertexConsumer consumer, PoseStack.Pose pose, ClientSpotCache.RenderedSpot spot) {
+        Direction face = spot.face();
+        int marker = spot.debugMarker() & 0xFFF;
+        int high = (marker >>> 8) & 0xF;
+        int middle = (marker >>> 4) & 0xF;
+        int low = marker & 0xF;
+        double digitWidth = 0.115D;
+        double digitHeight = 0.220D;
+        double digitGap = 0.018D;
+        double totalWidth = digitWidth * 3.0D + digitGap * 2.0D;
+        double startU = 0.5D - totalWidth * 0.5D;
+        double minV = 0.5D - digitHeight * 0.5D;
+        double markerOffset = SURFACE_OFFSET + 0.006D;
+
+        renderDebugFaceRect(consumer, pose, spot, face, startU - 0.018D, minV - 0.018D,
+                startU + totalWidth + 0.018D, minV + digitHeight + 0.018D, markerOffset,
+                0, 0, 0, 130);
+        renderDebugDigit(consumer, pose, spot, face, high, startU, minV, digitWidth, digitHeight, markerOffset);
+        renderDebugDigit(consumer, pose, spot, face, middle, startU + digitWidth + digitGap, minV,
+                digitWidth, digitHeight, markerOffset);
+        renderDebugDigit(consumer, pose, spot, face, low, startU + (digitWidth + digitGap) * 2.0D, minV,
+                digitWidth, digitHeight, markerOffset);
+    }
+
+    private static void renderDebugDigit(
+            VertexConsumer consumer,
+            PoseStack.Pose pose,
+            ClientSpotCache.RenderedSpot spot,
+            Direction face,
+            int digit,
+            double digitMinU,
+            double digitMinV,
+            double digitWidth,
+            double digitHeight,
+            double markerOffset
+    ) {
+        int mask = HEX_SEGMENT_MASKS[digit & 0xF];
+
+        for (MarkerSegment segment : MARKER_SEGMENTS) {
+            if ((mask & segment.bit()) == 0) {
+                continue;
+            }
+
+            renderDebugFaceRect(
+                    consumer,
+                    pose,
+                    spot,
+                    face,
+                    digitMinU + segment.minU() * digitWidth,
+                    digitMinV + segment.minV() * digitHeight,
+                    digitMinU + segment.maxU() * digitWidth,
+                    digitMinV + segment.maxV() * digitHeight,
+                    markerOffset,
+                    255,
+                    70,
+                    40,
+                    245
+            );
+        }
+    }
+
+    private static void renderDebugFaceRect(
+            VertexConsumer consumer,
+            PoseStack.Pose pose,
+            ClientSpotCache.RenderedSpot spot,
+            Direction face,
+            double minU,
+            double minV,
+            double maxU,
+            double maxV,
+            double offset,
+            int red,
+            int green,
+            int blue,
+            int alpha
+    ) {
+        SpotSurfaceFrame.LocalCoordinates p0 = SpotSurfaceFrame.surfaceLocal(face, minU, minV, offset);
+        SpotSurfaceFrame.LocalCoordinates p1 = SpotSurfaceFrame.surfaceLocal(face, minU, maxV, offset);
+        SpotSurfaceFrame.LocalCoordinates p2 = SpotSurfaceFrame.surfaceLocal(face, maxU, maxV, offset);
+        SpotSurfaceFrame.LocalCoordinates p3 = SpotSurfaceFrame.surfaceLocal(face, maxU, minV, offset);
+        double baseX = spot.pos().getX();
+        double baseY = spot.pos().getY();
+        double baseZ = spot.pos().getZ();
+
+        addDebugQuad(
+                consumer,
+                pose,
+                baseX + p0.x(),
+                baseY + p0.y(),
+                baseZ + p0.z(),
+                baseX + p1.x(),
+                baseY + p1.y(),
+                baseZ + p1.z(),
+                baseX + p2.x(),
+                baseY + p2.y(),
+                baseZ + p2.z(),
+                baseX + p3.x(),
+                baseY + p3.y(),
+                baseZ + p3.z(),
+                red,
+                green,
+                blue,
+                alpha
+        );
     }
 
     private static void renderTexturedSpot(
@@ -593,6 +719,8 @@ public final class SpotRenderEvents {
         return hash;
     }
 
+    private record MarkerSegment(int bit, double minU, double minV, double maxU, double maxV) {
+    }
 
     private SpotRenderEvents() {
     }

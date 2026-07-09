@@ -88,6 +88,7 @@ public record SpotOverlayPayload(int ownerId, List<SpotRecord> spots) implements
                 buffer.readVarInt(),
                 buffer.readVarInt(),
                 buffer.readVarInt(),
+                buffer.readVarInt(),
                 buffer.readVarInt()
         );
     }
@@ -135,6 +136,7 @@ public record SpotOverlayPayload(int ownerId, List<SpotRecord> spots) implements
         buffer.writeVarInt(spot.quadZ3());
         buffer.writeVarInt(spot.quadTextureU3());
         buffer.writeVarInt(spot.quadTextureV3());
+        buffer.writeVarInt(spot.debugMarker());
     }
 
     @Override

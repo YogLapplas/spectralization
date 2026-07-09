@@ -1,5 +1,6 @@
 package io.github.yoglappland.spectralization.optics.compiler;
 
+import io.github.yoglappland.spectralization.block.MirrorBlock;
 import io.github.yoglappland.spectralization.blockentity.LensHolderBlockEntity;
 import io.github.yoglappland.spectralization.optics.BeamEnvelope;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
@@ -20,9 +21,11 @@ import java.util.Map;
 import java.util.PriorityQueue;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.state.BlockState;
 
 public final class CompiledSpotLayer {
     private static final double MIN_SPOT_POWER = 1.0E-4;
+    private static final double PROJECTED_OPTICAL_SOURCE_MAX_RADIUS = 0.5D;
     private static final int MAX_SPOTS_PER_SAMPLE = 1024;
     public static final SpotLayer EMPTY = new SpotLayer(List.of(), new LongOpenHashSet(), List.of());
 
@@ -30,7 +33,8 @@ public final class CompiledSpotLayer {
             ServerLevel level,
             CompiledPortGraph graph,
             ScalarPowerSolution solution,
-            OutputBeam sourceOutput
+            OutputBeam sourceOutput,
+            CompiledBeamProfileLayer beamProfileLayer
     ) {
         if (!solution.reliableForReadout() || graph.nodes().isEmpty()) {
             return EMPTY;
@@ -62,7 +66,14 @@ public final class CompiledSpotLayer {
             }
 
             double coherentOutgoingPower = Math.min(outgoingPower, solution.coherentPowerAt(node));
-            BeamPacket profileTemplate = templateAt(sourceOutput, distanceByNode.getOrDefault(node, 0), solution, node)
+            BeamPacket profileTemplate = templateAt(
+                    level,
+                    sourceOutput,
+                    distanceByNode.getOrDefault(node, 0),
+                    solution,
+                    beamProfileLayer,
+                    node
+            )
                     .withDirection(node.side());
             if (addVisibleSpots(primarySpots, sideSpots, allocations, VoxelSpotProjector.projectLightConeSpots(
                     level,
@@ -158,6 +169,7 @@ public final class CompiledSpotLayer {
 
         for (SpotRecord spot : primarySpots) {
             if (spots.size() >= MAX_SPOTS_PER_SAMPLE) {
+                assignDebugMarkers(spots);
                 return spots;
             }
 
@@ -166,13 +178,79 @@ public final class CompiledSpotLayer {
 
         for (SpotRecord spot : sideSpots) {
             if (spots.size() >= MAX_SPOTS_PER_SAMPLE) {
+                assignDebugMarkers(spots);
                 return spots;
             }
 
             spots.add(spot);
         }
 
+        assignDebugMarkers(spots);
         return spots;
+    }
+
+    private static void assignDebugMarkers(List<SpotRecord> spots) {
+        DebugMarkerAllocator markerAllocator = null;
+
+        for (int index = 0; index < spots.size(); index++) {
+            SpotRecord spot = spots.get(index);
+
+            if (spot.projectionMode() != SpotRecord.ProjectionMode.DEBUG_FACE_CENTER) {
+                continue;
+            }
+
+            if (markerAllocator == null) {
+                markerAllocator = new DebugMarkerAllocator();
+            }
+
+            spots.set(index, spot.withDebugMarker(markerAllocator.marker(spot.pos(), spot.face())));
+        }
+    }
+
+    private static int initialDebugMarker(BlockPos pos, net.minecraft.core.Direction face) {
+        long positionKey = pos.asLong();
+        int hash = (int) (positionKey ^ (positionKey >>> 32));
+        hash = 31 * hash + face.ordinal();
+        hash ^= hash >>> 16;
+        hash *= 0x7FEB352D;
+        hash ^= hash >>> 15;
+        hash *= 0x846CA68B;
+        hash ^= hash >>> 16;
+        return hash & 0xFFF;
+    }
+
+    private static final class DebugMarkerAllocator {
+        private static final int MARKER_COUNT = 0x1000;
+        private final Map<DebugFaceKey, Integer> markersByFace = new HashMap<>();
+        private final Map<Integer, DebugFaceKey> facesByMarker = new HashMap<>();
+
+        private int marker(BlockPos pos, net.minecraft.core.Direction face) {
+            DebugFaceKey key = new DebugFaceKey(pos.immutable(), face);
+            Integer existing = markersByFace.get(key);
+
+            if (existing != null) {
+                return existing;
+            }
+
+            int start = initialDebugMarker(pos, face);
+
+            for (int probe = 0; probe < MARKER_COUNT; probe++) {
+                int candidate = (start + probe) & 0xFFF;
+                DebugFaceKey owner = facesByMarker.get(candidate);
+
+                if (owner == null || owner.equals(key)) {
+                    facesByMarker.put(candidate, key);
+                    markersByFace.put(key, candidate);
+                    return candidate;
+                }
+            }
+
+            markersByFace.put(key, -1);
+            return -1;
+        }
+    }
+
+    private record DebugFaceKey(BlockPos pos, net.minecraft.core.Direction face) {
     }
 
     public record SpotLayer(
@@ -188,16 +266,25 @@ public final class CompiledSpotLayer {
     }
 
     private static BeamPacket templateAt(
+            ServerLevel level,
             OutputBeam sourceOutput,
             int distance,
             ScalarPowerSolution solution,
+            CompiledBeamProfileLayer beamProfileLayer,
             PortGraphNode node
     ) {
         BeamEnvelope fallbackEnvelope = BeamGeometryOps.propagate(
                 sourceOutput.beam().envelope(),
                 Math.max(0, distance)
         );
-        BeamEnvelope envelope = dominantProfileEnvelope(solution, node, fallbackEnvelope);
+        BeamEnvelope solvedEnvelope = beamProfileLayer != null && !beamProfileLayer.envelopesByLane().isEmpty()
+                ? beamProfileLayer.envelopeAt(node, solution)
+                : null;
+        BeamEnvelope envelope = projectionEnvelopeAtNode(
+                level,
+                node,
+                solvedEnvelope == null ? dominantProfileEnvelope(solution, node, fallbackEnvelope) : solvedEnvelope
+        );
         List<PlaneWaveComponent> components = solution.powerByLane().entrySet().stream()
                 .map(entry -> {
                     double power = entry.getValue().getOrDefault(node, 0.0);
@@ -219,6 +306,22 @@ public final class CompiledSpotLayer {
         return sourceOutput.beam()
                 .withDirection(sourceOutput.outgoingDirection())
                 .withEnvelope(envelope);
+    }
+
+    private static BeamEnvelope projectionEnvelopeAtNode(ServerLevel level, PortGraphNode node, BeamEnvelope envelope) {
+        if (!level.isLoaded(node.pos())) {
+            return envelope;
+        }
+
+        BlockState state = level.getBlockState(node.pos());
+        boolean boundedProjectionSource = state.getBlock() instanceof MirrorBlock
+                || level.getBlockEntity(node.pos()) instanceof LensHolderBlockEntity lensHolder && lensHolder.hasLens();
+
+        if (!boundedProjectionSource || envelope.radius() <= PROJECTED_OPTICAL_SOURCE_MAX_RADIUS) {
+            return envelope;
+        }
+
+        return envelope.withRadius(PROJECTED_OPTICAL_SOURCE_MAX_RADIUS);
     }
 
     private static BeamEnvelope dominantProfileEnvelope(

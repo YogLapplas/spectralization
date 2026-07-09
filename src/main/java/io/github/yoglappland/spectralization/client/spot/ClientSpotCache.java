@@ -19,7 +19,7 @@ import net.neoforged.api.distmarker.OnlyIn;
 @OnlyIn(Dist.CLIENT)
 public final class ClientSpotCache {
     private static final int LEGACY_OWNER_ID = Integer.MIN_VALUE;
-    private static final double SURFACE_OFFSET = 0.003D;
+    private static final double SURFACE_OFFSET = 0.001D;
     private static final Map<Integer, Map<SpotKey, RenderedSpot>> SPOTS_BY_OWNER = new HashMap<>();
     private static final Comparator<SpotKey> SPOT_KEY_ORDER = Comparator
             .comparingInt((SpotKey key) -> key.pos().getX())
@@ -279,7 +279,8 @@ public final class ClientSpotCache {
                 spot.quadY3(),
                 spot.quadZ3(),
                 spot.quadTextureU3(),
-                spot.quadTextureV3()
+                spot.quadTextureV3(),
+                spot.debugMarker()
         );
     }
 
@@ -360,7 +361,8 @@ public final class ClientSpotCache {
                 first.quadY3(),
                 first.quadZ3(),
                 first.quadTextureU3(),
-                first.quadTextureV3()
+                first.quadTextureV3(),
+                first.debugMarker()
         );
     }
 
@@ -554,7 +556,8 @@ public final class ClientSpotCache {
             int quadY3,
             int quadZ3,
             int quadTextureU3,
-            int quadTextureV3
+            int quadTextureV3,
+            int debugMarker
     ) {
     }
 

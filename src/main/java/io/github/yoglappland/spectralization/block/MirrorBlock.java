@@ -1,12 +1,20 @@
 package io.github.yoglappland.spectralization.block;
 
 import io.github.yoglappland.spectralization.optics.BeamPacket;
+import io.github.yoglappland.spectralization.optics.BeamEnvelope;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalNetwork;
 import io.github.yoglappland.spectralization.optics.HorizontalOpticalOrientation;
 import io.github.yoglappland.spectralization.optics.OpticalElement;
 import io.github.yoglappland.spectralization.optics.OpticalResult;
 import io.github.yoglappland.spectralization.optics.cache.OpticalDirtyKind;
 import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
+import io.github.yoglappland.spectralization.optics.geometry.BeamProfileKey;
+import io.github.yoglappland.spectralization.optics.geometry.BeamProfileShape;
+import io.github.yoglappland.spectralization.optics.geometry.BeamProfileTransfer;
+import io.github.yoglappland.spectralization.optics.geometry.SpatialDegradationReason;
+import io.github.yoglappland.spectralization.optics.geometry.SpatialModeCoupling;
+import io.github.yoglappland.spectralization.optics.geometry.SpatialProfileElement;
+import io.github.yoglappland.spectralization.optics.geometry.SpatialTransformContext;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -28,9 +36,10 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
-public class MirrorBlock extends Block implements OpticalElement {
+public class MirrorBlock extends Block implements OpticalElement, SpatialProfileElement {
     public static final IntegerProperty ROTATION = IntegerProperty.create("rotation", 0, 7);
     private static final double REFLECTANCE = 0.9;
+    protected static final double OPTICAL_APERTURE_RADIUS = 1.0D;
 
     private static final double[][] BASE_BOXES = {
             {0.0, 0.0, 5.0, 16.0, 1.0, 11.0},
@@ -109,6 +118,44 @@ public class MirrorBlock extends Block implements OpticalElement {
             BlockPos pos
     ) {
         return compileOpticalNetwork(state, level, pos).interact(input, incomingDirection);
+    }
+
+    @Override
+    public SpatialModeCoupling transformSpatialProfile(
+            BeamEnvelope inputEnvelope,
+            SpatialTransformContext context
+    ) {
+        if (!shouldApplyOpticalAperture(context.state(), context.incomingDirection(), context.outgoingDirection())) {
+            return SpatialModeCoupling.ordered(inputEnvelope);
+        }
+
+        BeamProfileTransfer transfer = BeamProfileShape.fromEnvelope(inputEnvelope).apertureClip(OPTICAL_APERTURE_RADIUS);
+        return SpatialModeCoupling.degraded(
+                transfer.outputProfile().toEnvelope(),
+                transfer.gain(),
+                SpatialDegradationReason.APERTURE_CLIPPING
+        );
+    }
+
+    @Override
+    public BeamProfileTransfer transformProfileState(
+            BeamProfileKey inputProfile,
+            SpatialTransformContext context
+    ) {
+        if (!shouldApplyOpticalAperture(context.state(), context.incomingDirection(), context.outgoingDirection())) {
+            return BeamProfileTransfer.of(inputProfile, 1.0D);
+        }
+
+        return inputProfile.toShape().apertureClip(OPTICAL_APERTURE_RADIUS);
+    }
+
+    protected boolean shouldApplyOpticalAperture(
+            BlockState state,
+            Direction incomingDirection,
+            Direction outgoingDirection
+    ) {
+        return getConnectedDirections(state).contains(incomingDirection)
+                && outgoingDirection == getReflectedDirection(state, incomingDirection);
     }
 
     @Override

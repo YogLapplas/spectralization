@@ -110,10 +110,10 @@ public record BeamProfileKey(
         double correlation = denominator <= 1.0E-12D ? 0.0D : shape.rTheta() / denominator;
 
         return new BeamProfileKey(
-                logBucketCeil(radius, MIN_RADIUS, MAX_RADIUS_BUCKET),
+                logBucketNearest(radius, MIN_RADIUS, MAX_RADIUS_BUCKET),
                 (int) Math.round(BeamGeometryOps.clamp01((correlation + 1.0D) * 0.5D) * 2.0D * CORRELATION_BUCKETS)
                         - CORRELATION_BUCKETS,
-                divergence <= 0.0D ? 0 : logBucketCeil(divergence, MIN_DIVERGENCE, MAX_DIVERGENCE_BUCKET),
+                divergence <= 0.0D ? 0 : logBucketNearest(divergence, MIN_DIVERGENCE, MAX_DIVERGENCE_BUCKET),
                 clamp((int) Math.ceil(Math.max(1.0D, shape.quality()) * 4.0D) - 4, 0, MAX_QUALITY_BUCKET),
                 clamp((int) Math.ceil(BeamGeometryOps.clamp01(shape.scatter()) * MAX_SCATTER_BUCKET), 0, MAX_SCATTER_BUCKET),
                 shape.modeM(),
@@ -122,13 +122,13 @@ public record BeamProfileKey(
         );
     }
 
-    private static int logBucketCeil(double value, double minimum, int maxBucket) {
+    private static int logBucketNearest(double value, double minimum, int maxBucket) {
         if (!Double.isFinite(value) || value <= minimum) {
             return 0;
         }
 
         double octaves = Math.log(value / minimum) / Math.log(2.0D);
-        return clamp((int) Math.ceil(octaves * BUCKETS_PER_OCTAVE), 0, maxBucket);
+        return clamp((int) Math.round(octaves * BUCKETS_PER_OCTAVE), 0, maxBucket);
     }
 
     private static double radiusFromBucket(int bucket) {

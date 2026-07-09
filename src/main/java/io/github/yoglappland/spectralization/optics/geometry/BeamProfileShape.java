@@ -216,6 +216,31 @@ public record BeamProfileShape(
         return BeamProfileTransfer.of(output.toKey(), apertureGain);
     }
 
+    public BeamProfileTransfer apertureClip(double apertureRadius) {
+        if (!Double.isFinite(apertureRadius) || apertureRadius <= 0.0D) {
+            throw new IllegalArgumentException("Aperture radius must be finite and positive");
+        }
+
+        double apertureR2 = apertureRadius * apertureRadius;
+        double clippedR2 = Math.min(r2, apertureR2);
+        double apertureGain = r2 <= apertureR2 || r2 <= MOMENT_EPSILON ? 1.0D : apertureR2 / r2;
+        double momentScale = r2 <= MOMENT_EPSILON ? 1.0D : clippedR2 / r2;
+        double clippedRTheta = rTheta * Math.sqrt(Math.max(0.0D, momentScale));
+        double rawApertureFill = Math.sqrt(Math.max(0.0D, r2)) / apertureRadius;
+        double overfill = Math.max(0.0D, rawApertureFill - 1.0D);
+        BeamProfileShape output = new BeamProfileShape(
+                clippedR2,
+                clippedRTheta,
+                theta2,
+                Math.max(1.0D, quality * (1.0D + overfill * 0.12D)),
+                BeamGeometryOps.clamp01(scatter + overfill * 0.06D),
+                modeM,
+                modeN,
+                false
+        );
+        return BeamProfileTransfer.of(output.toKey(), apertureGain);
+    }
+
     public BeamProfileShape guidedOutput(double coreRadius, double acceptance) {
         double radius = Math.max(BeamGeometryOps.MIN_RADIUS, coreRadius);
         double angular = Math.max(0.0D, acceptance);

@@ -45,7 +45,8 @@ public record SpotRecord(
         int quadY3,
         int quadZ3,
         int quadTextureU3,
-        int quadTextureV3
+        int quadTextureV3,
+        int debugMarker
 ) {
     public static final int SLICE_QUANTIZATION_LEVEL = 255;
     public static final int QUAD_QUANTIZATION_LEVEL = 65535;
@@ -114,7 +115,8 @@ public record SpotRecord(
                 QUAD_QUANTIZATION_LEVEL,
                 0,
                 0,
-                QUAD_QUANTIZATION_LEVEL
+                QUAD_QUANTIZATION_LEVEL,
+                -1
         );
     }
 
@@ -158,6 +160,7 @@ public record SpotRecord(
         validateQuadUnit(quadZ3, "Quad z3");
         validateQuadUnit(quadTextureU3, "Quad texture u3");
         validateQuadUnit(quadTextureV3, "Quad texture v3");
+        validateDebugMarker(debugMarker, "Debug marker");
 
         if (projectionMode == null) {
             throw new IllegalArgumentException("Spot projection mode must not be null");
@@ -177,6 +180,10 @@ public record SpotRecord(
     }
 
     public static SpotRecord debugFaceCenter(BlockPos pos, Direction face) {
+        return debugFaceCenter(pos, face, -1);
+    }
+
+    public static SpotRecord debugFaceCenter(BlockPos pos, Direction face, int debugMarker) {
         return new SpotRecord(
                 pos,
                 face,
@@ -219,7 +226,8 @@ public record SpotRecord(
                 QUAD_QUANTIZATION_LEVEL,
                 0,
                 0,
-                QUAD_QUANTIZATION_LEVEL
+                QUAD_QUANTIZATION_LEVEL,
+                debugMarker
         );
     }
 
@@ -275,7 +283,8 @@ public record SpotRecord(
                 QUAD_QUANTIZATION_LEVEL,
                 0,
                 0,
-                QUAD_QUANTIZATION_LEVEL
+                QUAD_QUANTIZATION_LEVEL,
+                debugMarker
         );
     }
 
@@ -343,7 +352,56 @@ public record SpotRecord(
                 quadY3,
                 quadZ3,
                 quadTextureU3,
-                quadTextureV3
+                quadTextureV3,
+                debugMarker
+        );
+    }
+
+    public SpotRecord withDebugMarker(int debugMarker) {
+        return new SpotRecord(
+                pos,
+                face,
+                coherentAlphaLevel,
+                coherentRadiusLevel,
+                coherentRed,
+                coherentGreen,
+                coherentBlue,
+                strayAlphaLevel,
+                strayRadiusLevel,
+                strayRed,
+                strayGreen,
+                strayBlue,
+                ringAlphaLevel,
+                projectionMode,
+                clipMinU,
+                clipMinV,
+                clipMaxU,
+                clipMaxV,
+                textureMinU,
+                textureMinV,
+                textureMaxU,
+                textureMaxV,
+                quadX0,
+                quadY0,
+                quadZ0,
+                quadTextureU0,
+                quadTextureV0,
+                quadX1,
+                quadY1,
+                quadZ1,
+                quadTextureU1,
+                quadTextureV1,
+                quadX2,
+                quadY2,
+                quadZ2,
+                quadTextureU2,
+                quadTextureV2,
+                quadX3,
+                quadY3,
+                quadZ3,
+                quadTextureU3,
+                quadTextureV3,
+                debugMarker
         );
     }
 
@@ -368,6 +426,12 @@ public record SpotRecord(
     private static void validateQuadUnit(int value, String name) {
         if (value < 0 || value > QUAD_QUANTIZATION_LEVEL) {
             throw new IllegalArgumentException(name + " must be between 0 and " + QUAD_QUANTIZATION_LEVEL);
+        }
+    }
+
+    private static void validateDebugMarker(int marker, String name) {
+        if (marker < -1 || marker > 0xFFF) {
+            throw new IllegalArgumentException(name + " must be -1 or a 12-bit hex marker");
         }
     }
 }

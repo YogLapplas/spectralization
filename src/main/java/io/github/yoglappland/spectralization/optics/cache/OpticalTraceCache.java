@@ -752,7 +752,8 @@ public final class OpticalTraceCache {
                         level,
                         cachedTrace.portGraph(),
                         cachedTrace.scalarPowerSolution(),
-                        cachedTrace.sourceOutput()
+                        cachedTrace.sourceOutput(),
+                        cachedTrace.readoutLayer().beamProfileLayer()
                 )
                 : CompiledSpotLayer.EMPTY;
 
@@ -1535,7 +1536,13 @@ public final class OpticalTraceCache {
 
         addGraphDependencies(portGraph, dependencies);
         CompiledSpotLayer.SpotLayer spotLayer = scalarPowerSolution.reliableForReadout()
-                ? CompiledSpotLayer.sample(level, portGraph, scalarPowerSolution, request.sourceOutput())
+                ? CompiledSpotLayer.sample(
+                        level,
+                        portGraph,
+                        scalarPowerSolution,
+                        request.sourceOutput(),
+                        readoutLayer.beamProfileLayer()
+                )
                 : CompiledSpotLayer.EMPTY;
 
         return new CachedOpticalTrace(

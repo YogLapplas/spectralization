@@ -35,6 +35,8 @@ public final class VoxelSpotProjector {
     private static final double VISUAL_DISTANCE_FADE_QUADRATIC = 0.004D;
     private static final int MAX_PROJECTED_DEPTH = 32;
     private static final int CONE_TRAVEL_SAMPLES = 16;
+    private static final double[] OCCLUSION_PLANE_OFFSETS = {0.0D, 0.25D, 0.5D, 0.75D, 1.0D};
+    private static final String[] OCCLUSION_PLANE_NAMES = {"front", "q25", "q50", "q75", "back"};
     private static final CanonicalRect FULL_FOOTPRINT = new CanonicalRect(0.0D, 0.0D, 1.0D, 1.0D);
     private static volatile boolean debugFaceCentersEnabled = false;
 
@@ -67,6 +69,7 @@ public final class VoxelSpotProjector {
         List<SpotRecord> fragments = new ArrayList<>();
         List<SpotProjectionAllocation> allocations = new ArrayList<>();
         List<CanonicalRect> occupiedRayWindows = new ArrayList<>();
+        List<OcclusionWindow> occupiedDebugWindows = new ArrayList<>();
         BeamPacket projectionTemplate = profileTemplate;
 
         for (int depth = 1; depth <= MAX_PROJECTED_DEPTH; depth++) {
@@ -77,18 +80,12 @@ public final class VoxelSpotProjector {
                 continue;
             }
 
-            double exitRadius = envelopeAtOffset(envelope, 1.0D).radius();
-
-            if (!Double.isFinite(exitRadius) || exitRadius <= 0.0D) {
-                exitRadius = radius;
-            }
-
             Direction displayFace = travelDirection.getOpposite();
             Direction uDirection = SpotSurfaceFrame.uDirection(displayFace);
             Direction vDirection = SpotSurfaceFrame.vDirection(displayFace);
             int tileRadius = projectedTileRadius(maxEnvelopeRadiusOverUnit(envelope));
             BeamPacket targetTemplate = projectionTemplate.withEnvelope(envelope);
-            List<CanonicalRect> frontBlockersAtDepth = new ArrayList<>();
+            List<OcclusionWindow> frontBlockersAtDepth = new ArrayList<>();
             List<CanonicalRect> frontFaceWindowsAtDepth = new ArrayList<>();
             List<CanonicalRect> sideBlockersAtDepth = new ArrayList<>();
             BlockPos depthOrigin = sourcePos.relative(travelDirection, depth);
@@ -96,15 +93,21 @@ public final class VoxelSpotProjector {
             for (int dv = -tileRadius; dv <= tileRadius; dv++) {
                 for (int du = -tileRadius; du <= tileRadius; du++) {
                     ProjectionRect rect = projectionRect(radius, du, dv);
-                    CanonicalRect sweptWindow = sweptProjectionWindow(radius, exitRadius, du, dv);
-
-                    if (rect == null && sweptWindow == null) {
-                        continue;
-                    }
-
                     BlockPos targetPos = depthOrigin
                             .relative(uDirection, du)
                             .relative(vDirection, dv);
+                    List<OcclusionWindow> blockOcclusionWindows = blockPlaneOcclusionWindows(
+                            targetTemplate.envelope(),
+                            du,
+                            dv,
+                            targetPos,
+                            depth
+                    );
+
+                    if (rect == null && blockOcclusionWindows.isEmpty()) {
+                        continue;
+                    }
+
                     dependencies.add(targetPos.asLong());
 
                     if (!level.isLoaded(targetPos)) {
@@ -121,9 +124,22 @@ public final class VoxelSpotProjector {
                         continue;
                     }
 
-                    if (depth > 0 && rect != null) {
-                        frontBlockersAtDepth.add(rect.canonicalRect());
-                        frontFaceWindowsAtDepth.add(rect.canonicalRect());
+                    if (depth > 0 && !blockOcclusionWindows.isEmpty()) {
+                        frontBlockersAtDepth.addAll(blockOcclusionWindows);
+                        allocations.add(frontOcclusionProbeAllocation(
+                                targetPos,
+                                displayFace,
+                                depth,
+                                du,
+                                dv,
+                                targetTemplate.envelope(),
+                                rect,
+                                blockOcclusionWindows
+                        ));
+
+                        if (rect != null) {
+                            frontFaceWindowsAtDepth.add(rect.canonicalRect());
+                        }
                     }
 
                     if (rect == null) {
@@ -131,6 +147,29 @@ public final class VoxelSpotProjector {
                     }
 
                     List<ProjectionRect> visibleRects = visibleSubRects(radius, du, dv, rect, occupiedRayWindows);
+                    List<OcclusionWindow> intersectingOccupied = intersectingOcclusionWindows(rect.canonicalRect(), occupiedDebugWindows);
+                    List<ProjectionRect> visibleWithoutBackRects = visibleSubRects(
+                            radius,
+                            du,
+                            dv,
+                            rect,
+                            canonicalWindowsExcludingPlane(occupiedDebugWindows, "back")
+                    );
+
+                    if (!intersectingOccupied.isEmpty() || visibleRects.size() != 1) {
+                        allocations.add(frontVisibleProbeAllocation(
+                                targetPos,
+                                displayFace,
+                                depth,
+                                du,
+                                dv,
+                                rect,
+                                intersectingOccupied,
+                                visibleRects,
+                                visibleWithoutBackRects,
+                                occupiedDebugWindows.size()
+                        ));
+                    }
 
                     if (visibleRects.isEmpty()) {
                         continue;
@@ -190,12 +229,9 @@ public final class VoxelSpotProjector {
                 );
             }
 
-            for (CanonicalRect blocker : frontBlockersAtDepth) {
-                occupiedRayWindows.add(blocker);
-            }
-
-            for (CanonicalRect blocker : sideBlockersAtDepth) {
-                occupiedRayWindows.add(blocker);
+            for (OcclusionWindow blocker : frontBlockersAtDepth) {
+                occupiedRayWindows.add(blocker.rect());
+                occupiedDebugWindows.add(blocker);
             }
 
             if (fullyOccupied(occupiedRayWindows)) {
@@ -633,8 +669,15 @@ public final class VoxelSpotProjector {
 
                 BeamEnvelope envelope0 = envelopeAtOffset(targetTemplate.envelope(), crossTravel0);
                 BeamEnvelope envelope1 = envelopeAtOffset(targetTemplate.envelope(), crossTravel1);
-                SideCrossSection cross0 = uSideCrossSection(envelope0.radius(), boundaryWorldU, tileV);
-                SideCrossSection cross1 = uSideCrossSection(envelope1.radius(), boundaryWorldU, tileV);
+                double radius0 = envelope0.radius();
+                double radius1 = envelope1.radius();
+
+                if (!isEntranceSide(boundaryWorldU, fixedULocal, radius0, radius1)) {
+                    continue;
+                }
+
+                SideCrossSection cross0 = uSideCrossSection(radius0, boundaryWorldU, tileV);
+                SideCrossSection cross1 = uSideCrossSection(radius1, boundaryWorldU, tileV);
 
                 if (cross0 == null || cross1 == null) {
                     continue;
@@ -798,8 +841,15 @@ public final class VoxelSpotProjector {
 
                 BeamEnvelope envelope0 = envelopeAtOffset(targetTemplate.envelope(), crossTravel0);
                 BeamEnvelope envelope1 = envelopeAtOffset(targetTemplate.envelope(), crossTravel1);
-                SideCrossSection cross0 = vSideCrossSection(envelope0.radius(), boundaryWorldV, tileU);
-                SideCrossSection cross1 = vSideCrossSection(envelope1.radius(), boundaryWorldV, tileU);
+                double radius0 = envelope0.radius();
+                double radius1 = envelope1.radius();
+
+                if (!isEntranceSide(boundaryWorldV, fixedVLocal, radius0, radius1)) {
+                    continue;
+                }
+
+                SideCrossSection cross0 = vSideCrossSection(radius0, boundaryWorldV, tileU);
+                SideCrossSection cross1 = vSideCrossSection(radius1, boundaryWorldV, tileU);
 
                 if (cross0 == null || cross1 == null) {
                     continue;
@@ -1712,6 +1762,179 @@ public final class VoxelSpotProjector {
         return String.format(Locale.ROOT, "%.6f", value);
     }
 
+    private static SpotProjectionAllocation frontOcclusionProbeAllocation(
+            BlockPos targetPos,
+            Direction displayFace,
+            int depth,
+            int tileU,
+            int tileV,
+            BeamEnvelope envelope,
+            ProjectionRect frontRect,
+            List<OcclusionWindow> occlusionWindows
+    ) {
+        BeamEnvelope backEnvelope = envelopeAtOffset(envelope, 1.0D);
+        ProjectionRect backRect = projectionRect(backEnvelope.radius(), tileU, tileV);
+        String detail = "depth=" + depth
+                + ";tile=" + tileU + "," + tileV
+                + ";front_radius=" + formatDecimal(envelope.radius())
+                + ";back_radius=" + formatDecimal(backEnvelope.radius())
+                + ";front_rect=" + formatProjectionRect(frontRect)
+                + ";back_rect=" + formatProjectionRect(backRect)
+                + ";windows=" + formatOcclusionWindowList(occlusionWindows, 6);
+
+        return new SpotProjectionAllocation(
+                targetPos,
+                displayFace,
+                "front-occlusion-probe",
+                occlusionAreaSum(occlusionWindows),
+                occlusionWindows.size(),
+                0.0D,
+                0.0D,
+                0.0D,
+                0,
+                "debug",
+                detail
+        );
+    }
+
+    private static SpotProjectionAllocation frontVisibleProbeAllocation(
+            BlockPos targetPos,
+            Direction displayFace,
+            int depth,
+            int tileU,
+            int tileV,
+            ProjectionRect rawRect,
+            List<OcclusionWindow> intersectingOccupied,
+            List<ProjectionRect> visibleRects,
+            List<ProjectionRect> visibleWithoutBackRects,
+            int occupiedCount
+    ) {
+        double rawArea = canonicalArea(rawRect.canonicalRect());
+        double visibleArea = projectionRectAreaSum(visibleRects);
+        double visibleWithoutBackArea = projectionRectAreaSum(visibleWithoutBackRects);
+        double backDeltaArea = Math.max(0.0D, visibleWithoutBackArea - visibleArea);
+        List<OcclusionWindow> intersectingBack = occlusionWindowsWithPlane(intersectingOccupied, "back");
+        String result;
+
+        if (visibleRects.isEmpty()) {
+            result = "fully_occluded";
+        } else if (visibleArea < rawArea - EDGE_TOUCH_EPSILON) {
+            result = "clipped";
+        } else {
+            result = "unchanged";
+        }
+
+        String detail = "depth=" + depth
+                + ";tile=" + tileU + "," + tileV
+                + ";raw=" + formatProjectionRect(rawRect)
+                + ";occupied_count=" + occupiedCount
+                + ";intersecting_count=" + intersectingOccupied.size()
+                + ";intersecting_back_count=" + intersectingBack.size()
+                + ";intersecting=" + formatOcclusionWindowList(intersectingOccupied, 8)
+                + ";intersecting_back=" + formatOcclusionWindowList(intersectingBack, 8)
+                + ";visible=" + formatProjectionRectList(visibleRects, 8)
+                + ";visible_without_back=" + formatProjectionRectList(visibleWithoutBackRects, 8)
+                + ";raw_area=" + formatDecimal(rawArea)
+                + ";visible_area=" + formatDecimal(visibleArea)
+                + ";visible_without_back_area=" + formatDecimal(visibleWithoutBackArea)
+                + ";back_delta_area=" + formatDecimal(backDeltaArea);
+
+        return new SpotProjectionAllocation(
+                targetPos,
+                displayFace,
+                "front-visible-probe",
+                rawArea,
+                visibleArea,
+                0.0D,
+                0.0D,
+                0.0D,
+                0,
+                result,
+                detail
+        );
+    }
+
+    private static String formatProjectionRect(ProjectionRect rect) {
+        return rect == null ? "null" : formatRect(rect.canonicalRect());
+    }
+
+    private static String formatProjectionRectList(List<ProjectionRect> rects, int limit) {
+        if (rects.isEmpty()) {
+            return "[]";
+        }
+
+        List<CanonicalRect> canonicalRects = new ArrayList<>(rects.size());
+
+        for (ProjectionRect rect : rects) {
+            canonicalRects.add(rect.canonicalRect());
+        }
+
+        return formatRectList(canonicalRects, limit);
+    }
+
+    private static String formatRectList(List<CanonicalRect> rects, int limit) {
+        if (rects.isEmpty()) {
+            return "[]";
+        }
+
+        StringBuilder builder = new StringBuilder();
+        builder.append('[');
+        int count = Math.min(limit, rects.size());
+
+        for (int index = 0; index < count; index++) {
+            if (index > 0) {
+                builder.append('|');
+            }
+
+            builder.append(formatRect(rects.get(index)));
+        }
+
+        if (rects.size() > count) {
+            builder.append("|...+").append(rects.size() - count);
+        }
+
+        builder.append(']');
+        return builder.toString();
+    }
+
+    private static String formatOcclusionWindowList(List<OcclusionWindow> windows, int limit) {
+        if (windows.isEmpty()) {
+            return "[]";
+        }
+
+        StringBuilder builder = new StringBuilder();
+        builder.append('[');
+        int count = Math.min(limit, windows.size());
+
+        for (int index = 0; index < count; index++) {
+            if (index > 0) {
+                builder.append('|');
+            }
+
+            builder.append(formatOcclusionWindow(windows.get(index)));
+        }
+
+        if (windows.size() > count) {
+            builder.append("|...+").append(windows.size() - count);
+        }
+
+        builder.append(']');
+        return builder.toString();
+    }
+
+    private static String formatOcclusionWindow(OcclusionWindow window) {
+        return window.plane()
+                + "@"
+                + formatPos(window.pos())
+                + "/d=" + window.depth()
+                + "/tile=" + window.tileU() + "," + window.tileV()
+                + "/rect=" + formatRect(window.rect());
+    }
+
+    private static String formatPos(BlockPos pos) {
+        return pos.getX() + "," + pos.getY() + "," + pos.getZ();
+    }
+
     static Patch clippedUSidePatch(
             Direction sideFace,
             Direction travelDirection,
@@ -2414,6 +2637,31 @@ public final class VoxelSpotProjector {
         return beamPower * visualDistanceFactor * SIDE_FACE_VISUAL_FACTOR;
     }
 
+    private static boolean isEntranceSide(
+            double boundaryWorldCoordinate,
+            double fixedLocal,
+            double entryRadius,
+            double exitRadius
+    ) {
+        double radiusDelta = exitRadius - entryRadius;
+
+        if (!Double.isFinite(radiusDelta) || Math.abs(radiusDelta) <= CONE_SIDE_EPSILON) {
+            return false;
+        }
+
+        boolean minSide = fixedLocal < 0.5D;
+
+        if (radiusDelta > 0.0D) {
+            return minSide
+                    ? boundaryWorldCoordinate > CONE_SIDE_EPSILON
+                    : boundaryWorldCoordinate < -CONE_SIDE_EPSILON;
+        }
+
+        return minSide
+                ? boundaryWorldCoordinate < -CONE_SIDE_EPSILON
+                : boundaryWorldCoordinate > CONE_SIDE_EPSILON;
+    }
+
     private static double lerp(double start, double end, double t) {
         return start + (end - start) * t;
     }
@@ -2464,30 +2712,33 @@ public final class VoxelSpotProjector {
         return projectionRect(radius, tileU, tileV, textureMinU, textureMinV, textureMaxU, textureMaxV);
     }
 
-    private static CanonicalRect sweptProjectionWindow(double entryRadius, double exitRadius, int tileU, int tileV) {
-        ProjectionRect entryRect = projectionRect(entryRadius, tileU, tileV);
-        ProjectionRect exitRect = projectionRect(exitRadius, tileU, tileV);
+    private static List<OcclusionWindow> blockPlaneOcclusionWindows(
+            BeamEnvelope envelope,
+            int tileU,
+            int tileV,
+            BlockPos pos,
+            int depth
+    ) {
+        List<OcclusionWindow> windows = new ArrayList<>();
 
-        if (entryRect == null && exitRect == null) {
-            return null;
+        for (int index = 0; index < OCCLUSION_PLANE_OFFSETS.length; index++) {
+            double offset = OCCLUSION_PLANE_OFFSETS[index];
+            BeamEnvelope planeEnvelope = envelopeAtOffset(envelope, offset);
+            ProjectionRect planeRect = projectionRect(planeEnvelope.radius(), tileU, tileV);
+
+            if (planeRect != null) {
+                windows.add(new OcclusionWindow(
+                        planeRect.canonicalRect(),
+                        OCCLUSION_PLANE_NAMES[index],
+                        pos,
+                        depth,
+                        tileU,
+                        tileV
+                ));
+            }
         }
 
-        if (entryRect == null) {
-            return exitRect.canonicalRect();
-        }
-
-        if (exitRect == null) {
-            return entryRect.canonicalRect();
-        }
-
-        CanonicalRect entry = entryRect.canonicalRect();
-        CanonicalRect exit = exitRect.canonicalRect();
-        return canonicalRectOrNull(
-                Math.min(entry.minU(), exit.minU()),
-                Math.min(entry.minV(), exit.minV()),
-                Math.max(entry.maxU(), exit.maxU()),
-                Math.max(entry.maxV(), exit.maxV())
-        );
+        return windows.isEmpty() ? List.of() : windows;
     }
 
     private static ProjectionRect projectionRect(
@@ -2611,6 +2862,98 @@ public final class VoxelSpotProjector {
                 EDGE_TOUCH_EPSILON * EDGE_TOUCH_EPSILON,
                 (rayWindow.maxU() - rayWindow.minU()) * (rayWindow.maxV() - rayWindow.minV())
         );
+    }
+
+    private static double canonicalAreaSum(List<CanonicalRect> rayWindows) {
+        double area = 0.0D;
+
+        for (CanonicalRect rayWindow : rayWindows) {
+            area += canonicalArea(rayWindow);
+        }
+
+        return Math.max(0.0D, area);
+    }
+
+    private static double occlusionAreaSum(List<OcclusionWindow> windows) {
+        double area = 0.0D;
+
+        for (OcclusionWindow window : windows) {
+            area += canonicalArea(window.rect());
+        }
+
+        return Math.max(0.0D, area);
+    }
+
+    private static double projectionRectAreaSum(List<ProjectionRect> rects) {
+        double area = 0.0D;
+
+        for (ProjectionRect rect : rects) {
+            area += canonicalArea(rect.canonicalRect());
+        }
+
+        return Math.max(0.0D, area);
+    }
+
+    private static List<OcclusionWindow> intersectingOcclusionWindows(
+            CanonicalRect source,
+            List<OcclusionWindow> occupiedRayWindows
+    ) {
+        if (occupiedRayWindows.isEmpty()) {
+            return List.of();
+        }
+
+        List<OcclusionWindow> intersections = new ArrayList<>();
+
+        for (OcclusionWindow occupied : occupiedRayWindows) {
+            if (intersects(source, occupied.rect())) {
+                intersections.add(occupied);
+            }
+        }
+
+        return intersections.isEmpty() ? List.of() : intersections;
+    }
+
+    private static List<OcclusionWindow> occlusionWindowsWithPlane(List<OcclusionWindow> windows, String plane) {
+        if (windows.isEmpty()) {
+            return List.of();
+        }
+
+        List<OcclusionWindow> filtered = new ArrayList<>();
+
+        for (OcclusionWindow window : windows) {
+            if (plane.equals(window.plane())) {
+                filtered.add(window);
+            }
+        }
+
+        return filtered.isEmpty() ? List.of() : filtered;
+    }
+
+    private static List<CanonicalRect> canonicalWindowsExcludingPlane(
+            List<OcclusionWindow> windows,
+            String excludedPlane
+    ) {
+        if (windows.isEmpty()) {
+            return List.of();
+        }
+
+        List<CanonicalRect> rects = new ArrayList<>();
+
+        for (OcclusionWindow window : windows) {
+            if (!excludedPlane.equals(window.plane())) {
+                rects.add(window.rect());
+            }
+        }
+
+        return rects.isEmpty() ? List.of() : rects;
+    }
+
+    private static boolean intersects(CanonicalRect first, CanonicalRect second) {
+        double minU = Math.max(first.minU(), second.minU());
+        double minV = Math.max(first.minV(), second.minV());
+        double maxU = Math.min(first.maxU(), second.maxU());
+        double maxV = Math.min(first.maxV(), second.maxV());
+        return maxU - minU > EDGE_TOUCH_EPSILON && maxV - minV > EDGE_TOUCH_EPSILON;
     }
 
     private static List<CanonicalRect> sameDepthSideOcclusionWindows(
@@ -2846,6 +3189,16 @@ public final class VoxelSpotProjector {
                 throw new IllegalArgumentException("Canonical projection rectangle must have positive area");
             }
         }
+    }
+
+    private record OcclusionWindow(
+            CanonicalRect rect,
+            String plane,
+            BlockPos pos,
+            int depth,
+            int tileU,
+            int tileV
+    ) {
     }
 
     private VoxelSpotProjector() {

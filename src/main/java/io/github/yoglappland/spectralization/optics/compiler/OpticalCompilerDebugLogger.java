@@ -2189,6 +2189,10 @@ public final class OpticalCompilerDebugLogger {
     }
 
     private static int allocationPriority(SpotProjectionAllocation allocation) {
+        if (allocation.kind().endsWith("-probe")) {
+            return -1;
+        }
+
         if (allocation.assignedArea() > 0.0D && allocation.emittedQuads() == 0) {
             return 0;
         }

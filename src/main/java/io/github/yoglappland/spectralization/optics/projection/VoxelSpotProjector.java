@@ -2,6 +2,7 @@ package io.github.yoglappland.spectralization.optics.projection;
 
 import io.github.yoglappland.spectralization.block.LensHolderBlock;
 import io.github.yoglappland.spectralization.blockentity.LensHolderBlockEntity;
+import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.optics.OpticalElement;
 import io.github.yoglappland.spectralization.optics.BeamEnvelope;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
@@ -35,13 +36,15 @@ public final class VoxelSpotProjector {
     private static final double VISUAL_DISTANCE_FADE_QUADRATIC = 0.004D;
     private static final int MAX_PROJECTED_DEPTH = 32;
     private static final int CONE_TRAVEL_SAMPLES = 16;
-    private static final double[] OCCLUSION_PLANE_OFFSETS = {0.0D, 0.25D, 0.5D, 0.75D, 1.0D};
-    private static final String[] OCCLUSION_PLANE_NAMES = {"front", "q25", "q50", "q75", "back"};
     private static final CanonicalRect FULL_FOOTPRINT = new CanonicalRect(0.0D, 0.0D, 1.0D, 1.0D);
     private static volatile boolean debugFaceCentersEnabled = false;
 
     public static boolean debugFaceCentersEnabled() {
         return debugFaceCentersEnabled;
+    }
+
+    public static int occlusionPlaneCount() {
+        return Math.max(2, SpectralizationConfig.spotProjectionOcclusionPlanes());
     }
 
     public static void setDebugFaceCentersEnabled(boolean enabled) {
@@ -2721,15 +2724,17 @@ public final class VoxelSpotProjector {
     ) {
         List<OcclusionWindow> windows = new ArrayList<>();
 
-        for (int index = 0; index < OCCLUSION_PLANE_OFFSETS.length; index++) {
-            double offset = OCCLUSION_PLANE_OFFSETS[index];
+        int planeCount = occlusionPlaneCount();
+
+        for (int index = 0; index < planeCount; index++) {
+            double offset = occlusionPlaneOffset(index, planeCount);
             BeamEnvelope planeEnvelope = envelopeAtOffset(envelope, offset);
             ProjectionRect planeRect = projectionRect(planeEnvelope.radius(), tileU, tileV);
 
             if (planeRect != null) {
                 windows.add(new OcclusionWindow(
                         planeRect.canonicalRect(),
-                        OCCLUSION_PLANE_NAMES[index],
+                        occlusionPlaneName(index, planeCount),
                         pos,
                         depth,
                         tileU,
@@ -2739,6 +2744,26 @@ public final class VoxelSpotProjector {
         }
 
         return windows.isEmpty() ? List.of() : windows;
+    }
+
+    private static double occlusionPlaneOffset(int index, int planeCount) {
+        if (planeCount <= 1) {
+            return 0.0D;
+        }
+
+        return index / (double) (planeCount - 1);
+    }
+
+    private static String occlusionPlaneName(int index, int planeCount) {
+        if (index <= 0) {
+            return "front";
+        }
+
+        if (index >= planeCount - 1) {
+            return "back";
+        }
+
+        return "q" + Math.round(occlusionPlaneOffset(index, planeCount) * 100.0D);
     }
 
     private static ProjectionRect projectionRect(

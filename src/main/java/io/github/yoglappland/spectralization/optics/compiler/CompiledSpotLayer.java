@@ -2,6 +2,8 @@ package io.github.yoglappland.spectralization.optics.compiler;
 
 import io.github.yoglappland.spectralization.block.MirrorBlock;
 import io.github.yoglappland.spectralization.blockentity.LensHolderBlockEntity;
+import io.github.yoglappland.spectralization.config.SpectralizationConfig;
+import io.github.yoglappland.spectralization.diagnostics.SpectralDiagnostics;
 import io.github.yoglappland.spectralization.optics.BeamEnvelope;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
@@ -75,7 +77,8 @@ public final class CompiledSpotLayer {
                     node
             )
                     .withDirection(node.side());
-            if (addVisibleSpots(primarySpots, sideSpots, allocations, VoxelSpotProjector.projectLightConeSpots(
+            long projectionStartNanos = SpectralizationConfig.opticalCompilerDebugLog() ? System.nanoTime() : 0L;
+            SpotProjectionResult projectionResult = VoxelSpotProjector.projectLightConeSpots(
                     level,
                     node.pos(),
                     node.side(),
@@ -83,12 +86,39 @@ public final class CompiledSpotLayer {
                     profileTemplate,
                     outgoingPower,
                     coherentOutgoingPower
-            ), projectionDependencies)) {
+            );
+            logProjectionProfile(level, node, outgoingPower, projectionResult, projectionStartNanos);
+
+            if (addVisibleSpots(primarySpots, sideSpots, allocations, projectionResult, projectionDependencies)) {
                 break;
             }
         }
 
         return new SpotLayer(cappedSpots(primarySpots, sideSpots), projectionDependencies, allocations);
+    }
+
+    private static void logProjectionProfile(
+            ServerLevel level,
+            PortGraphNode node,
+            double outgoingPower,
+            SpotProjectionResult projectionResult,
+            long projectionStartNanos
+    ) {
+        if (!SpectralizationConfig.opticalCompilerDebugLog() || projectionStartNanos <= 0L) {
+            return;
+        }
+
+        long elapsedNanos = System.nanoTime() - projectionStartNanos;
+        SpectralDiagnostics.event(level, "spot_projection", "profile")
+                .pos("source", node.pos())
+                .field("direction", node.side())
+                .field("power", outgoingPower)
+                .field("plane_count", VoxelSpotProjector.occlusionPlaneCount())
+                .field("elapsed_us", elapsedNanos / 1_000.0D)
+                .field("spots", projectionResult.spots().size())
+                .field("allocations", projectionResult.allocations().size())
+                .field("dependencies", projectionResult.dependencies().size())
+                .write();
     }
 
     private static boolean isTransparentProjectionPassThrough(ServerLevel level, PortGraphNode node) {

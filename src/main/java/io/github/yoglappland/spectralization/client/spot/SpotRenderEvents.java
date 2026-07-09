@@ -4,6 +4,8 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.client.ClientHudState;
+import io.github.yoglappland.spectralization.config.SpectralizationConfig;
+import io.github.yoglappland.spectralization.diagnostics.SpectralDiagnostics;
 import io.github.yoglappland.spectralization.optics.SpotRecord;
 import io.github.yoglappland.spectralization.optics.SpotRecord.ProjectionMode;
 import io.github.yoglappland.spectralization.optics.projection.SpotSurfaceFrame;
@@ -30,6 +32,7 @@ public final class SpotRenderEvents {
     private static final double MAX_RENDER_DISTANCE_SQUARED = MAX_RENDER_DISTANCE * MAX_RENDER_DISTANCE;
     private static final double SURFACE_OFFSET = 0.001D;
     private static final double OVERLAP_LAYER_OFFSET = 0.00001D;
+    private static final long PROFILE_INTERVAL_NANOS = 1_000_000_000L;
     private static final ResourceLocation CORE_TEXTURE =
             ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "textures/effect/spot_square_core.png");
     private static final ResourceLocation HALO_TEXTURE =
@@ -54,6 +57,17 @@ public final class SpotRenderEvents {
             new MarkerSegment(0x20, 0.04D, 0.52D, 0.18D, 0.84D),
             new MarkerSegment(0x40, 0.20D, 0.44D, 0.80D, 0.56D)
     };
+    private static int currentFrameQuadCalls = 0;
+    private static long profileWindowStartNanos = 0L;
+    private static long profileRenderNanos = 0L;
+    private static long profileFrames = 0L;
+    private static long profileActiveSpots = 0L;
+    private static long profileSortedSpots = 0L;
+    private static long profileRenderedSpots = 0L;
+    private static long profileCulledSpots = 0L;
+    private static long profileQuadCalls = 0L;
+    private static long profileMaxFrameNanos = 0L;
+    private static int profileMaxFrameQuads = 0;
 
     @SubscribeEvent
     public static void renderSpots(RenderLevelStageEvent event) {
@@ -69,6 +83,9 @@ public final class SpotRenderEvents {
             return;
         }
 
+        boolean profile = SpectralizationConfig.opticalCompilerDebugLog();
+        long frameStartNanos = profile ? System.nanoTime() : 0L;
+        currentFrameQuadCalls = 0;
         PoseStack poseStack = event.getPoseStack();
         MultiBufferSource.BufferSource bufferSource = Minecraft.getInstance().renderBuffers().bufferSource();
         Vec3 cameraPosition = event.getCamera().getPosition();
@@ -83,6 +100,7 @@ public final class SpotRenderEvents {
         ).reversed());
 
         int renderedSpots = 0;
+        int culledSpots = 0;
 
         for (ClientSpotCache.RenderedSpot spot : sortedSpots) {
             if (renderedSpots >= MAX_RENDERED_SPOTS) {
@@ -90,6 +108,7 @@ public final class SpotRenderEvents {
             }
 
             if (!isNearCamera(cameraPosition, spot)) {
+                culledSpots++;
                 continue;
             }
 
@@ -102,6 +121,20 @@ public final class SpotRenderEvents {
         bufferSource.endBatch(HALO_RENDER_TYPE);
         bufferSource.endBatch(CORE_RENDER_TYPE);
         bufferSource.endBatch(RING_RENDER_TYPE);
+
+        if (profile) {
+            recordRenderProfile(
+                    Minecraft.getInstance(),
+                    spots.size(),
+                    sortedSpots.size(),
+                    renderedSpots,
+                    culledSpots,
+                    currentFrameQuadCalls,
+                    System.nanoTime() - frameStartNanos
+            );
+        } else {
+            resetRenderProfile();
+        }
     }
 
     private static void renderSpot(MultiBufferSource.BufferSource bufferSource, PoseStack.Pose pose, ClientSpotCache.RenderedSpot spot) {
@@ -512,6 +545,7 @@ public final class SpotRenderEvents {
             int blue,
             int alpha
     ) {
+        currentFrameQuadCalls++;
         addVertex(consumer, pose, x1, y1, z1, u1, v1, red, green, blue, alpha);
         addVertex(consumer, pose, x2, y2, z2, u2, v2, red, green, blue, alpha);
         addVertex(consumer, pose, x3, y3, z3, u3, v3, red, green, blue, alpha);
@@ -635,6 +669,7 @@ public final class SpotRenderEvents {
             int blue,
             int alpha
     ) {
+        currentFrameQuadCalls++;
         addDebugVertex(consumer, pose, x1, y1, z1, red, green, blue, alpha);
         addDebugVertex(consumer, pose, x2, y2, z2, red, green, blue, alpha);
         addDebugVertex(consumer, pose, x3, y3, z3, red, green, blue, alpha);
@@ -717,6 +752,63 @@ public final class SpotRenderEvents {
         hash = 31 * hash + spot.quadY3();
         hash = 31 * hash + spot.quadZ3();
         return hash;
+    }
+
+    private static void recordRenderProfile(
+            Minecraft minecraft,
+            int activeSpots,
+            int sortedSpots,
+            int renderedSpots,
+            int culledSpots,
+            int quadCalls,
+            long renderNanos
+    ) {
+        long now = System.nanoTime();
+
+        if (profileWindowStartNanos == 0L) {
+            profileWindowStartNanos = now;
+        }
+
+        profileFrames++;
+        profileRenderNanos += Math.max(0L, renderNanos);
+        profileActiveSpots += activeSpots;
+        profileSortedSpots += sortedSpots;
+        profileRenderedSpots += renderedSpots;
+        profileCulledSpots += culledSpots;
+        profileQuadCalls += quadCalls;
+        profileMaxFrameNanos = Math.max(profileMaxFrameNanos, renderNanos);
+        profileMaxFrameQuads = Math.max(profileMaxFrameQuads, quadCalls);
+
+        if (now - profileWindowStartNanos < PROFILE_INTERVAL_NANOS) {
+            return;
+        }
+
+        double frames = Math.max(1.0D, profileFrames);
+        SpectralDiagnostics.event(minecraft.level, "client_spot_render", "profile")
+                .field("frames", profileFrames)
+                .field("active_avg", profileActiveSpots / frames)
+                .field("sorted_avg", profileSortedSpots / frames)
+                .field("rendered_avg", profileRenderedSpots / frames)
+                .field("culled_avg", profileCulledSpots / frames)
+                .field("quad_avg", profileQuadCalls / frames)
+                .field("quad_max", profileMaxFrameQuads)
+                .field("elapsed_ms_avg", profileRenderNanos / frames / 1_000_000.0D)
+                .field("elapsed_ms_max", profileMaxFrameNanos / 1_000_000.0D)
+                .write();
+        resetRenderProfile();
+    }
+
+    private static void resetRenderProfile() {
+        profileWindowStartNanos = 0L;
+        profileRenderNanos = 0L;
+        profileFrames = 0L;
+        profileActiveSpots = 0L;
+        profileSortedSpots = 0L;
+        profileRenderedSpots = 0L;
+        profileCulledSpots = 0L;
+        profileQuadCalls = 0L;
+        profileMaxFrameNanos = 0L;
+        profileMaxFrameQuads = 0;
     }
 
     private record MarkerSegment(int bit, double minU, double minV, double maxU, double maxV) {

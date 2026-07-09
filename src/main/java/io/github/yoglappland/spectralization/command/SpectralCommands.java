@@ -97,6 +97,13 @@ public final class SpectralCommands {
                                         .executes(context -> setSpotDebugCenters(
                                                 context.getSource(),
                                                 !VoxelSpotProjector.debugFaceCentersEnabled()
+                                        ))))
+                        .then(Commands.literal("planes")
+                                .executes(context -> reportSpotProjectionPlanesState(context.getSource()))
+                                .then(Commands.argument("count", IntegerArgumentType.integer(2, 33))
+                                        .executes(context -> setSpotProjectionPlanes(
+                                                context.getSource(),
+                                                IntegerArgumentType.getInteger(context, "count")
                                         )))))
                 .then(OpticalExampleValidator.command())
                 .then(Commands.literal("uidebug")
@@ -346,6 +353,20 @@ public final class SpectralCommands {
     private static int reportSpotDebugCentersState(CommandSourceStack source) {
         String state = VoxelSpotProjector.debugFaceCentersEnabled() ? "on" : "off";
         source.sendSuccess(() -> Component.literal("Spectralization spot face-center debug markers: " + state), true);
+        return 1;
+    }
+
+    private static int setSpotProjectionPlanes(CommandSourceStack source, int planes) {
+        SpectralizationConfig.setSpotProjectionOcclusionPlanes(planes);
+        OpticalSpotTracker.clear(source.getLevel());
+        OpticalTraceCache.clear(source.getLevel());
+        OpticalNetworkIndex.markDirty(source.getLevel());
+        return reportSpotProjectionPlanesState(source);
+    }
+
+    private static int reportSpotProjectionPlanesState(CommandSourceStack source) {
+        int planes = SpectralizationConfig.spotProjectionOcclusionPlanes();
+        source.sendSuccess(() -> Component.literal("Spectralization spot projection occlusion planes: " + planes), true);
         return 1;
     }
 

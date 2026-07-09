@@ -33,6 +33,7 @@ public final class SpectralizationConfig {
     private static final ModConfigSpec.IntValue OPTICAL_COMPILER_DIRECT_RECOMPILE_QUIET_TICKS;
     private static final ModConfigSpec.BooleanValue OPTICAL_COMPILER_LEGACY_DEBUG_ORACLE;
     private static final ModConfigSpec.IntValue OPTICAL_COMPILER_SYSTEM_CACHE_MAX_ENTRIES;
+    private static final ModConfigSpec.IntValue SPOT_PROJECTION_OCCLUSION_PLANES;
 
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
@@ -133,6 +134,9 @@ public final class SpectralizationConfig {
         OPTICAL_COMPILER_SYSTEM_CACHE_MAX_ENTRIES = builder
                 .comment("Maximum cached compiled optical systems keyed by repeated source geometry states.")
                 .defineInRange("system_cache_max_entries", 256, 0, 8192);
+        SPOT_PROJECTION_OCCLUSION_PLANES = builder
+                .comment("Number of parallel planes used by projected spot occlusion. Default 5 means front, 25%, 50%, 75%, and back.")
+                .defineInRange("spot_projection_occlusion_planes", 5, 2, 33);
         builder.pop();
 
         SPEC = builder.build();
@@ -270,6 +274,15 @@ public final class SpectralizationConfig {
 
     public static int opticalCompilerSystemCacheMaxEntries() {
         return OPTICAL_COMPILER_SYSTEM_CACHE_MAX_ENTRIES.get();
+    }
+
+    public static int spotProjectionOcclusionPlanes() {
+        return SPOT_PROJECTION_OCCLUSION_PLANES.get();
+    }
+
+    public static void setSpotProjectionOcclusionPlanes(int planes) {
+        SPOT_PROJECTION_OCCLUSION_PLANES.set(Math.max(2, Math.min(33, planes)));
+        SPEC.save();
     }
 
     private static int interactiveQuietTicks(ModConfigSpec.IntValue value) {

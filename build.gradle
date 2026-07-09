@@ -2500,10 +2500,10 @@ tasks.register('verifySpotProjectionContinuity') {
         )
         expect(
                 projectorSource.contains('for (CanonicalRect visibleSideWindow : visibleSideWindows)')
-                        && projectorSource.contains('sideBlockersAtDepth.add(visibleSideWindow)')
+                        && !projectorSource.contains('sideBlockersAtDepth')
                         && projectorSource.contains('clippedUSidePatch(')
                         && projectorSource.contains('clippedVSidePatch('),
-                'VoxelSpotProjector must clip side geometry and reserve the same visible canonical window it renders.'
+                'VoxelSpotProjector must clip side visual geometry without treating side windows as downstream blockers.'
         )
         expect(
                 patchSource.contains('faceNormalDot(')

@@ -29,6 +29,10 @@ public final class SpectralDiagnostics {
     private static final String HEADER = "# If you are reading this log, read docs/LOGGING.md first.\n"
             + "# \u5982\u679c\u4f60\u6b63\u5728\u9605\u8bfb\u8fd9\u4e2a\u65e5\u5fd7\uff0c\u8bf7\u5148\u53c2\u9605 docs/LOGGING.md\u3002\n"
             + "# Logs are organized around Spectralization's geometry -> topology -> data pipeline.\n\n";
+    private static long writeCount;
+    private static long writeBytes;
+    private static long writeNanos;
+    private static long maxWriteNanos;
 
     public static Event event(Level level, String subsystem, String event) {
         return new Event("event", level, subsystem, event);
@@ -52,10 +56,11 @@ public final class SpectralDiagnostics {
         }
     }
 
-    public static synchronized void appendLog(String relativePath, String content, String failureLabel) {
+    public static synchronized WriteStats appendLog(String relativePath, String content, String failureLabel) {
         Path logPath = FMLPaths.GAMEDIR.get().resolve(relativePath);
 
         try {
+            long startNanos = System.nanoTime();
             Files.createDirectories(logPath.getParent());
             boolean needsHeader = !Files.exists(logPath) || Files.size(logPath) == 0L;
             String fullContent = needsHeader ? HEADER + content : content;
@@ -66,17 +71,28 @@ public final class SpectralDiagnostics {
                     StandardOpenOption.CREATE,
                     StandardOpenOption.APPEND
             );
+            long elapsedNanos = Math.max(0L, System.nanoTime() - startNanos);
+            writeCount++;
+            writeBytes += fullContent.getBytes(StandardCharsets.UTF_8).length;
+            writeNanos += elapsedNanos;
+            maxWriteNanos = Math.max(maxWriteNanos, elapsedNanos);
         } catch (IOException exception) {
             Spectralization.LOGGER.warn("Failed to write Spectralization {} log", failureLabel, exception);
         }
+
+        return writeStats();
     }
 
-    private static void write(Event event) {
+    public static synchronized WriteStats writeStats() {
+        return new WriteStats(writeCount, writeBytes, writeNanos, maxWriteNanos);
+    }
+
+    private static WriteStats write(Event event) {
         if (!SpectralizationConfig.diagnosticsEventLog()) {
-            return;
+            return writeStats();
         }
 
-        appendLog(DIAGNOSTICS_LOG_RELATIVE_PATH, event.format() + '\n', "diagnostics");
+        return appendLog(DIAGNOSTICS_LOG_RELATIVE_PATH, event.format() + '\n', "diagnostics");
     }
 
     private static String formatPos(BlockPos pos) {
@@ -147,8 +163,8 @@ public final class SpectralDiagnostics {
             return this;
         }
 
-        public void write() {
-            SpectralDiagnostics.write(this);
+        public WriteStats write() {
+            return SpectralDiagnostics.write(this);
         }
 
         private String format() {
@@ -171,6 +187,24 @@ public final class SpectralDiagnostics {
             }
 
             return builder.toString();
+        }
+    }
+
+    public record WriteStats(
+            long count,
+            long bytes,
+            long totalNanos,
+            long maxNanos
+    ) {
+        public WriteStats {
+            count = Math.max(0L, count);
+            bytes = Math.max(0L, bytes);
+            totalNanos = Math.max(0L, totalNanos);
+            maxNanos = Math.max(0L, maxNanos);
+        }
+
+        public double averageNanos() {
+            return count <= 0L ? 0.0D : totalNanos / (double) count;
         }
     }
 

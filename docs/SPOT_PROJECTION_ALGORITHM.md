@@ -124,17 +124,19 @@ it must not become gameplay authority.
 For front surfaces, a region of `K` should be assigned at most once along a single
 beam projection pass.
 
-In current code this is implemented by:
+In current code this is implemented by carrying the remaining texture region:
 
 ```text
-visible = candidateRect - occupiedRayWindows
-occupiedRayWindows += blockerRects
+remaining_0 = K
+visible = candidateRect intersect remaining_d
+remaining_{d+1} = remaining_d - union(blockerRectsAtDepth)
 ```
 
 ### 4.3 Monotone occlusion invariant
 
-The occupied set in texture domain only grows as the algorithm walks away from the
-source. Once a texture region is consumed by an opaque/projectable surface, later
+The consumed set in texture domain only grows as the algorithm walks away from
+the source. Runtime code stores this as the complementary `remaining` region.
+Once a texture region is consumed by an opaque/projectable surface, later
 surfaces should not receive that same region in the same projection pass.
 
 ### 4.4 Local continuity invariant
@@ -189,11 +191,22 @@ For each integer depth from `1` to `MAX_PROJECTED_DEPTH`:
 3. Scan transverse tiles `(du, dv)` that may intersect the beam.
 4. Convert each intersecting front tile into a `ProjectionRect`.
 5. Check the world block at that tile.
-6. If the block is projectable, subtract already occupied texture windows.
+6. If the block is projectable, intersect its candidate window with the current
+   remaining texture region.
 7. Emit visible front patches.
 8. Emit side visual patches for open side faces.
-9. Add the block's occlusion planes to `occupiedRayWindows`.
-10. Stop if the full texture domain is occupied.
+9. Collect the block's occlusion planes for the current depth.
+10. Union the current depth blockers and subtract them from the remaining
+    texture region.
+11. Stop if the remaining texture domain is empty.
+
+The implementation may keep a depth-local tile cache for the world block checks
+performed in steps 3-8. This cache is not a gameplay authority and is discarded
+after the depth slice. Its only purpose is to let side visual projection reuse
+the front scan's `loaded/state/projectable` facts instead of asking the world for
+the same tile again. The runtime cache should be a dense array over the current
+side scan bounds, not a hash map, because side projection touches a compact
+integer tile rectangle.
 
 ### 5.3 Projectable surfaces
 
@@ -235,10 +248,17 @@ Current side spots:
 - help players see that the beam intersects a side wall,
 - use `FOOTPRINT_QUAD`,
 - have a separate visual factor,
-- are clipped by existing front occlusion windows,
+- are clipped by the current remaining texture region and same-depth front
+  visual windows,
 - do not currently act as the primary downstream shadow authority.
 
 The downstream approximation is handled by parallel occlusion planes.
+
+Do not name side visual windows as blockers unless they are actually inserted
+into the downstream occupancy authority. Misleading names such as
+`sideBlockersAtDepth` imply a false algorithm where side patches participate in
+main occlusion. If side window diagnostics are needed, name them as visual or
+debug windows.
 
 ### 5.6 Dependencies
 
@@ -307,6 +327,8 @@ Useful commands and logs:
 
 ```text
 /spectralization compilerdebug on
+/spectralization compilerdebug verbose on
+/spectralization compilerdebug verbose off
 /spectralization spotdebug centers on
 /spectralization spotdebug centers off
 /spectralization spotdebug planes
@@ -320,6 +342,44 @@ Relevant diagnostics:
 - `spot_projection_counts`
 - `spot_projection_allocation_summary`
 - `spot_projection_continuity`
+
+`spot_projection/profile` is the lightweight performance log. It records tile,
+surface, occlusion-plane, and rectangle-subtraction counts even when verbose
+allocation tracing is off. Per-face `SpotProjectionAllocation` probes are heavy
+and should be gated by `compilerdebug verbose`.
+
+The profile line also includes phase timings and hot-spot counters:
+
+- `*_us` timing fields split projection generation into tile range setup,
+  rectangle creation, block lookup, projectability checks, occlusion-plane
+  creation, front remaining-intersection queries, side scanning, side
+  remaining-intersection queries, spot emission, and remaining-region updates.
+- `subtract_*` fields measure rectangle subtraction work after candidate windows
+  have been found. In the current stable path these mostly describe debug or
+  same-depth clipping rather than the main historical occlusion authority.
+- `remaining_*` fields measure the recursive texture-domain state:
+  slab/interval counts, remaining area, query counts, blocker input count,
+  blocker hits after clipping to the current remaining region, and update work.
+  `remaining_slabs=0` is the exact early-stop condition.
+- `side_*` fields measure side visual candidate enumeration. Side spots are still
+  visual readout objects, but the counters show how many side tiles, open-face
+  checks, travel intervals, and side texture windows were considered.
+- `side_range_culled_tiles` counts side-scan tile positions skipped by the
+  conservative `remaining`-bounds prefilter. This is a candidate-enumeration
+  optimization only; accepted side windows still pass through
+  `candidate intersect remaining`.
+- `side_boundary_*` fields compare the stable side scan with an experimental
+  boundary-based candidate enumerator. The stable renderer still uses the legacy
+  side scan. `side_boundary_missing_faces` must be zero before the boundary
+  enumerator can become authoritative. `side_boundary_extra_faces` is acceptable
+  during superset validation and measures how much later filtering would remain.
+- `side_candidate_verify_us` is the verbose-debug-only cost of the boundary
+  candidate comparison. It must not be counted as production side-scan cost.
+- `log_write_*_before` fields are rolling diagnostics-log write statistics
+  sampled before the current profile line is written. They measure synchronous
+  log-write cost without recursively writing a second timing event.
+- `hot_depth_*` fields describe the single depth slice that took the most time
+  in that projection pass.
 
 When checking logs, inspect the newest diagnostics and optical compiler logs
 first. Do not begin with global searches over all historical logs.
@@ -407,14 +467,52 @@ configuredQualityCap
 
 The result should be clamped by `spot_projection_occlusion_planes`.
 
-### 9.5 Merge rectangular windows
+### 9.5 Maintain the remaining region
 
-After repeated subtraction, merge adjacent or nearly adjacent `CanonicalRect`
-windows that share an edge and have compatible spans. This reduces the number of
-fragments in later subtractions.
+The runtime authority is the remaining texture region, represented as
+non-overlapping v-slabs containing non-overlapping u-intervals. Candidate faces
+receive:
+
+```text
+visible = candidate intersect remaining
+```
+
+Current-depth occlusion planes are applied only after all faces in that depth
+have read the old remaining region:
+
+```text
+remaining_{d+1} = remaining_d - union(blockers_d)
+```
+
+The runtime may compute this as an ordered sequence of blocker subtractions:
+
+```text
+remaining' = (((remaining_d - b_1) - b_2) ... - b_n)
+```
+
+This is exact because repeated set difference is equivalent to subtracting the
+union. The important implementation rule is that the sequence must run after all
+same-depth visible patches have been emitted, not during face scanning.
+
+After each update, adjacent slabs with identical interval sets are merged. This
+keeps the recursive certificate exact while avoiding historical occupied-window
+queries.
 
 This is safer than changing to polygon clipping because it preserves the current
 rectangle-domain semantics.
+
+The exact full-occupancy test must not be implemented by recomputing
+`FULL_FOOTPRINT - occupiedHistory` at every depth. The stable invariant is the
+recursive remaining certificate:
+
+```text
+remaining_0 = {K}
+remaining_{d+1} = remaining_d - newOcclusionWindows_d
+fully occupied <=> remaining_d is empty
+```
+
+This keeps the early-stop proof exact while charging each new occlusion window
+only once.
 
 ### 9.6 Gate probe allocations
 
@@ -429,6 +527,9 @@ profile: timings, counts, dependencies
 summary: allocation result totals
 verbose: per-face probes and clipping detail
 ```
+
+The stable runtime should keep `profile` available under ordinary compiler debug
+logging and reserve per-face allocation construction for verbose debug logging.
 
 ### 9.7 Cache empty or unchanged cones
 
@@ -450,6 +551,29 @@ This is a visual cutoff only.
 
 Side spots should remain a visualization aid. They should not force full polygon
 CSG or per-cell ray casting in production.
+
+Side candidate enumeration may use the current `remaining` region's texture-domain
+bounding box to conservatively shrink the scanned tile range. This is allowed
+because it only rejects side faces whose texture-domain footprint cannot receive
+any remaining texture. It must not replace the exact assignment step:
+
+```text
+visibleSide = sideCandidate intersect remaining
+```
+
+An experimental boundary-based side candidate enumerator may be run in parallel
+with the stable side scan for validation. In that mode, the stable side scan
+continues to render. The boundary enumerator is only a candidate-source probe:
+
+```text
+legacyCandidates = side faces that produced a stable sideWindow
+boundaryCandidates = side faces whose grid boundary is swept by the cone
+missing = legacyCandidates - boundaryCandidates
+extra = boundaryCandidates - legacyCandidates
+```
+
+The first invariant is `missing = 0`. The boundary set is allowed to be a
+superset while it is still being tightened.
 
 If side shadows need improvement, prefer:
 

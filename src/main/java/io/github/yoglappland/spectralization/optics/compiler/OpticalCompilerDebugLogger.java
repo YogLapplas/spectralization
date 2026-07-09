@@ -801,7 +801,12 @@ public final class OpticalCompilerDebugLogger {
                 .append(" stretch_avg=").append(formatDouble(metricSummary.stretchAverage()))
                 .append('\n');
         appendProjectionFaceMetrics(builder, activeSpots);
-        appendProjectionAllocationMetrics(builder, allocations);
+        if (verboseLog()) {
+            appendProjectionAllocationMetrics(builder, allocations);
+        } else {
+            builder.append("spot_projection_allocation_summary=skipped_non_verbose\n");
+            builder.append("spot_projection_allocation_metrics=skipped_non_verbose\n");
+        }
 
         for (SpotProjectionContinuity.Mismatch mismatch : continuityReport.mismatches()) {
             builder.append("  continuity_mismatch ").append(mismatch.format()).append('\n');

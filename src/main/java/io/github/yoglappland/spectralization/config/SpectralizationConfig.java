@@ -99,7 +99,7 @@ public final class SpectralizationConfig {
                 .comment("Whether every optical compiler run writes a debug entry to logs/spectralization/optical_compiler.log.")
                 .define("debug_log", false);
         OPTICAL_COMPILER_DEBUG_VERBOSE = builder
-                .comment("Whether optical compiler debug entries include heavy detail sections such as lanes, solver regions, SCCs, chords, edges, HUD segments, and readout output lists.")
+                .comment("Whether optical compiler debug entries include heavy detail sections such as lanes, solver regions, SCCs, chords, edges, HUD segments, readout output lists, and per-face spot projection probes.")
                 .define("debug_log_verbose", false);
         OPTICAL_COMPILER_DEBUG_MAX_EDGES = builder
                 .comment("Maximum edge lines written for each optical compiler debug entry.")
@@ -229,6 +229,11 @@ public final class SpectralizationConfig {
 
     public static void setOpticalCompilerDebugLog(boolean enabled) {
         OPTICAL_COMPILER_DEBUG_LOG.set(enabled);
+        SPEC.save();
+    }
+
+    public static void setOpticalCompilerDebugVerbose(boolean enabled) {
+        OPTICAL_COMPILER_DEBUG_VERBOSE.set(enabled);
         SPEC.save();
     }
 

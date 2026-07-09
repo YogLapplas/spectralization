@@ -85,7 +85,18 @@ public final class SpectralCommands {
                                 .executes(context -> setCompilerDebug(
                                         context.getSource(),
                                         !SpectralizationConfig.opticalCompilerDebugLog()
-                                ))))
+                                )))
+                        .then(Commands.literal("verbose")
+                                .executes(context -> reportCompilerDebugVerboseState(context.getSource()))
+                                .then(Commands.literal("on")
+                                        .executes(context -> setCompilerDebugVerbose(context.getSource(), true)))
+                                .then(Commands.literal("off")
+                                        .executes(context -> setCompilerDebugVerbose(context.getSource(), false)))
+                                .then(Commands.literal("toggle")
+                                        .executes(context -> setCompilerDebugVerbose(
+                                                context.getSource(),
+                                                !SpectralizationConfig.opticalCompilerDebugVerbose()
+                                        )))))
                 .then(Commands.literal("spotdebug")
                         .then(Commands.literal("centers")
                                 .executes(context -> reportSpotDebugCentersState(context.getSource()))
@@ -339,6 +350,17 @@ public final class SpectralCommands {
     private static int reportCompilerDebugState(CommandSourceStack source) {
         String state = SpectralizationConfig.opticalCompilerDebugLog() ? "on" : "off";
         source.sendSuccess(() -> Component.literal("Spectralization optical compiler debug log: " + state), true);
+        return 1;
+    }
+
+    private static int setCompilerDebugVerbose(CommandSourceStack source, boolean enabled) {
+        SpectralizationConfig.setOpticalCompilerDebugVerbose(enabled);
+        return reportCompilerDebugVerboseState(source);
+    }
+
+    private static int reportCompilerDebugVerboseState(CommandSourceStack source) {
+        String state = SpectralizationConfig.opticalCompilerDebugVerbose() ? "on" : "off";
+        source.sendSuccess(() -> Component.literal("Spectralization optical compiler verbose debug log: " + state), true);
         return 1;
     }
 

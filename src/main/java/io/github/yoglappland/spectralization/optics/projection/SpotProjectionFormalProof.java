@@ -130,6 +130,7 @@ public final class SpotProjectionFormalProof {
         }
 
         int clippedGeometryChecks = proveClippedSideGeometry(failures);
+        int frontOrderChecks = proveFrontPlaneOrder(failures);
 
         if (rawNegativePatches == 0) {
             failures.add("formal proof did not exercise any negative-winding side patch.");
@@ -139,13 +140,91 @@ public final class SpotProjectionFormalProof {
             failures.add("formal proof did not exercise clipped side geometry.");
         }
 
+        if (frontOrderChecks == 0) {
+            failures.add("formal proof did not exercise same-depth front event ordering.");
+        }
+
         return new ProofResult(
                 checkedPatches,
                 rawNegativePatches,
                 clippedGeometryChecks,
+                frontOrderChecks,
                 Map.copyOf(patchCounts),
                 failures
         );
+    }
+
+    private static int proveFrontPlaneOrder(List<String> failures) {
+        int checked = 0;
+        checked += expectFrontPlanePhase(
+                failures,
+                "strictly earlier sampled plane",
+                0.25D,
+                0.25D,
+                0.5D,
+                VoxelSpotProjector.FrontPlanePhase.BEFORE
+        );
+        checked += expectFrontPlanePhase(
+                failures,
+                "continuing volume coplanar plane",
+                0.5D,
+                0.0D,
+                0.5D,
+                VoxelSpotProjector.FrontPlanePhase.CONTINUING
+        );
+        checked += expectFrontPlanePhase(
+                failures,
+                "new volume front plane",
+                0.5D,
+                0.5D,
+                0.5D,
+                VoxelSpotProjector.FrontPlanePhase.STARTING
+        );
+        checked += expectFrontPlanePhase(
+                failures,
+                "later sampled plane",
+                0.75D,
+                0.0D,
+                0.5D,
+                VoxelSpotProjector.FrontPlanePhase.AFTER
+        );
+        checked += expectFrontPlanePhase(
+                failures,
+                "epsilon-coplanar continuing plane",
+                0.5D + 5.0E-8D,
+                0.0D,
+                0.5D,
+                VoxelSpotProjector.FrontPlanePhase.CONTINUING
+        );
+        checked += expectFrontPlanePhase(
+                failures,
+                "epsilon-coplanar starting plane",
+                0.5D - 5.0E-8D,
+                0.5D - 5.0E-8D,
+                0.5D,
+                VoxelSpotProjector.FrontPlanePhase.STARTING
+        );
+        return checked;
+    }
+
+    private static int expectFrontPlanePhase(
+            List<String> failures,
+            String label,
+            double planeTravel,
+            double volumeStartTravel,
+            double frontGroupTravel,
+            VoxelSpotProjector.FrontPlanePhase expected
+    ) {
+        VoxelSpotProjector.FrontPlanePhase actual = VoxelSpotProjector.classifyFrontPlaneEvent(
+                planeTravel,
+                volumeStartTravel,
+                frontGroupTravel
+        );
+        if (actual != expected) {
+            failures.add("front event order failed for " + label
+                    + ": expected=" + expected + " actual=" + actual);
+        }
+        return 1;
     }
 
     private static int proveClippedSideGeometry(List<String> failures) {
@@ -626,6 +705,7 @@ public final class SpotProjectionFormalProof {
             int checkedPatches,
             int rawNegativePatches,
             int clippedGeometryChecks,
+            int frontOrderChecks,
             Map<Direction, Integer> patchCounts,
             List<String> failures
     ) {
@@ -637,10 +717,11 @@ public final class SpotProjectionFormalProof {
         String format() {
             return String.format(
                     Locale.ROOT,
-                    "spot_projection_formal_proof checked=%d negative_winding=%d clipped_geometry=%d counts=%s",
+                    "spot_projection_formal_proof checked=%d negative_winding=%d clipped_geometry=%d front_order=%d counts=%s",
                     checkedPatches,
                     rawNegativePatches,
                     clippedGeometryChecks,
+                    frontOrderChecks,
                     patchCounts
             );
         }

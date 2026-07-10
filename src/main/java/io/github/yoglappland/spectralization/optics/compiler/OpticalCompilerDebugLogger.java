@@ -2142,6 +2142,7 @@ public final class OpticalCompilerDebugLogger {
         int emittedQuads = 0;
         int assignedButNotEmitted = 0;
         int internalSideAllocations = 0;
+        int frontPrefixAllocations = 0;
         int otherSideAllocations = 0;
         int probeAllocations = 0;
         int otherAllocations = 0;
@@ -2166,6 +2167,9 @@ public final class OpticalCompilerDebugLogger {
                 otherSideAllocations++;
             } else if (allocation.kind().endsWith("-probe")) {
                 probeAllocations++;
+                if ("front-prefix-probe".equals(allocation.kind())) {
+                    frontPrefixAllocations++;
+                }
             } else {
                 otherAllocations++;
             }
@@ -2182,6 +2186,7 @@ public final class OpticalCompilerDebugLogger {
                 .append(" emitted_quads=").append(emittedQuads)
                 .append(" assigned_but_not_emitted=").append(assignedButNotEmitted)
                 .append(" internal_side_allocations=").append(internalSideAllocations)
+                .append(" front_prefix_allocations=").append(frontPrefixAllocations)
                 .append(" other_side_allocations=").append(otherSideAllocations)
                 .append(" probe_allocations=").append(probeAllocations)
                 .append(" other_allocations=").append(otherAllocations)
@@ -2199,11 +2204,12 @@ public final class OpticalCompilerDebugLogger {
                 .thenComparing(SpotProjectionAllocation::kind));
 
         int configuredRows = Math.max(96, Math.min(512, SpectralizationConfig.opticalCompilerDebugMaxEdges() * 4));
-        int maxRows = Math.max(configuredRows, internalSideAllocations);
+        int maxRows = Math.max(configuredRows, internalSideAllocations + frontPrefixAllocations);
         builder.append("spot_projection_allocation_row_budget configured=")
                 .append(configuredRows)
                 .append(" effective=").append(maxRows)
                 .append(" internal_side_reserved=").append(internalSideAllocations)
+                .append(" front_prefix_reserved=").append(frontPrefixAllocations)
                 .append('\n');
         int count = 0;
 
@@ -2235,6 +2241,10 @@ public final class OpticalCompilerDebugLogger {
     }
 
     private static int allocationPriority(SpotProjectionAllocation allocation) {
+        if ("front-prefix-probe".equals(allocation.kind())) {
+            return -4;
+        }
+
         if (allocation.internalProjectionSide()) {
             return -3;
         }

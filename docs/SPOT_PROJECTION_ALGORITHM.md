@@ -210,8 +210,10 @@ valid piece of the spot.
 
 ### 4.6 Proof boundary
 
-`SpotProjectionFormalProof` currently proves local side-patch orientation and
-local clipping properties. It does not prove global area conservation, dependency
+`SpotProjectionFormalProof` currently proves local side-patch orientation,
+local clipping properties, and the four-way classification of one sampled front
+plane as `BEFORE`, `CONTINUING`, `STARTING`, or `AFTER`. It does not prove the
+complete multi-event cursor transaction, global area conservation, dependency
 correctness, or player-facing shadow correctness.
 
 Do not treat it as proof that the world projection is correct.
@@ -243,12 +245,15 @@ For each integer depth from `1` to `MAX_PROJECTED_DEPTH`:
 3. Scan transverse tiles `(du, dv)` that may intersect the beam.
 4. Convert each intersecting front tile into a `ProjectionRect`.
 5. Check the world block at that tile.
-6. If the block is projectable, intersect its candidate window with the current
-   remaining texture region.
-7. Emit visible front patches.
-8. Emit side visual patches for open side faces.
-9. Collect the block's occlusion planes for the current depth.
-10. Union the current depth blockers and subtract them from the remaining
+6. If the block is projectable, collect its cuboid front candidates and
+   occlusion planes for the current depth.
+7. Sort the front candidates by cuboid-local `minTravel`, and sort the sampled
+   occlusion planes by their travel coordinate.
+8. For each coplanar front group, advance the sampled-plane prefix to that
+   travel, emit every face in the group from the same incoming region, then
+   activate planes belonging to volumes that start at that travel.
+9. Emit side visual patches for open side faces.
+10. Union the current depth blockers and subtract them from the global remaining
     texture region.
 11. Stop if the remaining texture domain is empty.
 
@@ -312,21 +317,19 @@ An empty lens holder is transparent for projection and should not create a new
 visible spot.
 
 For a block with several optical collision boxes, the boxes are sorted by
-`minTravel` in the beam frame. The projection pass maintains a block-local
-surface remaining texture region while walking those boxes. This local region is
-reduced by encountered box front windows, not by every internal occlusion plane.
-The box list is a decomposition of one block shape, not a set of independent
-opaque mini-blocks; internal decomposition seams must not cast shadows onto the
-same stair or fence. The global depth remaining region is still updated only
-after the current depth slice with the block's occlusion-plane windows,
-preserving the existing same-depth invariant.
+`minTravel` in the beam frame. Surface exposure is still resolved as a union of
+the block's boxes, so internal decomposition contacts do not become receiving
+faces. Optical ordering, however, is depth-wide: once a sampled plane from an
+earlier volume becomes active, it may clip a later receiving face in either the
+same block or a different block. Block ownership is diagnostic identity, not an
+occlusion partition.
 
 The cuboid is now the projection primitive. A visible receiving face is not
 automatically the whole face of the cuboid; it is the cuboid face after sibling
 cuboids in the same block have removed their contact rectangles. This applies to
-front faces and side faces. The full cuboid footprint is still used for occlusion
-planes and block-local downstream remaining, because the solid volume exists even
-where its receiving face is covered by another cuboid. In short:
+front faces and side faces. The full cuboid footprint is still used for sampled
+occlusion planes and depth-local/downstream remaining, because the solid volume
+exists even where its receiving face is covered by another cuboid. In short:
 
 ```text
 visible face = cuboid face - same-block sibling contacts
@@ -337,44 +340,57 @@ This distinction is what makes slabs, stairs, fences, and future model-derived
 partial blocks behave as a union of axis-aligned cuboids while keeping a complete
 block equal to the special cuboid `[0,1] x [0,1] x [0,1]`.
 
-For a single non-full cuboid, front and side receiving faces are evaluated as one
-atomic cuboid transaction: they read the same incoming remaining texture region.
-The cuboid's front face must not pre-clip its own side faces. The historical
-same-depth front clipping remains valid only for the full-unit block special
-case, where the old full-block visual behavior is intentionally preserved.
+For a single non-full cuboid, its front plane becomes active only after its
+coplanar front receiving face has read the incoming region. Side clipping also
+excludes the receiving cuboid's own planes. These two rules prevent a cuboid from
+erasing its own front or side surface while still allowing its volume to block
+surfaces farther along the beam.
 
-#### Known unresolved front-order limitation
+#### Depth-wide front ordering through sampled-plane events
 
-Front-face ordering is not yet global across one Minecraft depth slice. The
-current transitional implementation emits front faces while scanning tiles. A
-multi-cuboid block has a block-local `tileRemainingRayWindows`, so a lower stair
-cuboid can shadow an upper cuboid in the same block. Cuboids in different blocks
-still read the same depth-entry `remainingRayWindows`; their blockers are only
-applied after every front face at that integer depth has been emitted.
+Front-face ordering is global across one Minecraft depth slice. The depth scan
+first collects every cuboid front candidate without emitting it. After the scan,
+the candidates are sorted by beam-frame `minTravel` and processed as coplanar
+travel groups. This replaces the earlier block-local `tileRemainingRayWindows`
+path.
 
-This produces a stable incorrect case: place stairs in a row and project upward.
-When the lower half of one stair should partially shadow the upper half of an
-adjacent stair, the cross-block shadow is missing even though the equivalent
-same-block ordering works. The fault is on front receiving faces, not side-face
-mapping.
+Grouping only the visible cuboid front rectangles is insufficient. A ray may
+enter an earlier cuboid through its side as the beam envelope changes inside the
+depth slice, so the cuboid's sampled `q` or back plane can cover a later front
+receiver even when its minimum-travel front rectangle did not. The July 10 west-
+travel reproduction establishes that the affected east-facing internal stair
+riser is a **front** receiver in the beam frame. Side-allocation diagnostics do
+not exercise this path.
 
-The required recurrence has two ordered coordinates:
+Each sampled plane therefore carries both its own `travel` and the
+`volumeStartTravel` of its cuboid. For a front group at travel `tau`, the event
+order is:
 
 ```text
 remaining at integer depth d
 -> collect every cuboid front candidate in that depth
--> group candidates by cuboid-local front travel tau
+-> collect every sampled occlusion plane in that depth
+-> for front travel tau, subtract every plane with travel < tau
+-> subtract planes at tau whose volumeStartTravel < tau
 -> every coplanar face in group tau reads the same incoming region
--> add the opaque cuboid occupancy at tau to the depth-local consumed region
+-> subtract planes at tau whose volumeStartTravel == tau
 -> continue with the next travel group
 -> publish the final blocker union as remaining at depth d + 1
 ```
+
+The middle distinction is essential. A `q` or back plane from a volume that
+started earlier represents occupancy already present at `tau` and must block the
+front group. A front plane belonging to a volume that starts at `tau` becomes
+active only after all coplanar receivers have read the region.
 
 The transaction boundary is the whole depth slice, not one block. Sorting must
 use the beam-frame `minTravel` carried by each cuboid. World block position may
 identify ownership and dependencies, but it must not partition occlusion
 authority. A full block remains the special case whose only front travel is
-zero.
+zero, so coplanar full-block faces still read the same depth-entry region. The
+original stair-row A/B scene has confirmed this repair: a tread in a different
+stair block now clips the internal riser, while removing that tread restores the
+visible patch.
 
 ### 5.4 Parallel occlusion planes
 
@@ -389,9 +405,17 @@ spot_projection_occlusion_planes
 
 The default is `5`.
 
-These planes are an intentional approximation. They make a block behave more like
-a volume without requiring exact polygonal swept-side clipping. Increasing the
-plane count improves side-like shadow behavior but increases projection work.
+These planes remain an intentional approximation for downstream/global shadow
+authority. They are also the depth-local event stream for later front receivers
+and the production same-depth authority for side receivers. Increasing the
+plane count improves side-entry coverage but increases projection work.
+
+A July 10 experiment replaced side clipping with a continuous cuboid-prefix
+sweep, but that neither fixed the cross-block stair reproduction nor preserved
+bounded cost: every side candidate multiplied the cuboid count by adaptive sweep
+segments. That path was removed. Do not reintroduce it without first identifying
+the failed ordering/coverage predicate and designing a local index with a bounded
+candidate set.
 
 The important point: these planes are occlusion-only. They are not extra rendered
 surfaces.
@@ -415,17 +439,26 @@ Current side spots:
 For model-based multi-box blocks, such as stairs and fences, side spots are
 clipped by same-depth occlusion with identity and travel order. A stair tread or
 riser is a real receiving face inside the block's unit cube; the candidate
-cuboid's own front planes must not erase its side face, but earlier sibling
-cuboids and other blocks at the same depth may occlude it. In code terms, each
-same-depth occlusion window carries its owning block position, box index, and
-travel coordinate. A side patch segment reads:
+cuboid's own volume must not erase its side face, but earlier sibling cuboids and
+other blocks at the same depth may occlude it.
+
+A side patch segment reads:
 
 ```text
 incoming = previous_depth_remaining
-incoming -= same_depth_occluders_before(segment_midpoint)
-incoming excludes occluders from the same cuboid
+incoming -= sampled_same_depth_occluders_before(segment_midpoint)
+incoming excludes only the receiving cuboid itself
 visible = side_window intersect incoming
 ```
+
+In verbose mode, internal side allocation records include an `occlusion_audit`
+field. It compares all cuboids collected in the same depth slice against the
+sampled planes that reached the side clipper. Its `sample_gaps` value means a
+conservative cuboid prefix overlaps the candidate window but none of that
+cuboid's sampled planes did. This is diagnostic evidence, not an alternate
+authority path; conservative-prefix overlap can overestimate a true swept
+intersection. It must not be used to diagnose a receiver already classified as
+a front face.
 
 When two boxes in the same block touch a side plane, that contact is resolved as
 a rectangle difference on the side face itself before the optical-order clipping
@@ -639,10 +672,31 @@ surface, occlusion-plane, and rectangle-subtraction counts even when verbose
 allocation tracing is off. Per-face `SpotProjectionAllocation` probes are heavy
 and should be gated by `compilerdebug verbose`.
 
-Verbose allocation output gives internal model-derived `u-side` and `v-side`
-records first and reserves enough rows to print all of them. Other side records,
-failed allocations, and front probes follow. The allocation summary reports each
-category count so a row cap cannot silently hide the internal cuboid evidence.
+Verbose allocation output gives `front-prefix-probe` records first, followed by
+internal model-derived `u-side` and `v-side` records. The row budget reserves
+space for both categories before other side records, failed allocations, and
+ordinary front probes. The allocation summary reports each category count so a
+row cap cannot silently hide the relevant cuboid evidence.
+
+Each `front-prefix-probe` reports the target front travel, active/intersecting
+prefix counts, cross-block and same-block sibling hits, coplanar continuing-
+volume hits, the bounded prefix-window list, and raw/visible areas. Occlusion
+windows include both `/travel=` and `/start=` so the event phase can be checked
+directly. The summary and row-budget lines expose `front_prefix_allocations` and
+`front_prefix_reserved` respectively.
+
+Internal side records also include `occlusion_audit` with:
+
+- `probes`, `own`, `after`, and `prior` cuboid counts for the depth slice,
+- `cross_block_prior` and `nearby_cross_block_prior` for non-owner cuboids
+  geometrically before the segment,
+- `conservative_hits` and `sampled_hits` for candidate-window overlap,
+- `sample_gaps` for conservative-prefix hits absent from the sampled planes,
+- bounded per-cuboid entries containing block position, tile, box geometry,
+  ownership relation, prefix endpoint, and sampled-hit result.
+
+The audit is constructed only for verbose internal-side allocations. Ordinary
+profile mode does not collect the cuboid probe list or run this comparison.
 
 `client_spot_color_debug/profile` is emitted when `spotdebug colors` is enabled.
 It belongs to the appearance layer. It does not change texture ownership or

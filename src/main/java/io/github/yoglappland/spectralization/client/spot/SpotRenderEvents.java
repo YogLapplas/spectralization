@@ -11,7 +11,9 @@ import io.github.yoglappland.spectralization.optics.SpotRecord.ProjectionMode;
 import io.github.yoglappland.spectralization.optics.projection.SpotSurfaceFrame;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -32,6 +34,7 @@ public final class SpotRenderEvents {
     private static final double MAX_RENDER_DISTANCE_SQUARED = MAX_RENDER_DISTANCE * MAX_RENDER_DISTANCE;
     private static final double SURFACE_OFFSET = 0.001D;
     private static final double OVERLAP_LAYER_OFFSET = 0.00001D;
+    private static final double PARTIAL_QUAD_AREA_THRESHOLD = 0.985D;
     private static final long PROFILE_INTERVAL_NANOS = 1_000_000_000L;
     private static final ResourceLocation CORE_TEXTURE =
             ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "textures/effect/spot_square_core.png");
@@ -68,6 +71,28 @@ public final class SpotRenderEvents {
     private static long profileQuadCalls = 0L;
     private static long profileMaxFrameNanos = 0L;
     private static int profileMaxFrameQuads = 0;
+    private static long colorDebugWindowStartNanos = 0L;
+    private static long colorDebugFrames = 0L;
+    private static long colorDebugFootprintQuads = 0L;
+    private static long colorDebugPartialQuads = 0L;
+    private static long colorDebugSmallPartialQuads = 0L;
+    private static long colorDebugFootprintSlices = 0L;
+    private static long colorDebugPartialSlices = 0L;
+    private static long colorDebugMergedContributionSpots = 0L;
+    private static long colorDebugMultiColorMergedSpots = 0L;
+    private static long colorDebugPartialMultiColorFaces = 0L;
+    private static long colorDebugPartialGeometryGroups = 0L;
+    private static long colorDebugPartialGeometryMergedGroups = 0L;
+    private static long colorDebugPartialGeometryMergedInputSpots = 0L;
+    private static long colorDebugPartialGeometryMulticolorGroups = 0L;
+    private static long colorDebugPartialQuadFlatRendered = 0L;
+    private static double colorDebugMinPartialArea = 1.0D;
+    private static int colorDebugWorstFacePartialQuads = 0;
+    private static int colorDebugWorstFaceColorBuckets = 0;
+    private static String colorDebugWorstFace = "none";
+    private static int colorDebugWorstGeometrySpots = 0;
+    private static int colorDebugWorstGeometryColorBuckets = 0;
+    private static String colorDebugWorstGeometry = "none";
 
     @SubscribeEvent
     public static void renderSpots(RenderLevelStageEvent event) {
@@ -84,11 +109,13 @@ public final class SpotRenderEvents {
         }
 
         boolean profile = SpectralizationConfig.opticalCompilerDebugLog();
+        boolean colorDebug = SpectralizationConfig.spotColorDebug();
         long frameStartNanos = profile ? System.nanoTime() : 0L;
         currentFrameQuadCalls = 0;
         PoseStack poseStack = event.getPoseStack();
         MultiBufferSource.BufferSource bufferSource = Minecraft.getInstance().renderBuffers().bufferSource();
         Vec3 cameraPosition = event.getCamera().getPosition();
+        ColorDebugFrameStats colorDebugStats = colorDebug ? new ColorDebugFrameStats() : null;
 
         poseStack.pushPose();
         poseStack.translate(-cameraPosition.x, -cameraPosition.y, -cameraPosition.z);
@@ -112,7 +139,15 @@ public final class SpotRenderEvents {
                 continue;
             }
 
+            if (colorDebugStats != null) {
+                colorDebugStats.record(spot);
+            }
+
             renderSpot(bufferSource, pose, spot);
+
+            if (colorDebug) {
+                renderColorDebugOverlay(bufferSource.getBuffer(RenderType.debugQuads()), pose, spot);
+            }
             renderedSpots++;
         }
 
@@ -134,6 +169,12 @@ public final class SpotRenderEvents {
             );
         } else {
             resetRenderProfile();
+        }
+
+        if (colorDebugStats != null) {
+            recordColorDebugProfile(Minecraft.getInstance(), colorDebugStats);
+        } else {
+            resetColorDebugProfile();
         }
     }
 
@@ -181,6 +222,111 @@ public final class SpotRenderEvents {
                     spot.ringBlue()
             );
         }
+    }
+
+    private static void renderColorDebugOverlay(VertexConsumer consumer, PoseStack.Pose pose, ClientSpotCache.RenderedSpot spot) {
+        if (spot.projectionMode() != ProjectionMode.FOOTPRINT_QUAD
+                && spot.projectionMode() != ProjectionMode.FOOTPRINT_SLICE) {
+            return;
+        }
+
+        double area = textureArea(spot);
+        if (area >= 0.985D) {
+            return;
+        }
+
+        int[] color = colorDebugOverlayColor(spot);
+        int alpha = ClientSpotCache.colorBucketCount(spot) > 1 ? 150 : 92;
+
+        if (spot.projectionMode() == ProjectionMode.FOOTPRINT_QUAD) {
+            renderColorDebugFootprintQuad(consumer, pose, spot, color[0], color[1], color[2], alpha);
+        } else {
+            renderColorDebugFootprintSlice(consumer, pose, spot, color[0], color[1], color[2], alpha);
+        }
+    }
+
+    private static void renderColorDebugFootprintQuad(
+            VertexConsumer consumer,
+            PoseStack.Pose pose,
+            ClientSpotCache.RenderedSpot spot,
+            int red,
+            int green,
+            int blue,
+            int alpha
+    ) {
+        Direction face = spot.face();
+        double surfaceOffset = surfaceOffset(spot) + 0.004D;
+        double offsetX = face.getStepX() * surfaceOffset;
+        double offsetY = face.getStepY() * surfaceOffset;
+        double offsetZ = face.getStepZ() * surfaceOffset;
+        double baseX = spot.pos().getX();
+        double baseY = spot.pos().getY();
+        double baseZ = spot.pos().getZ();
+
+        addDebugQuad(
+                consumer,
+                pose,
+                baseX + normalizedQuadUnit(spot.quadX0()) + offsetX,
+                baseY + normalizedQuadUnit(spot.quadY0()) + offsetY,
+                baseZ + normalizedQuadUnit(spot.quadZ0()) + offsetZ,
+                baseX + normalizedQuadUnit(spot.quadX1()) + offsetX,
+                baseY + normalizedQuadUnit(spot.quadY1()) + offsetY,
+                baseZ + normalizedQuadUnit(spot.quadZ1()) + offsetZ,
+                baseX + normalizedQuadUnit(spot.quadX2()) + offsetX,
+                baseY + normalizedQuadUnit(spot.quadY2()) + offsetY,
+                baseZ + normalizedQuadUnit(spot.quadZ2()) + offsetZ,
+                baseX + normalizedQuadUnit(spot.quadX3()) + offsetX,
+                baseY + normalizedQuadUnit(spot.quadY3()) + offsetY,
+                baseZ + normalizedQuadUnit(spot.quadZ3()) + offsetZ,
+                red,
+                green,
+                blue,
+                alpha
+        );
+    }
+
+    private static void renderColorDebugFootprintSlice(
+            VertexConsumer consumer,
+            PoseStack.Pose pose,
+            ClientSpotCache.RenderedSpot spot,
+            int red,
+            int green,
+            int blue,
+            int alpha
+    ) {
+        renderDebugFaceRect(
+                consumer,
+                pose,
+                spot,
+                spot.face(),
+                normalizedByte(spot.clipMinU()),
+                normalizedByte(spot.clipMinV()),
+                normalizedByte(spot.clipMaxU()),
+                normalizedByte(spot.clipMaxV()),
+                surfaceOffset(spot) + 0.004D,
+                red,
+                green,
+                blue,
+                alpha
+        );
+    }
+
+    private static int[] colorDebugOverlayColor(ClientSpotCache.RenderedSpot spot) {
+        if (ClientSpotCache.colorBucketCount(spot) > 1) {
+            return new int[]{255, 255, 255};
+        }
+
+        int bucket = Integer.numberOfTrailingZeros(Math.max(1, spot.colorBucketMask()));
+        return switch (bucket) {
+            case 1 -> new int[]{255, 48, 48};
+            case 2 -> new int[]{48, 255, 48};
+            case 3 -> new int[]{255, 230, 48};
+            case 4 -> new int[]{64, 96, 255};
+            case 5 -> new int[]{255, 64, 255};
+            case 6 -> new int[]{64, 255, 255};
+            case 7 -> new int[]{255, 255, 255};
+            default -> new int[]{150, 150, 150};
+        };
     }
 
     private static void renderDebugFaceCenter(VertexConsumer consumer, PoseStack.Pose pose, ClientSpotCache.RenderedSpot spot) {
@@ -429,6 +575,15 @@ public final class SpotRenderEvents {
         double baseX = spot.pos().getX();
         double baseY = spot.pos().getY();
         double baseZ = spot.pos().getZ();
+        boolean flatPartialQuad = isPartialFootprintQuad(spot);
+        float textureU0 = flatPartialQuad ? flatQuadTextureU(spot) : normalizedQuadUnitFloat(spot.quadTextureU0());
+        float textureV0 = flatPartialQuad ? flatQuadTextureV(spot) : normalizedQuadUnitFloat(spot.quadTextureV0());
+        float textureU1 = flatPartialQuad ? textureU0 : normalizedQuadUnitFloat(spot.quadTextureU1());
+        float textureV1 = flatPartialQuad ? textureV0 : normalizedQuadUnitFloat(spot.quadTextureV1());
+        float textureU2 = flatPartialQuad ? textureU0 : normalizedQuadUnitFloat(spot.quadTextureU2());
+        float textureV2 = flatPartialQuad ? textureV0 : normalizedQuadUnitFloat(spot.quadTextureV2());
+        float textureU3 = flatPartialQuad ? textureU0 : normalizedQuadUnitFloat(spot.quadTextureU3());
+        float textureV3 = flatPartialQuad ? textureV0 : normalizedQuadUnitFloat(spot.quadTextureV3());
 
         addQuad(
                 consumer,
@@ -436,23 +591,23 @@ public final class SpotRenderEvents {
                 baseX + normalizedQuadUnit(spot.quadX0()) + offsetX,
                 baseY + normalizedQuadUnit(spot.quadY0()) + offsetY,
                 baseZ + normalizedQuadUnit(spot.quadZ0()) + offsetZ,
-                normalizedQuadUnitFloat(spot.quadTextureU0()),
-                normalizedQuadUnitFloat(spot.quadTextureV0()),
+                textureU0,
+                textureV0,
                 baseX + normalizedQuadUnit(spot.quadX1()) + offsetX,
                 baseY + normalizedQuadUnit(spot.quadY1()) + offsetY,
                 baseZ + normalizedQuadUnit(spot.quadZ1()) + offsetZ,
-                normalizedQuadUnitFloat(spot.quadTextureU1()),
-                normalizedQuadUnitFloat(spot.quadTextureV1()),
+                textureU1,
+                textureV1,
                 baseX + normalizedQuadUnit(spot.quadX2()) + offsetX,
                 baseY + normalizedQuadUnit(spot.quadY2()) + offsetY,
                 baseZ + normalizedQuadUnit(spot.quadZ2()) + offsetZ,
-                normalizedQuadUnitFloat(spot.quadTextureU2()),
-                normalizedQuadUnitFloat(spot.quadTextureV2()),
+                textureU2,
+                textureV2,
                 baseX + normalizedQuadUnit(spot.quadX3()) + offsetX,
                 baseY + normalizedQuadUnit(spot.quadY3()) + offsetY,
                 baseZ + normalizedQuadUnit(spot.quadZ3()) + offsetZ,
-                normalizedQuadUnitFloat(spot.quadTextureU3()),
-                normalizedQuadUnitFloat(spot.quadTextureV3()),
+                textureU3,
+                textureV3,
                 red,
                 green,
                 blue,
@@ -754,6 +909,156 @@ public final class SpotRenderEvents {
         return hash;
     }
 
+    private static double textureArea(ClientSpotCache.RenderedSpot spot) {
+        return switch (spot.projectionMode()) {
+            case FOOTPRINT_QUAD -> quadTextureArea(spot);
+            case FOOTPRINT_SLICE -> sliceTextureArea(spot);
+            default -> 1.0D;
+        };
+    }
+
+    private static boolean isPartialFootprintQuad(ClientSpotCache.RenderedSpot spot) {
+        return spot.projectionMode() == ProjectionMode.FOOTPRINT_QUAD
+                && quadTextureArea(spot) < PARTIAL_QUAD_AREA_THRESHOLD;
+    }
+
+    private static float flatQuadTextureU(ClientSpotCache.RenderedSpot spot) {
+        return (normalizedQuadUnitFloat(spot.quadTextureU0())
+                + normalizedQuadUnitFloat(spot.quadTextureU1())
+                + normalizedQuadUnitFloat(spot.quadTextureU2())
+                + normalizedQuadUnitFloat(spot.quadTextureU3())) * 0.25F;
+    }
+
+    private static float flatQuadTextureV(ClientSpotCache.RenderedSpot spot) {
+        return (normalizedQuadUnitFloat(spot.quadTextureV0())
+                + normalizedQuadUnitFloat(spot.quadTextureV1())
+                + normalizedQuadUnitFloat(spot.quadTextureV2())
+                + normalizedQuadUnitFloat(spot.quadTextureV3())) * 0.25F;
+    }
+
+    private static double sliceTextureArea(ClientSpotCache.RenderedSpot spot) {
+        double width = Math.max(0.0D, normalizedByte(spot.textureMaxU()) - normalizedByte(spot.textureMinU()));
+        double height = Math.max(0.0D, normalizedByte(spot.textureMaxV()) - normalizedByte(spot.textureMinV()));
+        return Math.min(1.0D, width * height);
+    }
+
+    private static double quadTextureArea(ClientSpotCache.RenderedSpot spot) {
+        double u0 = normalizedQuadUnit(spot.quadTextureU0());
+        double v0 = normalizedQuadUnit(spot.quadTextureV0());
+        double u1 = normalizedQuadUnit(spot.quadTextureU1());
+        double v1 = normalizedQuadUnit(spot.quadTextureV1());
+        double u2 = normalizedQuadUnit(spot.quadTextureU2());
+        double v2 = normalizedQuadUnit(spot.quadTextureV2());
+        double u3 = normalizedQuadUnit(spot.quadTextureU3());
+        double v3 = normalizedQuadUnit(spot.quadTextureV3());
+        double twiceArea = u0 * v1 - v0 * u1
+                + u1 * v2 - v1 * u2
+                + u2 * v3 - v2 * u3
+                + u3 * v0 - v3 * u0;
+        return Math.min(1.0D, Math.abs(twiceArea) * 0.5D);
+    }
+
+    private static void recordColorDebugProfile(Minecraft minecraft, ColorDebugFrameStats stats) {
+        long now = System.nanoTime();
+
+        if (colorDebugWindowStartNanos == 0L) {
+            colorDebugWindowStartNanos = now;
+        }
+
+        colorDebugFrames++;
+        colorDebugFootprintQuads += stats.footprintQuads;
+        colorDebugPartialQuads += stats.partialQuads;
+        colorDebugSmallPartialQuads += stats.smallPartialQuads;
+        colorDebugFootprintSlices += stats.footprintSlices;
+        colorDebugPartialSlices += stats.partialSlices;
+        colorDebugMergedContributionSpots += stats.mergedContributionSpots;
+        colorDebugMultiColorMergedSpots += stats.multiColorMergedSpots;
+        colorDebugPartialMultiColorFaces += stats.partialMultiColorFaces();
+        ClientSpotCache.GeometryMergeStats geometryStats = ClientSpotCache.geometryMergeStats();
+        colorDebugPartialGeometryGroups += geometryStats.partialGeometryGroups();
+        colorDebugPartialGeometryMergedGroups += geometryStats.partialGeometryMergedGroups();
+        colorDebugPartialGeometryMergedInputSpots += geometryStats.partialGeometryMergedInputSpots();
+        colorDebugPartialGeometryMulticolorGroups += geometryStats.partialGeometryMulticolorGroups();
+        colorDebugPartialQuadFlatRendered += stats.partialQuadFlatRendered;
+
+        if (stats.minPartialArea < colorDebugMinPartialArea) {
+            colorDebugMinPartialArea = stats.minPartialArea;
+        }
+
+        FaceColorStats worstFace = stats.worstFace();
+        if (worstFace != null
+                && (worstFace.partialQuads > colorDebugWorstFacePartialQuads
+                || (worstFace.partialQuads == colorDebugWorstFacePartialQuads
+                && worstFace.colorBucketCount() > colorDebugWorstFaceColorBuckets))) {
+            colorDebugWorstFacePartialQuads = worstFace.partialQuads;
+            colorDebugWorstFaceColorBuckets = worstFace.colorBucketCount();
+            colorDebugWorstFace = worstFace.key.format();
+        }
+
+        if (geometryStats.worstGeometrySpots() > colorDebugWorstGeometrySpots
+                || (geometryStats.worstGeometrySpots() == colorDebugWorstGeometrySpots
+                && geometryStats.worstGeometryColorBuckets() > colorDebugWorstGeometryColorBuckets)) {
+            colorDebugWorstGeometrySpots = geometryStats.worstGeometrySpots();
+            colorDebugWorstGeometryColorBuckets = geometryStats.worstGeometryColorBuckets();
+            colorDebugWorstGeometry = geometryStats.worstGeometryKey();
+        }
+
+        if (now - colorDebugWindowStartNanos < PROFILE_INTERVAL_NANOS) {
+            return;
+        }
+
+        double frames = Math.max(1.0D, colorDebugFrames);
+        SpectralDiagnostics.event(minecraft.level, "client_spot_color_debug", "profile")
+                .field("frames", colorDebugFrames)
+                .field("footprint_quad_avg", colorDebugFootprintQuads / frames)
+                .field("partial_quad_avg", colorDebugPartialQuads / frames)
+                .field("small_partial_quad_avg", colorDebugSmallPartialQuads / frames)
+                .field("footprint_slice_avg", colorDebugFootprintSlices / frames)
+                .field("partial_slice_avg", colorDebugPartialSlices / frames)
+                .field("merged_contribution_spots_avg", colorDebugMergedContributionSpots / frames)
+                .field("multicolor_merged_spots_avg", colorDebugMultiColorMergedSpots / frames)
+                .field("partial_multicolor_faces_avg", colorDebugPartialMultiColorFaces / frames)
+                .field("partial_geometry_groups_avg", colorDebugPartialGeometryGroups / frames)
+                .field("partial_geometry_merged_groups_avg", colorDebugPartialGeometryMergedGroups / frames)
+                .field("partial_geometry_merged_input_spots_avg", colorDebugPartialGeometryMergedInputSpots / frames)
+                .field("partial_geometry_multicolor_groups_avg", colorDebugPartialGeometryMulticolorGroups / frames)
+                .field("partial_quad_flat_rendered_avg", colorDebugPartialQuadFlatRendered / frames)
+                .field("min_partial_area", colorDebugMinPartialArea == 1.0D ? 0.0D : colorDebugMinPartialArea)
+                .field("worst_face", colorDebugWorstFace)
+                .field("worst_face_partial_quads", colorDebugWorstFacePartialQuads)
+                .field("worst_face_color_buckets", colorDebugWorstFaceColorBuckets)
+                .field("worst_geometry", colorDebugWorstGeometry)
+                .field("worst_geometry_spots", colorDebugWorstGeometrySpots)
+                .field("worst_geometry_color_buckets", colorDebugWorstGeometryColorBuckets)
+                .write();
+        resetColorDebugProfile();
+    }
+
+    private static void resetColorDebugProfile() {
+        colorDebugWindowStartNanos = 0L;
+        colorDebugFrames = 0L;
+        colorDebugFootprintQuads = 0L;
+        colorDebugPartialQuads = 0L;
+        colorDebugSmallPartialQuads = 0L;
+        colorDebugFootprintSlices = 0L;
+        colorDebugPartialSlices = 0L;
+        colorDebugMergedContributionSpots = 0L;
+        colorDebugMultiColorMergedSpots = 0L;
+        colorDebugPartialMultiColorFaces = 0L;
+        colorDebugPartialGeometryGroups = 0L;
+        colorDebugPartialGeometryMergedGroups = 0L;
+        colorDebugPartialGeometryMergedInputSpots = 0L;
+        colorDebugPartialGeometryMulticolorGroups = 0L;
+        colorDebugPartialQuadFlatRendered = 0L;
+        colorDebugMinPartialArea = 1.0D;
+        colorDebugWorstFacePartialQuads = 0;
+        colorDebugWorstFaceColorBuckets = 0;
+        colorDebugWorstFace = "none";
+        colorDebugWorstGeometrySpots = 0;
+        colorDebugWorstGeometryColorBuckets = 0;
+        colorDebugWorstGeometry = "none";
+    }
+
     private static void recordRenderProfile(
             Minecraft minecraft,
             int activeSpots,
@@ -809,6 +1114,114 @@ public final class SpotRenderEvents {
         profileQuadCalls = 0L;
         profileMaxFrameNanos = 0L;
         profileMaxFrameQuads = 0;
+    }
+
+    private static final class ColorDebugFrameStats {
+        private final Map<FaceKey, FaceColorStats> partialQuadFaces = new HashMap<>();
+        private int footprintQuads;
+        private int partialQuads;
+        private int smallPartialQuads;
+        private int footprintSlices;
+        private int partialSlices;
+        private int mergedContributionSpots;
+        private int multiColorMergedSpots;
+        private int partialQuadFlatRendered;
+        private double minPartialArea = 1.0D;
+
+        private void record(ClientSpotCache.RenderedSpot spot) {
+            if (spot.mergedContributions() > 1) {
+                mergedContributionSpots++;
+            }
+
+            if (ClientSpotCache.colorBucketCount(spot) > 1) {
+                multiColorMergedSpots++;
+            }
+
+            if (spot.projectionMode() == ProjectionMode.FOOTPRINT_QUAD) {
+                footprintQuads++;
+                double area = textureArea(spot);
+
+                if (area < PARTIAL_QUAD_AREA_THRESHOLD) {
+                    partialQuads++;
+                    partialQuadFlatRendered++;
+                    minPartialArea = Math.min(minPartialArea, area);
+
+                    if (area < 0.025D) {
+                        smallPartialQuads++;
+                    }
+
+                    FaceKey key = FaceKey.from(spot);
+                    partialQuadFaces.computeIfAbsent(key, FaceColorStats::new)
+                            .record(spot.colorBucketMask(), area);
+                }
+            } else if (spot.projectionMode() == ProjectionMode.FOOTPRINT_SLICE) {
+                footprintSlices++;
+                double area = textureArea(spot);
+
+                if (area < 0.985D) {
+                    partialSlices++;
+                    minPartialArea = Math.min(minPartialArea, area);
+                }
+            }
+        }
+
+        private int partialMultiColorFaces() {
+            int count = 0;
+
+            for (FaceColorStats stats : partialQuadFaces.values()) {
+                if (stats.colorBucketCount() > 1) {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private FaceColorStats worstFace() {
+            FaceColorStats worst = null;
+
+            for (FaceColorStats stats : partialQuadFaces.values()) {
+                if (worst == null
+                        || stats.partialQuads > worst.partialQuads
+                        || (stats.partialQuads == worst.partialQuads
+                        && stats.colorBucketCount() > worst.colorBucketCount())) {
+                    worst = stats;
+                }
+            }
+
+            return worst;
+        }
+    }
+
+    private static final class FaceColorStats {
+        private final FaceKey key;
+        private int partialQuads;
+        private int colorBucketMask;
+        private double minArea = 1.0D;
+
+        private FaceColorStats(FaceKey key) {
+            this.key = key;
+        }
+
+        private void record(int bucketMask, double area) {
+            partialQuads++;
+            colorBucketMask |= bucketMask;
+            minArea = Math.min(minArea, area);
+        }
+
+        private int colorBucketCount() {
+            return Integer.bitCount(colorBucketMask);
+        }
+    }
+
+    private record FaceKey(int x, int y, int z, Direction face) {
+        private static FaceKey from(ClientSpotCache.RenderedSpot spot) {
+            return new FaceKey(spot.pos().getX(), spot.pos().getY(), spot.pos().getZ(), spot.face());
+        }
+
+        private String format() {
+            return x + "," + y + "," + z + "/" + face;
+        }
     }
 
     private record MarkerSegment(int bit, double minU, double minV, double maxU, double maxV) {

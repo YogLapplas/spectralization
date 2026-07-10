@@ -245,7 +245,25 @@ public final class OpticalSpotTracker {
 
         SpotOwnerSnapshot snapshot = new SpotOwnerSnapshot(ownerId, visibleSpots, visibleAllocations, signature, gameTime);
         ownerSnapshots.put(ownerId, snapshot);
-        sendSnapshotToNearby(level, snapshot, true);
+        if (previous == null) {
+            sendSnapshotToNearby(level, snapshot, true);
+        } else {
+            sendSnapshotToNearbyOrPrevious(level, snapshot, previous);
+        }
+    }
+
+    public static void clearCompiledSpots(ServerLevel level, int ownerId) {
+        Map<Integer, SpotOwnerSnapshot> ownerSnapshots = SPOTS_BY_OWNER.get(level);
+
+        if (ownerSnapshots != null) {
+            ownerSnapshots.remove(ownerId);
+
+            if (ownerSnapshots.isEmpty()) {
+                SPOTS_BY_OWNER.remove(level);
+            }
+        }
+
+        sendClearSnapshot(level, ownerId);
     }
 
     private static void mark(
@@ -324,12 +342,150 @@ public final class OpticalSpotTracker {
         SENT_SNAPSHOTS_BY_PLAYER.remove(serverLevel);
     }
 
+    public static void discardSpotsAt(LevelAccessor levelAccessor, BlockPos pos) {
+        if (!(levelAccessor instanceof ServerLevel level)) {
+            return;
+        }
+
+        BlockPos removedPos = pos.immutable();
+        discardOwnerSpotsAt(level, removedPos);
+        discardLegacySpotsAt(level, removedPos);
+    }
+
     public static void clearAll() {
         SPOTS_BY_OWNER.clear();
         SENT_SNAPSHOTS_BY_PLAYER.clear();
         LEGACY_ACTIVE_SPOTS.clear();
         LAST_REFRESH.clear();
         LAST_LOG.clear();
+    }
+
+    private static void discardOwnerSpotsAt(ServerLevel level, BlockPos removedPos) {
+        Map<Integer, SpotOwnerSnapshot> ownerSnapshots = SPOTS_BY_OWNER.get(level);
+
+        if (ownerSnapshots == null || ownerSnapshots.isEmpty()) {
+            return;
+        }
+
+        List<Integer> ownerIds = new ArrayList<>(ownerSnapshots.keySet());
+        long gameTime = level.getGameTime();
+
+        for (int ownerId : ownerIds) {
+            SpotOwnerSnapshot snapshot = ownerSnapshots.get(ownerId);
+
+            if (snapshot == null) {
+                continue;
+            }
+
+            List<SpotRecord> filteredSpots = spotsWithoutPos(snapshot.spots(), removedPos);
+            List<SpotProjectionAllocation> filteredAllocations =
+                    allocationsWithoutPos(snapshot.allocations(), removedPos);
+
+            if (filteredSpots.size() == snapshot.spots().size()
+                    && filteredAllocations.size() == snapshot.allocations().size()) {
+                continue;
+            }
+
+            if (filteredSpots.isEmpty()) {
+                ownerSnapshots.remove(ownerId);
+                sendClearSnapshot(level, ownerId);
+                continue;
+            }
+
+            long signature = 31L * spotSnapshotSignature(filteredSpots)
+                    + allocationSnapshotSignature(filteredAllocations);
+            SpotOwnerSnapshot updated =
+                    new SpotOwnerSnapshot(ownerId, filteredSpots, filteredAllocations, signature, gameTime);
+            ownerSnapshots.put(ownerId, updated);
+            sendSnapshotToNearbyOrChangedPos(level, updated, removedPos);
+        }
+
+        if (ownerSnapshots.isEmpty()) {
+            SPOTS_BY_OWNER.remove(level);
+        }
+    }
+
+    private static List<SpotRecord> spotsWithoutPos(List<SpotRecord> spots, BlockPos removedPos) {
+        List<SpotRecord> filtered = null;
+
+        for (int index = 0; index < spots.size(); index++) {
+            SpotRecord spot = spots.get(index);
+
+            if (!spot.pos().equals(removedPos)) {
+                if (filtered != null) {
+                    filtered.add(spot);
+                }
+                continue;
+            }
+
+            if (filtered == null) {
+                filtered = new ArrayList<>(spots.size() - 1);
+                filtered.addAll(spots.subList(0, index));
+            }
+        }
+
+        return filtered == null ? spots : List.copyOf(filtered);
+    }
+
+    private static List<SpotProjectionAllocation> allocationsWithoutPos(
+            List<SpotProjectionAllocation> allocations,
+            BlockPos removedPos
+    ) {
+        List<SpotProjectionAllocation> filtered = null;
+
+        for (int index = 0; index < allocations.size(); index++) {
+            SpotProjectionAllocation allocation = allocations.get(index);
+
+            if (!allocation.pos().equals(removedPos)) {
+                if (filtered != null) {
+                    filtered.add(allocation);
+                }
+                continue;
+            }
+
+            if (filtered == null) {
+                filtered = new ArrayList<>(allocations.size() - 1);
+                filtered.addAll(allocations.subList(0, index));
+            }
+        }
+
+        return filtered == null ? allocations : List.copyOf(filtered);
+    }
+
+    private static void discardLegacySpotsAt(ServerLevel level, BlockPos removedPos) {
+        Map<SpotKey, ActiveSpot> levelSpots = LEGACY_ACTIVE_SPOTS.get(level);
+
+        if (levelSpots == null || levelSpots.isEmpty()) {
+            return;
+        }
+
+        List<SpotKey> removedKeys = new ArrayList<>();
+        List<SpotRecord> removedSpots = new ArrayList<>();
+
+        for (Map.Entry<SpotKey, ActiveSpot> entry : levelSpots.entrySet()) {
+            SpotRecord spot = entry.getValue().spot();
+
+            if (spot.pos().equals(removedPos)) {
+                removedKeys.add(entry.getKey());
+                removedSpots.add(spot);
+            }
+        }
+
+        if (removedKeys.isEmpty()) {
+            return;
+        }
+
+        for (SpotKey key : removedKeys) {
+            levelSpots.remove(key);
+        }
+
+        if (levelSpots.isEmpty()) {
+            LEGACY_ACTIVE_SPOTS.remove(level);
+        }
+
+        for (SpotRecord spot : removedSpots) {
+            sendSpotToNearby(level, invisibleLike(spot));
+        }
     }
 
     private static void refresh(ServerLevel level) {
@@ -418,6 +574,54 @@ public final class OpticalSpotTracker {
         return new SnapshotSendResult(sentSpots, sentPlayers);
     }
 
+    private static SnapshotSendResult sendSnapshotToNearbyOrChangedPos(
+            ServerLevel level,
+            SpotOwnerSnapshot snapshot,
+            BlockPos changedPos
+    ) {
+        SpotOverlayPayload payload = new SpotOverlayPayload(snapshot.ownerId(), snapshot.spots());
+        long gameTime = level.getGameTime();
+        int sentPlayers = 0;
+        int sentSpots = 0;
+
+        for (ServerPlayer player : level.players()) {
+            if (!isNearSnapshot(player, snapshot) && !isNearBlock(player, changedPos)) {
+                continue;
+            }
+
+            PacketDistributor.sendToPlayer(player, payload);
+            rememberSnapshotSent(level, player, snapshot, gameTime);
+            sentPlayers++;
+            sentSpots += snapshot.spots().size();
+        }
+
+        return new SnapshotSendResult(sentSpots, sentPlayers);
+    }
+
+    private static SnapshotSendResult sendSnapshotToNearbyOrPrevious(
+            ServerLevel level,
+            SpotOwnerSnapshot snapshot,
+            SpotOwnerSnapshot previous
+    ) {
+        SpotOverlayPayload payload = new SpotOverlayPayload(snapshot.ownerId(), snapshot.spots());
+        long gameTime = level.getGameTime();
+        int sentPlayers = 0;
+        int sentSpots = 0;
+
+        for (ServerPlayer player : level.players()) {
+            if (!isNearSnapshot(player, snapshot) && !isNearSnapshot(player, previous)) {
+                continue;
+            }
+
+            PacketDistributor.sendToPlayer(player, payload);
+            rememberSnapshotSent(level, player, snapshot, gameTime);
+            sentPlayers++;
+            sentSpots += snapshot.spots().size();
+        }
+
+        return new SnapshotSendResult(sentSpots, sentPlayers);
+    }
+
     private static void sendClearSnapshot(ServerLevel level, int ownerId) {
         SpotOverlayPayload payload = new SpotOverlayPayload(ownerId, List.of());
         Map<UUID, Map<Integer, SentSpotSnapshot>> sentByPlayer = SENT_SNAPSHOTS_BY_PLAYER.get(level);
@@ -482,6 +686,11 @@ public final class OpticalSpotTracker {
         }
 
         return false;
+    }
+
+    private static boolean isNearBlock(ServerPlayer player, BlockPos pos) {
+        return player.distanceToSqr(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D)
+                <= SEND_RADIUS_SQUARED;
     }
 
     private static List<SpotRecord> visibleSnapshot(List<SpotRecord> spots) {
@@ -551,6 +760,54 @@ public final class OpticalSpotTracker {
         }
 
         return signature;
+    }
+
+    private static SpotRecord invisibleLike(SpotRecord spot) {
+        return new SpotRecord(
+                spot.pos(),
+                spot.face(),
+                0,
+                spot.coherentRadiusLevel(),
+                spot.coherentRed(),
+                spot.coherentGreen(),
+                spot.coherentBlue(),
+                0,
+                spot.strayRadiusLevel(),
+                spot.strayRed(),
+                spot.strayGreen(),
+                spot.strayBlue(),
+                0,
+                spot.projectionMode(),
+                spot.clipMinU(),
+                spot.clipMinV(),
+                spot.clipMaxU(),
+                spot.clipMaxV(),
+                spot.textureMinU(),
+                spot.textureMinV(),
+                spot.textureMaxU(),
+                spot.textureMaxV(),
+                spot.quadX0(),
+                spot.quadY0(),
+                spot.quadZ0(),
+                spot.quadTextureU0(),
+                spot.quadTextureV0(),
+                spot.quadX1(),
+                spot.quadY1(),
+                spot.quadZ1(),
+                spot.quadTextureU1(),
+                spot.quadTextureV1(),
+                spot.quadX2(),
+                spot.quadY2(),
+                spot.quadZ2(),
+                spot.quadTextureU2(),
+                spot.quadTextureV2(),
+                spot.quadX3(),
+                spot.quadY3(),
+                spot.quadZ3(),
+                spot.quadTextureU3(),
+                spot.quadTextureV3(),
+                spot.debugMarker()
+        );
     }
 
     private static long allocationSnapshotSignature(List<SpotProjectionAllocation> allocations) {

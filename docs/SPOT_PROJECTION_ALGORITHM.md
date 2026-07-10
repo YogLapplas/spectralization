@@ -112,6 +112,35 @@ exit cross-section at travel t1
 Side rendering is visual. Downstream occlusion is currently handled by parallel
 occlusion planes, not by exact side polygons.
 
+### 3.4 Projection surface descriptor
+
+Future non-full-block support should enter through a projection-surface
+descriptor, not through scattered special cases in the depth loop.
+
+The descriptor should answer these questions:
+
+```text
+ProjectionSurfaceDescriptor:
+  source face origin / offset
+  receiving visual faces
+  occluding volume approximation
+  dependency positions
+  surface-to-texture mapping rule
+```
+
+This is the extension point for:
+
+- source faces that can move parallel to their block face,
+- source faces that do not share the block-center origin,
+- slabs, stairs, fences, panes, and other partial blocks,
+- optical blocks whose visual aperture differs from their Minecraft collision
+  shape.
+
+The descriptor belongs to the projection layer unless it changes gameplay power.
+If a partial block changes aperture loss or coupling power, that part belongs in
+the optical/data layer and the projection descriptor should only mirror the
+readout geometry.
+
 ## 4. Invariants
 
 ### 4.1 Readout-only invariant
@@ -208,6 +237,30 @@ the same tile again. The runtime cache should be a dense array over the current
 side scan bounds, not a hash map, because side projection touches a compact
 integer tile rectangle.
 
+The front and side passes may share a unified depth scan over
+`frontBounds union sideBounds`. This scan records dependencies for all tiles that
+could affect front or side projection and fills the depth-local tile cache. Side
+projection should then enumerate exposed grid boundaries from that cached slice,
+not blindly revisit every projectable tile face. This is just a reordering of the
+side predicate:
+
+```text
+sideVisible = inSideBounds && projectable && openFace && coneSweepsFace && remainingIntersects
+```
+
+The runtime side candidate source is:
+
+```text
+projectable tile adjacent to air-like neighbor
+-> exposed side boundary
+-> cone sweep interval exists
+-> side window intersect remaining
+```
+
+Filtering `projectable` and `openFace` before the side travel calculation
+preserves the visible set while avoiding repeated work in air and hidden interior
+faces.
+
 ### 5.3 Projectable surfaces
 
 A block is projectable when it is not air-like and one of these is true:
@@ -271,6 +324,12 @@ Dependency collection must include:
 - blocks whose internal planes may occlude later faces,
 - neighboring blocks checked for side openness.
 
+When a projectable block is broken, the first safe visual action is to remove any
+already-published spot records whose `pos` is that block. This removes the
+impossible floating surface immediately. It does not pretend that downstream
+shadows have been recomputed; downstream projection still follows the normal
+dirty/recompile path.
+
 The long-term target is local projection-tree updates, but the current stable
 path still exports a dependency set from each projection pass.
 
@@ -286,6 +345,36 @@ Client-side rendering in `SpotRenderEvents`:
 - uses `FOOTPRINT_SLICE` for front rectangular slices,
 - uses `FOOTPRINT_QUAD` for side/patch quads,
 - uses tiny deterministic offsets to avoid z-fighting.
+
+Client-side spot cache merging is allowed to pre-compose spots with identical
+projection geometry. The composition should behave like light intensity, not like
+ordinary paint mixing: color channels are accumulated in premultiplied light
+space, then converted back to a straight display color. This keeps same-color
+overlap stable while making different visible frequencies blend toward a brighter
+combined color instead of producing muddy order-dependent patches.
+
+The client currently contains an experimental narrow second pass for incomplete
+`FOOTPRINT_QUAD` records that have the same world-space quad vertices but
+different texture-domain vertices. It composes the light color for one render
+primitive so coplanar translucent quads do not z-fight. This is an appearance
+layer experiment only. It must not be used as proof that the texture-domain
+projection allocation is correct, and it must not be extended to complete quads
+unless a separate invariant is written.
+
+The current flat display experiment for incomplete `FOOTPRINT_QUAD` records is a
+known failed update. It renders these records as flat light patches by sampling
+the center of the assigned texture-domain quad for all four vertices. In-game
+testing showed that this does not solve the visual problem cleanly and makes the
+display strategy of incomplete quads visibly different from complete quads and
+slices. Keep the diagnostics for now, but do not treat this as the accepted final
+rendering rule.
+
+Spot overlays are owner snapshots, not loose quad streams. When an owner's
+snapshot changes, players near either the old snapshot or the new snapshot must
+receive the replacement payload; otherwise old quads can remain on the client and
+produce false color-overlap artifacts. When a source/network owner is retired,
+the server must send an empty spot overlay for that owner, just as HUD beam
+owners are cleared.
 
 Render cost is currently much lower than projection generation cost. Recent logs
 showed hundreds of quads rendering in roughly sub-millisecond CPU-side time, while
@@ -331,6 +420,8 @@ Useful commands and logs:
 /spectralization compilerdebug verbose off
 /spectralization spotdebug centers on
 /spectralization spotdebug centers off
+/spectralization spotdebug colors on
+/spectralization spotdebug colors off
 /spectralization spotdebug planes
 /spectralization spotdebug planes <count>
 ```
@@ -339,6 +430,7 @@ Relevant diagnostics:
 
 - `subsystem=spot_projection event=profile`
 - `subsystem=client_spot_render event=profile`
+- `subsystem=client_spot_color_debug event=profile`
 - `spot_projection_counts`
 - `spot_projection_allocation_summary`
 - `spot_projection_continuity`
@@ -347,6 +439,34 @@ Relevant diagnostics:
 surface, occlusion-plane, and rectangle-subtraction counts even when verbose
 allocation tracing is off. Per-face `SpotProjectionAllocation` probes are heavy
 and should be gated by `compilerdebug verbose`.
+
+`client_spot_color_debug/profile` is emitted when `spotdebug colors` is enabled.
+It belongs to the appearance layer. It does not change texture ownership or
+optical readout. It marks incomplete footprint quads in the world and summarizes
+whether color artifacts are happening inside one merged geometry key or across
+separate neighboring fragments:
+
+- `partial_quad_avg` counts rendered `FOOTPRINT_QUAD` patches whose texture area
+  is smaller than a full footprint.
+- `small_partial_quad_avg` counts very small partial quads near the texture
+  boundary.
+- `merged_contribution_spots_avg` counts spots whose client geometry key merged
+  multiple incoming spot records.
+- `multicolor_merged_spots_avg` counts merged spots whose inputs had more than
+  one color bucket.
+- `partial_multicolor_faces_avg` counts block faces where incomplete quads from
+  multiple color buckets coexist without necessarily sharing the same exact
+  geometry key.
+- `partial_geometry_*` fields count the narrow client-side appearance merge for
+  incomplete `FOOTPRINT_QUAD` records with identical world-space quad vertices.
+  These fields are diagnostics for coplanar translucent overlap, not optical
+  power diagnostics.
+- `partial_quad_flat_rendered_avg` counts incomplete footprint quads that used
+  the flat-patch display rule instead of stretching their full texture crop.
+- `worst_face` points to the face with the densest incomplete-quad color debug
+  cluster in the current profile window.
+- `worst_geometry` points to the exact render-geometry key with the densest
+  incomplete-quad merge group.
 
 The profile line also includes phase timings and hot-spot counters:
 
@@ -361,18 +481,51 @@ The profile line also includes phase timings and hot-spot counters:
   slab/interval counts, remaining area, query counts, blocker input count,
   blocker hits after clipping to the current remaining region, and update work.
   `remaining_slabs=0` is the exact early-stop condition.
+- `plane_window_candidates` counts plane windows before the exact remaining-region
+  prefilter. `plane_window_remaining_culled` counts windows rejected by the set
+  identity above, and `plane_windows` / `plane_windows_effective` counts the
+  windows that actually enter the downstream remaining update.
+- `remaining_prefilter_*` fields measure the cheap boolean intersection tests
+  used by the plane-window prefilter. They are separate from
+  `remaining_intersection_*`, which measures visible fragment generation.
 - `side_*` fields measure side visual candidate enumeration. Side spots are still
   visual readout objects, but the counters show how many side tiles, open-face
   checks, travel intervals, and side texture windows were considered.
+- `side_candidate_us` measures exposed-boundary candidate construction.
+- `side_emit_us` measures the side candidate to `SpotRecord` emission path.
+- `side_travel_split_us` measures side travel interval splitting and subdivision
+  selection inside the side emit path.
+- `side_window_us` measures side cross-section and canonical side-window
+  construction.
+- `side_remaining_intersect_us` measures `sideWindow intersect remaining` and
+  same-depth front-window clipping.
+- `side_patch_emit_us` measures conversion from visible side windows to emitted
+  `SpotRecord` quad patches.
+- `side_fast_path_patches` counts side patches emitted through the full-travel
+  side fast path. These are side windows whose texture-domain region already
+  spans the whole side travel axis, so they can be emitted as one coherent quad
+  instead of being split into several local patches.
+- `side_fast_path_skipped` counts side windows that would have matched that
+  full-travel fast path but are deliberately routed through clipped side
+  patches. The fast path is disabled because x/y boundary-entry cases need the
+  same endpoint and cut-point handling as ordinary clipped side windows to avoid
+  barb-like texture discontinuities.
 - `side_range_culled_tiles` counts side-scan tile positions skipped by the
   conservative `remaining`-bounds prefilter. This is a candidate-enumeration
   optimization only; accepted side windows still pass through
   `candidate intersect remaining`.
-- `side_boundary_*` fields compare the stable side scan with an experimental
-  boundary-based candidate enumerator. The stable renderer still uses the legacy
-  side scan. `side_boundary_missing_faces` must be zero before the boundary
-  enumerator can become authoritative. `side_boundary_extra_faces` is acceptable
-  during superset validation and measures how much later filtering would remain.
+- `side_boundary_*` fields describe the boundary-based candidate enumerator.
+  When verbose validation is enabled, they also compare it against the legacy
+  projectable-tile face scan. `side_boundary_missing_faces` must stay zero;
+  extra faces are acceptable only when later side-window filtering discards them.
+- `front_fragments_before_merge` and `front_fragments_after_merge` count visible
+  front-face texture fragments before and after exact texture-domain union on the
+  same block face. The merge changes render granularity only; it does not change
+  the assigned texture region.
+- `remaining_union_input_rects` counts raw same-depth occlusion windows entering
+  the remaining-region update. `remaining_union_merged_rects` counts the exact
+  canonical rectangle/slab intervals after those windows are unioned in texture
+  domain. A large ratio means many blocker windows were redundant or overlapping.
 - `side_candidate_verify_us` is the verbose-debug-only cost of the boundary
   candidate comparison. It must not be counted as production side-scan cost.
 - `log_write_*_before` fields are rolling diagnostics-log write statistics
@@ -389,6 +542,89 @@ first. Do not begin with global searches over all historical logs.
 The current algorithm should be faster than normal ray tracing because it works
 with texture-domain regions and voxel tiles, not per-pixel or per-ray samples.
 The main remaining costs are avoidable.
+
+### 9.0 Optimization architecture
+
+Optimization must preserve the projection semantics before it chases local
+micro-costs. The stable architecture should be split into three layers:
+
+```text
+geometry layer
+  source position, direction, radius, divergence, aperture, plane count, blocks
+  -> candidate faces, texture-domain windows, dependencies
+
+occlusion layer
+  remaining_0 = K
+  remaining_{d+1} = remaining_d - union(blockers_d)
+  -> visible texture regions assigned to faces
+
+appearance layer
+  solved power, coherent power, frequency, distance, debug mode
+  -> alpha, color, texture choice, render visibility
+```
+
+These layers have different invalidation rules:
+
+- A block placement or removal invalidates geometry and downstream occlusion for
+  the cone subtree that depends on that block.
+- A radius, divergence, aperture, direction, or plane-count change invalidates
+  geometry for the affected source output.
+- A power, coherent-power, or frequency-only change should normally reuse the
+  same geometry and occlusion assignment, then update appearance.
+- A debug-center or diagnostic-visibility toggle should not force a world rescan
+  unless it changes which records are exported.
+
+This separation is the main coordination point for all optimizations. A local
+optimization that reduces `side_scan_us` but makes power changes rebuild geometry
+is not actually an architectural win.
+
+The long-term cache keys should reflect the split:
+
+```text
+ProjectionGeometryKey:
+  dimension
+  source block position
+  source face / travel direction
+  source-face origin
+  beam envelope signature: radius, divergence, aperture clamp
+  projection quality: max depth, occlusion plane rule/count
+  geometry dependency epoch/signature
+
+ProjectionAppearanceKey:
+  solved power
+  coherent power
+  frequency/color summary
+  visual distance rule
+  debug render mode
+```
+
+`ProjectionGeometryKey` must not include power merely because alpha changes.
+`ProjectionAppearanceKey` must not be allowed to change texture-domain ownership.
+
+The depth pass should converge on a reusable immutable object:
+
+```text
+DepthSliceSnapshot:
+  depth
+  beam envelope at this depth
+  scanned tile bounds
+  tile facts: loaded, air-like, projectable, block position
+  exposed side boundaries
+  front candidate windows
+  occlusion-plane candidate windows
+  dependency positions
+```
+
+Front spots, side spots, and occlusion planes should be derived from the same
+snapshot. They should not independently rediscover the same block state, side
+openness, or cone intersection facts.
+
+Recent profiling shows the important coordination problem. Render cost is much
+lower than projection generation cost; hundreds of emitted quads are usually
+sub-millisecond on the client, while projection generation spends milliseconds in
+`side_scan_us`, `side_emit_us`, `front_emit_us`, and `remaining_update_us`.
+Therefore the first optimizations should reduce candidate generation and
+geometry/occlusion recomputation, not simplify the renderer.
 
 ### 9.1 Optimize the light-cone tree first
 
@@ -501,6 +737,48 @@ queries.
 This is safer than changing to polygon clipping because it preserves the current
 rectangle-domain semantics.
 
+Before applying same-depth blockers, the runtime may discard blocker windows that
+do not intersect the current remaining region:
+
+```text
+R_d - union(B_d)
+= R_d - union({ b in B_d | b intersects R_d })
+```
+
+This is an exact set identity, not a visual approximation. It is especially
+important when internal occlusion planes generate many windows after most of the
+texture domain has already been consumed. The prefilter should be a cheap boolean
+query against the remaining slabs and intervals; it must not allocate visible
+rectangle fragments or modify `R_d`.
+
+The slab representation is ordered by `v`, and each slab's intervals are ordered
+by `u`. Boolean remaining queries may binary-search to the first potentially
+intersecting slab or interval and stop once the query range is passed. This
+preserves the same region invariant while making the query local to the relevant
+texture-domain stripe.
+
+Before subtracting same-depth blockers, the runtime may replace the raw blocker
+list by its exact texture-domain union:
+
+```text
+R_d - union(B_d)
+```
+
+instead of repeatedly applying every raw blocker. This is exact set algebra, not
+a visual approximation. The implementation builds the union by slicing the
+texture domain at all blocker `v` boundaries, merging covered `u` intervals on
+each slab, then subtracting those disjoint slabs from `R_d`.
+
+On a single front face, visible fragments may similarly be exact-unioned before
+render emission:
+
+```text
+render(A) + render(B) == render(A union B)
+```
+
+when `A` and `B` live on the same world face with the same texture-to-face map.
+This reduces `SpotRecord` count without changing texture assignment.
+
 The exact full-occupancy test must not be implemented by recomputing
 `FULL_FOOTPRINT - occupiedHistory` at every depth. The stable invariant is the
 recursive remaining certificate:
@@ -539,6 +817,24 @@ and dependency epochs.
 If the dependency set has not changed, reuse the previous projection result.
 This fits the existing event-driven architecture better than per-frame tracing.
 
+The cache should distinguish the geometry result from the appearance result:
+
+```text
+cached geometry:
+  spot texture ownership
+  world face mappings
+  dependencies
+  projection tree / depth snapshots
+
+recomputed appearance:
+  alpha
+  color
+  optional debug decoration
+```
+
+This lets frequent optical-power updates remain cheap when the beam envelope and
+world geometry are unchanged.
+
 ### 9.8 Stop when visual alpha is gone
 
 The current projection horizon is fixed by `MAX_PROJECTED_DEPTH`. A beam whose
@@ -561,9 +857,9 @@ any remaining texture. It must not replace the exact assignment step:
 visibleSide = sideCandidate intersect remaining
 ```
 
-An experimental boundary-based side candidate enumerator may be run in parallel
-with the stable side scan for validation. In that mode, the stable side scan
-continues to render. The boundary enumerator is only a candidate-source probe:
+A boundary-based side candidate enumerator is the stable side candidate source.
+In verbose validation mode it can still be compared against the old projectable
+tile face scan:
 
 ```text
 legacyCandidates = side faces that produced a stable sideWindow
@@ -573,7 +869,7 @@ extra = boundaryCandidates - legacyCandidates
 ```
 
 The first invariant is `missing = 0`. The boundary set is allowed to be a
-superset while it is still being tightened.
+superset only when later side-window filtering discards the extra candidates.
 
 If side shadows need improvement, prefer:
 
@@ -590,6 +886,65 @@ full side polygon clipping
 per-cell ray casts
 one render quad per texture cell
 ```
+
+### 9.10 Parallel projection jobs
+
+Parallelism is allowed only across a clean thread boundary. Minecraft world reads
+and mutable compiler state must stay on the main/server thread. Pure projection
+math may run on worker threads after the required facts have been snapshotted.
+
+The required sequence is:
+
+```text
+main/server thread:
+  collect immutable projection input
+  collect block/projectability/dependency snapshots needed by the job
+  assign source epoch and dependency epoch
+
+worker thread:
+  compute texture-domain geometry
+  compute remaining-region occlusion
+  build immutable spot records and dependency output
+
+main/server thread:
+  publish the result only if source epoch and dependency epoch still match
+  otherwise discard the stale worker result
+```
+
+The first parallelization unit should be one source output direction. Different
+source outputs are independent in the projection layer. A single source output's
+depth slices are not initially good parallel units because they are connected by
+the recurrence:
+
+```text
+remaining_{d+1} = remaining_d - union(blockers_d)
+```
+
+Depth parallelism would require a prefix-union or staged scan over blockers. That
+may become useful later, but it should not be the first implementation.
+
+The worker input must not contain live `Level` access. If block states, collision
+categories, lens-holder state, optical element flags, or air-like checks are
+needed, the main thread should convert them into compact immutable tile facts
+before dispatching the job. This keeps thread safety and mathematical ownership
+aligned: workers operate on a frozen cone, not on a changing world.
+
+Parallelization should also preserve deterministic publication. If two worker
+jobs finish out of order, the newer epoch wins and older results are discarded.
+Do not merge partial stale results into the live spot layer.
+
+The first useful diagnostics for this phase are:
+
+- source-output job count,
+- snapshot build time on the main thread,
+- worker projection time,
+- stale result count,
+- published result count,
+- geometry-cache hit count,
+- appearance-only update count.
+
+These counters should be separate from `client_spot_render`; render time is not
+the current bottleneck.
 
 ## 10. Change rules
 

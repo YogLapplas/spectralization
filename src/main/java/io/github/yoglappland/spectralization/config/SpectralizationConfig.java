@@ -13,6 +13,7 @@ public final class SpectralizationConfig {
     private static final ModConfigSpec.BooleanValue LASER_BLINDNESS;
     private static final ModConfigSpec.BooleanValue UI_DEBUG;
     private static final ModConfigSpec.BooleanValue UI_DEBUG_LABELS;
+    private static final ModConfigSpec.BooleanValue SPOT_COLOR_DEBUG;
     private static final ModConfigSpec.BooleanValue DIAGNOSTICS_EVENT_LOG;
     private static final ModConfigSpec.BooleanValue SCATTERING_FIELD_ENABLED;
     private static final ModConfigSpec.IntValue SCATTERING_FIELD_RADIUS;
@@ -60,6 +61,9 @@ public final class SpectralizationConfig {
         UI_DEBUG_LABELS = builder
                 .comment("Whether UI debug boxes render their component names and rectangles.")
                 .define("ui_debug_labels", true);
+        SPOT_COLOR_DEBUG = builder
+                .comment("Whether projected spot rendering adds color-composition debug overlays and summaries.")
+                .define("spot_color_debug", false);
         builder.pop();
 
         builder.push("diagnostics");
@@ -188,6 +192,15 @@ public final class SpectralizationConfig {
 
     public static void setUiDebugLabels(boolean enabled) {
         UI_DEBUG_LABELS.set(enabled);
+        SPEC.save();
+    }
+
+    public static boolean spotColorDebug() {
+        return SPOT_COLOR_DEBUG.get();
+    }
+
+    public static void setSpotColorDebug(boolean enabled) {
+        SPOT_COLOR_DEBUG.set(enabled);
         SPEC.save();
     }
 

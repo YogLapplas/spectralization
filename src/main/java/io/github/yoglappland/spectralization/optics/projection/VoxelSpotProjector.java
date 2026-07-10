@@ -127,24 +127,35 @@ public final class VoxelSpotProjector {
             BlockPos depthOrigin = sourcePos.relative(travelDirection, depth);
             SideScanTileBounds sideTileBounds = sideScanTileBounds(minTile, maxTile, maxUnitRadius, remainingRayWindows);
             DepthTileCache depthTileCache = new DepthTileCache(depthOrigin, uDirection, vDirection, sideTileBounds);
+            List<DepthTile> sideProjectableTiles = new ArrayList<>();
+            int scanMinU = sideTileBounds.empty() ? minTile : Math.min(minTile, sideTileBounds.minU());
+            int scanMaxU = sideTileBounds.empty() ? maxTile : Math.max(maxTile, sideTileBounds.maxU());
+            int scanMinV = sideTileBounds.empty() ? minTile : Math.min(minTile, sideTileBounds.minV());
+            int scanMaxV = sideTileBounds.empty() ? maxTile : Math.max(maxTile, sideTileBounds.maxV());
             stats.addTileRangeNanos(rangeStartNanos);
 
-            for (int dv = minTile; dv <= maxTile; dv++) {
-                for (int du = minTile; du <= maxTile; du++) {
+            for (int dv = scanMinV; dv <= scanMaxV; dv++) {
+                for (int du = scanMinU; du <= scanMaxU; du++) {
                     stats.scannedTiles++;
                     long rectStartNanos = stats.startTimer();
-                    ProjectionRect rect = projectionRect(radius, du, dv);
-                    boolean candidateTile = rect != null || tileIntersectsRadius(maxUnitRadius, du, dv);
+                    boolean inFrontBounds = du >= minTile && du <= maxTile && dv >= minTile && dv <= maxTile;
+                    boolean inSideBounds = sideTileBounds.contains(du, dv);
+                    ProjectionRect rect = inFrontBounds ? projectionRect(radius, du, dv) : null;
+                    boolean frontCandidateTile = inFrontBounds && (rect != null || tileIntersectsRadius(maxUnitRadius, du, dv));
                     stats.addProjectionRectNanos(rectStartNanos);
+
+                    if (!frontCandidateTile && !inSideBounds) {
+                        continue;
+                    }
+
                     BlockPos targetPos = depthOrigin
                             .relative(uDirection, du)
                             .relative(vDirection, dv);
 
-                    if (!candidateTile) {
-                        continue;
+                    if (frontCandidateTile) {
+                        stats.candidateTiles++;
                     }
 
-                    stats.candidateTiles++;
                     dependencies.add(targetPos.asLong());
 
                     long blockLookupStartNanos = stats.startTimer();
@@ -157,18 +168,38 @@ public final class VoxelSpotProjector {
                         continue;
                     }
 
-                    stats.loadedTiles++;
+                    if (frontCandidateTile) {
+                        stats.loadedTiles++;
+                    }
 
                     if (OpticalMaterialProfiles.isAirLike(targetState)) {
-                        stats.airTiles++;
+                        if (frontCandidateTile) {
+                            stats.airTiles++;
+                        }
                         depthTileCache.put(new DepthTile(du, dv, targetPos, true, targetState, true, false));
+                        if (inSideBounds) {
+                            stats.sideLoadedTiles++;
+                        }
                         continue;
                     }
 
                     long projectableStartNanos = stats.startTimer();
                     boolean projectableSurface = isProjectableSurface(level, targetPos, targetState);
                     stats.addProjectableCheckNanos(projectableStartNanos);
-                    depthTileCache.put(new DepthTile(du, dv, targetPos, true, targetState, false, projectableSurface));
+                    DepthTile depthTile = new DepthTile(du, dv, targetPos, true, targetState, false, projectableSurface);
+                    depthTileCache.put(depthTile);
+
+                    if (inSideBounds) {
+                        stats.sideLoadedTiles++;
+                        if (projectableSurface) {
+                            stats.sideProjectableTiles++;
+                            sideProjectableTiles.add(depthTile);
+                        }
+                    }
+
+                    if (!frontCandidateTile) {
+                        continue;
+                    }
 
                     if (!projectableSurface) {
                         stats.nonProjectableTiles++;
@@ -183,6 +214,7 @@ public final class VoxelSpotProjector {
                             dv,
                             targetPos,
                             depth,
+                            remainingRayWindows,
                             stats
                     );
                     stats.addPlaneWindowNanos(planeStartNanos);
@@ -216,6 +248,7 @@ public final class VoxelSpotProjector {
                     }
 
                     List<ProjectionRect> visibleRects = visibleSubRects(radius, du, dv, rect, remainingRayWindows, stats, false);
+                    visibleRects = mergeProjectionRects(radius, du, dv, visibleRects, stats);
 
                     if (collectAllocations) {
                         List<OcclusionWindow> intersectingOccupied = intersectingOcclusionWindows(rect.canonicalRect(), occupiedDebugWindows);
@@ -294,6 +327,7 @@ public final class VoxelSpotProjector {
                         maxUnitRadius,
                         sideTileBounds,
                         depthTileCache,
+                        sideProjectableTiles,
                         targetTemplate,
                         beamPower,
                         coherentBeamPower,
@@ -353,6 +387,7 @@ public final class VoxelSpotProjector {
             double maxUnitRadius,
             SideScanTileBounds tileBounds,
             DepthTileCache depthTileCache,
+            List<DepthTile> sideProjectableTiles,
             BeamPacket targetTemplate,
             double beamPower,
             double coherentBeamPower,
@@ -366,75 +401,68 @@ public final class VoxelSpotProjector {
             List<SpotRecord> fragments
     ) {
         stats.sideRangeCulledTiles += tileBounds.culledTiles();
+        stats.sideTilesScanned += tileBounds.tileCount();
 
         if (tileBounds.empty()) {
             return;
         }
 
-        Set<SideCandidateKey> legacySideCandidates = stats.sideCandidateValidationEnabled()
-                ? new HashSet<>()
+        long candidateStartNanos = stats.startTimer();
+        List<SideFaceCandidate> sideCandidates = collectBoundarySideCandidates(
+                level,
+                depthOrigin,
+                uDirection,
+                vDirection,
+                tileBounds,
+                depthTileCache,
+                targetTemplate.envelope(),
+                stats,
+                dependencies
+        );
+        stats.addSideCandidateNanos(candidateStartNanos);
+        stats.recordSideBoundaryCandidateCount(sideCandidates.size());
+
+        Set<SideCandidateKey> boundarySideCandidates = stats.sideCandidateValidationEnabled()
+                ? sideCandidateKeys(sideCandidates)
                 : null;
 
-        for (int tileV = tileBounds.minV(); tileV <= tileBounds.maxV(); tileV++) {
-            for (int tileU = tileBounds.minU(); tileU <= tileBounds.maxU(); tileU++) {
-                stats.sideTilesScanned++;
-                DepthTile targetTile = loadDepthTile(level, depthTileCache, tileU, tileV, stats);
-                dependencies.add(targetTile.pos().asLong());
-
-                if (!targetTile.loaded()) {
-                    continue;
-                }
-
-                stats.sideLoadedTiles++;
-
-                if (!targetTile.projectable()) {
-                    continue;
-                }
-
-                stats.sideProjectableTiles++;
-                addSideQuads(
-                        level,
-                        targetTile.pos(),
-                        targetTile.state(),
-                        travelDirection,
-                        uDirection,
-                        vDirection,
-                        tileU,
-                        tileV,
-                        targetTemplate,
-                        beamPower,
-                        coherentBeamPower,
-                        visualDistanceFactor,
-                        remainingRayWindows,
-                        sameDepthFrontWindows,
-                        collectAllocations,
-                        stats,
-                        dependencies,
-                        allocations,
-                        fragments,
-                        legacySideCandidates
-                );
-            }
-        }
-
-        if (legacySideCandidates != null) {
-            long validationStartNanos = stats.startTimer();
-            Set<SideCandidateKey> boundarySideCandidates = collectBoundarySideCandidates(
+        long emitStartNanos = stats.startTimer();
+        for (SideFaceCandidate candidate : sideCandidates) {
+            addSideCandidateQuads(
                     level,
-                    depthOrigin,
+                    candidate,
+                    travelDirection,
                     uDirection,
                     vDirection,
-                    tileBounds,
-                    depthTileCache,
-                    targetTemplate.envelope(),
-                    stats
+                    targetTemplate,
+                    beamPower,
+                    coherentBeamPower,
+                    visualDistanceFactor,
+                    remainingRayWindows,
+                    sameDepthFrontWindows,
+                    collectAllocations,
+                    stats,
+                    allocations,
+                    fragments
+            );
+        }
+        stats.addSideEmitNanos(emitStartNanos);
+
+        if (boundarySideCandidates != null) {
+            long validationStartNanos = stats.startTimer();
+            Set<SideCandidateKey> legacySideCandidates = collectLegacySideCandidates(
+                    level,
+                    sideProjectableTiles,
+                    uDirection,
+                    vDirection,
+                    targetTemplate.envelope()
             );
             stats.addSideBoundaryVerifyNanos(validationStartNanos);
             stats.recordSideCandidateComparison(legacySideCandidates, boundarySideCandidates);
         }
     }
 
-    private static Set<SideCandidateKey> collectBoundarySideCandidates(
+    private static List<SideFaceCandidate> collectBoundarySideCandidates(
             Level level,
             BlockPos depthOrigin,
             Direction uDirection,
@@ -442,9 +470,10 @@ public final class VoxelSpotProjector {
             SideScanTileBounds tileBounds,
             DepthTileCache depthTileCache,
             BeamEnvelope envelope,
-            ProjectionStatsBuilder stats
+            ProjectionStatsBuilder stats,
+            LongSet dependencies
     ) {
-        Set<SideCandidateKey> candidates = new HashSet<>();
+        List<SideFaceCandidate> candidates = new ArrayList<>();
 
         for (int boundaryU = tileBounds.minU(); boundaryU <= tileBounds.maxU() + 1; boundaryU++) {
             double boundaryWorldU = boundaryU - 0.5D;
@@ -465,6 +494,7 @@ public final class VoxelSpotProjector {
                             depthTileCache,
                             envelope,
                             stats,
+                            dependencies,
                             candidates
                     );
                 }
@@ -484,6 +514,7 @@ public final class VoxelSpotProjector {
                             depthTileCache,
                             envelope,
                             stats,
+                            dependencies,
                             candidates
                     );
                 }
@@ -509,6 +540,7 @@ public final class VoxelSpotProjector {
                             depthTileCache,
                             envelope,
                             stats,
+                            dependencies,
                             candidates
                     );
                 }
@@ -528,6 +560,7 @@ public final class VoxelSpotProjector {
                             depthTileCache,
                             envelope,
                             stats,
+                            dependencies,
                             candidates
                     );
                 }
@@ -550,7 +583,8 @@ public final class VoxelSpotProjector {
             DepthTileCache depthTileCache,
             BeamEnvelope envelope,
             ProjectionStatsBuilder stats,
-            Set<SideCandidateKey> candidates
+            LongSet dependencies,
+            List<SideFaceCandidate> candidates
     ) {
         stats.sideBoundaryFaceTests++;
         DepthTile targetTile = loadDepthTile(level, depthTileCache, tileU, tileV, stats);
@@ -564,7 +598,8 @@ public final class VoxelSpotProjector {
         }
 
         stats.sideBoundaryProjectableFaces++;
-        if (!isSideOpenForValidation(level, targetTile.pos(), sideFace)) {
+        int neighborU = fixedULocal >= 0.5D ? tileU + 1 : tileU - 1;
+        if (!isBoundarySideOpen(level, depthTileCache, targetTile, sideFace, neighborU, tileV, stats, dependencies)) {
             return;
         }
 
@@ -577,7 +612,15 @@ public final class VoxelSpotProjector {
         }
 
         stats.sideBoundaryTravelFaces++;
-        recordSideCandidate(candidates, targetTile.pos(), sideFace);
+        candidates.add(new SideFaceCandidate(
+                SideAxis.U,
+                targetTile,
+                sideFace,
+                boundaryWorldU,
+                fixedULocal,
+                tileV,
+                List.copyOf(travels)
+        ));
     }
 
     private static void maybeRecordBoundaryVSideCandidate(
@@ -593,7 +636,8 @@ public final class VoxelSpotProjector {
             DepthTileCache depthTileCache,
             BeamEnvelope envelope,
             ProjectionStatsBuilder stats,
-            Set<SideCandidateKey> candidates
+            LongSet dependencies,
+            List<SideFaceCandidate> candidates
     ) {
         stats.sideBoundaryFaceTests++;
         DepthTile targetTile = loadDepthTile(level, depthTileCache, tileU, tileV, stats);
@@ -607,7 +651,8 @@ public final class VoxelSpotProjector {
         }
 
         stats.sideBoundaryProjectableFaces++;
-        if (!isSideOpenForValidation(level, targetTile.pos(), sideFace)) {
+        int neighborV = fixedVLocal >= 0.5D ? tileV + 1 : tileV - 1;
+        if (!isBoundarySideOpen(level, depthTileCache, targetTile, sideFace, tileU, neighborV, stats, dependencies)) {
             return;
         }
 
@@ -620,7 +665,306 @@ public final class VoxelSpotProjector {
         }
 
         stats.sideBoundaryTravelFaces++;
-        recordSideCandidate(candidates, targetTile.pos(), sideFace);
+        candidates.add(new SideFaceCandidate(
+                SideAxis.V,
+                targetTile,
+                sideFace,
+                boundaryWorldV,
+                fixedVLocal,
+                tileU,
+                List.copyOf(travels)
+        ));
+    }
+
+    private static boolean isBoundarySideOpen(
+            Level level,
+            DepthTileCache depthTileCache,
+            DepthTile targetTile,
+            Direction sideFace,
+            int neighborU,
+            int neighborV,
+            ProjectionStatsBuilder stats,
+            LongSet dependencies
+    ) {
+        stats.sideOpenChecks++;
+        BlockPos neighborPos = targetTile.pos().relative(sideFace);
+        dependencies.add(neighborPos.asLong());
+        DepthTile neighborTile = loadDepthTile(level, depthTileCache, neighborU, neighborV, stats);
+
+        if (!neighborTile.loaded()) {
+            return false;
+        }
+
+        boolean open = neighborTile.airLike();
+        if (open) {
+            stats.sideOpenFaces++;
+        }
+        return open;
+    }
+
+    private static Set<SideCandidateKey> sideCandidateKeys(List<SideFaceCandidate> candidates) {
+        Set<SideCandidateKey> keys = new HashSet<>();
+
+        for (SideFaceCandidate candidate : candidates) {
+            recordSideCandidate(keys, candidate.tile().pos(), candidate.sideFace());
+        }
+
+        return keys;
+    }
+
+    private static Set<SideCandidateKey> collectLegacySideCandidates(
+            Level level,
+            List<DepthTile> sideProjectableTiles,
+            Direction uDirection,
+            Direction vDirection,
+            BeamEnvelope envelope
+    ) {
+        Set<SideCandidateKey> candidates = new HashSet<>();
+
+        for (DepthTile targetTile : sideProjectableTiles) {
+            recordLegacyUSideCandidate(
+                    level,
+                    targetTile.pos(),
+                    uDirection.getOpposite(),
+                    envelope,
+                    targetTile.tileU() - 0.5D,
+                    0.0D,
+                    targetTile.tileV(),
+                    candidates
+            );
+            recordLegacyUSideCandidate(
+                    level,
+                    targetTile.pos(),
+                    uDirection,
+                    envelope,
+                    targetTile.tileU() + 0.5D,
+                    1.0D,
+                    targetTile.tileV(),
+                    candidates
+            );
+            recordLegacyVSideCandidate(
+                    level,
+                    targetTile.pos(),
+                    vDirection.getOpposite(),
+                    envelope,
+                    targetTile.tileV() - 0.5D,
+                    0.0D,
+                    targetTile.tileU(),
+                    candidates
+            );
+            recordLegacyVSideCandidate(
+                    level,
+                    targetTile.pos(),
+                    vDirection,
+                    envelope,
+                    targetTile.tileV() + 0.5D,
+                    1.0D,
+                    targetTile.tileU(),
+                    candidates
+            );
+        }
+
+        return candidates;
+    }
+
+    private static void recordLegacyUSideCandidate(
+            Level level,
+            BlockPos targetPos,
+            Direction sideFace,
+            BeamEnvelope envelope,
+            double boundaryWorldU,
+            double fixedULocal,
+            int tileV,
+            Set<SideCandidateKey> candidates
+    ) {
+        if (!isSideOpenForValidation(level, targetPos, sideFace)) {
+            return;
+        }
+
+        if (uSideHasWindow(envelope, boundaryWorldU, fixedULocal, tileV)) {
+            recordSideCandidate(candidates, targetPos, sideFace);
+        }
+    }
+
+    private static void recordLegacyVSideCandidate(
+            Level level,
+            BlockPos targetPos,
+            Direction sideFace,
+            BeamEnvelope envelope,
+            double boundaryWorldV,
+            double fixedVLocal,
+            int tileU,
+            Set<SideCandidateKey> candidates
+    ) {
+        if (!isSideOpenForValidation(level, targetPos, sideFace)) {
+            return;
+        }
+
+        if (vSideHasWindow(envelope, boundaryWorldV, fixedVLocal, tileU)) {
+            recordSideCandidate(candidates, targetPos, sideFace);
+        }
+    }
+
+    private static boolean uSideHasWindow(
+            BeamEnvelope envelope,
+            double boundaryWorldU,
+            double fixedULocal,
+            int tileV
+    ) {
+        for (TravelInterval visibleTravel : uSideTravelIntervals(envelope, boundaryWorldU, tileV)) {
+            if (uSideIntervalHasWindow(envelope, visibleTravel, boundaryWorldU, fixedULocal, tileV)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static boolean vSideHasWindow(
+            BeamEnvelope envelope,
+            double boundaryWorldV,
+            double fixedVLocal,
+            int tileU
+    ) {
+        for (TravelInterval visibleTravel : vSideTravelIntervals(envelope, boundaryWorldV, tileU)) {
+            if (vSideIntervalHasWindow(envelope, visibleTravel, boundaryWorldV, fixedVLocal, tileU)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static boolean uSideIntervalHasWindow(
+            BeamEnvelope envelope,
+            TravelInterval visibleTravel,
+            double boundaryWorldU,
+            double fixedULocal,
+            int tileV
+    ) {
+        for (TravelInterval chartTravel : splitSideTravelAtCrossBoundaries(
+                envelope,
+                visibleTravel,
+                tileV - 0.5D,
+                tileV + 0.5D
+        )) {
+            int travelSteps = sideChartTravelSubdivisionCount(envelope, chartTravel.min(), chartTravel.max());
+
+            for (int travelIndex = 0; travelIndex < travelSteps; travelIndex++) {
+                double rawTravel0 = lerp(chartTravel.min(), chartTravel.max(), travelIndex / (double) travelSteps);
+                double rawTravel1 = lerp(chartTravel.min(), chartTravel.max(), (travelIndex + 1) / (double) travelSteps);
+                double crossTravel0 = nudgeUSideTravelEndpoint(envelope, rawTravel0, rawTravel1, boundaryWorldU, tileV);
+                double crossTravel1 = nudgeUSideTravelEndpoint(envelope, rawTravel1, rawTravel0, boundaryWorldU, tileV);
+
+                if (sideWindowExistsForUSide(envelope, crossTravel0, crossTravel1, boundaryWorldU, fixedULocal, tileV)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static boolean vSideIntervalHasWindow(
+            BeamEnvelope envelope,
+            TravelInterval visibleTravel,
+            double boundaryWorldV,
+            double fixedVLocal,
+            int tileU
+    ) {
+        for (TravelInterval chartTravel : splitSideTravelAtCrossBoundaries(
+                envelope,
+                visibleTravel,
+                tileU - 0.5D,
+                tileU + 0.5D
+        )) {
+            int travelSteps = sideChartTravelSubdivisionCount(envelope, chartTravel.min(), chartTravel.max());
+
+            for (int travelIndex = 0; travelIndex < travelSteps; travelIndex++) {
+                double rawTravel0 = lerp(chartTravel.min(), chartTravel.max(), travelIndex / (double) travelSteps);
+                double rawTravel1 = lerp(chartTravel.min(), chartTravel.max(), (travelIndex + 1) / (double) travelSteps);
+                double crossTravel0 = nudgeVSideTravelEndpoint(envelope, rawTravel0, rawTravel1, boundaryWorldV, tileU);
+                double crossTravel1 = nudgeVSideTravelEndpoint(envelope, rawTravel1, rawTravel0, boundaryWorldV, tileU);
+
+                if (sideWindowExistsForVSide(envelope, crossTravel0, crossTravel1, boundaryWorldV, fixedVLocal, tileU)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static boolean sideWindowExistsForUSide(
+            BeamEnvelope envelope,
+            double crossTravel0,
+            double crossTravel1,
+            double boundaryWorldU,
+            double fixedULocal,
+            int tileV
+    ) {
+        if (crossTravel1 - crossTravel0 <= EDGE_TOUCH_EPSILON) {
+            return false;
+        }
+
+        double radius0 = radiusAt(envelope, crossTravel0);
+        double radius1 = radiusAt(envelope, crossTravel1);
+
+        if (!isEntranceSide(boundaryWorldU, fixedULocal, radius0, radius1)) {
+            return false;
+        }
+
+        SideCrossSection cross0 = uSideCrossSection(radius0, boundaryWorldU, tileV);
+        SideCrossSection cross1 = uSideCrossSection(radius1, boundaryWorldU, tileV);
+
+        return cross0 != null
+                && cross1 != null
+                && sideCanonicalWindow(
+                cross0.axisCanonical(),
+                cross0.axisCanonical(),
+                cross1.axisCanonical(),
+                cross1.axisCanonical(),
+                cross0.minCanonical(),
+                cross0.maxCanonical(),
+                cross1.minCanonical(),
+                cross1.maxCanonical()
+        ) != null;
+    }
+
+    private static boolean sideWindowExistsForVSide(
+            BeamEnvelope envelope,
+            double crossTravel0,
+            double crossTravel1,
+            double boundaryWorldV,
+            double fixedVLocal,
+            int tileU
+    ) {
+        if (crossTravel1 - crossTravel0 <= EDGE_TOUCH_EPSILON) {
+            return false;
+        }
+
+        double radius0 = radiusAt(envelope, crossTravel0);
+        double radius1 = radiusAt(envelope, crossTravel1);
+
+        if (!isEntranceSide(boundaryWorldV, fixedVLocal, radius0, radius1)) {
+            return false;
+        }
+
+        SideCrossSection cross0 = vSideCrossSection(radius0, boundaryWorldV, tileU);
+        SideCrossSection cross1 = vSideCrossSection(radius1, boundaryWorldV, tileU);
+
+        return cross0 != null
+                && cross1 != null
+                && sideCanonicalWindow(
+                cross0.minCanonical(),
+                cross0.maxCanonical(),
+                cross1.minCanonical(),
+                cross1.maxCanonical(),
+                cross0.axisCanonical(),
+                cross0.axisCanonical(),
+                cross1.axisCanonical(),
+                cross1.axisCanonical()
+        ) != null;
     }
 
     private static void recordSideCandidate(Set<SideCandidateKey> candidates, BlockPos pos, Direction face) {
@@ -795,6 +1139,82 @@ public final class VoxelSpotProjector {
         );
     }
 
+    private static void addSideCandidateQuads(
+            Level level,
+            SideFaceCandidate candidate,
+            Direction travelDirection,
+            Direction uDirection,
+            Direction vDirection,
+            BeamPacket targetTemplate,
+            double beamPower,
+            double coherentBeamPower,
+            double visualDistanceFactor,
+            CanonicalRegion remainingRayWindows,
+            List<CanonicalRect> sameDepthFrontWindows,
+            boolean collectAllocations,
+            ProjectionStatsBuilder stats,
+            List<SpotProjectionAllocation> allocations,
+            List<SpotRecord> fragments
+    ) {
+        stats.sideTravelIntervals += candidate.visibleTravels().size();
+
+        if (candidate.axis() == SideAxis.U) {
+            addUSideVolumeQuads(
+                    level,
+                    candidate.tile().pos(),
+                    candidate.tile().state(),
+                    candidate.sideFace(),
+                    travelDirection,
+                    uDirection,
+                    vDirection,
+                    0.0D,
+                    1.0D,
+                    candidate.fixedLocal(),
+                    candidate.crossTile(),
+                    candidate.boundaryWorld(),
+                    candidate.visibleTravels(),
+                    targetTemplate,
+                    beamPower,
+                    coherentBeamPower,
+                    visualDistanceFactor,
+                    remainingRayWindows,
+                    sameDepthFrontWindows,
+                    collectAllocations,
+                    stats,
+                    allocations,
+                    fragments,
+                    null
+            );
+        } else {
+            addVSideVolumeQuads(
+                    level,
+                    candidate.tile().pos(),
+                    candidate.tile().state(),
+                    candidate.sideFace(),
+                    travelDirection,
+                    uDirection,
+                    vDirection,
+                    0.0D,
+                    1.0D,
+                    candidate.fixedLocal(),
+                    candidate.crossTile(),
+                    candidate.boundaryWorld(),
+                    candidate.visibleTravels(),
+                    targetTemplate,
+                    beamPower,
+                    coherentBeamPower,
+                    visualDistanceFactor,
+                    remainingRayWindows,
+                    sameDepthFrontWindows,
+                    collectAllocations,
+                    stats,
+                    allocations,
+                    fragments,
+                    null
+            );
+        }
+    }
+
     private static boolean isProjectableSurface(Level level, BlockPos pos, BlockState state) {
         if (OpticalMaterialProfiles.isAirLike(state)) {
             return false;
@@ -935,6 +1355,8 @@ public final class VoxelSpotProjector {
             return;
         }
 
+        List<TravelInterval> visibleTravels = uSideTravelIntervals(targetTemplate.envelope(), boundaryWorldU, tileV);
+        stats.sideTravelIntervals += visibleTravels.size();
         addUSideVolumeQuads(
                 level,
                 targetPos,
@@ -948,6 +1370,7 @@ public final class VoxelSpotProjector {
                 fixedULocal,
                 tileV,
                 boundaryWorldU,
+                visibleTravels,
                 targetTemplate,
                 beamPower,
                 coherentBeamPower,
@@ -992,6 +1415,8 @@ public final class VoxelSpotProjector {
             return;
         }
 
+        List<TravelInterval> visibleTravels = vSideTravelIntervals(targetTemplate.envelope(), boundaryWorldV, tileU);
+        stats.sideTravelIntervals += visibleTravels.size();
         addVSideVolumeQuads(
                 level,
                 targetPos,
@@ -1005,6 +1430,7 @@ public final class VoxelSpotProjector {
                 fixedVLocal,
                 tileU,
                 boundaryWorldV,
+                visibleTravels,
                 targetTemplate,
                 beamPower,
                 coherentBeamPower,
@@ -1032,6 +1458,7 @@ public final class VoxelSpotProjector {
             double fixedULocal,
             int tileV,
             double boundaryWorldU,
+            List<TravelInterval> visibleTravels,
             BeamPacket targetTemplate,
             double beamPower,
             double coherentBeamPower,
@@ -1044,9 +1471,6 @@ public final class VoxelSpotProjector {
             List<SpotRecord> fragments,
             Set<SideCandidateKey> legacySideCandidates
     ) {
-        List<TravelInterval> visibleTravels = uSideTravelIntervals(targetTemplate.envelope(), boundaryWorldU, tileV);
-        stats.sideTravelIntervals += visibleTravels.size();
-
         if (visibleTravels.isEmpty()) {
             return;
         }
@@ -1054,23 +1478,29 @@ public final class VoxelSpotProjector {
         boolean addedDebugCenter = false;
 
         for (TravelInterval visibleTravel : visibleTravels) {
+            long travelSplitStartNanos = stats.startTimer();
             List<TravelInterval> chartTravels = splitSideTravelAtCrossBoundaries(
                     targetTemplate.envelope(),
                     visibleTravel,
                     tileV - 0.5D,
                     tileV + 0.5D
             );
+            stats.addSideTravelSplitNanos(travelSplitStartNanos);
 
             for (TravelInterval chartTravel : chartTravels) {
+                long travelSubdivisionStartNanos = stats.startTimer();
                 int travelSteps = sideChartTravelSubdivisionCount(targetTemplate.envelope(), chartTravel.min(), chartTravel.max());
+                stats.addSideTravelSplitNanos(travelSubdivisionStartNanos);
 
                 for (int travelIndex = 0; travelIndex < travelSteps; travelIndex++) {
+                    long sideWindowStartNanos = stats.startTimer();
                     double rawTravel0 = lerp(chartTravel.min(), chartTravel.max(), travelIndex / (double) travelSteps);
                     double rawTravel1 = lerp(chartTravel.min(), chartTravel.max(), (travelIndex + 1) / (double) travelSteps);
                     double crossTravel0 = nudgeUSideTravelEndpoint(targetTemplate.envelope(), rawTravel0, rawTravel1, boundaryWorldU, tileV);
                     double crossTravel1 = nudgeUSideTravelEndpoint(targetTemplate.envelope(), rawTravel1, rawTravel0, boundaryWorldU, tileV);
 
                     if (crossTravel1 - crossTravel0 <= EDGE_TOUCH_EPSILON) {
+                        stats.addSideWindowNanos(sideWindowStartNanos);
                         continue;
                     }
 
@@ -1080,6 +1510,7 @@ public final class VoxelSpotProjector {
                     double radius1 = envelope1.radius();
 
                     if (!isEntranceSide(boundaryWorldU, fixedULocal, radius0, radius1)) {
+                        stats.addSideWindowNanos(sideWindowStartNanos);
                         continue;
                     }
 
@@ -1087,6 +1518,7 @@ public final class VoxelSpotProjector {
                     SideCrossSection cross1 = uSideCrossSection(radius1, boundaryWorldU, tileV);
 
                     if (cross0 == null || cross1 == null) {
+                        stats.addSideWindowNanos(sideWindowStartNanos);
                         continue;
                     }
 
@@ -1102,11 +1534,14 @@ public final class VoxelSpotProjector {
                     );
 
                     if (sideWindow == null) {
+                        stats.addSideWindowNanos(sideWindowStartNanos);
                         continue;
                     }
+                    stats.addSideWindowNanos(sideWindowStartNanos);
 
                     recordSideCandidate(legacySideCandidates, targetPos, sideFace);
                     stats.sideWindowCandidates++;
+                    long sideRemainingStartNanos = stats.startTimer();
                     List<CanonicalRect> visibleSideWindows = visibleRayWindows(
                             sideWindow,
                             remainingRayWindows,
@@ -1114,6 +1549,7 @@ public final class VoxelSpotProjector {
                             stats,
                             true
                     );
+                    stats.addSideRemainingIntersectNanos(sideRemainingStartNanos);
                     double candidateArea = canonicalArea(sideWindow);
 
                     if (visibleSideWindows.isEmpty()) {
@@ -1165,6 +1601,7 @@ public final class VoxelSpotProjector {
                             continue;
                         }
 
+                        long sidePatchStartNanos = stats.startTimer();
                         PatchEmissionReport emission = addUSideChartSpot(
                                 level,
                                 targetPos,
@@ -1184,8 +1621,10 @@ public final class VoxelSpotProjector {
                                 sideWindow,
                                 visibleSideWindow,
                                 collectAllocations,
+                                stats,
                                 fragments
                         );
+                        stats.addSidePatchEmitNanos(sidePatchStartNanos);
 
                         if (collectAllocations) {
                             allocations.add(sideAllocation(
@@ -1221,6 +1660,7 @@ public final class VoxelSpotProjector {
             double fixedVLocal,
             int tileU,
             double boundaryWorldV,
+            List<TravelInterval> visibleTravels,
             BeamPacket targetTemplate,
             double beamPower,
             double coherentBeamPower,
@@ -1233,9 +1673,6 @@ public final class VoxelSpotProjector {
             List<SpotRecord> fragments,
             Set<SideCandidateKey> legacySideCandidates
     ) {
-        List<TravelInterval> visibleTravels = vSideTravelIntervals(targetTemplate.envelope(), boundaryWorldV, tileU);
-        stats.sideTravelIntervals += visibleTravels.size();
-
         if (visibleTravels.isEmpty()) {
             return;
         }
@@ -1243,23 +1680,29 @@ public final class VoxelSpotProjector {
         boolean addedDebugCenter = false;
 
         for (TravelInterval visibleTravel : visibleTravels) {
+            long travelSplitStartNanos = stats.startTimer();
             List<TravelInterval> chartTravels = splitSideTravelAtCrossBoundaries(
                     targetTemplate.envelope(),
                     visibleTravel,
                     tileU - 0.5D,
                     tileU + 0.5D
             );
+            stats.addSideTravelSplitNanos(travelSplitStartNanos);
 
             for (TravelInterval chartTravel : chartTravels) {
+                long travelSubdivisionStartNanos = stats.startTimer();
                 int travelSteps = sideChartTravelSubdivisionCount(targetTemplate.envelope(), chartTravel.min(), chartTravel.max());
+                stats.addSideTravelSplitNanos(travelSubdivisionStartNanos);
 
                 for (int travelIndex = 0; travelIndex < travelSteps; travelIndex++) {
+                    long sideWindowStartNanos = stats.startTimer();
                     double rawTravel0 = lerp(chartTravel.min(), chartTravel.max(), travelIndex / (double) travelSteps);
                     double rawTravel1 = lerp(chartTravel.min(), chartTravel.max(), (travelIndex + 1) / (double) travelSteps);
                     double crossTravel0 = nudgeVSideTravelEndpoint(targetTemplate.envelope(), rawTravel0, rawTravel1, boundaryWorldV, tileU);
                     double crossTravel1 = nudgeVSideTravelEndpoint(targetTemplate.envelope(), rawTravel1, rawTravel0, boundaryWorldV, tileU);
 
                     if (crossTravel1 - crossTravel0 <= EDGE_TOUCH_EPSILON) {
+                        stats.addSideWindowNanos(sideWindowStartNanos);
                         continue;
                     }
 
@@ -1269,6 +1712,7 @@ public final class VoxelSpotProjector {
                     double radius1 = envelope1.radius();
 
                     if (!isEntranceSide(boundaryWorldV, fixedVLocal, radius0, radius1)) {
+                        stats.addSideWindowNanos(sideWindowStartNanos);
                         continue;
                     }
 
@@ -1276,6 +1720,7 @@ public final class VoxelSpotProjector {
                     SideCrossSection cross1 = vSideCrossSection(radius1, boundaryWorldV, tileU);
 
                     if (cross0 == null || cross1 == null) {
+                        stats.addSideWindowNanos(sideWindowStartNanos);
                         continue;
                     }
 
@@ -1291,11 +1736,14 @@ public final class VoxelSpotProjector {
                     );
 
                     if (sideWindow == null) {
+                        stats.addSideWindowNanos(sideWindowStartNanos);
                         continue;
                     }
+                    stats.addSideWindowNanos(sideWindowStartNanos);
 
                     recordSideCandidate(legacySideCandidates, targetPos, sideFace);
                     stats.sideWindowCandidates++;
+                    long sideRemainingStartNanos = stats.startTimer();
                     List<CanonicalRect> visibleSideWindows = visibleRayWindows(
                             sideWindow,
                             remainingRayWindows,
@@ -1303,6 +1751,7 @@ public final class VoxelSpotProjector {
                             stats,
                             true
                     );
+                    stats.addSideRemainingIntersectNanos(sideRemainingStartNanos);
                     double candidateArea = canonicalArea(sideWindow);
 
                     if (visibleSideWindows.isEmpty()) {
@@ -1354,6 +1803,7 @@ public final class VoxelSpotProjector {
                             continue;
                         }
 
+                        long sidePatchStartNanos = stats.startTimer();
                         PatchEmissionReport emission = addVSideChartSpot(
                                 level,
                                 targetPos,
@@ -1373,8 +1823,10 @@ public final class VoxelSpotProjector {
                                 sideWindow,
                                 visibleSideWindow,
                                 collectAllocations,
+                                stats,
                                 fragments
                         );
+                        stats.addSidePatchEmitNanos(sidePatchStartNanos);
 
                         if (collectAllocations) {
                             allocations.add(sideAllocation(
@@ -1853,10 +2305,16 @@ public final class VoxelSpotProjector {
             CanonicalRect sideWindow,
             CanonicalRect visibleWindow,
             boolean collectDetail,
+            ProjectionStatsBuilder stats,
             List<SpotRecord> fragments
     ) {
         PatchEmission result = PatchEmission.PATCH_NULL;
         int emittedQuads = 0;
+
+        if (wouldUseFullTravelUSidePatch(cross0, cross1, visibleWindow)) {
+            stats.recordSideFastPathSkipped();
+        }
+
         List<Patch> patches = clippedUSidePatches(
                 sideFace,
                 travelDirection,
@@ -1919,10 +2377,16 @@ public final class VoxelSpotProjector {
             CanonicalRect sideWindow,
             CanonicalRect visibleWindow,
             boolean collectDetail,
+            ProjectionStatsBuilder stats,
             List<SpotRecord> fragments
     ) {
         PatchEmission result = PatchEmission.PATCH_NULL;
         int emittedQuads = 0;
+
+        if (wouldUseFullTravelVSidePatch(cross0, cross1, visibleWindow)) {
+            stats.recordSideFastPathSkipped();
+        }
+
         List<Patch> patches = clippedVSidePatches(
                 sideFace,
                 travelDirection,
@@ -2404,6 +2868,48 @@ public final class VoxelSpotProjector {
         );
 
         return patches.isEmpty() ? null : patches.get(0);
+    }
+
+    private static boolean wouldUseFullTravelUSidePatch(
+            SideCrossSection cross0,
+            SideCrossSection cross1,
+            CanonicalRect visibleWindow
+    ) {
+        if (!coversFullSideTravelAxis(visibleWindow.minU(), visibleWindow.maxU(), cross0.axisCanonical(), cross1.axisCanonical())) {
+            return false;
+        }
+
+        CrossClip clip0 = clippedCrossSectionAt(cross0, cross1, 0.0D, visibleWindow.minV(), visibleWindow.maxV());
+        CrossClip clip1 = clippedCrossSectionAt(cross0, cross1, 1.0D, visibleWindow.minV(), visibleWindow.maxV());
+
+        return clip0 != null && clip1 != null;
+    }
+
+    private static boolean wouldUseFullTravelVSidePatch(
+            SideCrossSection cross0,
+            SideCrossSection cross1,
+            CanonicalRect visibleWindow
+    ) {
+        if (!coversFullSideTravelAxis(visibleWindow.minV(), visibleWindow.maxV(), cross0.axisCanonical(), cross1.axisCanonical())) {
+            return false;
+        }
+
+        CrossClip clip0 = clippedCrossSectionAt(cross0, cross1, 0.0D, visibleWindow.minU(), visibleWindow.maxU());
+        CrossClip clip1 = clippedCrossSectionAt(cross0, cross1, 1.0D, visibleWindow.minU(), visibleWindow.maxU());
+
+        return clip0 != null && clip1 != null;
+    }
+
+    private static boolean coversFullSideTravelAxis(
+            double windowMin,
+            double windowMax,
+            double axis0,
+            double axis1
+    ) {
+        double axisMin = Math.min(axis0, axis1);
+        double axisMax = Math.max(axis0, axis1);
+        return windowMin <= axisMin + EDGE_TOUCH_EPSILON
+                && windowMax >= axisMax - EDGE_TOUCH_EPSILON;
     }
 
     private static List<Patch> clippedUSidePatches(
@@ -3247,6 +3753,7 @@ public final class VoxelSpotProjector {
             int tileV,
             BlockPos pos,
             int depth,
+            CanonicalRegion remainingRayWindows,
             ProjectionStatsBuilder stats
     ) {
         List<OcclusionWindow> windows = new ArrayList<>();
@@ -3260,9 +3767,17 @@ public final class VoxelSpotProjector {
             ProjectionRect planeRect = projectionRect(planeEnvelope.radius(), tileU, tileV);
 
             if (planeRect != null) {
+                stats.planeWindowCandidates++;
+                CanonicalRect planeWindow = planeRect.canonicalRect();
+
+                if (remainingRayWindows != null && !remainingRayWindows.intersectsForPlanePrefilter(planeWindow, stats)) {
+                    stats.planeWindowRemainingCulled++;
+                    continue;
+                }
+
                 stats.planeWindows++;
                 windows.add(new OcclusionWindow(
-                        planeRect.canonicalRect(),
+                        planeWindow,
                         occlusionPlaneName(index, planeCount),
                         pos,
                         depth,
@@ -3356,6 +3871,36 @@ public final class VoxelSpotProjector {
                 side
         );
         return visibleSubRectsFromRayWindows(radius, tileU, tileV, visibleRayWindows, stats);
+    }
+
+    private static List<ProjectionRect> mergeProjectionRects(
+            double radius,
+            int tileU,
+            int tileV,
+            List<ProjectionRect> rects,
+            ProjectionStatsBuilder stats
+    ) {
+        if (rects.size() < 2) {
+            if (stats != null) {
+                stats.recordFrontFragmentMerge(rects.size(), rects.size());
+            }
+            return rects;
+        }
+
+        List<CanonicalRect> rayWindows = new ArrayList<>(rects.size());
+
+        for (ProjectionRect rect : rects) {
+            rayWindows.add(rect.canonicalRect());
+        }
+
+        List<CanonicalRect> mergedWindows = CanonicalRegion.fromRects(rayWindows).toRects();
+        List<ProjectionRect> mergedRects = visibleSubRectsFromRayWindows(radius, tileU, tileV, mergedWindows, null);
+
+        if (stats != null) {
+            stats.recordFrontFragmentMerge(rects.size(), mergedRects.size());
+        }
+
+        return mergedRects.isEmpty() ? List.of() : mergedRects;
     }
 
     private static List<ProjectionRect> visibleSubRects(
@@ -3717,9 +4262,11 @@ public final class VoxelSpotProjector {
 
     private static final class CanonicalRegion {
         private List<Slab> slabs;
+        private CanonicalRect bounds;
 
         private CanonicalRegion(List<Slab> slabs) {
             this.slabs = normalizeSlabs(slabs);
+            this.bounds = boundsOf(this.slabs);
         }
 
         private static CanonicalRegion full() {
@@ -3728,6 +4275,79 @@ public final class VoxelSpotProjector {
                     1.0D,
                     List.of(new Interval(0.0D, 1.0D))
             )));
+        }
+
+        private static CanonicalRegion fromRects(List<CanonicalRect> rects) {
+            if (rects.isEmpty()) {
+                return new CanonicalRegion(List.of());
+            }
+
+            List<Double> edges = new ArrayList<>(rects.size() * 2);
+
+            for (CanonicalRect rect : rects) {
+                edges.add(rect.minV());
+                edges.add(rect.maxV());
+            }
+
+            edges.sort(Double::compare);
+            List<Double> uniqueEdges = new ArrayList<>(edges.size());
+
+            for (double edge : edges) {
+                if (uniqueEdges.isEmpty()
+                        || Math.abs(uniqueEdges.get(uniqueEdges.size() - 1) - edge) > EDGE_TOUCH_EPSILON) {
+                    uniqueEdges.add(edge);
+                }
+            }
+
+            if (uniqueEdges.size() < 2) {
+                return new CanonicalRegion(List.of());
+            }
+
+            List<Slab> slabs = new ArrayList<>();
+
+            for (int index = 0; index < uniqueEdges.size() - 1; index++) {
+                double minV = uniqueEdges.get(index);
+                double maxV = uniqueEdges.get(index + 1);
+
+                if (maxV - minV <= EDGE_TOUCH_EPSILON) {
+                    continue;
+                }
+
+                List<Interval> intervals = new ArrayList<>();
+
+                for (CanonicalRect rect : rects) {
+                    if (rect.maxV() <= minV + EDGE_TOUCH_EPSILON
+                            || rect.minV() >= maxV - EDGE_TOUCH_EPSILON) {
+                        continue;
+                    }
+
+                    intervals.add(new Interval(rect.minU(), rect.maxU()));
+                }
+
+                intervals = mergeIntervals(intervals);
+
+                if (!intervals.isEmpty()) {
+                    appendSlab(slabs, new Slab(minV, maxV, intervals));
+                }
+            }
+
+            return new CanonicalRegion(slabs);
+        }
+
+        private List<CanonicalRect> toRects() {
+            if (slabs.isEmpty()) {
+                return List.of();
+            }
+
+            List<CanonicalRect> rects = new ArrayList<>();
+
+            for (Slab slab : slabs) {
+                for (Interval interval : slab.intervals()) {
+                    addCanonicalRect(rects, interval.minU(), slab.minV(), interval.maxU(), slab.maxV());
+                }
+            }
+
+            return rects.isEmpty() ? List.of() : rects;
         }
 
         private boolean isEmpty() {
@@ -3763,34 +4383,11 @@ public final class VoxelSpotProjector {
         }
 
         private CanonicalRect bounds() {
-            if (slabs.isEmpty()) {
-                return null;
-            }
-
-            double minU = 1.0D;
-            double minV = 1.0D;
-            double maxU = 0.0D;
-            double maxV = 0.0D;
-
-            for (Slab slab : slabs) {
-                if (slab.intervals().isEmpty()) {
-                    continue;
-                }
-
-                minV = Math.min(minV, slab.minV());
-                maxV = Math.max(maxV, slab.maxV());
-
-                for (Interval interval : slab.intervals()) {
-                    minU = Math.min(minU, interval.minU());
-                    maxU = Math.max(maxU, interval.maxU());
-                }
-            }
-
-            return canonicalRectOrNull(minU, minV, maxU, maxV);
+            return bounds;
         }
 
         private List<CanonicalRect> intersect(CanonicalRect source, ProjectionStatsBuilder stats) {
-            if (slabs.isEmpty()) {
+            if (slabs.isEmpty() || !intersects(source, bounds)) {
                 if (stats != null) {
                     stats.recordRemainingIntersection(0L, 0L, 0);
                 }
@@ -3801,7 +4398,13 @@ public final class VoxelSpotProjector {
             long slabTests = 0L;
             long intervalTests = 0L;
 
-            for (Slab slab : slabs) {
+            for (int slabIndex = firstCandidateSlabIndex(source.minV()); slabIndex < slabs.size(); slabIndex++) {
+                Slab slab = slabs.get(slabIndex);
+
+                if (slab.minV() >= source.maxV() - EDGE_TOUCH_EPSILON) {
+                    break;
+                }
+
                 slabTests++;
                 double minV = Math.max(source.minV(), slab.minV());
                 double maxV = Math.min(source.maxV(), slab.maxV());
@@ -3810,7 +4413,14 @@ public final class VoxelSpotProjector {
                     continue;
                 }
 
-                for (Interval interval : slab.intervals()) {
+                List<Interval> intervals = slab.intervals();
+                for (int intervalIndex = firstCandidateIntervalIndex(intervals, source.minU()); intervalIndex < intervals.size(); intervalIndex++) {
+                    Interval interval = intervals.get(intervalIndex);
+
+                    if (interval.minU() >= source.maxU() - EDGE_TOUCH_EPSILON) {
+                        break;
+                    }
+
                     intervalTests++;
                     double minU = Math.max(source.minU(), interval.minU());
                     double maxU = Math.min(source.maxU(), interval.maxU());
@@ -3827,6 +4437,57 @@ public final class VoxelSpotProjector {
             return output.isEmpty() ? List.of() : output;
         }
 
+        private boolean intersectsForPlanePrefilter(CanonicalRect source, ProjectionStatsBuilder stats) {
+            if (slabs.isEmpty() || !intersects(source, bounds)) {
+                if (stats != null) {
+                    stats.recordRemainingPrefilter(0L, 0L, false);
+                }
+                return false;
+            }
+
+            long slabTests = 0L;
+            long intervalTests = 0L;
+
+            for (int slabIndex = firstCandidateSlabIndex(source.minV()); slabIndex < slabs.size(); slabIndex++) {
+                Slab slab = slabs.get(slabIndex);
+
+                if (slab.minV() >= source.maxV() - EDGE_TOUCH_EPSILON) {
+                    break;
+                }
+
+                slabTests++;
+                double minV = Math.max(source.minV(), slab.minV());
+                double maxV = Math.min(source.maxV(), slab.maxV());
+
+                if (maxV - minV <= EDGE_TOUCH_EPSILON) {
+                    continue;
+                }
+
+                List<Interval> intervals = slab.intervals();
+                for (int intervalIndex = firstCandidateIntervalIndex(intervals, source.minU()); intervalIndex < intervals.size(); intervalIndex++) {
+                    Interval interval = intervals.get(intervalIndex);
+
+                    if (interval.minU() >= source.maxU() - EDGE_TOUCH_EPSILON) {
+                        break;
+                    }
+
+                    intervalTests++;
+
+                    if (Math.min(source.maxU(), interval.maxU()) - Math.max(source.minU(), interval.minU()) > EDGE_TOUCH_EPSILON) {
+                        if (stats != null) {
+                            stats.recordRemainingPrefilter(slabTests, intervalTests, true);
+                        }
+                        return true;
+                    }
+                }
+            }
+
+            if (stats != null) {
+                stats.recordRemainingPrefilter(slabTests, intervalTests, false);
+            }
+            return false;
+        }
+
         private void subtractUnion(List<OcclusionWindow> blockers, ProjectionStatsBuilder stats) {
             if (slabs.isEmpty() || blockers.isEmpty()) {
                 if (stats != null) {
@@ -3841,8 +4502,19 @@ public final class VoxelSpotProjector {
 
             long applyStartNanos = stats == null ? 0L : stats.startTimer();
             List<Slab> current = slabs;
+            List<CanonicalRect> blockerRects = new ArrayList<>(blockers.size());
 
             for (OcclusionWindow blocker : blockers) {
+                blockerRects.add(blocker.rect());
+            }
+
+            CanonicalRegion blockerUnion = CanonicalRegion.fromRects(blockerRects);
+
+            if (stats != null) {
+                stats.remainingUnionMergedRects += blockerUnion.intervalCount();
+            }
+
+            for (Slab blocker : blockerUnion.slabs) {
                 if (current.isEmpty()) {
                     break;
                 }
@@ -3850,19 +4522,19 @@ public final class VoxelSpotProjector {
                 if (stats != null) {
                     stats.remainingBlockerTests++;
                 }
-                current = subtractBlockerFromRemaining(current, blocker.rect(), stats);
+                current = subtractBlockerSlabFromRemaining(current, blocker, stats);
             }
 
-            slabs = current;
+            setSlabs(current);
             if (stats != null) {
                 stats.addRemainingUnionNanos(applyStartNanos);
                 stats.recordRemainingRegion(this);
             }
         }
 
-        private static List<Slab> subtractBlockerFromRemaining(
+        private static List<Slab> subtractBlockerSlabFromRemaining(
                 List<Slab> remainingSlabs,
-                CanonicalRect blocker,
+                Slab blocker,
                 ProjectionStatsBuilder stats
         ) {
             if (remainingSlabs.isEmpty()) {
@@ -3885,7 +4557,7 @@ public final class VoxelSpotProjector {
                     continue;
                 }
 
-                if (!intersectsAnyInterval(remaining.intervals(), blocker.minU(), blocker.maxU(), stats)) {
+                if (!intersectsAnyInterval(remaining.intervals(), blocker.intervals(), stats)) {
                     appendSlab(output, remaining);
                     continue;
                 }
@@ -3898,7 +4570,7 @@ public final class VoxelSpotProjector {
 
                 List<Interval> clippedIntervals = subtractIntervals(
                         remaining.intervals(),
-                        List.of(new Interval(blocker.minU(), blocker.maxU())),
+                        blocker.intervals(),
                         stats
                 );
 
@@ -3926,7 +4598,13 @@ public final class VoxelSpotProjector {
                 double maxU,
                 ProjectionStatsBuilder stats
         ) {
-            for (Interval interval : intervals) {
+            for (int intervalIndex = firstCandidateIntervalIndex(intervals, minU); intervalIndex < intervals.size(); intervalIndex++) {
+                Interval interval = intervals.get(intervalIndex);
+
+                if (interval.minU() >= maxU - EDGE_TOUCH_EPSILON) {
+                    break;
+                }
+
                 if (stats != null) {
                     stats.remainingIntervalClipTests++;
                 }
@@ -3937,6 +4615,116 @@ public final class VoxelSpotProjector {
             }
 
             return false;
+        }
+
+        private static boolean intersectsAnyInterval(
+                List<Interval> remainingIntervals,
+                List<Interval> blockerIntervals,
+                ProjectionStatsBuilder stats
+        ) {
+            if (remainingIntervals.isEmpty() || blockerIntervals.isEmpty()) {
+                return false;
+            }
+
+            int blockerIndex = 0;
+
+            for (Interval remaining : remainingIntervals) {
+                while (blockerIndex < blockerIntervals.size()
+                        && blockerIntervals.get(blockerIndex).maxU() <= remaining.minU() + EDGE_TOUCH_EPSILON) {
+                    blockerIndex++;
+                }
+
+                for (int index = blockerIndex; index < blockerIntervals.size(); index++) {
+                    Interval blocker = blockerIntervals.get(index);
+
+                    if (blocker.minU() >= remaining.maxU() - EDGE_TOUCH_EPSILON) {
+                        break;
+                    }
+
+                    if (stats != null) {
+                        stats.remainingIntervalClipTests++;
+                    }
+
+                    if (Math.min(remaining.maxU(), blocker.maxU()) - Math.max(remaining.minU(), blocker.minU()) > EDGE_TOUCH_EPSILON) {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private void setSlabs(List<Slab> slabs) {
+            this.slabs = slabs.isEmpty() ? List.of() : slabs;
+            this.bounds = boundsOf(this.slabs);
+        }
+
+        private int firstCandidateSlabIndex(double minV) {
+            int low = 0;
+            int high = slabs.size();
+            double threshold = minV + EDGE_TOUCH_EPSILON;
+
+            while (low < high) {
+                int middle = (low + high) >>> 1;
+                if (slabs.get(middle).maxV() <= threshold) {
+                    low = middle + 1;
+                } else {
+                    high = middle;
+                }
+            }
+
+            return low;
+        }
+
+        private static int firstCandidateIntervalIndex(List<Interval> intervals, double minU) {
+            int low = 0;
+            int high = intervals.size();
+            double threshold = minU + EDGE_TOUCH_EPSILON;
+
+            while (low < high) {
+                int middle = (low + high) >>> 1;
+                if (intervals.get(middle).maxU() <= threshold) {
+                    low = middle + 1;
+                } else {
+                    high = middle;
+                }
+            }
+
+            return low;
+        }
+
+        private static boolean intersects(CanonicalRect left, CanonicalRect right) {
+            return left != null
+                    && right != null
+                    && Math.min(left.maxU(), right.maxU()) - Math.max(left.minU(), right.minU()) > EDGE_TOUCH_EPSILON
+                    && Math.min(left.maxV(), right.maxV()) - Math.max(left.minV(), right.minV()) > EDGE_TOUCH_EPSILON;
+        }
+
+        private static CanonicalRect boundsOf(List<Slab> slabs) {
+            if (slabs.isEmpty()) {
+                return null;
+            }
+
+            double minU = 1.0D;
+            double minV = 1.0D;
+            double maxU = 0.0D;
+            double maxV = 0.0D;
+
+            for (Slab slab : slabs) {
+                if (slab.intervals().isEmpty()) {
+                    continue;
+                }
+
+                minV = Math.min(minV, slab.minV());
+                maxV = Math.max(maxV, slab.maxV());
+
+                for (Interval interval : slab.intervals()) {
+                    minU = Math.min(minU, interval.minU());
+                    maxU = Math.max(maxU, interval.maxU());
+                }
+            }
+
+            return canonicalRectOrNull(minU, minV, maxU, maxV);
         }
 
         private static void appendSlab(List<Slab> slabs, Slab slab) {
@@ -4183,6 +4971,14 @@ public final class VoxelSpotProjector {
         private boolean empty() {
             return minU > maxU || minV > maxV;
         }
+
+        private boolean contains(int tileU, int tileV) {
+            return !empty() && tileU >= minU && tileU <= maxU && tileV >= minV && tileV <= maxV;
+        }
+
+        private int tileCount() {
+            return tileRangeCount(minU, maxU, minV, maxV);
+        }
     }
 
     private static final class DepthTileCache {
@@ -4249,6 +5045,22 @@ public final class VoxelSpotProjector {
             BlockState state,
             boolean airLike,
             boolean projectable
+    ) {
+    }
+
+    private enum SideAxis {
+        U,
+        V
+    }
+
+    private record SideFaceCandidate(
+            SideAxis axis,
+            DepthTile tile,
+            Direction sideFace,
+            double boundaryWorld,
+            double fixedLocal,
+            int crossTile,
+            List<TravelInterval> visibleTravels
     ) {
     }
 
@@ -4347,6 +5159,8 @@ public final class VoxelSpotProjector {
         private long sideOpenFaces;
         private long sideTravelIntervals;
         private long sideWindowCandidates;
+        private long sideFastPathPatches;
+        private long sideFastPathSkipped;
         private long sideRangeCulledTiles;
         private long depthTileCacheHits;
         private long depthTileCacheMisses;
@@ -4360,6 +5174,8 @@ public final class VoxelSpotProjector {
         private long sideBoundaryMissingFaces;
         private long sideBoundaryExtraFaces;
         private long planeWindowTests;
+        private long planeWindowCandidates;
+        private long planeWindowRemainingCulled;
         private long planeWindows;
         private long frontSubtractions;
         private long sideSubtractions;
@@ -4367,6 +5183,8 @@ public final class VoxelSpotProjector {
         private long occupiedWindowHits;
         private int maxOccupiedWindows;
         private int maxVisibleFragments;
+        private long frontFragmentsBeforeMerge;
+        private long frontFragmentsAfterMerge;
         private long tileRangeNanos;
         private long projectionRectNanos;
         private long blockLookupNanos;
@@ -4374,6 +5192,12 @@ public final class VoxelSpotProjector {
         private long planeWindowNanos;
         private long frontSubtractNanos;
         private long sideScanNanos;
+        private long sideCandidateNanos;
+        private long sideEmitNanos;
+        private long sideTravelSplitNanos;
+        private long sideWindowNanos;
+        private long sideRemainingIntersectNanos;
+        private long sidePatchEmitNanos;
         private long sideCandidateVerifyNanos;
         private long sideSubtractNanos;
         private long indexQueryNanos;
@@ -4406,7 +5230,12 @@ public final class VoxelSpotProjector {
         private long remainingIntersectionSlabTests;
         private long remainingIntersectionIntervalTests;
         private long remainingVisibleFragments;
+        private long remainingPrefilterQueries;
+        private long remainingPrefilterHits;
+        private long remainingPrefilterSlabTests;
+        private long remainingPrefilterIntervalTests;
         private long remainingUnionInputRects;
+        private long remainingUnionMergedRects;
         private long remainingBlockerTests;
         private long remainingBlockerHits;
         private long remainingClippedBlockers;
@@ -4461,6 +5290,30 @@ public final class VoxelSpotProjector {
 
         private void addSideScanNanos(long startNanos) {
             sideScanNanos += elapsedSince(startNanos);
+        }
+
+        private void addSideCandidateNanos(long startNanos) {
+            sideCandidateNanos += elapsedSince(startNanos);
+        }
+
+        private void addSideEmitNanos(long startNanos) {
+            sideEmitNanos += elapsedSince(startNanos);
+        }
+
+        private void addSideTravelSplitNanos(long startNanos) {
+            sideTravelSplitNanos += elapsedSince(startNanos);
+        }
+
+        private void addSideWindowNanos(long startNanos) {
+            sideWindowNanos += elapsedSince(startNanos);
+        }
+
+        private void addSideRemainingIntersectNanos(long startNanos) {
+            sideRemainingIntersectNanos += elapsedSince(startNanos);
+        }
+
+        private void addSidePatchEmitNanos(long startNanos) {
+            sidePatchEmitNanos += elapsedSince(startNanos);
         }
 
         private void addSideBoundaryVerifyNanos(long startNanos) {
@@ -4545,12 +5398,26 @@ public final class VoxelSpotProjector {
             remainingVisibleFragments += Math.max(0, visibleFragments);
         }
 
+        private void recordRemainingPrefilter(long slabTests, long intervalTests, boolean hit) {
+            remainingPrefilterQueries++;
+            remainingPrefilterSlabTests += Math.max(0L, slabTests);
+            remainingPrefilterIntervalTests += Math.max(0L, intervalTests);
+
+            if (hit) {
+                remainingPrefilterHits++;
+            }
+        }
+
+        private void recordFrontFragmentMerge(int before, int after) {
+            frontFragmentsBeforeMerge += Math.max(0, before);
+            frontFragmentsAfterMerge += Math.max(0, after);
+        }
+
         private void recordSideCandidateComparison(
                 Set<SideCandidateKey> legacyCandidates,
                 Set<SideCandidateKey> boundaryCandidates
         ) {
             sideLegacyCandidateFaces += legacyCandidates.size();
-            sideBoundaryCandidateFaces += boundaryCandidates.size();
 
             for (SideCandidateKey legacyCandidate : legacyCandidates) {
                 if (!boundaryCandidates.contains(legacyCandidate)) {
@@ -4563,6 +5430,14 @@ public final class VoxelSpotProjector {
                     sideBoundaryExtraFaces++;
                 }
             }
+        }
+
+        private void recordSideBoundaryCandidateCount(int count) {
+            sideBoundaryCandidateFaces += Math.max(0, count);
+        }
+
+        private void recordSideFastPathSkipped() {
+            sideFastPathSkipped++;
         }
 
         private void finishDepth(
@@ -4614,6 +5489,8 @@ public final class VoxelSpotProjector {
                     sideOpenFaces,
                     sideTravelIntervals,
                     sideWindowCandidates,
+                    sideFastPathPatches,
+                    sideFastPathSkipped,
                     sideRangeCulledTiles,
                     depthTileCacheHits,
                     depthTileCacheMisses,
@@ -4627,6 +5504,8 @@ public final class VoxelSpotProjector {
                     sideBoundaryMissingFaces,
                     sideBoundaryExtraFaces,
                     planeWindowTests,
+                    planeWindowCandidates,
+                    planeWindowRemainingCulled,
                     planeWindows,
                     frontSubtractions,
                     sideSubtractions,
@@ -4634,6 +5513,8 @@ public final class VoxelSpotProjector {
                     occupiedWindowHits,
                     maxOccupiedWindows,
                     maxVisibleFragments,
+                    frontFragmentsBeforeMerge,
+                    frontFragmentsAfterMerge,
                     new SpotProjectionResult.StageTimings(
                             tileRangeNanos,
                             projectionRectNanos,
@@ -4642,6 +5523,12 @@ public final class VoxelSpotProjector {
                             planeWindowNanos,
                             frontSubtractNanos,
                             sideScanNanos,
+                            sideCandidateNanos,
+                            sideEmitNanos,
+                            sideTravelSplitNanos,
+                            sideWindowNanos,
+                            sideRemainingIntersectNanos,
+                            sidePatchEmitNanos,
                             sideCandidateVerifyNanos,
                             sideSubtractNanos,
                             indexQueryNanos,
@@ -4680,7 +5567,12 @@ public final class VoxelSpotProjector {
                             remainingIntersectionSlabTests,
                             remainingIntersectionIntervalTests,
                             remainingVisibleFragments,
+                            remainingPrefilterQueries,
+                            remainingPrefilterHits,
+                            remainingPrefilterSlabTests,
+                            remainingPrefilterIntervalTests,
                             remainingUnionInputRects,
+                            remainingUnionMergedRects,
                             remainingBlockerTests,
                             remainingBlockerHits,
                             remainingClippedBlockers,

@@ -20,6 +20,7 @@ import net.neoforged.api.distmarker.OnlyIn;
 public final class ClientSpotCache {
     private static final int LEGACY_OWNER_ID = Integer.MIN_VALUE;
     private static final double SURFACE_OFFSET = 0.001D;
+    private static final double PARTIAL_QUAD_AREA_THRESHOLD = 0.985D;
     private static final Map<Integer, Map<SpotKey, RenderedSpot>> SPOTS_BY_OWNER = new HashMap<>();
     private static final Comparator<SpotKey> SPOT_KEY_ORDER = Comparator
             .comparingInt((SpotKey key) -> key.pos().getX())
@@ -91,6 +92,7 @@ public final class ClientSpotCache {
             .thenComparingInt(RenderedSpot::quadTextureV3);
     private static List<RenderedSpot> activeSpots = List.of();
     private static Object lastLevel;
+    private static GeometryMergeStats lastGeometryMergeStats = GeometryMergeStats.empty();
 
     public static void accept(SpotRecord spot) {
         if (Minecraft.getInstance().level == null) {
@@ -180,15 +182,72 @@ public final class ClientSpotCache {
             }
         }
 
-        List<RenderedSpot> sortedSpots = new ArrayList<>(mergedSpots.values());
+        List<RenderedSpot> sortedSpots = mergePartialGeometrySpots(mergedSpots.values());
         sortedSpots.sort(RENDERED_SPOT_ORDER);
         activeSpots = List.copyOf(sortedSpots);
+    }
+
+    private static List<RenderedSpot> mergePartialGeometrySpots(Collection<RenderedSpot> spots) {
+        Map<PartialQuadGeometryKey, List<RenderedSpot>> partialGroups = new HashMap<>();
+        List<RenderedSpot> result = new ArrayList<>(spots.size());
+
+        for (RenderedSpot spot : spots) {
+            if (isPartialFootprintQuad(spot)) {
+                partialGroups.computeIfAbsent(PartialQuadGeometryKey.from(spot), ignored -> new ArrayList<>())
+                        .add(spot);
+            } else {
+                result.add(spot);
+            }
+        }
+
+        GeometryMergeStatsBuilder stats = new GeometryMergeStatsBuilder();
+        stats.partialGeometryGroups = partialGroups.size();
+
+        for (Map.Entry<PartialQuadGeometryKey, List<RenderedSpot>> entry : partialGroups.entrySet()) {
+            List<RenderedSpot> group = entry.getValue();
+            group.sort(RENDERED_SPOT_ORDER);
+
+            if (group.size() == 1) {
+                result.add(group.getFirst());
+                continue;
+            }
+
+            RenderedSpot merged = group.getFirst();
+            int colorBucketMask = merged.colorBucketMask();
+
+            for (int index = 1; index < group.size(); index++) {
+                RenderedSpot next = group.get(index);
+                colorBucketMask |= next.colorBucketMask();
+                merged = mergeSpot(merged, next);
+            }
+
+            result.add(merged);
+            stats.partialGeometryMergedGroups++;
+            stats.partialGeometryMergedInputSpots += group.size();
+
+            int colorBuckets = Integer.bitCount(colorBucketMask);
+            if (colorBuckets > 1) {
+                stats.partialGeometryMulticolorGroups++;
+            }
+
+            if (group.size() > stats.worstGeometrySpots
+                    || (group.size() == stats.worstGeometrySpots
+                    && colorBuckets > stats.worstGeometryColorBuckets)) {
+                stats.worstGeometryKey = entry.getKey().format();
+                stats.worstGeometrySpots = group.size();
+                stats.worstGeometryColorBuckets = colorBuckets;
+            }
+        }
+
+        lastGeometryMergeStats = stats.build();
+        return result;
     }
 
     public static void clear() {
         SPOTS_BY_OWNER.clear();
         activeSpots = List.of();
         lastLevel = null;
+        lastGeometryMergeStats = GeometryMergeStats.empty();
     }
 
     private static void clearIfLevelChanged(Object level) {
@@ -280,7 +339,10 @@ public final class ClientSpotCache {
                 spot.quadZ3(),
                 spot.quadTextureU3(),
                 spot.quadTextureV3(),
-                spot.debugMarker()
+                spot.debugMarker(),
+                1,
+                colorBucketMask(spot.coherentAlphaLevel(), spot.coherentRed(), spot.coherentGreen(), spot.coherentBlue(),
+                        spot.strayAlphaLevel(), spot.strayRed(), spot.strayGreen(), spot.strayBlue())
         );
     }
 
@@ -318,21 +380,21 @@ public final class ClientSpotCache {
                 Math.max(first.coherentAlphaLevel(), second.coherentAlphaLevel()),
                 Math.max(first.coherentRadius(), second.coherentRadius()),
                 coherentAlpha,
-                mixChannel(first.coherentRed(), first.coherentAlpha(), second.coherentRed(), second.coherentAlpha()),
-                mixChannel(first.coherentGreen(), first.coherentAlpha(), second.coherentGreen(), second.coherentAlpha()),
-                mixChannel(first.coherentBlue(), first.coherentAlpha(), second.coherentBlue(), second.coherentAlpha()),
+                mixLightChannel(first.coherentRed(), first.coherentAlpha(), second.coherentRed(), second.coherentAlpha(), coherentAlpha),
+                mixLightChannel(first.coherentGreen(), first.coherentAlpha(), second.coherentGreen(), second.coherentAlpha(), coherentAlpha),
+                mixLightChannel(first.coherentBlue(), first.coherentAlpha(), second.coherentBlue(), second.coherentAlpha(), coherentAlpha),
                 Math.max(first.strayAlphaLevel(), second.strayAlphaLevel()),
                 Math.max(first.strayRadius(), second.strayRadius()),
                 strayAlpha,
-                mixChannel(first.strayRed(), first.strayAlpha(), second.strayRed(), second.strayAlpha()),
-                mixChannel(first.strayGreen(), first.strayAlpha(), second.strayGreen(), second.strayAlpha()),
-                mixChannel(first.strayBlue(), first.strayAlpha(), second.strayBlue(), second.strayAlpha()),
+                mixLightChannel(first.strayRed(), first.strayAlpha(), second.strayRed(), second.strayAlpha(), strayAlpha),
+                mixLightChannel(first.strayGreen(), first.strayAlpha(), second.strayGreen(), second.strayAlpha(), strayAlpha),
+                mixLightChannel(first.strayBlue(), first.strayAlpha(), second.strayBlue(), second.strayAlpha(), strayAlpha),
                 Math.max(first.ringAlphaLevel(), second.ringAlphaLevel()),
                 Math.max(first.ringRadius(), second.ringRadius()),
                 ringAlpha,
-                mixChannel(first.ringRed(), first.ringAlpha(), second.ringRed(), second.ringAlpha()),
-                mixChannel(first.ringGreen(), first.ringAlpha(), second.ringGreen(), second.ringAlpha()),
-                mixChannel(first.ringBlue(), first.ringAlpha(), second.ringBlue(), second.ringAlpha()),
+                mixLightChannel(first.ringRed(), first.ringAlpha(), second.ringRed(), second.ringAlpha(), ringAlpha),
+                mixLightChannel(first.ringGreen(), first.ringAlpha(), second.ringGreen(), second.ringAlpha(), ringAlpha),
+                mixLightChannel(first.ringBlue(), first.ringAlpha(), second.ringBlue(), second.ringAlpha(), ringAlpha),
                 first.projectionMode(),
                 first.clipMinU(),
                 first.clipMinV(),
@@ -362,7 +424,9 @@ public final class ClientSpotCache {
                 first.quadZ3(),
                 first.quadTextureU3(),
                 first.quadTextureV3(),
-                first.debugMarker()
+                first.debugMarker(),
+                first.mergedContributions() + second.mergedContributions(),
+                first.colorBucketMask() | second.colorBucketMask()
         );
     }
 
@@ -373,20 +437,98 @@ public final class ClientSpotCache {
         return Math.max(0, Math.min(240, (int) Math.round(opacity * 255.0D)));
     }
 
-    private static int mixChannel(int firstChannel, int firstAlpha, int secondChannel, int secondAlpha) {
-        int weight = firstAlpha + secondAlpha;
-
-        if (weight <= 0) {
-            return Math.max(0, Math.min(255, firstChannel));
+    private static int mixLightChannel(
+            int firstChannel,
+            int firstAlpha,
+            int secondChannel,
+            int secondAlpha,
+            int outputAlpha
+    ) {
+        if (outputAlpha <= 0) {
+            return clampColor(Math.max(firstChannel, secondChannel));
         }
 
-        return Math.max(
-                0,
-                Math.min(
-                        255,
-                        (int) Math.round((firstChannel * firstAlpha + secondChannel * secondAlpha) / (double) weight)
-                )
-        );
+        double firstEnergy = (firstChannel / 255.0D) * (firstAlpha / 255.0D);
+        double secondEnergy = (secondChannel / 255.0D) * (secondAlpha / 255.0D);
+        double outputOpacity = outputAlpha / 255.0D;
+        double straightChannel = Math.min(1.0D, (firstEnergy + secondEnergy) / outputOpacity);
+        return clampColor((int) Math.round(straightChannel * 255.0D));
+    }
+
+    private static int clampColor(int value) {
+        return Math.max(0, Math.min(255, value));
+    }
+
+    private static int colorBucketMask(
+            int coherentAlphaLevel,
+            int coherentRed,
+            int coherentGreen,
+            int coherentBlue,
+            int strayAlphaLevel,
+            int strayRed,
+            int strayGreen,
+            int strayBlue
+    ) {
+        int red = coherentAlphaLevel > 0 ? coherentRed : strayRed;
+        int green = coherentAlphaLevel > 0 ? coherentGreen : strayGreen;
+        int blue = coherentAlphaLevel > 0 ? coherentBlue : strayBlue;
+        int alphaLevel = coherentAlphaLevel > 0 ? coherentAlphaLevel : strayAlphaLevel;
+
+        if (alphaLevel <= 0) {
+            return 1;
+        }
+
+        int max = Math.max(red, Math.max(green, blue));
+
+        if (max <= 0) {
+            return 1;
+        }
+
+        int bucket = 0;
+        double threshold = max * 0.42D;
+
+        if (red >= threshold) {
+            bucket |= 1;
+        }
+
+        if (green >= threshold) {
+            bucket |= 2;
+        }
+
+        if (blue >= threshold) {
+            bucket |= 4;
+        }
+
+        return 1 << bucket;
+    }
+
+    public static int colorBucketCount(RenderedSpot spot) {
+        return Integer.bitCount(spot.colorBucketMask());
+    }
+
+    public static GeometryMergeStats geometryMergeStats() {
+        return lastGeometryMergeStats;
+    }
+
+    private static boolean isPartialFootprintQuad(RenderedSpot spot) {
+        return spot.projectionMode() == ProjectionMode.FOOTPRINT_QUAD
+                && quadTextureArea(spot) < PARTIAL_QUAD_AREA_THRESHOLD;
+    }
+
+    private static double quadTextureArea(RenderedSpot spot) {
+        double u0 = normalizedQuadUnit(spot.quadTextureU0());
+        double v0 = normalizedQuadUnit(spot.quadTextureV0());
+        double u1 = normalizedQuadUnit(spot.quadTextureU1());
+        double v1 = normalizedQuadUnit(spot.quadTextureV1());
+        double u2 = normalizedQuadUnit(spot.quadTextureU2());
+        double v2 = normalizedQuadUnit(spot.quadTextureV2());
+        double u3 = normalizedQuadUnit(spot.quadTextureU3());
+        double v3 = normalizedQuadUnit(spot.quadTextureV3());
+        double twiceArea = u0 * v1 - v0 * u1
+                + u1 * v2 - v1 * u2
+                + u2 * v3 - v2 * u3
+                + u3 * v0 - v3 * u0;
+        return Math.min(1.0D, Math.abs(twiceArea) * 0.5D);
     }
 
     private static SpotKey spotKey(SpotRecord spot) {
@@ -504,6 +646,86 @@ public final class ClientSpotCache {
     ) {
     }
 
+    private record PartialQuadGeometryKey(
+            BlockPos pos,
+            Direction face,
+            int quadX0,
+            int quadY0,
+            int quadZ0,
+            int quadX1,
+            int quadY1,
+            int quadZ1,
+            int quadX2,
+            int quadY2,
+            int quadZ2,
+            int quadX3,
+            int quadY3,
+            int quadZ3
+    ) {
+        private static PartialQuadGeometryKey from(RenderedSpot spot) {
+            return new PartialQuadGeometryKey(
+                    spot.pos(),
+                    spot.face(),
+                    spot.quadX0(),
+                    spot.quadY0(),
+                    spot.quadZ0(),
+                    spot.quadX1(),
+                    spot.quadY1(),
+                    spot.quadZ1(),
+                    spot.quadX2(),
+                    spot.quadY2(),
+                    spot.quadZ2(),
+                    spot.quadX3(),
+                    spot.quadY3(),
+                    spot.quadZ3()
+            );
+        }
+
+        private String format() {
+            return pos.getX() + "," + pos.getY() + "," + pos.getZ() + "/" + face
+                    + "/" + quadX0 + "," + quadY0 + "," + quadZ0
+                    + ";" + quadX1 + "," + quadY1 + "," + quadZ1
+                    + ";" + quadX2 + "," + quadY2 + "," + quadZ2
+                    + ";" + quadX3 + "," + quadY3 + "," + quadZ3;
+        }
+    }
+
+    private static final class GeometryMergeStatsBuilder {
+        private int partialGeometryGroups;
+        private int partialGeometryMergedGroups;
+        private int partialGeometryMergedInputSpots;
+        private int partialGeometryMulticolorGroups;
+        private String worstGeometryKey = "none";
+        private int worstGeometrySpots;
+        private int worstGeometryColorBuckets;
+
+        private GeometryMergeStats build() {
+            return new GeometryMergeStats(
+                    partialGeometryGroups,
+                    partialGeometryMergedGroups,
+                    partialGeometryMergedInputSpots,
+                    partialGeometryMulticolorGroups,
+                    worstGeometryKey,
+                    worstGeometrySpots,
+                    worstGeometryColorBuckets
+            );
+        }
+    }
+
+    public record GeometryMergeStats(
+            int partialGeometryGroups,
+            int partialGeometryMergedGroups,
+            int partialGeometryMergedInputSpots,
+            int partialGeometryMulticolorGroups,
+            String worstGeometryKey,
+            int worstGeometrySpots,
+            int worstGeometryColorBuckets
+    ) {
+        private static GeometryMergeStats empty() {
+            return new GeometryMergeStats(0, 0, 0, 0, "none", 0, 0);
+        }
+    }
+
     public record RenderedSpot(
             BlockPos pos,
             Direction face,
@@ -557,7 +779,9 @@ public final class ClientSpotCache {
             int quadZ3,
             int quadTextureU3,
             int quadTextureV3,
-            int debugMarker
+            int debugMarker,
+            int mergedContributions,
+            int colorBucketMask
     ) {
     }
 

@@ -52,6 +52,8 @@ public record SpotProjectionResult(
             long sideOpenFaces,
             long sideTravelIntervals,
             long sideWindowCandidates,
+            long sideFastPathPatches,
+            long sideFastPathSkipped,
             long sideRangeCulledTiles,
             long depthTileCacheHits,
             long depthTileCacheMisses,
@@ -65,6 +67,8 @@ public record SpotProjectionResult(
             long sideBoundaryMissingFaces,
             long sideBoundaryExtraFaces,
             long planeWindowTests,
+            long planeWindowCandidates,
+            long planeWindowRemainingCulled,
             long planeWindows,
             long frontSubtractions,
             long sideSubtractions,
@@ -72,6 +76,8 @@ public record SpotProjectionResult(
             long occupiedWindowHits,
             int maxOccupiedWindows,
             int maxVisibleFragments,
+            long frontFragmentsBeforeMerge,
+            long frontFragmentsAfterMerge,
             StageTimings timings,
             IndexStats index,
             SubtractionStats subtraction,
@@ -111,8 +117,14 @@ public record SpotProjectionResult(
                 0L,
                 0L,
                 0L,
+                0L,
+                0L,
+                0L,
+                0L,
                 0,
                 0,
+                0L,
+                0L,
                 StageTimings.EMPTY,
                 IndexStats.EMPTY,
                 SubtractionStats.EMPTY,
@@ -135,6 +147,8 @@ public record SpotProjectionResult(
             sideOpenFaces = Math.max(0L, sideOpenFaces);
             sideTravelIntervals = Math.max(0L, sideTravelIntervals);
             sideWindowCandidates = Math.max(0L, sideWindowCandidates);
+            sideFastPathPatches = Math.max(0L, sideFastPathPatches);
+            sideFastPathSkipped = Math.max(0L, sideFastPathSkipped);
             sideRangeCulledTiles = Math.max(0L, sideRangeCulledTiles);
             depthTileCacheHits = Math.max(0L, depthTileCacheHits);
             depthTileCacheMisses = Math.max(0L, depthTileCacheMisses);
@@ -148,6 +162,8 @@ public record SpotProjectionResult(
             sideBoundaryMissingFaces = Math.max(0L, sideBoundaryMissingFaces);
             sideBoundaryExtraFaces = Math.max(0L, sideBoundaryExtraFaces);
             planeWindowTests = Math.max(0L, planeWindowTests);
+            planeWindowCandidates = Math.max(0L, planeWindowCandidates);
+            planeWindowRemainingCulled = Math.max(0L, planeWindowRemainingCulled);
             planeWindows = Math.max(0L, planeWindows);
             frontSubtractions = Math.max(0L, frontSubtractions);
             sideSubtractions = Math.max(0L, sideSubtractions);
@@ -155,6 +171,8 @@ public record SpotProjectionResult(
             occupiedWindowHits = Math.max(0L, occupiedWindowHits);
             maxOccupiedWindows = Math.max(0, maxOccupiedWindows);
             maxVisibleFragments = Math.max(0, maxVisibleFragments);
+            frontFragmentsBeforeMerge = Math.max(0L, frontFragmentsBeforeMerge);
+            frontFragmentsAfterMerge = Math.max(0L, frontFragmentsAfterMerge);
             timings = timings == null ? StageTimings.EMPTY : timings;
             index = index == null ? IndexStats.EMPTY : index;
             subtraction = subtraction == null ? SubtractionStats.EMPTY : subtraction;
@@ -171,6 +189,12 @@ public record SpotProjectionResult(
             long planeWindowNanos,
             long frontSubtractNanos,
             long sideScanNanos,
+            long sideCandidateNanos,
+            long sideEmitNanos,
+            long sideTravelSplitNanos,
+            long sideWindowNanos,
+            long sideRemainingIntersectNanos,
+            long sidePatchEmitNanos,
             long sideCandidateVerifyNanos,
             long sideSubtractNanos,
             long indexQueryNanos,
@@ -197,6 +221,12 @@ public record SpotProjectionResult(
                 0L,
                 0L,
                 0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
                 0L
         );
 
@@ -208,6 +238,12 @@ public record SpotProjectionResult(
             planeWindowNanos = Math.max(0L, planeWindowNanos);
             frontSubtractNanos = Math.max(0L, frontSubtractNanos);
             sideScanNanos = Math.max(0L, sideScanNanos);
+            sideCandidateNanos = Math.max(0L, sideCandidateNanos);
+            sideEmitNanos = Math.max(0L, sideEmitNanos);
+            sideTravelSplitNanos = Math.max(0L, sideTravelSplitNanos);
+            sideWindowNanos = Math.max(0L, sideWindowNanos);
+            sideRemainingIntersectNanos = Math.max(0L, sideRemainingIntersectNanos);
+            sidePatchEmitNanos = Math.max(0L, sidePatchEmitNanos);
             sideCandidateVerifyNanos = Math.max(0L, sideCandidateVerifyNanos);
             sideSubtractNanos = Math.max(0L, sideSubtractNanos);
             indexQueryNanos = Math.max(0L, indexQueryNanos);
@@ -273,7 +309,12 @@ public record SpotProjectionResult(
             long intersectionSlabTests,
             long intersectionIntervalTests,
             long visibleFragments,
+            long prefilterQueries,
+            long prefilterHits,
+            long prefilterSlabTests,
+            long prefilterIntervalTests,
             long unionInputRects,
+            long unionMergedRects,
             long blockerTests,
             long blockerHits,
             long clippedBlockers,
@@ -302,6 +343,11 @@ public record SpotProjectionResult(
                 0L,
                 0L,
                 0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
                 0L
         );
 
@@ -316,7 +362,12 @@ public record SpotProjectionResult(
             intersectionSlabTests = Math.max(0L, intersectionSlabTests);
             intersectionIntervalTests = Math.max(0L, intersectionIntervalTests);
             visibleFragments = Math.max(0L, visibleFragments);
+            prefilterQueries = Math.max(0L, prefilterQueries);
+            prefilterHits = Math.max(0L, prefilterHits);
+            prefilterSlabTests = Math.max(0L, prefilterSlabTests);
+            prefilterIntervalTests = Math.max(0L, prefilterIntervalTests);
             unionInputRects = Math.max(0L, unionInputRects);
+            unionMergedRects = Math.max(0L, unionMergedRects);
             blockerTests = Math.max(0L, blockerTests);
             blockerHits = Math.max(0L, blockerHits);
             clippedBlockers = Math.max(0L, clippedBlockers);

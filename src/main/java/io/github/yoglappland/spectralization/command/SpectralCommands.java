@@ -109,6 +109,17 @@ public final class SpectralCommands {
                                                 context.getSource(),
                                                 !VoxelSpotProjector.debugFaceCentersEnabled()
                                         ))))
+                        .then(Commands.literal("colors")
+                                .executes(context -> reportSpotColorDebugState(context.getSource()))
+                                .then(Commands.literal("on")
+                                        .executes(context -> setSpotColorDebug(context.getSource(), true)))
+                                .then(Commands.literal("off")
+                                        .executes(context -> setSpotColorDebug(context.getSource(), false)))
+                                .then(Commands.literal("toggle")
+                                        .executes(context -> setSpotColorDebug(
+                                                context.getSource(),
+                                                !SpectralizationConfig.spotColorDebug()
+                                        ))))
                         .then(Commands.literal("planes")
                                 .executes(context -> reportSpotProjectionPlanesState(context.getSource()))
                                 .then(Commands.argument("count", IntegerArgumentType.integer(2, 33))
@@ -375,6 +386,17 @@ public final class SpectralCommands {
     private static int reportSpotDebugCentersState(CommandSourceStack source) {
         String state = VoxelSpotProjector.debugFaceCentersEnabled() ? "on" : "off";
         source.sendSuccess(() -> Component.literal("Spectralization spot face-center debug markers: " + state), true);
+        return 1;
+    }
+
+    private static int setSpotColorDebug(CommandSourceStack source, boolean enabled) {
+        SpectralizationConfig.setSpotColorDebug(enabled);
+        return reportSpotColorDebugState(source);
+    }
+
+    private static int reportSpotColorDebugState(CommandSourceStack source) {
+        String state = SpectralizationConfig.spotColorDebug() ? "on" : "off";
+        source.sendSuccess(() -> Component.literal("Spectralization spot color debug overlay: " + state), true);
         return 1;
     }
 

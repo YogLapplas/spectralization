@@ -5,6 +5,7 @@ import io.github.yoglappland.spectralization.block.FiberRelayBlock;
 import io.github.yoglappland.spectralization.block.HolographicStorageMultiblock;
 import io.github.yoglappland.spectralization.blockentity.GainMediumBlockEntity;
 import io.github.yoglappland.spectralization.microlizer.MicrolizerNetworkData;
+import io.github.yoglappland.spectralization.optics.OpticalSpotTracker;
 import io.github.yoglappland.spectralization.optics.cache.OpticalDirtyKind;
 import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
@@ -69,6 +70,7 @@ public final class SpectralBlockChangeHandlers {
     }
 
     public static void broken(LevelAccessor levelAccessor, Level playerLevel, BlockPos pos, BlockState state) {
+        OpticalSpotTracker.discardSpotsAt(levelAccessor, pos);
         SurfaceCoatingData.removeAll(playerLevel, pos);
 
         if (!isFiberRelayOnly(state)) {

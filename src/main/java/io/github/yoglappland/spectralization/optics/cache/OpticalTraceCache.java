@@ -646,6 +646,7 @@ public final class OpticalTraceCache {
         cache.applyStableCachedSystems(level);
         syncHudViewers(level, cache);
         flushRetiredHudOwners(level, cache);
+        flushRetiredSpotOwners(level, cache);
     }
 
     private static IntSet processPendingSystemRebuilds(
@@ -1392,6 +1393,19 @@ public final class OpticalTraceCache {
 
         for (int ownerId : ownerIds) {
             BeamPathOverlayTracker.clearForHudPlayers(level, ownerId);
+        }
+    }
+
+    private static void flushRetiredSpotOwners(ServerLevel level, LevelTraceCache cache) {
+        if (cache.retiredSpotOwnerIds.isEmpty()) {
+            return;
+        }
+
+        IntSet ownerIds = new IntOpenHashSet(cache.retiredSpotOwnerIds);
+        cache.retiredSpotOwnerIds.clear();
+
+        for (int ownerId : ownerIds) {
+            OpticalSpotTracker.clearCompiledSpots(level, ownerId);
         }
     }
 
@@ -3151,6 +3165,7 @@ public final class OpticalTraceCache {
         private final Map<Integer, BeamHudOverlayDebugState> lastHudOverlayDebugStateByNetwork = new HashMap<>();
         private final LongSet awakenedDormantSourcePositions = new LongOpenHashSet();
         private final IntSet retiredHudOwnerIds = new IntOpenHashSet();
+        private final IntSet retiredSpotOwnerIds = new IntOpenHashSet();
         private final Set<UUID> hudHelmetPlayers = new HashSet<>();
         private final ArrayDeque<TraceRequest> pendingRequests = new ArrayDeque<>();
         private final IntSet queuedNetworkIds = new IntOpenHashSet();
@@ -3271,6 +3286,7 @@ public final class OpticalTraceCache {
             queuedProjectionRefreshNetworkIds.remove(networkId);
             pendingProjectionRefreshes.removeIf(queuedNetworkId -> queuedNetworkId == networkId);
             retiredHudOwnerIds.add(networkId);
+            retiredSpotOwnerIds.add(networkId);
             lastHudOverlaySentByNetwork.remove(networkId);
             lastHudOverlayDebugTickByNetwork.remove(networkId);
             lastHudOverlayDebugStateByNetwork.remove(networkId);

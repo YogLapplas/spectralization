@@ -15,6 +15,7 @@ public record SpotProjectionAllocation(
         double emittedPowerFraction,
         int emittedQuads,
         String result,
+        boolean internalProjectionSide,
         String detail
 ) {
     public SpotProjectionAllocation(
@@ -40,7 +41,37 @@ public record SpotProjectionAllocation(
                 emittedPowerFraction,
                 emittedQuads,
                 result,
+                false,
                 ""
+        );
+    }
+
+    public SpotProjectionAllocation(
+            BlockPos pos,
+            Direction face,
+            String kind,
+            double candidateArea,
+            double assignedArea,
+            double emittedArea,
+            double assignedPowerFraction,
+            double emittedPowerFraction,
+            int emittedQuads,
+            String result,
+            String detail
+    ) {
+        this(
+                pos,
+                face,
+                kind,
+                candidateArea,
+                assignedArea,
+                emittedArea,
+                assignedPowerFraction,
+                emittedPowerFraction,
+                emittedQuads,
+                result,
+                false,
+                detail
         );
     }
 

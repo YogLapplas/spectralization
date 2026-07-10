@@ -2,8 +2,10 @@ package io.github.yoglappland.spectralization.optics.projection;
 
 import io.github.yoglappland.spectralization.optics.SpotRecord;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import net.minecraft.core.Direction;
 
 public final class SpotProjectionContinuity {
@@ -26,6 +28,7 @@ public final class SpotProjectionContinuity {
         int mismatchCount = 0;
         int maxTextureGap = 0;
         List<Mismatch> mismatches = new ArrayList<>();
+        Map<GridBoundary, BoundaryPairSections> gridBoundaries = new HashMap<>();
 
         for (int leftIndex = 0; leftIndex < quads.size(); leftIndex++) {
             Quad left = quads.get(leftIndex);
@@ -33,26 +36,11 @@ public final class SpotProjectionContinuity {
             for (int rightIndex = leftIndex + 1; rightIndex < quads.size(); rightIndex++) {
                 Quad right = quads.get(rightIndex);
 
-                TextureContinuity gridContinuity = left.gridBoundaryContinuity(right);
-                if (gridContinuity != null) {
-                    sharedEdges++;
-
-                    int textureGap = gridContinuity.textureGap();
-                    if (textureGap > TEXTURE_EPSILON_UNIT) {
-                        mismatchCount++;
-                        maxTextureGap = Math.max(maxTextureGap, textureGap);
-
-                        if (mismatches.size() < maxExamples) {
-                            mismatches.add(new Mismatch(
-                                    left.spot(),
-                                    -1,
-                                    right.spot(),
-                                    -1,
-                                    textureGap,
-                                    gridContinuity
-                            ));
-                        }
-                    }
+                GridBoundary gridBoundary = GridBoundary.between(left, right);
+                if (gridBoundary != null) {
+                    BoundaryPairSections sections = gridBoundaries.computeIfAbsent(gridBoundary, BoundaryPairSections::new);
+                    sections.add(left);
+                    sections.add(right);
                 }
 
                 for (int leftEdgeIndex = 0; leftEdgeIndex < 4; leftEdgeIndex++) {
@@ -85,6 +73,29 @@ public final class SpotProjectionContinuity {
                                 ));
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        for (BoundaryPairSections sections : gridBoundaries.values()) {
+            for (TextureContinuity continuity : sections.inspect()) {
+                sharedEdges++;
+
+                int textureGap = continuity.textureGap();
+                if (textureGap > TEXTURE_EPSILON_UNIT) {
+                    mismatchCount++;
+                    maxTextureGap = Math.max(maxTextureGap, textureGap);
+
+                    if (mismatches.size() < maxExamples) {
+                        mismatches.add(new Mismatch(
+                                sections.firstSpot(),
+                                -1,
+                                sections.secondSpot(),
+                                -1,
+                                textureGap,
+                                continuity
+                        ));
                     }
                 }
             }
@@ -220,94 +231,6 @@ public final class SpotProjectionContinuity {
 
         private long textureArea() {
             return polygonArea2d(p0.u(), p0.v(), p1.u(), p1.v(), p2.u(), p2.v(), p3.u(), p3.v());
-        }
-
-        private TextureContinuity gridBoundaryContinuity(Quad other) {
-            GridBoundary boundary = GridBoundary.between(this, other);
-
-            if (boundary == null) {
-                return null;
-            }
-
-            BoundarySection first = boundary.section(this);
-            BoundarySection second = boundary.section(other);
-
-            if (first == null && second == null) {
-                return null;
-            }
-
-            if (first == null || second == null) {
-                BoundarySection present = first == null ? second : first;
-                WorldPoint start = boundary.worldAt(present.minCoord());
-                WorldPoint end = boundary.worldAt(present.maxCoord());
-                TexturePoint presentStart = present.textureAt(present.minCoord());
-                TexturePoint presentEnd = present.textureAt(present.maxCoord());
-                TexturePoint missing = new TexturePoint(0.0D, 0.0D);
-
-                return new TextureContinuity(
-                        PROOF_SCALE,
-                        start,
-                        end,
-                        first == null ? missing : presentStart,
-                        first == null ? missing : presentEnd,
-                        second == null ? missing : presentStart,
-                        second == null ? missing : presentEnd,
-                        "grid_section_missing"
-                );
-            }
-
-            double sectionGap = Math.max(
-                    Math.abs(first.minCoord() - second.minCoord()),
-                    Math.abs(first.maxCoord() - second.maxCoord())
-            );
-
-            if (sectionGap > POSITION_EPSILON_UNIT) {
-                double min = Math.min(first.minCoord(), second.minCoord());
-                double max = Math.max(first.maxCoord(), second.maxCoord());
-                return new TextureContinuity(
-                        Math.max(PROOF_SCALE, (int) Math.round(sectionGap)),
-                        boundary.worldAt(min),
-                        boundary.worldAt(max),
-                        first.textureAt(first.clampCoord(min)),
-                        first.textureAt(first.clampCoord(max)),
-                        second.textureAt(second.clampCoord(min)),
-                        second.textureAt(second.clampCoord(max)),
-                        String.format(
-                                Locale.ROOT,
-                                "grid_section_gap first_s=[%s,%s] second_s=[%s,%s]",
-                                formatProofUnit(first.minCoord()),
-                                formatProofUnit(first.maxCoord()),
-                                formatProofUnit(second.minCoord()),
-                                formatProofUnit(second.maxCoord())
-                        )
-                );
-            }
-
-            double min = Math.max(first.minCoord(), second.minCoord());
-            double max = Math.min(first.maxCoord(), second.maxCoord());
-
-            if (max - min <= MIN_SHARED_EDGE_UNIT) {
-                return null;
-            }
-
-            TexturePoint firstStart = first.textureAt(min);
-            TexturePoint firstEnd = first.textureAt(max);
-            TexturePoint secondStart = second.textureAt(min);
-            TexturePoint secondEnd = second.textureAt(max);
-            int startGap = firstStart.distance(secondStart);
-            int endGap = firstEnd.distance(secondEnd);
-            int textureGap = Math.max(startGap, endGap);
-
-            return new TextureContinuity(
-                    textureGap,
-                    boundary.worldAt(min),
-                    boundary.worldAt(max),
-                    firstStart,
-                    firstEnd,
-                    secondStart,
-                    secondEnd,
-                    "grid_boundary_uv"
-            );
         }
     }
 
@@ -699,6 +622,172 @@ public final class SpotProjectionContinuity {
 
             return planeCoord;
         }
+    }
+
+    private static final class BoundaryPairSections {
+        private final GridBoundary boundary;
+        private final List<BoundarySideSection> lowerSections = new ArrayList<>();
+        private final List<BoundarySideSection> upperSections = new ArrayList<>();
+        private SpotRecord lowerSpot;
+        private SpotRecord upperSpot;
+
+        private BoundaryPairSections(GridBoundary boundary) {
+            this.boundary = boundary;
+        }
+
+        private void add(Quad quad) {
+            BoundarySection section = boundary.section(quad);
+
+            if (section == null) {
+                return;
+            }
+
+            int blockMin = blockCoordinate(quad.spot(), boundary.fixedAxis()) * PROOF_SCALE;
+            boolean lowerSide = blockMin < boundary.fixedCoord();
+            List<BoundarySideSection> target = lowerSide ? lowerSections : upperSections;
+
+            for (BoundarySideSection existing : target) {
+                if (existing.spot().equals(quad.spot())) {
+                    return;
+                }
+            }
+
+            target.add(new BoundarySideSection(quad.spot(), section));
+
+            if (lowerSide) {
+                if (lowerSpot == null) {
+                    lowerSpot = quad.spot();
+                }
+            } else if (upperSpot == null) {
+                upperSpot = quad.spot();
+            }
+        }
+
+        private SpotRecord firstSpot() {
+            return lowerSpot != null ? lowerSpot : upperSpot;
+        }
+
+        private SpotRecord secondSpot() {
+            return upperSpot != null ? upperSpot : lowerSpot;
+        }
+
+        private List<TextureContinuity> inspect() {
+            if (lowerSections.isEmpty() && upperSections.isEmpty()) {
+                return List.of();
+            }
+
+            List<Double> cuts = new ArrayList<>();
+            addCut(cuts, boundary.segmentMin());
+            addCut(cuts, boundary.segmentMax());
+            addSectionCuts(cuts, lowerSections);
+            addSectionCuts(cuts, upperSections);
+            cuts.sort(Double::compare);
+            cuts = uniqueCuts(cuts);
+
+            if (cuts.size() < 2) {
+                return List.of();
+            }
+
+            List<TextureContinuity> continuities = new ArrayList<>();
+
+            for (int i = 0; i < cuts.size() - 1; i++) {
+                double min = cuts.get(i);
+                double max = cuts.get(i + 1);
+
+                if (max - min <= MIN_SHARED_EDGE_UNIT) {
+                    continue;
+                }
+
+                double midpoint = (min + max) * 0.5D;
+                BoundarySideSection lower = sectionAt(lowerSections, midpoint);
+                BoundarySideSection upper = sectionAt(upperSections, midpoint);
+
+                if (lower == null && upper == null) {
+                    continue;
+                }
+
+                if (lower == null || upper == null) {
+                    BoundarySideSection present = lower == null ? upper : lower;
+                    TexturePoint presentStart = present.section().textureAt(present.section().clampCoord(min));
+                    TexturePoint presentEnd = present.section().textureAt(present.section().clampCoord(max));
+                    TexturePoint missing = new TexturePoint(0.0D, 0.0D);
+                    continuities.add(new TextureContinuity(
+                            PROOF_SCALE,
+                            boundary.worldAt(min),
+                            boundary.worldAt(max),
+                            lower == null ? missing : presentStart,
+                            lower == null ? missing : presentEnd,
+                            upper == null ? missing : presentStart,
+                            upper == null ? missing : presentEnd,
+                            "grid_section_missing"
+                    ));
+                    continue;
+                }
+
+                TexturePoint lowerStart = lower.section().textureAt(lower.section().clampCoord(min));
+                TexturePoint lowerEnd = lower.section().textureAt(lower.section().clampCoord(max));
+                TexturePoint upperStart = upper.section().textureAt(upper.section().clampCoord(min));
+                TexturePoint upperEnd = upper.section().textureAt(upper.section().clampCoord(max));
+                int startGap = lowerStart.distance(upperStart);
+                int endGap = lowerEnd.distance(upperEnd);
+                int textureGap = Math.max(startGap, endGap);
+                continuities.add(new TextureContinuity(
+                        textureGap,
+                        boundary.worldAt(min),
+                        boundary.worldAt(max),
+                        lowerStart,
+                        lowerEnd,
+                        upperStart,
+                        upperEnd,
+                        "grid_boundary_uv"
+                ));
+            }
+
+            return continuities;
+        }
+
+        private void addSectionCuts(List<Double> cuts, List<BoundarySideSection> sections) {
+            for (BoundarySideSection section : sections) {
+                addCut(cuts, section.section().minCoord());
+                addCut(cuts, section.section().maxCoord());
+            }
+        }
+
+        private void addCut(List<Double> cuts, double coord) {
+            if (coord < boundary.segmentMin() - POSITION_EPSILON_UNIT
+                    || coord > boundary.segmentMax() + POSITION_EPSILON_UNIT) {
+                return;
+            }
+
+            cuts.add(Math.max(boundary.segmentMin(), Math.min(boundary.segmentMax(), coord)));
+        }
+
+        private List<Double> uniqueCuts(List<Double> cuts) {
+            List<Double> unique = new ArrayList<>(cuts.size());
+
+            for (double cut : cuts) {
+                if (unique.isEmpty()
+                        || Math.abs(cut - unique.get(unique.size() - 1)) > POSITION_EPSILON_UNIT) {
+                    unique.add(cut);
+                }
+            }
+
+            return unique;
+        }
+
+        private BoundarySideSection sectionAt(List<BoundarySideSection> sections, double coord) {
+            for (BoundarySideSection section : sections) {
+                if (coord >= section.section().minCoord() - POSITION_EPSILON_UNIT
+                        && coord <= section.section().maxCoord() + POSITION_EPSILON_UNIT) {
+                    return section;
+                }
+            }
+
+            return null;
+        }
+    }
+
+    private record BoundarySideSection(SpotRecord spot, BoundarySection section) {
     }
 
     private record BoundarySample(double coord, TexturePoint texture) {

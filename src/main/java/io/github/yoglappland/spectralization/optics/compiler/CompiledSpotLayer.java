@@ -111,6 +111,7 @@ public final class CompiledSpotLayer {
         long elapsedNanos = System.nanoTime() - projectionStartNanos;
         SpotProjectionResult.Stats stats = projectionResult.stats();
         SpotProjectionResult.StageTimings timings = stats.timings();
+        SpotProjectionResult.SideDiagnostics sideDiagnostics = stats.sideDiagnostics();
         SpotProjectionResult.SubtractionStats subtraction = stats.subtraction();
         SpotProjectionResult.RemainingStats remaining = stats.remaining();
         SpotProjectionResult.HotDepth hotDepth = stats.hotDepth();
@@ -152,6 +153,35 @@ public final class CompiledSpotLayer {
                 .field("side_boundary_candidate_faces", stats.sideBoundaryCandidateFaces())
                 .field("side_boundary_missing_faces", stats.sideBoundaryMissingFaces())
                 .field("side_boundary_extra_faces", stats.sideBoundaryExtraFaces())
+                .field("side_internal_travel_intervals", sideDiagnostics.internalTravelIntervals())
+                .field("side_external_travel_intervals", sideDiagnostics.externalTravelIntervals())
+                .field("side_internal_window_attempts", sideDiagnostics.internalWindowAttempts())
+                .field("side_external_window_attempts", sideDiagnostics.externalWindowAttempts())
+                .field("side_internal_degenerate_travel", sideDiagnostics.internalDegenerateTravel())
+                .field("side_external_degenerate_travel", sideDiagnostics.externalDegenerateTravel())
+                .field("side_internal_not_renderable", sideDiagnostics.internalNotRenderable())
+                .field("side_external_not_renderable", sideDiagnostics.externalNotRenderable())
+                .field("side_internal_cross_null", sideDiagnostics.internalCrossNull())
+                .field("side_external_cross_null", sideDiagnostics.externalCrossNull())
+                .field("side_internal_window_null", sideDiagnostics.internalWindowNull())
+                .field("side_external_window_null", sideDiagnostics.externalWindowNull())
+                .field("side_internal_window_candidates", sideDiagnostics.internalWindowCandidates())
+                .field("side_external_window_candidates", sideDiagnostics.externalWindowCandidates())
+                .field("side_internal_visible_empty", sideDiagnostics.internalVisibleEmpty())
+                .field("side_external_visible_empty", sideDiagnostics.externalVisibleEmpty())
+                .field("side_internal_low_power", sideDiagnostics.internalLowPower())
+                .field("side_external_low_power", sideDiagnostics.externalLowPower())
+                .field("side_internal_patch_null", sideDiagnostics.internalPatchNull())
+                .field("side_external_patch_null", sideDiagnostics.externalPatchNull())
+                .field("side_internal_spot_invisible", sideDiagnostics.internalSpotInvisible())
+                .field("side_external_spot_invisible", sideDiagnostics.externalSpotInvisible())
+                .field("side_internal_emitted_quads", sideDiagnostics.internalEmittedQuads())
+                .field("side_external_emitted_quads", sideDiagnostics.externalEmittedQuads())
+                .field("side_internal_tiny_texture_patches", sideDiagnostics.internalTinyTexturePatches())
+                .field("side_external_tiny_texture_patches", sideDiagnostics.externalTinyTexturePatches())
+                .field("side_internal_large_stretch_patches", sideDiagnostics.internalLargeStretchPatches())
+                .field("side_external_large_stretch_patches", sideDiagnostics.externalLargeStretchPatches())
+                .field("side_max_stretch_ratio", sideDiagnostics.maxStretchRatio())
                 .field("plane_window_tests", stats.planeWindowTests())
                 .field("plane_window_candidates", stats.planeWindowCandidates())
                 .field("plane_window_remaining_culled", stats.planeWindowRemainingCulled())

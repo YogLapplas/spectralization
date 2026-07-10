@@ -16,7 +16,23 @@ final class SpotProjectionPatch {
             LocalPoint p3,
             TexturePoint t3
     ) {
-        if (!liesOnFace(face, p0, p1, p2, p3)) {
+        double expected = face.getAxisDirection() == Direction.AxisDirection.POSITIVE ? 1.0D : 0.0D;
+        return orientedOnPlane(face, expected, p0, t0, p1, t1, p2, t2, p3, t3);
+    }
+
+    static Patch orientedOnPlane(
+            Direction face,
+            double fixedAxisCoordinate,
+            LocalPoint p0,
+            TexturePoint t0,
+            LocalPoint p1,
+            TexturePoint t1,
+            LocalPoint p2,
+            TexturePoint t2,
+            LocalPoint p3,
+            TexturePoint t3
+    ) {
+        if (!liesOnPlane(face, fixedAxisCoordinate, p0, p1, p2, p3)) {
             return null;
         }
 
@@ -74,6 +90,25 @@ final class SpotProjectionPatch {
             LocalPoint p3
     ) {
         double expected = face.getAxisDirection() == Direction.AxisDirection.POSITIVE ? 1.0D : 0.0D;
+        return Math.abs(axisCoordinate(p0, face) - expected) <= FACE_EPSILON
+                && Math.abs(axisCoordinate(p1, face) - expected) <= FACE_EPSILON
+                && Math.abs(axisCoordinate(p2, face) - expected) <= FACE_EPSILON
+                && Math.abs(axisCoordinate(p3, face) - expected) <= FACE_EPSILON;
+    }
+
+    static boolean liesOnPlane(
+            Direction face,
+            double fixedAxisCoordinate,
+            LocalPoint p0,
+            LocalPoint p1,
+            LocalPoint p2,
+            LocalPoint p3
+    ) {
+        if (!Double.isFinite(fixedAxisCoordinate)) {
+            return false;
+        }
+
+        double expected = clamp01(fixedAxisCoordinate);
         return Math.abs(axisCoordinate(p0, face) - expected) <= FACE_EPSILON
                 && Math.abs(axisCoordinate(p1, face) - expected) <= FACE_EPSILON
                 && Math.abs(axisCoordinate(p2, face) - expected) <= FACE_EPSILON

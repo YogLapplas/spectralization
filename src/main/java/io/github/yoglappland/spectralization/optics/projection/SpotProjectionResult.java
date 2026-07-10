@@ -78,6 +78,7 @@ public record SpotProjectionResult(
             int maxVisibleFragments,
             long frontFragmentsBeforeMerge,
             long frontFragmentsAfterMerge,
+            SideDiagnostics sideDiagnostics,
             StageTimings timings,
             IndexStats index,
             SubtractionStats subtraction,
@@ -125,6 +126,7 @@ public record SpotProjectionResult(
                 0,
                 0L,
                 0L,
+                SideDiagnostics.EMPTY,
                 StageTimings.EMPTY,
                 IndexStats.EMPTY,
                 SubtractionStats.EMPTY,
@@ -173,11 +175,108 @@ public record SpotProjectionResult(
             maxVisibleFragments = Math.max(0, maxVisibleFragments);
             frontFragmentsBeforeMerge = Math.max(0L, frontFragmentsBeforeMerge);
             frontFragmentsAfterMerge = Math.max(0L, frontFragmentsAfterMerge);
+            sideDiagnostics = sideDiagnostics == null ? SideDiagnostics.EMPTY : sideDiagnostics;
             timings = timings == null ? StageTimings.EMPTY : timings;
             index = index == null ? IndexStats.EMPTY : index;
             subtraction = subtraction == null ? SubtractionStats.EMPTY : subtraction;
             remaining = remaining == null ? RemainingStats.EMPTY : remaining;
             hotDepth = hotDepth == null ? HotDepth.EMPTY : hotDepth;
+        }
+    }
+
+    public record SideDiagnostics(
+            long internalTravelIntervals,
+            long externalTravelIntervals,
+            long internalWindowAttempts,
+            long externalWindowAttempts,
+            long internalDegenerateTravel,
+            long externalDegenerateTravel,
+            long internalNotRenderable,
+            long externalNotRenderable,
+            long internalCrossNull,
+            long externalCrossNull,
+            long internalWindowNull,
+            long externalWindowNull,
+            long internalWindowCandidates,
+            long externalWindowCandidates,
+            long internalVisibleEmpty,
+            long externalVisibleEmpty,
+            long internalLowPower,
+            long externalLowPower,
+            long internalPatchNull,
+            long externalPatchNull,
+            long internalSpotInvisible,
+            long externalSpotInvisible,
+            long internalEmittedQuads,
+            long externalEmittedQuads,
+            long internalTinyTexturePatches,
+            long externalTinyTexturePatches,
+            long internalLargeStretchPatches,
+            long externalLargeStretchPatches,
+            double maxStretchRatio
+    ) {
+        public static final SideDiagnostics EMPTY = new SideDiagnostics(
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0.0D
+        );
+
+        public SideDiagnostics {
+            internalTravelIntervals = Math.max(0L, internalTravelIntervals);
+            externalTravelIntervals = Math.max(0L, externalTravelIntervals);
+            internalWindowAttempts = Math.max(0L, internalWindowAttempts);
+            externalWindowAttempts = Math.max(0L, externalWindowAttempts);
+            internalDegenerateTravel = Math.max(0L, internalDegenerateTravel);
+            externalDegenerateTravel = Math.max(0L, externalDegenerateTravel);
+            internalNotRenderable = Math.max(0L, internalNotRenderable);
+            externalNotRenderable = Math.max(0L, externalNotRenderable);
+            internalCrossNull = Math.max(0L, internalCrossNull);
+            externalCrossNull = Math.max(0L, externalCrossNull);
+            internalWindowNull = Math.max(0L, internalWindowNull);
+            externalWindowNull = Math.max(0L, externalWindowNull);
+            internalWindowCandidates = Math.max(0L, internalWindowCandidates);
+            externalWindowCandidates = Math.max(0L, externalWindowCandidates);
+            internalVisibleEmpty = Math.max(0L, internalVisibleEmpty);
+            externalVisibleEmpty = Math.max(0L, externalVisibleEmpty);
+            internalLowPower = Math.max(0L, internalLowPower);
+            externalLowPower = Math.max(0L, externalLowPower);
+            internalPatchNull = Math.max(0L, internalPatchNull);
+            externalPatchNull = Math.max(0L, externalPatchNull);
+            internalSpotInvisible = Math.max(0L, internalSpotInvisible);
+            externalSpotInvisible = Math.max(0L, externalSpotInvisible);
+            internalEmittedQuads = Math.max(0L, internalEmittedQuads);
+            externalEmittedQuads = Math.max(0L, externalEmittedQuads);
+            internalTinyTexturePatches = Math.max(0L, internalTinyTexturePatches);
+            externalTinyTexturePatches = Math.max(0L, externalTinyTexturePatches);
+            internalLargeStretchPatches = Math.max(0L, internalLargeStretchPatches);
+            externalLargeStretchPatches = Math.max(0L, externalLargeStretchPatches);
+            maxStretchRatio = Double.isFinite(maxStretchRatio) ? Math.max(0.0D, maxStretchRatio) : 0.0D;
         }
     }
 

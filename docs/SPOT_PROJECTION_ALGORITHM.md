@@ -158,6 +158,12 @@ case. Existing mod optical elements, optical sources, full blocks, and lens
 holders with lenses retain the historical full-block projection box unless a
 separate descriptor is added for that block.
 
+The first correctness target for partial geometry is a single arbitrary
+axis-aligned cuboid contained in one Minecraft block. Cross-block cuboids may be
+split at block boundaries, and stairs/fences should be treated later as unions of
+this primitive. The cuboid is the projection primitive; a full block is only the
+special cuboid `[0,1] x [0,1] x [0,1]`.
+
 ## 4. Invariants
 
 ### 4.1 Readout-only invariant
@@ -268,8 +274,9 @@ sideVisible = inSideBounds && projectable && openFace && coneSweepsFace && remai
 The runtime side candidate source is:
 
 ```text
-projectable tile adjacent to air-like neighbor
+projectable tile in the front/side scan range
 -> exposed side boundary
+-> source-side receiving boundary
 -> cone sweep interval exists
 -> side window intersect remaining
 ```
@@ -284,6 +291,11 @@ x/z or y/z faces live inside tiles that may already be in the front scan and are
 not necessarily on the cone's outer side boundary. Treating slabs, stairs, and
 fences as a set of smaller cuboids requires enumerating those cuboid side faces
 wherever the cuboid itself was a projected tile candidate.
+
+Projectable tiles that are only in the side scan range still contribute their
+occlusion-plane windows for the current depth. A side-visible cuboid can block
+another side or internal face even when its front face is not an ordinary
+front-tile visual candidate at that exact depth.
 
 ### 5.3 Projectable surfaces
 
@@ -308,6 +320,61 @@ opaque mini-blocks; internal decomposition seams must not cast shadows onto the
 same stair or fence. The global depth remaining region is still updated only
 after the current depth slice with the block's occlusion-plane windows,
 preserving the existing same-depth invariant.
+
+The cuboid is now the projection primitive. A visible receiving face is not
+automatically the whole face of the cuboid; it is the cuboid face after sibling
+cuboids in the same block have removed their contact rectangles. This applies to
+front faces and side faces. The full cuboid footprint is still used for occlusion
+planes and block-local downstream remaining, because the solid volume exists even
+where its receiving face is covered by another cuboid. In short:
+
+```text
+visible face = cuboid face - same-block sibling contacts
+occluding body = full cuboid volume
+```
+
+This distinction is what makes slabs, stairs, fences, and future model-derived
+partial blocks behave as a union of axis-aligned cuboids while keeping a complete
+block equal to the special cuboid `[0,1] x [0,1] x [0,1]`.
+
+For a single non-full cuboid, front and side receiving faces are evaluated as one
+atomic cuboid transaction: they read the same incoming remaining texture region.
+The cuboid's front face must not pre-clip its own side faces. The historical
+same-depth front clipping remains valid only for the full-unit block special
+case, where the old full-block visual behavior is intentionally preserved.
+
+#### Known unresolved front-order limitation
+
+Front-face ordering is not yet global across one Minecraft depth slice. The
+current transitional implementation emits front faces while scanning tiles. A
+multi-cuboid block has a block-local `tileRemainingRayWindows`, so a lower stair
+cuboid can shadow an upper cuboid in the same block. Cuboids in different blocks
+still read the same depth-entry `remainingRayWindows`; their blockers are only
+applied after every front face at that integer depth has been emitted.
+
+This produces a stable incorrect case: place stairs in a row and project upward.
+When the lower half of one stair should partially shadow the upper half of an
+adjacent stair, the cross-block shadow is missing even though the equivalent
+same-block ordering works. The fault is on front receiving faces, not side-face
+mapping.
+
+The required recurrence has two ordered coordinates:
+
+```text
+remaining at integer depth d
+-> collect every cuboid front candidate in that depth
+-> group candidates by cuboid-local front travel tau
+-> every coplanar face in group tau reads the same incoming region
+-> add the opaque cuboid occupancy at tau to the depth-local consumed region
+-> continue with the next travel group
+-> publish the final blocker union as remaining at depth d + 1
+```
+
+The transaction boundary is the whole depth slice, not one block. Sorting must
+use the beam-frame `minTravel` carried by each cuboid. World block position may
+identify ownership and dependencies, but it must not partition occlusion
+authority. A full block remains the special case whose only front travel is
+zero.
 
 ### 5.4 Parallel occlusion planes
 
@@ -341,23 +408,69 @@ Current side spots:
   model-based projection shape,
 - use `FOOTPRINT_QUAD`,
 - have a separate visual factor,
-- are clipped by the current remaining texture region and same-depth front
-  visual windows for full-block style surfaces,
+- are clipped by the current remaining texture region and owner-aware same-depth
+  occlusion windows,
 - do not currently act as the primary downstream shadow authority.
 
-For model-based multi-box blocks, such as stairs and fences, side spots are not
-clipped by the whole depth slice's front-window list. A stair tread or riser is a
-real receiving face inside the block's unit cube; treating every same-depth box
-front as a global side clip erases those faces and creates false self-shadow.
+For model-based multi-box blocks, such as stairs and fences, side spots are
+clipped by same-depth occlusion with identity and travel order. A stair tread or
+riser is a real receiving face inside the block's unit cube; the candidate
+cuboid's own front planes must not erase its side face, but earlier sibling
+cuboids and other blocks at the same depth may occlude it. In code terms, each
+same-depth occlusion window carries its owning block position, box index, and
+travel coordinate. A side patch segment reads:
+
+```text
+incoming = previous_depth_remaining
+incoming -= same_depth_occluders_before(segment_midpoint)
+incoming excludes occluders from the same cuboid
+visible = side_window intersect incoming
+```
+
 When two boxes in the same block touch a side plane, that contact is resolved as
-a rectangle difference on the side face itself. A sibling box may cover part of
-an internal side face, but partial contact must not delete the whole face.
+a rectangle difference on the side face itself before the optical-order clipping
+above. A sibling box may cover part of an internal side face, but partial contact
+must not delete the whole face.
 Internal side faces whose fixed local coordinate lies inside the unit cube are
-not tested with the old cone-entrance predicate. They are real x/z or y/z
-receiving surfaces; once their swept side region intersects the texture domain,
-they may receive a side spot even when the beam radius is constant across that
-block. The entrance-side predicate is only a culling rule for outer block
-boundaries.
+not automatically accepted merely because they are internal. Every cuboid face
+carries its real polarity: the negative face is the cuboid's own minimum on the
+fixed axis, and the positive face is its own maximum. This identity must not be
+reconstructed from `fixedLocal < 0.5`; both faces of an offset cuboid may lie on
+the same side of the block-local midpoint.
+
+For each travel segment, the beam radius change and the face polarity determine
+whether rays cross that face into the cuboid. Only this entrance face may enter
+texture-domain allocation. The opposite longitudinal face is an exit/back face
+and is rejected before canonical-window construction, clipping, or quad
+emission. A constant-radius segment has no longitudinal entrance face. This
+rule is identical for full-block exterior faces and model-derived internal
+faces; internal/exterior status affects geometric reachability and diagnostics,
+not illumination authority.
+
+After entrance classification, the face is reduced to the part actually
+reachable from the source side. Same-block sibling contacts remove coplanar
+pieces, and same-block solid volume that covers the same source-side ray removes
+the travel/cross region behind it. The remaining internal x/z or y/z surface is
+a real receiving surface and proceeds through the ordinary texture-domain
+difference pipeline.
+
+For these model-derived side faces, `Direction` is only the face normal. It must
+not be used as the plane position. A side patch on an internal cuboid face must
+validate against the real fixed block-local axis coordinate of that face, such as
+`x = 0.5` or `y = 0.25`, not against the full-block exterior plane `0` or `1`.
+The side patch emitter therefore carries both the normal direction and the
+fixed-axis coordinate.
+
+Runtime side candidates carry a `ProjectionFace`-like descriptor. It records the
+face normal, its cuboid-relative minimum/maximum polarity, the real fixed local
+coordinate, and the travel/cross interval of the receiving face. This descriptor
+is the service-side geometry authority for a side patch; scattered values such
+as `Direction`, `fixedLocal < 0.5`, or `opticalBoxes.size()` must not be used to
+infer where the face lies.
+
+Side travel should be adaptively subdivided when the beam radius changes. A
+single endpoint rectangle is not a safe approximation for a side face when the
+beam converges, diverges, or has a waist inside the cuboid.
 
 The downstream approximation is handled by parallel occlusion planes.
 
@@ -526,6 +639,11 @@ surface, occlusion-plane, and rectangle-subtraction counts even when verbose
 allocation tracing is off. Per-face `SpotProjectionAllocation` probes are heavy
 and should be gated by `compilerdebug verbose`.
 
+Verbose allocation output gives internal model-derived `u-side` and `v-side`
+records first and reserves enough rows to print all of them. Other side records,
+failed allocations, and front probes follow. The allocation summary reports each
+category count so a row cap cannot silently hide the internal cuboid evidence.
+
 `client_spot_color_debug/profile` is emitted when `spotdebug colors` is enabled.
 It belongs to the appearance layer. It does not change texture ownership or
 optical readout. It marks incomplete footprint quads in the world and summarizes
@@ -576,6 +694,17 @@ The profile line also includes phase timings and hot-spot counters:
 - `side_*` fields measure side visual candidate enumeration. Side spots are still
   visual readout objects, but the counters show how many side tiles, open-face
   checks, travel intervals, and side texture windows were considered.
+- `side_internal_*` and `side_external_*` fields split the side visual pipeline
+  by the receiving face's fixed local coordinate. Internal means the side plane
+  lies inside the block unit cube, such as a stair or fence model cuboid face;
+  external means it lies on the full block boundary. The failure counters mark
+  the stage where a side attempt stopped: degenerate travel, not-renderable side,
+  missing cross-section, missing side window, empty visible region, low power,
+  patch-null, or invisible spot.
+- `side_*_tiny_texture_patches`, `side_*_large_stretch_patches`, and
+  `side_max_stretch_ratio` are geometry-health diagnostics. They identify
+  patches whose texture-domain area is extremely small or whose world/texture
+  stretch is large. They do not alter assignment or rendering.
 - `side_candidate_us` measures exposed-boundary candidate construction.
 - `side_emit_us` measures the side candidate to `SpotRecord` emission path.
 - `side_travel_split_us` measures side travel interval splitting and subdivision
@@ -710,6 +839,27 @@ sub-millisecond on the client, while projection generation spends milliseconds i
 `side_scan_us`, `side_emit_us`, `front_emit_us`, and `remaining_update_us`.
 Therefore the first optimizations should reduce candidate generation and
 geometry/occlusion recomputation, not simplify the renderer.
+
+The July 10 partial-block test makes this gap concrete. A wide 300 SP source
+scanned 8,544 tiles and exported 8,880 dependencies per rebuild. Typical rebuilds
+took about 190-333 ms, with a cold/debug-heavy peak near 801 ms. `side_scan_us`
+was about 51-96 ms and `side_emit_us` about 42-81 ms, while client rendering of
+roughly 1,350-1,585 active quads stayed near 2-4 ms per frame. The bottleneck is
+server-side projection generation plus verbose allocation construction, not GPU
+quad submission.
+
+The same test produced about 549-862 spots for the wide source, below
+`CompiledSpotLayer.MAX_SPOTS_PER_SAMPLE = 1024`. The observed shortage of quads
+therefore must not be treated as a cap problem. Correct front ordering and exact
+small-fragment assignment come first; raising the cap before that would increase
+cost without restoring missing geometric regions.
+
+Verbose side diagnostics should reserve full geometry strings for internal
+model-derived faces. Ordinary external side allocations may retain numeric
+totals without formatting every occluder and patch. Incidence rejection should
+be performed before same-depth occluder splitting. Because radius squared is a
+quadratic propagation invariant, splitting at the single beam waist makes each
+travel interval monotone and permits this early rejection without sampling.
 
 ### 9.1 Optimize the light-cone tree first
 

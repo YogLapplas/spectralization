@@ -42,6 +42,8 @@ public final class OpticalCompilerDebugLogger {
     private static final String AUTH_REFERENCE = "reference";
     private static final String AUTH_DEBUG_ORACLE = "debug_oracle";
     private static final String AUTH_LEGACY_COMPARE = "legacy_compare";
+    private static final double SPOT_TINY_TEXTURE_AREA_THRESHOLD = 1.0E-4D;
+    private static final double SPOT_LARGE_STRETCH_RATIO_THRESHOLD = 200.0D;
     private static final Comparator<PortGraphNode> NODE_COMPARATOR = Comparator
             .comparingInt((PortGraphNode node) -> node.pos().getX())
             .thenComparingInt(node -> node.pos().getY())
@@ -799,6 +801,8 @@ public final class OpticalCompilerDebugLogger {
                 .append(" stretch_min=").append(formatDouble(metricSummary.stretchMin()))
                 .append(" stretch_max=").append(formatDouble(metricSummary.stretchMax()))
                 .append(" stretch_avg=").append(formatDouble(metricSummary.stretchAverage()))
+                .append(" tiny_texture_patches=").append(metricSummary.tinyTexturePatches())
+                .append(" large_stretch_patches=").append(metricSummary.largeStretchPatches())
                 .append('\n');
         appendProjectionFaceMetrics(builder, activeSpots);
         if (verboseLog()) {
@@ -2031,6 +2035,8 @@ public final class OpticalCompilerDebugLogger {
         double stretchSum = 0.0D;
         double stretchMin = Double.POSITIVE_INFINITY;
         double stretchMax = 0.0D;
+        int tinyTexturePatches = 0;
+        int largeStretchPatches = 0;
 
         for (SpotRecord spot : spots) {
             SpotProjectionContinuity.Metrics metrics = SpotProjectionContinuity.metrics(spot);
@@ -2045,10 +2051,18 @@ public final class OpticalCompilerDebugLogger {
             stretchSum += metrics.stretchRatio();
             stretchMin = Math.min(stretchMin, metrics.stretchRatio());
             stretchMax = Math.max(stretchMax, metrics.stretchRatio());
+
+            if (metrics.originalArea() <= SPOT_TINY_TEXTURE_AREA_THRESHOLD) {
+                tinyTexturePatches++;
+            }
+
+            if (metrics.stretchRatio() >= SPOT_LARGE_STRETCH_RATIO_THRESHOLD) {
+                largeStretchPatches++;
+            }
         }
 
         if (count == 0) {
-            return new ProjectionMetricSummary(0, 0.0D, 0.0D, 0.0D, 0.0D, 0.0D);
+            return new ProjectionMetricSummary(0, 0.0D, 0.0D, 0.0D, 0.0D, 0.0D, 0, 0);
         }
 
         return new ProjectionMetricSummary(
@@ -2057,7 +2071,9 @@ public final class OpticalCompilerDebugLogger {
                 worldAreaSum,
                 stretchMin,
                 stretchMax,
-                stretchSum / count
+                stretchSum / count,
+                tinyTexturePatches,
+                largeStretchPatches
         );
     }
 
@@ -2125,6 +2141,10 @@ public final class OpticalCompilerDebugLogger {
         double emittedPowerSum = 0.0D;
         int emittedQuads = 0;
         int assignedButNotEmitted = 0;
+        int internalSideAllocations = 0;
+        int otherSideAllocations = 0;
+        int probeAllocations = 0;
+        int otherAllocations = 0;
         Map<String, Integer> resultCounts = new HashMap<>();
 
         for (SpotProjectionAllocation allocation : allocations) {
@@ -2139,6 +2159,16 @@ public final class OpticalCompilerDebugLogger {
             if (allocation.assignedArea() > 0.0D && allocation.emittedQuads() == 0) {
                 assignedButNotEmitted++;
             }
+
+            if (allocation.internalProjectionSide()) {
+                internalSideAllocations++;
+            } else if (isSideAllocation(allocation)) {
+                otherSideAllocations++;
+            } else if (allocation.kind().endsWith("-probe")) {
+                probeAllocations++;
+            } else {
+                otherAllocations++;
+            }
         }
 
         builder.append("spot_projection_allocation_summary")
@@ -2151,6 +2181,10 @@ public final class OpticalCompilerDebugLogger {
                 .append(" emitted_power_fraction_sum=").append(formatDouble(emittedPowerSum))
                 .append(" emitted_quads=").append(emittedQuads)
                 .append(" assigned_but_not_emitted=").append(assignedButNotEmitted)
+                .append(" internal_side_allocations=").append(internalSideAllocations)
+                .append(" other_side_allocations=").append(otherSideAllocations)
+                .append(" probe_allocations=").append(probeAllocations)
+                .append(" other_allocations=").append(otherAllocations)
                 .append(" results=").append(formatStringCounts(resultCounts))
                 .append('\n');
 
@@ -2164,7 +2198,13 @@ public final class OpticalCompilerDebugLogger {
                 .thenComparing(allocation -> allocation.face().getSerializedName())
                 .thenComparing(SpotProjectionAllocation::kind));
 
-        int maxRows = Math.max(96, Math.min(512, SpectralizationConfig.opticalCompilerDebugMaxEdges() * 4));
+        int configuredRows = Math.max(96, Math.min(512, SpectralizationConfig.opticalCompilerDebugMaxEdges() * 4));
+        int maxRows = Math.max(configuredRows, internalSideAllocations);
+        builder.append("spot_projection_allocation_row_budget configured=")
+                .append(configuredRows)
+                .append(" effective=").append(maxRows)
+                .append(" internal_side_reserved=").append(internalSideAllocations)
+                .append('\n');
         int count = 0;
 
         for (SpotProjectionAllocation allocation : sortedAllocations) {
@@ -2182,6 +2222,7 @@ public final class OpticalCompilerDebugLogger {
                     .append(" assigned_power_fraction=").append(formatDouble(allocation.assignedPowerFraction()))
                     .append(" emitted_power_fraction=").append(formatDouble(allocation.emittedPowerFraction()))
                     .append(" emitted_quads=").append(allocation.emittedQuads())
+                    .append(" internal_side=").append(allocation.internalProjectionSide())
                     .append(" result=").append(allocation.result());
 
             if (!allocation.detail().isEmpty()) {
@@ -2194,12 +2235,20 @@ public final class OpticalCompilerDebugLogger {
     }
 
     private static int allocationPriority(SpotProjectionAllocation allocation) {
-        if (allocation.kind().endsWith("-probe")) {
-            return -1;
+        if (allocation.internalProjectionSide()) {
+            return -3;
+        }
+
+        if (isSideAllocation(allocation)) {
+            return -2;
         }
 
         if (allocation.assignedArea() > 0.0D && allocation.emittedQuads() == 0) {
-            return 0;
+            return -1;
+        }
+
+        if (allocation.kind().endsWith("-probe")) {
+            return 3;
         }
 
         if ("occluded".equals(allocation.result())) {
@@ -2211,6 +2260,10 @@ public final class OpticalCompilerDebugLogger {
         }
 
         return 1;
+    }
+
+    private static boolean isSideAllocation(SpotProjectionAllocation allocation) {
+        return "u-side".equals(allocation.kind()) || "v-side".equals(allocation.kind());
     }
 
     private static String formatPos(BlockPos pos) {
@@ -2296,7 +2349,9 @@ public final class OpticalCompilerDebugLogger {
             double worldAreaSum,
             double stretchMin,
             double stretchMax,
-            double stretchAverage
+            double stretchAverage,
+            int tinyTexturePatches,
+            int largeStretchPatches
     ) {
     }
 

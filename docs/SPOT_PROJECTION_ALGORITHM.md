@@ -339,35 +339,32 @@ Server-side projection emits `SpotRecord` values.
 
 Client-side rendering in `SpotRenderEvents`:
 
-- sorts spots back-to-front,
+- sorts by receiving surface group for stable submission,
 - culls by render distance,
-- renders core, halo, and ring textures,
+- renders core, halo, and ring textures through an additive light pass,
 - uses `FOOTPRINT_SLICE` for front rectangular slices,
 - uses `FOOTPRINT_QUAD` for side/patch quads,
-- uses tiny deterministic offsets to avoid z-fighting.
+- uses one fixed surface offset per receiving face.
 
-Client-side spot cache merging is allowed to pre-compose spots with identical
-projection geometry. The composition should behave like light intensity, not like
-ordinary paint mixing: color channels are accumulated in premultiplied light
-space, then converted back to a straight display color. This keeps same-color
-overlap stable while making different visible frequencies blend toward a brighter
-combined color instead of producing muddy order-dependent patches.
+Client-side spot cache merging should not pre-compose contributions during
+appearance-layer validation. Owner snapshots still use `SpotKey` to replace an
+owner's own records, but records from different owners are kept as separate light
+contributions. If future code reintroduces an exact duplicate merge, the key must
+include world geometry, texture-domain mapping, texture kind, and color function,
+and the merge must accumulate linear light energy without alpha-over
+composition.
 
-The client currently contains an experimental narrow second pass for incomplete
-`FOOTPRINT_QUAD` records that have the same world-space quad vertices but
-different texture-domain vertices. It composes the light color for one render
-primitive so coplanar translucent quads do not z-fight. This is an appearance
-layer experiment only. It must not be used as proof that the texture-domain
-projection allocation is correct, and it must not be extended to complete quads
-unless a separate invariant is written.
+Overlapping spots are emitted-light contributions, not stacked translucent
+paint layers. Each contribution keeps its own UV mapping, and the render pass
+uses additive blending so fragment output is accumulated as light intensity. The
+result should not depend on owner order, spot order, or small camera-distance
+sorting changes inside one physical face.
 
-The current flat display experiment for incomplete `FOOTPRINT_QUAD` records is a
-known failed update. It renders these records as flat light patches by sampling
-the center of the assigned texture-domain quad for all four vertices. In-game
-testing showed that this does not solve the visual problem cleanly and makes the
-display strategy of incomplete quads visibly different from complete quads and
-slices. Keep the diagnostics for now, but do not treat this as the accepted final
-rendering rule.
+The earlier incomplete-quad flat display experiment was rejected and removed. A
+`FOOTPRINT_QUAD` must always use its own four texture coordinates. Sampling the
+center of the assigned texture-domain quad for all four vertices changes the
+display rule and hides the actual texture mapping problem instead of solving
+overlap.
 
 Spot overlays are owner snapshots, not loose quad streams. When an owner's
 snapshot changes, players near either the old snapshot or the new snapshot must
@@ -450,23 +447,22 @@ separate neighboring fragments:
   is smaller than a full footprint.
 - `small_partial_quad_avg` counts very small partial quads near the texture
   boundary.
-- `merged_contribution_spots_avg` counts spots whose client geometry key merged
-  multiple incoming spot records.
+- `merged_contribution_spots_avg` counts spots whose client cache entry merged
+  multiple incoming spot records. It should stay zero while additive rendering is
+  being validated.
 - `multicolor_merged_spots_avg` counts merged spots whose inputs had more than
   one color bucket.
 - `partial_multicolor_faces_avg` counts block faces where incomplete quads from
   multiple color buckets coexist without necessarily sharing the same exact
   geometry key.
-- `partial_geometry_*` fields count the narrow client-side appearance merge for
-  incomplete `FOOTPRINT_QUAD` records with identical world-space quad vertices.
-  These fields are diagnostics for coplanar translucent overlap, not optical
-  power diagnostics.
-- `partial_quad_flat_rendered_avg` counts incomplete footprint quads that used
-  the flat-patch display rule instead of stretching their full texture crop.
+- `partial_geometry_*` fields diagnose incomplete `FOOTPRINT_QUAD` records with
+  identical world-space quad vertices. `partial_geometry_merged_*` should stay
+  zero in the additive render path; identical-world-quad groups are no longer
+  merged unless their full `SpotKey`, including texture mapping, is identical.
 - `worst_face` points to the face with the densest incomplete-quad color debug
   cluster in the current profile window.
 - `worst_geometry` points to the exact render-geometry key with the densest
-  incomplete-quad merge group.
+  incomplete-quad geometry group.
 
 The profile line also includes phase timings and hot-spot counters:
 

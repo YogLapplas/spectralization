@@ -1,7 +1,11 @@
 package io.github.yoglappland.spectralization.client.spot;
 
+import com.mojang.blaze3d.platform.GlStateManager;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.client.ClientHudState;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
@@ -17,6 +21,7 @@ import java.util.Map;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.Direction;
@@ -33,7 +38,6 @@ public final class SpotRenderEvents {
     private static final double MAX_RENDER_DISTANCE = 48.0D;
     private static final double MAX_RENDER_DISTANCE_SQUARED = MAX_RENDER_DISTANCE * MAX_RENDER_DISTANCE;
     private static final double SURFACE_OFFSET = 0.001D;
-    private static final double OVERLAP_LAYER_OFFSET = 0.00001D;
     private static final double PARTIAL_QUAD_AREA_THRESHOLD = 0.985D;
     private static final long PROFILE_INTERVAL_NANOS = 1_000_000_000L;
     private static final ResourceLocation CORE_TEXTURE =
@@ -42,9 +46,26 @@ public final class SpotRenderEvents {
             ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "textures/effect/spot_square_halo.png");
     private static final ResourceLocation RING_TEXTURE =
             ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "textures/effect/spot_square_ring.png");
-    private static final RenderType CORE_RENDER_TYPE = RenderType.entityTranslucentEmissive(CORE_TEXTURE);
-    private static final RenderType HALO_RENDER_TYPE = RenderType.entityTranslucentEmissive(HALO_TEXTURE);
-    private static final RenderType RING_RENDER_TYPE = RenderType.entityTranslucentEmissive(RING_TEXTURE);
+    private static final RenderStateShard.TransparencyStateShard ADDITIVE_LIGHT_TRANSPARENCY =
+            new RenderStateShard.TransparencyStateShard(
+                    "spectralization_additive_light_transparency",
+                    () -> {
+                        RenderSystem.enableBlend();
+                        RenderSystem.blendFuncSeparate(
+                                GlStateManager.SourceFactor.SRC_ALPHA,
+                                GlStateManager.DestFactor.ONE,
+                                GlStateManager.SourceFactor.ZERO,
+                                GlStateManager.DestFactor.ONE
+                        );
+                    },
+                    () -> {
+                        RenderSystem.disableBlend();
+                        RenderSystem.defaultBlendFunc();
+                    }
+            );
+    private static final RenderType CORE_RENDER_TYPE = additiveSpotRenderType("spot_core_additive", CORE_TEXTURE);
+    private static final RenderType HALO_RENDER_TYPE = additiveSpotRenderType("spot_halo_additive", HALO_TEXTURE);
+    private static final RenderType RING_RENDER_TYPE = additiveSpotRenderType("spot_ring_additive", RING_TEXTURE);
     private static final int[] HEX_SEGMENT_MASKS = {
             0x3F, 0x06, 0x5B, 0x4F,
             0x66, 0x6D, 0x7D, 0x07,
@@ -85,7 +106,6 @@ public final class SpotRenderEvents {
     private static long colorDebugPartialGeometryMergedGroups = 0L;
     private static long colorDebugPartialGeometryMergedInputSpots = 0L;
     private static long colorDebugPartialGeometryMulticolorGroups = 0L;
-    private static long colorDebugPartialQuadFlatRendered = 0L;
     private static double colorDebugMinPartialArea = 1.0D;
     private static int colorDebugWorstFacePartialQuads = 0;
     private static int colorDebugWorstFaceColorBuckets = 0;
@@ -93,6 +113,27 @@ public final class SpotRenderEvents {
     private static int colorDebugWorstGeometrySpots = 0;
     private static int colorDebugWorstGeometryColorBuckets = 0;
     private static String colorDebugWorstGeometry = "none";
+
+    private static RenderType additiveSpotRenderType(String name, ResourceLocation texture) {
+        return RenderType.create(
+                Spectralization.MODID + ":" + name,
+                DefaultVertexFormat.NEW_ENTITY,
+                VertexFormat.Mode.QUADS,
+                256,
+                false,
+                true,
+                RenderType.CompositeState.builder()
+                        .setShaderState(RenderType.RENDERTYPE_ENTITY_TRANSLUCENT_EMISSIVE_SHADER)
+                        .setTextureState(new RenderStateShard.TextureStateShard(texture, false, false))
+                        .setTransparencyState(ADDITIVE_LIGHT_TRANSPARENCY)
+                        .setCullState(RenderType.NO_CULL)
+                        .setLightmapState(RenderType.LIGHTMAP)
+                        .setOverlayState(RenderType.OVERLAY)
+                        .setDepthTestState(RenderType.LEQUAL_DEPTH_TEST)
+                        .setWriteMaskState(RenderType.COLOR_WRITE)
+                        .createCompositeState(false)
+        );
+    }
 
     @SubscribeEvent
     public static void renderSpots(RenderLevelStageEvent event) {
@@ -123,8 +164,26 @@ public final class SpotRenderEvents {
         PoseStack.Pose pose = poseStack.last();
         List<ClientSpotCache.RenderedSpot> sortedSpots = new ArrayList<>(spots);
         sortedSpots.sort(Comparator.comparingDouble(
-                (ClientSpotCache.RenderedSpot spot) -> distanceSquared(cameraPosition, spot)
-        ).reversed());
+                        (ClientSpotCache.RenderedSpot spot) -> surfaceDistanceSquared(cameraPosition, spot)
+                ).reversed()
+                .thenComparingInt(spot -> spot.pos().getX())
+                .thenComparingInt(spot -> spot.pos().getY())
+                .thenComparingInt(spot -> spot.pos().getZ())
+                .thenComparingInt(spot -> spot.face().ordinal())
+                .thenComparingInt(spot -> spot.projectionMode().ordinal())
+                .thenComparingInt(ClientSpotCache.RenderedSpot::clipMinU)
+                .thenComparingInt(ClientSpotCache.RenderedSpot::clipMinV)
+                .thenComparingInt(ClientSpotCache.RenderedSpot::clipMaxU)
+                .thenComparingInt(ClientSpotCache.RenderedSpot::clipMaxV)
+                .thenComparingInt(ClientSpotCache.RenderedSpot::textureMinU)
+                .thenComparingInt(ClientSpotCache.RenderedSpot::textureMinV)
+                .thenComparingInt(ClientSpotCache.RenderedSpot::textureMaxU)
+                .thenComparingInt(ClientSpotCache.RenderedSpot::textureMaxV)
+                .thenComparingInt(ClientSpotCache.RenderedSpot::quadX0)
+                .thenComparingInt(ClientSpotCache.RenderedSpot::quadY0)
+                .thenComparingInt(ClientSpotCache.RenderedSpot::quadZ0)
+                .thenComparingInt(ClientSpotCache.RenderedSpot::quadTextureU0)
+                .thenComparingInt(ClientSpotCache.RenderedSpot::quadTextureV0));
 
         int renderedSpots = 0;
         int culledSpots = 0;
@@ -489,10 +548,10 @@ public final class SpotRenderEvents {
         double x = spot.centerX();
         double y = spot.centerY();
         double z = spot.centerZ();
-        double overlapOffset = overlapLayerOffset(spot);
-        double offsetX = face.getStepX() * overlapOffset;
-        double offsetY = face.getStepY() * overlapOffset;
-        double offsetZ = face.getStepZ() * overlapOffset;
+        double fixedOffset = surfaceOffset(spot);
+        double offsetX = face.getStepX() * fixedOffset;
+        double offsetY = face.getStepY() * fixedOffset;
+        double offsetZ = face.getStepZ() * fixedOffset;
 
         switch (face.getAxis()) {
             case X -> addQuad(
@@ -575,15 +634,14 @@ public final class SpotRenderEvents {
         double baseX = spot.pos().getX();
         double baseY = spot.pos().getY();
         double baseZ = spot.pos().getZ();
-        boolean flatPartialQuad = isPartialFootprintQuad(spot);
-        float textureU0 = flatPartialQuad ? flatQuadTextureU(spot) : normalizedQuadUnitFloat(spot.quadTextureU0());
-        float textureV0 = flatPartialQuad ? flatQuadTextureV(spot) : normalizedQuadUnitFloat(spot.quadTextureV0());
-        float textureU1 = flatPartialQuad ? textureU0 : normalizedQuadUnitFloat(spot.quadTextureU1());
-        float textureV1 = flatPartialQuad ? textureV0 : normalizedQuadUnitFloat(spot.quadTextureV1());
-        float textureU2 = flatPartialQuad ? textureU0 : normalizedQuadUnitFloat(spot.quadTextureU2());
-        float textureV2 = flatPartialQuad ? textureV0 : normalizedQuadUnitFloat(spot.quadTextureV2());
-        float textureU3 = flatPartialQuad ? textureU0 : normalizedQuadUnitFloat(spot.quadTextureU3());
-        float textureV3 = flatPartialQuad ? textureV0 : normalizedQuadUnitFloat(spot.quadTextureV3());
+        float textureU0 = normalizedQuadUnitFloat(spot.quadTextureU0());
+        float textureV0 = normalizedQuadUnitFloat(spot.quadTextureV0());
+        float textureU1 = normalizedQuadUnitFloat(spot.quadTextureU1());
+        float textureV1 = normalizedQuadUnitFloat(spot.quadTextureV1());
+        float textureU2 = normalizedQuadUnitFloat(spot.quadTextureU2());
+        float textureV2 = normalizedQuadUnitFloat(spot.quadTextureV2());
+        float textureU3 = normalizedQuadUnitFloat(spot.quadTextureU3());
+        float textureV3 = normalizedQuadUnitFloat(spot.quadTextureV3());
 
         addQuad(
                 consumer,
@@ -857,6 +915,16 @@ public final class SpotRenderEvents {
         return dx * dx + dy * dy + dz * dz;
     }
 
+    private static double surfaceDistanceSquared(Vec3 cameraPosition, ClientSpotCache.RenderedSpot spot) {
+        double x = spot.pos().getX() + 0.5D + spot.face().getStepX() * (0.5D + SURFACE_OFFSET);
+        double y = spot.pos().getY() + 0.5D + spot.face().getStepY() * (0.5D + SURFACE_OFFSET);
+        double z = spot.pos().getZ() + 0.5D + spot.face().getStepZ() * (0.5D + SURFACE_OFFSET);
+        double dx = x - cameraPosition.x;
+        double dy = y - cameraPosition.y;
+        double dz = z - cameraPosition.z;
+        return dx * dx + dy * dy + dz * dz;
+    }
+
     private static double normalizedByte(int value) {
         return value / 255.0D;
     }
@@ -874,39 +942,7 @@ public final class SpotRenderEvents {
     }
 
     private static double surfaceOffset(ClientSpotCache.RenderedSpot spot) {
-        return SURFACE_OFFSET + overlapLayerOffset(spot);
-    }
-
-    private static double overlapLayerOffset(ClientSpotCache.RenderedSpot spot) {
-        return (1 + Math.floorMod(stableSpotHash(spot), 7)) * OVERLAP_LAYER_OFFSET;
-    }
-
-    private static int stableSpotHash(ClientSpotCache.RenderedSpot spot) {
-        int hash = 17;
-        hash = 31 * hash + spot.pos().hashCode();
-        hash = 31 * hash + spot.face().ordinal();
-        hash = 31 * hash + spot.projectionMode().ordinal();
-        hash = 31 * hash + spot.clipMinU();
-        hash = 31 * hash + spot.clipMinV();
-        hash = 31 * hash + spot.clipMaxU();
-        hash = 31 * hash + spot.clipMaxV();
-        hash = 31 * hash + spot.textureMinU();
-        hash = 31 * hash + spot.textureMinV();
-        hash = 31 * hash + spot.textureMaxU();
-        hash = 31 * hash + spot.textureMaxV();
-        hash = 31 * hash + spot.quadX0();
-        hash = 31 * hash + spot.quadY0();
-        hash = 31 * hash + spot.quadZ0();
-        hash = 31 * hash + spot.quadX1();
-        hash = 31 * hash + spot.quadY1();
-        hash = 31 * hash + spot.quadZ1();
-        hash = 31 * hash + spot.quadX2();
-        hash = 31 * hash + spot.quadY2();
-        hash = 31 * hash + spot.quadZ2();
-        hash = 31 * hash + spot.quadX3();
-        hash = 31 * hash + spot.quadY3();
-        hash = 31 * hash + spot.quadZ3();
-        return hash;
+        return SURFACE_OFFSET;
     }
 
     private static double textureArea(ClientSpotCache.RenderedSpot spot) {
@@ -915,25 +951,6 @@ public final class SpotRenderEvents {
             case FOOTPRINT_SLICE -> sliceTextureArea(spot);
             default -> 1.0D;
         };
-    }
-
-    private static boolean isPartialFootprintQuad(ClientSpotCache.RenderedSpot spot) {
-        return spot.projectionMode() == ProjectionMode.FOOTPRINT_QUAD
-                && quadTextureArea(spot) < PARTIAL_QUAD_AREA_THRESHOLD;
-    }
-
-    private static float flatQuadTextureU(ClientSpotCache.RenderedSpot spot) {
-        return (normalizedQuadUnitFloat(spot.quadTextureU0())
-                + normalizedQuadUnitFloat(spot.quadTextureU1())
-                + normalizedQuadUnitFloat(spot.quadTextureU2())
-                + normalizedQuadUnitFloat(spot.quadTextureU3())) * 0.25F;
-    }
-
-    private static float flatQuadTextureV(ClientSpotCache.RenderedSpot spot) {
-        return (normalizedQuadUnitFloat(spot.quadTextureV0())
-                + normalizedQuadUnitFloat(spot.quadTextureV1())
-                + normalizedQuadUnitFloat(spot.quadTextureV2())
-                + normalizedQuadUnitFloat(spot.quadTextureV3())) * 0.25F;
     }
 
     private static double sliceTextureArea(ClientSpotCache.RenderedSpot spot) {
@@ -979,7 +996,6 @@ public final class SpotRenderEvents {
         colorDebugPartialGeometryMergedGroups += geometryStats.partialGeometryMergedGroups();
         colorDebugPartialGeometryMergedInputSpots += geometryStats.partialGeometryMergedInputSpots();
         colorDebugPartialGeometryMulticolorGroups += geometryStats.partialGeometryMulticolorGroups();
-        colorDebugPartialQuadFlatRendered += stats.partialQuadFlatRendered;
 
         if (stats.minPartialArea < colorDebugMinPartialArea) {
             colorDebugMinPartialArea = stats.minPartialArea;
@@ -1022,7 +1038,6 @@ public final class SpotRenderEvents {
                 .field("partial_geometry_merged_groups_avg", colorDebugPartialGeometryMergedGroups / frames)
                 .field("partial_geometry_merged_input_spots_avg", colorDebugPartialGeometryMergedInputSpots / frames)
                 .field("partial_geometry_multicolor_groups_avg", colorDebugPartialGeometryMulticolorGroups / frames)
-                .field("partial_quad_flat_rendered_avg", colorDebugPartialQuadFlatRendered / frames)
                 .field("min_partial_area", colorDebugMinPartialArea == 1.0D ? 0.0D : colorDebugMinPartialArea)
                 .field("worst_face", colorDebugWorstFace)
                 .field("worst_face_partial_quads", colorDebugWorstFacePartialQuads)
@@ -1049,7 +1064,6 @@ public final class SpotRenderEvents {
         colorDebugPartialGeometryMergedGroups = 0L;
         colorDebugPartialGeometryMergedInputSpots = 0L;
         colorDebugPartialGeometryMulticolorGroups = 0L;
-        colorDebugPartialQuadFlatRendered = 0L;
         colorDebugMinPartialArea = 1.0D;
         colorDebugWorstFacePartialQuads = 0;
         colorDebugWorstFaceColorBuckets = 0;
@@ -1125,7 +1139,6 @@ public final class SpotRenderEvents {
         private int partialSlices;
         private int mergedContributionSpots;
         private int multiColorMergedSpots;
-        private int partialQuadFlatRendered;
         private double minPartialArea = 1.0D;
 
         private void record(ClientSpotCache.RenderedSpot spot) {
@@ -1143,7 +1156,6 @@ public final class SpotRenderEvents {
 
                 if (area < PARTIAL_QUAD_AREA_THRESHOLD) {
                     partialQuads++;
-                    partialQuadFlatRendered++;
                     minPartialArea = Math.min(minPartialArea, area);
 
                     if (area < 0.025D) {

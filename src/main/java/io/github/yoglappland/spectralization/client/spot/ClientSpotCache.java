@@ -163,7 +163,7 @@ public final class ClientSpotCache {
             return;
         }
 
-        Map<SpotKey, RenderedSpot> mergedSpots = new HashMap<>();
+        List<RenderedSpot> sortedSpots = new ArrayList<>();
         List<Integer> ownerIds = new ArrayList<>(SPOTS_BY_OWNER.keySet());
         ownerIds.sort(Integer::compare);
 
@@ -178,25 +178,22 @@ public final class ClientSpotCache {
             entries.sort(Map.Entry.comparingByKey(SPOT_KEY_ORDER));
 
             for (Map.Entry<SpotKey, RenderedSpot> entry : entries) {
-                mergedSpots.merge(entry.getKey(), entry.getValue(), ClientSpotCache::mergeSpot);
+                sortedSpots.add(entry.getValue());
             }
         }
 
-        List<RenderedSpot> sortedSpots = mergePartialGeometrySpots(mergedSpots.values());
+        lastGeometryMergeStats = analyzePartialGeometrySpots(sortedSpots);
         sortedSpots.sort(RENDERED_SPOT_ORDER);
         activeSpots = List.copyOf(sortedSpots);
     }
 
-    private static List<RenderedSpot> mergePartialGeometrySpots(Collection<RenderedSpot> spots) {
+    private static GeometryMergeStats analyzePartialGeometrySpots(Collection<RenderedSpot> spots) {
         Map<PartialQuadGeometryKey, List<RenderedSpot>> partialGroups = new HashMap<>();
-        List<RenderedSpot> result = new ArrayList<>(spots.size());
 
         for (RenderedSpot spot : spots) {
             if (isPartialFootprintQuad(spot)) {
                 partialGroups.computeIfAbsent(PartialQuadGeometryKey.from(spot), ignored -> new ArrayList<>())
                         .add(spot);
-            } else {
-                result.add(spot);
             }
         }
 
@@ -205,25 +202,15 @@ public final class ClientSpotCache {
 
         for (Map.Entry<PartialQuadGeometryKey, List<RenderedSpot>> entry : partialGroups.entrySet()) {
             List<RenderedSpot> group = entry.getValue();
-            group.sort(RENDERED_SPOT_ORDER);
 
-            if (group.size() == 1) {
-                result.add(group.getFirst());
+            if (group.size() < 2) {
                 continue;
             }
 
-            RenderedSpot merged = group.getFirst();
-            int colorBucketMask = merged.colorBucketMask();
-
-            for (int index = 1; index < group.size(); index++) {
-                RenderedSpot next = group.get(index);
-                colorBucketMask |= next.colorBucketMask();
-                merged = mergeSpot(merged, next);
+            int colorBucketMask = 0;
+            for (RenderedSpot spot : group) {
+                colorBucketMask |= spot.colorBucketMask();
             }
-
-            result.add(merged);
-            stats.partialGeometryMergedGroups++;
-            stats.partialGeometryMergedInputSpots += group.size();
 
             int colorBuckets = Integer.bitCount(colorBucketMask);
             if (colorBuckets > 1) {
@@ -239,8 +226,7 @@ public final class ClientSpotCache {
             }
         }
 
-        lastGeometryMergeStats = stats.build();
-        return result;
+        return stats.build();
     }
 
     public static void clear() {
@@ -364,99 +350,6 @@ public final class ClientSpotCache {
         }
 
         return Math.max(0, Math.min(240, (int) Math.round((88 + alphaLevel * 10) * multiplier)));
-    }
-
-    private static RenderedSpot mergeSpot(RenderedSpot first, RenderedSpot second) {
-        int coherentAlpha = composeAlpha(first.coherentAlpha(), second.coherentAlpha());
-        int strayAlpha = composeAlpha(first.strayAlpha(), second.strayAlpha());
-        int ringAlpha = composeAlpha(first.ringAlpha(), second.ringAlpha());
-
-        return new RenderedSpot(
-                first.pos(),
-                first.face(),
-                first.centerX(),
-                first.centerY(),
-                first.centerZ(),
-                Math.max(first.coherentAlphaLevel(), second.coherentAlphaLevel()),
-                Math.max(first.coherentRadius(), second.coherentRadius()),
-                coherentAlpha,
-                mixLightChannel(first.coherentRed(), first.coherentAlpha(), second.coherentRed(), second.coherentAlpha(), coherentAlpha),
-                mixLightChannel(first.coherentGreen(), first.coherentAlpha(), second.coherentGreen(), second.coherentAlpha(), coherentAlpha),
-                mixLightChannel(first.coherentBlue(), first.coherentAlpha(), second.coherentBlue(), second.coherentAlpha(), coherentAlpha),
-                Math.max(first.strayAlphaLevel(), second.strayAlphaLevel()),
-                Math.max(first.strayRadius(), second.strayRadius()),
-                strayAlpha,
-                mixLightChannel(first.strayRed(), first.strayAlpha(), second.strayRed(), second.strayAlpha(), strayAlpha),
-                mixLightChannel(first.strayGreen(), first.strayAlpha(), second.strayGreen(), second.strayAlpha(), strayAlpha),
-                mixLightChannel(first.strayBlue(), first.strayAlpha(), second.strayBlue(), second.strayAlpha(), strayAlpha),
-                Math.max(first.ringAlphaLevel(), second.ringAlphaLevel()),
-                Math.max(first.ringRadius(), second.ringRadius()),
-                ringAlpha,
-                mixLightChannel(first.ringRed(), first.ringAlpha(), second.ringRed(), second.ringAlpha(), ringAlpha),
-                mixLightChannel(first.ringGreen(), first.ringAlpha(), second.ringGreen(), second.ringAlpha(), ringAlpha),
-                mixLightChannel(first.ringBlue(), first.ringAlpha(), second.ringBlue(), second.ringAlpha(), ringAlpha),
-                first.projectionMode(),
-                first.clipMinU(),
-                first.clipMinV(),
-                first.clipMaxU(),
-                first.clipMaxV(),
-                first.textureMinU(),
-                first.textureMinV(),
-                first.textureMaxU(),
-                first.textureMaxV(),
-                first.quadX0(),
-                first.quadY0(),
-                first.quadZ0(),
-                first.quadTextureU0(),
-                first.quadTextureV0(),
-                first.quadX1(),
-                first.quadY1(),
-                first.quadZ1(),
-                first.quadTextureU1(),
-                first.quadTextureV1(),
-                first.quadX2(),
-                first.quadY2(),
-                first.quadZ2(),
-                first.quadTextureU2(),
-                first.quadTextureV2(),
-                first.quadX3(),
-                first.quadY3(),
-                first.quadZ3(),
-                first.quadTextureU3(),
-                first.quadTextureV3(),
-                first.debugMarker(),
-                first.mergedContributions() + second.mergedContributions(),
-                first.colorBucketMask() | second.colorBucketMask()
-        );
-    }
-
-    private static int composeAlpha(int first, int second) {
-        double firstOpacity = first / 255.0D;
-        double secondOpacity = second / 255.0D;
-        double opacity = 1.0D - (1.0D - firstOpacity) * (1.0D - secondOpacity);
-        return Math.max(0, Math.min(240, (int) Math.round(opacity * 255.0D)));
-    }
-
-    private static int mixLightChannel(
-            int firstChannel,
-            int firstAlpha,
-            int secondChannel,
-            int secondAlpha,
-            int outputAlpha
-    ) {
-        if (outputAlpha <= 0) {
-            return clampColor(Math.max(firstChannel, secondChannel));
-        }
-
-        double firstEnergy = (firstChannel / 255.0D) * (firstAlpha / 255.0D);
-        double secondEnergy = (secondChannel / 255.0D) * (secondAlpha / 255.0D);
-        double outputOpacity = outputAlpha / 255.0D;
-        double straightChannel = Math.min(1.0D, (firstEnergy + secondEnergy) / outputOpacity);
-        return clampColor((int) Math.round(straightChannel * 255.0D));
-    }
-
-    private static int clampColor(int value) {
-        return Math.max(0, Math.min(255, value));
     }
 
     private static int colorBucketMask(

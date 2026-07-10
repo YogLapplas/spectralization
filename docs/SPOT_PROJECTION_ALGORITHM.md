@@ -123,7 +123,7 @@ The descriptor should answer these questions:
 ProjectionSurfaceDescriptor:
   source face origin / offset
   receiving visual faces
-  occluding volume approximation
+  optical collision boxes
   dependency positions
   surface-to-texture mapping rule
 ```
@@ -140,6 +140,23 @@ The descriptor belongs to the projection layer unless it changes gameplay power.
 If a partial block changes aperture loss or coupling power, that part belongs in
 the optical/data layer and the projection descriptor should only mirror the
 readout geometry.
+
+The first optical collision box implementation represents selected vanilla
+partial blocks as a finite list of local axis-aligned boxes:
+
+```text
+OpticalCollisionBox:
+  minTravel, maxTravel
+  minU, maxU
+  minV, maxV
+```
+
+For slabs, stairs, and fences, these boxes are derived from the block state's
+model/outline `VoxelShape`. This makes an isolated fence post and a connected
+fence produce different projection geometry without hard-coding each connection
+case. Existing mod optical elements, optical sources, full blocks, and lens
+holders with lenses retain the historical full-block projection box unless a
+separate descriptor is added for that block.
 
 ## 4. Invariants
 
@@ -261,6 +278,13 @@ Filtering `projectable` and `openFace` before the side travel calculation
 preserves the visible set while avoiding repeated work in air and hidden interior
 faces.
 
+For model-based multi-box blocks, the side candidate range must include the
+ordinary front scan bounds as well as the old side boundary bounds. Internal
+x/z or y/z faces live inside tiles that may already be in the front scan and are
+not necessarily on the cone's outer side boundary. Treating slabs, stairs, and
+fences as a set of smaller cuboids requires enumerating those cuboid side faces
+wherever the cuboid itself was a projected tile candidate.
+
 ### 5.3 Projectable surfaces
 
 A block is projectable when it is not air-like and one of these is true:
@@ -268,15 +292,29 @@ A block is projectable when it is not air-like and one of these is true:
 - its collision shape is a full block,
 - it is an `OpticalElement`,
 - it is an `OpticalSource`,
-- it is a `LensHolderBlock` with an installed lens.
+- it is a `LensHolderBlock` with an installed lens,
+- it is a slab, stair, or fence block whose model/outline shape produces at
+  least one optical collision box.
 
 An empty lens holder is transparent for projection and should not create a new
 visible spot.
 
+For a block with several optical collision boxes, the boxes are sorted by
+`minTravel` in the beam frame. The projection pass maintains a block-local
+surface remaining texture region while walking those boxes. This local region is
+reduced by encountered box front windows, not by every internal occlusion plane.
+The box list is a decomposition of one block shape, not a set of independent
+opaque mini-blocks; internal decomposition seams must not cast shadows onto the
+same stair or fence. The global depth remaining region is still updated only
+after the current depth slice with the block's occlusion-plane windows,
+preserving the existing same-depth invariant.
+
 ### 5.4 Parallel occlusion planes
 
 Each projectable block contributes several occlusion planes between its front and
-back faces along the travel direction. The count is controlled by:
+back faces along the travel direction. For model-based optical collision boxes,
+each box contributes planes only across that box's local travel interval and only
+inside that box's local `u/v` footprint. The count is controlled by:
 
 ```text
 spot_projection_occlusion_planes
@@ -299,11 +337,27 @@ cross-sections of the same texture domain.
 Current side spots:
 
 - help players see that the beam intersects a side wall,
+- enumerate exposed side faces from optical collision boxes when a block has a
+  model-based projection shape,
 - use `FOOTPRINT_QUAD`,
 - have a separate visual factor,
 - are clipped by the current remaining texture region and same-depth front
-  visual windows,
+  visual windows for full-block style surfaces,
 - do not currently act as the primary downstream shadow authority.
+
+For model-based multi-box blocks, such as stairs and fences, side spots are not
+clipped by the whole depth slice's front-window list. A stair tread or riser is a
+real receiving face inside the block's unit cube; treating every same-depth box
+front as a global side clip erases those faces and creates false self-shadow.
+When two boxes in the same block touch a side plane, that contact is resolved as
+a rectangle difference on the side face itself. A sibling box may cover part of
+an internal side face, but partial contact must not delete the whole face.
+Internal side faces whose fixed local coordinate lies inside the unit cube are
+not tested with the old cone-entrance predicate. They are real x/z or y/z
+receiving surfaces; once their swept side region intersects the texture domain,
+they may receive a side spot even when the beam radius is constant across that
+block. The entrance-side predicate is only a culling rule for outer block
+boundaries.
 
 The downstream approximation is handled by parallel occlusion planes.
 
@@ -406,6 +460,41 @@ become a performance cost.
 Continuity and formal proof tools are useful, but they do not replace in-game
 visual validation. A proof that only checks patch winding does not prove global
 shadow correctness.
+
+### 7.5 Unresolved: internal longitudinal faces of model-based blocks
+
+Model-based optical collision boxes are still not fully equivalent to treating a
+partial block as a set of normal cuboids.
+
+The known failure case is an internal side face parallel to the beam direction,
+for example an x/z or y/z face inside a stair when the beam travels along z. The
+same physical model feature can receive a spot when rotated into the transverse
+front plane, so front-face projection is working, but longitudinal side-face
+projection is still incomplete.
+
+Do not treat the current slab, stair, and fence path as solved. The intended
+invariant is:
+
+```text
+partial block shape
+  -> decompose into axis-aligned optical boxes
+  -> expose each visible cuboid face as a receiving surface
+  -> allocate texture regions with the same area and continuity rules as full
+     blocks
+```
+
+Future fixes should log the following stages independently:
+
+```text
+face candidate collected
+side travel interval generated
+side window survives remaining-region clipping
+FOOTPRINT_QUAD emitted
+client render receives the patch
+```
+
+This bug should stay documented until an in-game test confirms that internal
+x/z and y/z faces receive spots continuously and without floating patches.
 
 ## 8. Debug and diagnostics
 

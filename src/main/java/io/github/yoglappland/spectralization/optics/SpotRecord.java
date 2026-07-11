@@ -121,45 +121,64 @@ public record SpotRecord(
     }
 
     public SpotRecord {
-        validateLevel(coherentAlphaLevel, "Coherent alpha level");
-        validateLevel(coherentRadiusLevel, "Coherent radius level");
-        validateColor(coherentRed, "Coherent red");
-        validateColor(coherentGreen, "Coherent green");
-        validateColor(coherentBlue, "Coherent blue");
-        validateLevel(strayAlphaLevel, "Stray alpha level");
-        validateLevel(strayRadiusLevel, "Stray radius level");
-        validateColor(strayRed, "Stray red");
-        validateColor(strayGreen, "Stray green");
-        validateColor(strayBlue, "Stray blue");
-        validateLevel(ringAlphaLevel, "Ring alpha level");
-        validateByte(clipMinU, "Clip min U");
-        validateByte(clipMinV, "Clip min V");
-        validateByte(clipMaxU, "Clip max U");
-        validateByte(clipMaxV, "Clip max V");
-        validateByte(textureMinU, "Texture min U");
-        validateByte(textureMinV, "Texture min V");
-        validateByte(textureMaxU, "Texture max U");
-        validateByte(textureMaxV, "Texture max V");
-        validateQuadUnit(quadX0, "Quad x0");
-        validateQuadUnit(quadY0, "Quad y0");
-        validateQuadUnit(quadZ0, "Quad z0");
-        validateQuadUnit(quadTextureU0, "Quad texture u0");
-        validateQuadUnit(quadTextureV0, "Quad texture v0");
-        validateQuadUnit(quadX1, "Quad x1");
-        validateQuadUnit(quadY1, "Quad y1");
-        validateQuadUnit(quadZ1, "Quad z1");
-        validateQuadUnit(quadTextureU1, "Quad texture u1");
-        validateQuadUnit(quadTextureV1, "Quad texture v1");
-        validateQuadUnit(quadX2, "Quad x2");
-        validateQuadUnit(quadY2, "Quad y2");
-        validateQuadUnit(quadZ2, "Quad z2");
-        validateQuadUnit(quadTextureU2, "Quad texture u2");
-        validateQuadUnit(quadTextureV2, "Quad texture v2");
-        validateQuadUnit(quadX3, "Quad x3");
-        validateQuadUnit(quadY3, "Quad y3");
-        validateQuadUnit(quadZ3, "Quad z3");
-        validateQuadUnit(quadTextureU3, "Quad texture u3");
-        validateQuadUnit(quadTextureV3, "Quad texture v3");
+        int levelBits = coherentAlphaLevel | coherentRadiusLevel | strayAlphaLevel | strayRadiusLevel | ringAlphaLevel;
+        if ((levelBits & ~0xF) != 0) {
+            validateLevel(coherentAlphaLevel, "Coherent alpha level");
+            validateLevel(coherentRadiusLevel, "Coherent radius level");
+            validateLevel(strayAlphaLevel, "Stray alpha level");
+            validateLevel(strayRadiusLevel, "Stray radius level");
+            validateLevel(ringAlphaLevel, "Ring alpha level");
+        }
+
+        int colorBits = coherentRed | coherentGreen | coherentBlue | strayRed | strayGreen | strayBlue;
+        if ((colorBits & ~0xFF) != 0) {
+            validateColor(coherentRed, "Coherent red");
+            validateColor(coherentGreen, "Coherent green");
+            validateColor(coherentBlue, "Coherent blue");
+            validateColor(strayRed, "Stray red");
+            validateColor(strayGreen, "Stray green");
+            validateColor(strayBlue, "Stray blue");
+        }
+
+        int byteBits = clipMinU | clipMinV | clipMaxU | clipMaxV
+                | textureMinU | textureMinV | textureMaxU | textureMaxV;
+        if ((byteBits & ~0xFF) != 0) {
+            validateByte(clipMinU, "Clip min U");
+            validateByte(clipMinV, "Clip min V");
+            validateByte(clipMaxU, "Clip max U");
+            validateByte(clipMaxV, "Clip max V");
+            validateByte(textureMinU, "Texture min U");
+            validateByte(textureMinV, "Texture min V");
+            validateByte(textureMaxU, "Texture max U");
+            validateByte(textureMaxV, "Texture max V");
+        }
+
+        int quadBits = quadX0 | quadY0 | quadZ0 | quadTextureU0 | quadTextureV0
+                | quadX1 | quadY1 | quadZ1 | quadTextureU1 | quadTextureV1
+                | quadX2 | quadY2 | quadZ2 | quadTextureU2 | quadTextureV2
+                | quadX3 | quadY3 | quadZ3 | quadTextureU3 | quadTextureV3;
+        if ((quadBits & ~QUAD_QUANTIZATION_LEVEL) != 0) {
+            validateQuadUnit(quadX0, "Quad x0");
+            validateQuadUnit(quadY0, "Quad y0");
+            validateQuadUnit(quadZ0, "Quad z0");
+            validateQuadUnit(quadTextureU0, "Quad texture u0");
+            validateQuadUnit(quadTextureV0, "Quad texture v0");
+            validateQuadUnit(quadX1, "Quad x1");
+            validateQuadUnit(quadY1, "Quad y1");
+            validateQuadUnit(quadZ1, "Quad z1");
+            validateQuadUnit(quadTextureU1, "Quad texture u1");
+            validateQuadUnit(quadTextureV1, "Quad texture v1");
+            validateQuadUnit(quadX2, "Quad x2");
+            validateQuadUnit(quadY2, "Quad y2");
+            validateQuadUnit(quadZ2, "Quad z2");
+            validateQuadUnit(quadTextureU2, "Quad texture u2");
+            validateQuadUnit(quadTextureV2, "Quad texture v2");
+            validateQuadUnit(quadX3, "Quad x3");
+            validateQuadUnit(quadY3, "Quad y3");
+            validateQuadUnit(quadZ3, "Quad z3");
+            validateQuadUnit(quadTextureU3, "Quad texture u3");
+            validateQuadUnit(quadTextureV3, "Quad texture v3");
+        }
         validateDebugMarker(debugMarker, "Debug marker");
 
         if (projectionMode == null) {
@@ -403,6 +422,131 @@ public record SpotRecord(
                 quadTextureV3,
                 debugMarker
         );
+    }
+
+    public SpotRecord withAppearanceFrom(SpotRecord appearance) {
+        if (appearance == null) {
+            throw new IllegalArgumentException("Spot appearance must not be null");
+        }
+        if (!pos.equals(appearance.pos) || face != appearance.face) {
+            throw new IllegalArgumentException("Spot appearance must belong to the same world face");
+        }
+        return new SpotRecord(
+                pos,
+                face,
+                appearance.coherentAlphaLevel,
+                appearance.coherentRadiusLevel,
+                appearance.coherentRed,
+                appearance.coherentGreen,
+                appearance.coherentBlue,
+                appearance.strayAlphaLevel,
+                appearance.strayRadiusLevel,
+                appearance.strayRed,
+                appearance.strayGreen,
+                appearance.strayBlue,
+                appearance.ringAlphaLevel,
+                projectionMode,
+                clipMinU,
+                clipMinV,
+                clipMaxU,
+                clipMaxV,
+                textureMinU,
+                textureMinV,
+                textureMaxU,
+                textureMaxV,
+                quadX0,
+                quadY0,
+                quadZ0,
+                quadTextureU0,
+                quadTextureV0,
+                quadX1,
+                quadY1,
+                quadZ1,
+                quadTextureU1,
+                quadTextureV1,
+                quadX2,
+                quadY2,
+                quadZ2,
+                quadTextureU2,
+                quadTextureV2,
+                quadX3,
+                quadY3,
+                quadZ3,
+                quadTextureU3,
+                quadTextureV3,
+                debugMarker
+        );
+    }
+
+    public GeometryKey geometryKey() {
+        return new GeometryKey(
+                pos,
+                face,
+                projectionMode,
+                clipMinU,
+                clipMinV,
+                clipMaxU,
+                clipMaxV,
+                textureMinU,
+                textureMinV,
+                textureMaxU,
+                textureMaxV,
+                quadX0,
+                quadY0,
+                quadZ0,
+                quadTextureU0,
+                quadTextureV0,
+                quadX1,
+                quadY1,
+                quadZ1,
+                quadTextureU1,
+                quadTextureV1,
+                quadX2,
+                quadY2,
+                quadZ2,
+                quadTextureU2,
+                quadTextureV2,
+                quadX3,
+                quadY3,
+                quadZ3,
+                quadTextureU3,
+                quadTextureV3
+        );
+    }
+
+    public record GeometryKey(
+            BlockPos pos,
+            Direction face,
+            ProjectionMode projectionMode,
+            int clipMinU,
+            int clipMinV,
+            int clipMaxU,
+            int clipMaxV,
+            int textureMinU,
+            int textureMinV,
+            int textureMaxU,
+            int textureMaxV,
+            int quadX0,
+            int quadY0,
+            int quadZ0,
+            int quadTextureU0,
+            int quadTextureV0,
+            int quadX1,
+            int quadY1,
+            int quadZ1,
+            int quadTextureU1,
+            int quadTextureV1,
+            int quadX2,
+            int quadY2,
+            int quadZ2,
+            int quadTextureU2,
+            int quadTextureV2,
+            int quadX3,
+            int quadY3,
+            int quadZ3,
+            int quadTextureU3,
+            int quadTextureV3
+    ) {
     }
 
     private static void validateLevel(int level, String name) {

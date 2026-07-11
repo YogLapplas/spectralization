@@ -4,6 +4,11 @@ This document is the authority note for projected light spots, large spot shadow
 side spots, and `VoxelSpotProjector` changes. Read it before changing spot
 projection code.
 
+The implementation and performance checkpoint for the current branch is
+[SPOT_PROJECTION_CHECKPOINT_2026-07-11.md](SPOT_PROJECTION_CHECKPOINT_2026-07-11.md).
+It records the test entry points, measured baseline, cache state, and the next
+depth-suffix invalidation milestone. This document remains the semantic authority.
+
 The projection layer is a visual/readout export layer. It helps the player infer
 where light would land. It does not drive the optical power solve, and it must not
 write power back into the port graph.
@@ -539,12 +544,21 @@ Server-side projection emits `SpotRecord` values.
 
 Client-side rendering in `SpotRenderEvents`:
 
-- sorts by receiving surface group for stable submission,
+- iterates the cache's stable order directly while the client render budget is not
+  exceeded,
+- if the budget is exceeded, culls by distance first and keeps the nearest spots,
 - culls by render distance,
 - renders core, halo, and ring textures through an additive light pass,
 - uses `FOOTPRINT_SLICE` for front rectangular slices,
 - uses `FOOTPRINT_QUAD` for side/patch quads,
 - uses one fixed surface offset per receiving face.
+
+The texture sampler uses linear filtering without mipmaps. Core, halo, and ring
+alpha are zero-origin power curves: alpha level zero is invisible, and low positive
+levels no longer inherit a fixed opaque floor. Generated spot textures also reach
+zero support at their outer envelope. This feathers the projected beam envelope;
+it does not yet feather internal occlusion cut edges, which require explicit
+boundary-mask data rather than a different sampler.
 
 Client-side spot cache merging should not pre-compose contributions during
 appearance-layer validation. Owner snapshots still use `SpotKey` to replace an
@@ -656,11 +670,95 @@ Useful commands and logs:
 /spectralization spotdebug colors off
 /spectralization spotdebug planes
 /spectralization spotdebug planes <count>
+/spectralization spottest random
+/spectralization spottest random <seed>
+/spectralization spottest rerun
+/spectralization spottest report [count]
+/spectralization spottest benchmark [count]
+/spectralization spottest clear
+/spectralization spotperf report
+/spectralization spotperf report <count>
+/spectralization spotperf reset
 ```
+
+The creative inventory also contains the operator-only `spot_test` instrument.
+Right-click starts its selected automatic suite or reports the current case;
+Shift-right-click cycles through quick, partial-geometry, performance, and full
+suite modes. The selected mode is stored on the item, while the active run is
+server-owned and keyed by player UUID. Only one automatic suite may hold the
+global debug-configuration lease at a time. Each case builds a deterministic
+scattered-light scene, gathers source-bound samples, writes `suite_started`,
+`case_started`, `case_complete`, and `suite_complete` diagnostics, and restores
+the previous compiler/spot debug settings on completion or failure. The item has
+no recipe and requires operator permission level 2 because it clears and rebuilds
+a reserved world volume.
+
+Automatic structural validation is source-scoped by dimension, source position,
+and travel direction. It must not turn global compiler verbose mode on for every
+other active source. A boundary candidate discrepancy writes one structured
+`subsystem=spot_projection event=boundary_missing_face` entry containing the
+source, direction, depth, target block position, source-relative offset, receiving
+face, full block state, candidate path, and rejection-stage detail. Rejection
+detail includes the cuboid axis/index, fixed local coordinate, polarity, and
+exposed-region count, so an internal stair/fence face can be identified without
+parsing the aggregate profile line.
+
+The verbose legacy candidate oracle is shape-aware. For model-derived partial
+blocks it enumerates actual optical cuboids, sibling-exposed regions, and stable
+side windows. A whole-block envelope is not a valid oracle for an isolated fence
+or a stair: reporting a full-block boundary that contains no optical cuboid face
+would be a validator false positive, not evidence that production omitted a face.
+
+The performance and full suites separate forced geometry rebuilds from cache
+reuse. Sparse, mixed, and dense cases invalidate the selected source geometry
+before every measured sample. Two cached mixed-scene cases perform one forced
+unmeasured geometry rebuild followed by one unmeasured appearance-only refresh,
+reset their source-bound sample windows, and then step through either source
+power or visible-light color before each measured sample. All measured samples
+in these cases must report `appearance_only`; one
+unexpected full rebuild fails the case. Retries do not advance the appearance
+sequence. Reports include `full_rebuild_samples` and `appearance_only_samples`;
+a mixed report must not be interpreted without those counts. Automatic suites
+show one concise localized chat line for case start and one for the result. The
+result distinguishes projection-core average/P95 from request-to-observation
+response average/P95; the latter includes the test runner's server-tick boundary
+and therefore better matches player-visible delay. Detailed stage timing remains
+in the structured diagnostics/performance log.
+
+`spottest random` builds a complete reproducible projection stress scene in the
+loaded area in front of and above the executing player. It contains a 300 SP
+incoherent stray-like creative source with radius 0.5 and divergence 0.5,
+seeded random stairs/slabs/fences/full blocks,
+fixed same-depth partial-block regression fixtures, and a terminal white receiver
+wall. The command reports its seed and source position. `rerun` rebuilds the last
+scene at the same position with the same seed, while `clear` removes its reserved
+test volume. This is a destructive debug-volume command and requires the normal
+operator permission inherited from `/spectralization`.
+
+Generation writes `subsystem=spot_projection_test event=generated` with the seed,
+source geometry, and block counts so a performance profile can be tied to the exact
+world fixture. The test command does not enable compiler logging automatically.
+
+`spotperf` keeps a bounded in-memory window of the most recent projection passes in
+the current dimension. `report` prints total latency percentiles, average projection
+work, emitted side geometry, appearance-cache counts, footprint-integral counts,
+and detailed stage averages when compiler debug timing is enabled. It also writes a
+single `subsystem=spot_projection event=performance_report` diagnostic entry.
+`reset` clears the window before a controlled rerun. Total latency and structural
+counts are collected even when compiler debug logging is disabled, so the command
+can produce a low-instrumentation release-path baseline.
+
+`spottest report` filters that window by the recorded test source position and
+direction, so unrelated active optical sources cannot replace the intended test
+sample. `spottest benchmark` clears only that source's samples and schedules one
+reprojection at a time from the server post-tick path. It waits for each matching
+sample before requesting the next pass and prints the source-bound report when the
+requested count is reached. The default is 5 samples and the command maximum is 16.
 
 Relevant diagnostics:
 
 - `subsystem=spot_projection event=profile`
+- `subsystem=spot_projection event=budget`
 - `subsystem=client_spot_render event=profile`
 - `subsystem=client_spot_color_debug event=profile`
 - `spot_projection_counts`
@@ -671,6 +769,12 @@ Relevant diagnostics:
 surface, occlusion-plane, and rectangle-subtraction counts even when verbose
 allocation tracing is off. Per-face `SpotProjectionAllocation` probes are heavy
 and should be gated by `compilerdebug verbose`.
+
+The periodic `spot_overlay` entry always writes its active/sent summary. It only
+computes and formats continuity, face, allocation, and per-spot detail when verbose
+logging is enabled and at least one spot was sent in that update. A zero-send update
+records `spot_overlay_detail=skipped_no_sent_spots`; non-verbose updates record
+`spot_overlay_detail=skipped_non_verbose`.
 
 Verbose allocation output gives `front-prefix-probe` records first, followed by
 internal model-derived `u-side` and `v-side` records. The row budget reserves
@@ -763,10 +867,28 @@ The profile line also includes phase timings and hot-spot counters:
 - `side_emit_us` measures the side candidate to `SpotRecord` emission path.
 - `side_travel_split_us` measures side travel interval splitting and subdivision
   selection inside the side emit path.
+- `side_same_depth_split_us` isolates clipping a side travel interval at same-depth
+  blocker boundaries.
+- `side_occlusion_index_build_us` measures construction of the per-depth travel
+  and canonical-bin index used by side receivers.
+- `side_prefix_query_us` isolates the same-depth front-order prefix query used for
+  side visibility at the segment midpoint.
+- `side_debug_audit_us` isolates verbose cuboid/rectangle audit construction. It is
+  diagnostic cost and must be zero or negligible without verbose allocation detail.
+- `surface_appearance_build_us` measures cache misses that construct the shared
+  surface appearance record; `patch_clip_us` measures visible-window-to-quad
+  clipping; `spot_record_pack_us` measures side quad quantization and immutable
+  `SpotRecord` construction.
 - `side_window_us` measures side cross-section and canonical side-window
   construction.
 - `side_remaining_intersect_us` measures `sideWindow intersect remaining` and
   same-depth front-window clipping.
+- `side_region_intersect_us` isolates the direct V-slab/U-interval intersection
+  with `remaining`; `side_canonical_normalize_us` measures same-depth blocker
+  union, slab subtraction, adjacent-slab coalescing, and final rectangle export.
+- `side_canonical_validation_*` is the verbose-only exact-region comparison
+  between the former rectangle-fragment path and the production slab path. Every
+  mismatch is a correctness alarm and validation never drives production output.
 - `side_patch_emit_us` measures conversion from visible side windows to emitted
   `SpotRecord` quad patches.
 - `side_fast_path_patches` counts side patches emitted through the full-travel
@@ -786,6 +908,11 @@ The profile line also includes phase timings and hot-spot counters:
   When verbose validation is enabled, they also compare it against the legacy
   projectable-tile face scan. `side_boundary_missing_faces` must stay zero;
   extra faces are acceptable only when later side-window filtering discards them.
+  When it is nonzero, `side_boundary_missing_examples` records at most eight
+  `depth/pos/face/state/reject` examples. Rejection stages currently distinguish
+  unreachable-or-closed faces, absent exposed regions, absent beam travel, and the
+  fallback case where no boundary candidate was observed. These examples are
+  validation evidence only and never affect production candidate authority.
 - `front_fragments_before_merge` and `front_fragments_after_merge` count visible
   front-face texture fragments before and after exact texture-domain union on the
   same block face. The merge changes render granularity only; it does not change
@@ -794,6 +921,13 @@ The profile line also includes phase timings and hot-spot counters:
   the remaining-region update. `remaining_union_merged_rects` counts the exact
   canonical rectangle/slab intervals after those windows are unioned in texture
   domain. A large ratio means many blocker windows were redundant or overlapping.
+- `same_depth_*_index_*` fields count indexed split/prefix queries, travel groups,
+  spatial candidates, and accepted hits. The index preserves owner-cuboid
+  exclusion and restores original window order before sequential clipping.
+- `remaining_subtract_validation_*`, `same_depth_split_validation_*`, and
+  `same_depth_prefix_validation_*` are verbose-only comparisons against the former
+  serial scans. Every mismatch is a correctness alarm; bounded details are written
+  to `structural_validation_examples`. Validation never drives production output.
 - `side_candidate_verify_us` is the verbose-debug-only cost of the boundary
   candidate comparison. It must not be counted as production side-scan cost.
 - `log_write_*_before` fields are rolling diagnostics-log write statistics
@@ -801,6 +935,20 @@ The profile line also includes phase timings and hot-spot counters:
   log-write cost without recursively writing a second timing event.
 - `hot_depth_*` fields describe the single depth slice that took the most time
   in that projection pass.
+- `front_pass_us` measures the complete depth-wide front event transaction,
+  including ordering and prefix updates. `projection_attributed_us` sums mutually
+  exclusive top-level stages; `projection_residual_us` is the measured projection
+  time not covered by those stages. The performance report exposes corresponding
+  front-pass and residual averages.
+- `surface_appearance_builds` and `surface_appearance_cache_hits` show how many
+  material/spectrum appearance records were built or reused before quad geometry
+  was attached.
+- `footprint_integral_calls` counts the 64x64 footprint-kernel integrals retained
+  for verbose allocation diagnostics. It must be zero in the production path;
+  diagnostic integrals use an exact constant-time prefix antiderivative.
+- `side_candidate_tiles_visited` counts projectable cached tiles visited by the
+  sparse side candidate enumerator. It can be compared with `side_tiles_scanned`
+  to measure the avoided second dense bounds traversal.
 
 When checking logs, inspect the newest diagnostics and optical compiler logs
 first. Do not begin with global searches over all historical logs.
@@ -902,11 +1050,44 @@ roughly 1,350-1,585 active quads stayed near 2-4 ms per frame. The bottleneck is
 server-side projection generation plus verbose allocation construction, not GPU
 quad submission.
 
-The same test produced about 549-862 spots for the wide source, below
-`CompiledSpotLayer.MAX_SPOTS_PER_SAMPLE = 1024`. The observed shortage of quads
-therefore must not be treated as a cap problem. Correct front ordering and exact
-small-fragment assignment come first; raising the cap before that would increase
-cost without restoring missing geometric regions.
+The same test produced about 549-862 spots for the wide source, below the old 1024
+quota. That observed shortage was therefore not caused by the quota; correct front
+ordering and exact small-fragment assignment still came first. After the ordering
+bug was fixed, the publication path was eventually raised to one shared limit of
+`2^15 = 32768` spots per owner. Reaching the quota does not abort graph traversal:
+every eligible outgoing node is projected and contributes its dependency positions.
+The exporter still publishes primary records before side records.
+
+The compiler, wire protocol, client cache, and renderer use the same 32768 limit.
+A snapshot is split into ordered chunks of 2048 records, with a token, chunk index,
+chunk count, and total record count on every payload. The client keeps the previous
+owner snapshot visible while chunks arrive and replaces it only after a complete
+snapshot has been reassembled. A clear is a zero-record one-chunk snapshot. This
+atomic replacement is part of the visual contract; partial network delivery must
+not temporarily remove valid faces.
+
+Before quota publication, records are keyed by their already-quantized render
+geometry. Exact duplicate geometry uses the same key on the server and client and
+is reduced with the existing last-appearance-wins behavior. The
+`spot_projection/budget` event reports raw generated, unique generated,
+deduplicated, exported, dropped, and payload chunk counts.
+
+Side visible windows are canonicalized before patch construction, but only inside
+one side chart and one occlusion event. The production path intersects the side
+window directly with the remaining V-slab/U-interval region, exact-unions the
+same-depth prefix occluders, subtracts that union in slab form, and materializes
+rectangles only after adjacent equal slabs have coalesced. This computes exactly:
+
+```text
+(remaining intersect sideWindow) - union(prefixOccluders)
+```
+
+It must not merge across depth/front-order boundaries or across distinct chart
+mappings. In verbose validation, the former rectangle-fragment path is exact-
+unioned and compared with the direct slab result, but never drives production
+output. `side_visible_windows_before_merge` counts raw slab interval fragments
+before adjacent-V coalescing; `side_visible_windows_after_merge` counts emitted
+canonical rectangles.
 
 Verbose side diagnostics should reserve full geometry strings for internal
 model-derived faces. Ordinary external side allocations may retain numeric
@@ -1019,6 +1200,13 @@ This is exact because repeated set difference is equivalent to subtracting the
 union. The important implementation rule is that the sequence must run after all
 same-depth visible patches have been emitted, not during face scanning.
 
+The optimized representation first constructs the exact canonical
+`blockerUnion`, then subtracts it from `remaining` with one synchronized V-slab
+sweep. At each common V band it subtracts the normalized U interval lists once.
+This is representation-level acceleration only and preserves the equation above.
+Verbose validation may also run the former blocker-slab loop and compare the
+normalized result, but the legacy result never drives production authority.
+
 After each update, adjacent slabs with identical interval sets are merged. This
 keeps the recursive certificate exact while avoiding historical occupied-window
 queries.
@@ -1067,6 +1255,12 @@ render(A) + render(B) == render(A union B)
 
 when `A` and `B` live on the same world face with the same texture-to-face map.
 This reduces `SpotRecord` count without changing texture assignment.
+
+For one side candidate, same-depth prefix occluders are now prefiltered by exact
+canonical-rectangle intersection before visible-window subtraction. Rejecting a
+non-intersecting occluder is an exact set identity, so this reduces allocation and
+split work without changing travel order, cuboid ownership, or the resulting
+visible region.
 
 The exact full-occupancy test must not be implemented by recomputing
 `FULL_FOOTPRINT - occupiedHistory` at every depth. The stable invariant is the
@@ -1123,6 +1317,57 @@ recomputed appearance:
 
 This lets frequent optical-power updates remain cheap when the beam envelope and
 world geometry are unchanged.
+
+The first production cache stage stores the complete assigned patch geometry for
+one network source output. Its key contains network id, source position,
+direction, exact beam envelope, and occlusion-plane count; it deliberately omits
+power, coherent power, frequency/color weights, and material appearance. A cache
+hit rebuilds those appearance fields from the current solved packet and current
+receiving material, while copying only the cached patch mapping. Geometry
+templates include patches that quantized to invisible at the previous power, so a
+later power increase cannot reveal geometry that the cache discarded.
+
+Each cached geometry result also stores an immutable appearance-application plan.
+The plan maps every geometry template, in original publication order, to a unique
+receiving `(position, face)` surface and precomputes the envelope and visual power
+scale for that surface. An appearance refresh builds one current appearance record
+per unique surface, then applies it to templates through the integer mapping. The
+plan may cache geometry-derived values, but must not cache power, coherent power,
+frequency/color, or receiving-material appearance. It must not regroup the output
+iteration order, because ordering still participates in deterministic quota and
+duplicate reduction behavior.
+
+Projection dependencies are stored as an immutable snapshot owned by the cached
+geometry result. Appearance-only results share that snapshot instead of copying
+the complete dependency set on every power/color refresh. Consumers receive an
+unmodifiable `LongSet`; any path that needs to mutate dependencies must create its
+own accumulator. Full geometry rebuilds still construct a fresh snapshot.
+
+Detailed appearance timing uses one timer per phase, not one timer per template:
+prepare all unique surfaces, build all current surface appearances, then update
+all templates in original order. Per-template `System.nanoTime()` calls would be
+measurement overhead inside the hot path and are therefore forbidden.
+
+Projection dependency dirties remove matching geometry entries before a refresh.
+The invalidation event records `earliest_invalidated_depth`, but this first stage
+still removes the complete source-output entry. Reusing prefix depth snapshots
+and recomputing only the invalidated suffix remains the next cache stage. Verbose
+validation and debug face-center projection bypass the production cache. Cache
+storage is bounded both by entries and by total retained geometry templates.
+
+Useful cache fields and events are:
+
+- profile `cache_mode=full_rebuild|appearance_only`,
+- budget `geometry_cache_hits`, `geometry_cache_misses`,
+  `appearance_only_updates`, and `full_geometry_rebuilds`,
+- performance report `full_rebuild_samples` and `appearance_only_samples`,
+- performance report `geometry_timed_samples`, `appearance_timed_samples`, and
+  `appearance_*_avg_us` fields. Appearance-only per-sample profiles use a compact
+  field set because geometry, side-scan, and remaining-region counters are zero,
+- compact appearance profile `appearance_plan_reused`, template/surface counts,
+  `dependency_snapshot_reused`, and prepare/surface-build/record-update timing,
+- `subsystem=spot_projection event=geometry_cache_invalidated` with the changed
+  position, reason, removed entry count, and earliest projected depth.
 
 ### 9.8 Stop when visual alpha is gone
 

@@ -55,6 +55,7 @@ import io.github.yoglappland.spectralization.item.PhosphorTubeItem;
 import io.github.yoglappland.spectralization.item.RecursiveGeneratorBlockItem;
 import io.github.yoglappland.spectralization.item.SandpaperItem;
 import io.github.yoglappland.spectralization.item.SingularMaterialItem;
+import io.github.yoglappland.spectralization.item.SpotTestItem;
 import io.github.yoglappland.spectralization.item.StrawberryRodItem;
 import io.github.yoglappland.spectralization.item.UnstableMicrolizedMachineItem;
 import io.github.yoglappland.spectralization.network.SpectralNetwork;
@@ -226,6 +227,10 @@ public class Spectralization {
     public static final DeferredItem<CreativeBrushItem> CREATIVE_BRUSH = ITEMS.register(
             "creative_brush",
             () -> new CreativeBrushItem(new Item.Properties().stacksTo(1))
+    );
+    public static final DeferredItem<SpotTestItem> SPOT_TEST = ITEMS.register(
+            "spot_test",
+            () -> new SpotTestItem(new Item.Properties().stacksTo(1))
     );
     public static final DeferredItem<StrawberryRodItem> ROD_OF_STRAWBERRY = ITEMS.register(
             "rod_of_strawberry",

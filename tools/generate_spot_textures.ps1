@@ -161,8 +161,7 @@ public static class SpectralSpotTextureGenerator
 
     private static double SquareEdgeSupport(double s)
     {
-        double cutoff = 1.0 - SmoothStep(0.955, 1.0, s);
-        return 0.035 + 0.965 * cutoff;
+        return 1.0 - SmoothStep(0.92, 1.0, s);
     }
 
     private static double EdgeSupport(double r)
@@ -172,8 +171,7 @@ public static class SpectralSpotTextureGenerator
             return 0.0;
         }
 
-        double cutoff = 1.0 - SmoothStep(0.965, 1.0, r);
-        return 0.025 + 0.975 * cutoff;
+        return 1.0 - SmoothStep(0.94, 1.0, r);
     }
 
     private static double SmoothStep(double edge0, double edge1, double value)
@@ -199,7 +197,7 @@ public static class SpectralSpotTextureGenerator
             return 0;
         }
 
-        return (byte)Math.Max(1, Math.Min(255, (int)Math.Round(value)));
+        return (byte)Math.Max(0, Math.Min(255, (int)Math.Round(value)));
     }
 }
 "@

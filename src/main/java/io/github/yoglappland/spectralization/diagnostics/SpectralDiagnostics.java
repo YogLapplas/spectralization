@@ -3,6 +3,7 @@ package io.github.yoglappland.spectralization.diagnostics;
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -11,6 +12,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
+import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import net.minecraft.core.BlockPos;
@@ -33,6 +35,14 @@ public final class SpectralDiagnostics {
     private static long writeBytes;
     private static long writeNanos;
     private static long maxWriteNanos;
+    private static final Map<Path, OutputStream> OPEN_LOGS = new HashMap<>();
+
+    static {
+        Runtime.getRuntime().addShutdownHook(new Thread(
+                SpectralDiagnostics::closeOpenLogs,
+                "spectralization-log-close"
+        ));
+    }
 
     public static Event event(Level level, String subsystem, String event) {
         return new Event("event", level, subsystem, event);
@@ -61,26 +71,58 @@ public final class SpectralDiagnostics {
 
         try {
             long startNanos = System.nanoTime();
-            Files.createDirectories(logPath.getParent());
-            boolean needsHeader = !Files.exists(logPath) || Files.size(logPath) == 0L;
-            String fullContent = needsHeader ? HEADER + content : content;
-            Files.writeString(
-                    logPath,
-                    fullContent,
-                    StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.APPEND
-            );
+            OutputStream output = OPEN_LOGS.get(logPath);
+            long bytesWritten = 0L;
+            if (output == null) {
+                Files.createDirectories(logPath.getParent());
+                boolean needsHeader = !Files.exists(logPath) || Files.size(logPath) == 0L;
+                output = Files.newOutputStream(
+                        logPath,
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.APPEND
+                );
+                OPEN_LOGS.put(logPath, output);
+                if (needsHeader) {
+                    byte[] headerBytes = HEADER.getBytes(StandardCharsets.UTF_8);
+                    output.write(headerBytes);
+                    bytesWritten += headerBytes.length;
+                }
+            }
+            byte[] contentBytes = content.getBytes(StandardCharsets.UTF_8);
+            output.write(contentBytes);
+            bytesWritten += contentBytes.length;
             long elapsedNanos = Math.max(0L, System.nanoTime() - startNanos);
             writeCount++;
-            writeBytes += fullContent.getBytes(StandardCharsets.UTF_8).length;
+            writeBytes += bytesWritten;
             writeNanos += elapsedNanos;
             maxWriteNanos = Math.max(maxWriteNanos, elapsedNanos);
         } catch (IOException exception) {
+            closeLog(logPath);
             Spectralization.LOGGER.warn("Failed to write Spectralization {} log", failureLabel, exception);
         }
 
         return writeStats();
+    }
+
+    private static synchronized void closeOpenLogs() {
+        for (OutputStream output : OPEN_LOGS.values()) {
+            try {
+                output.close();
+            } catch (IOException ignored) {
+            }
+        }
+        OPEN_LOGS.clear();
+    }
+
+    private static void closeLog(Path path) {
+        OutputStream output = OPEN_LOGS.remove(path);
+        if (output == null) {
+            return;
+        }
+        try {
+            output.close();
+        } catch (IOException ignored) {
+        }
     }
 
     public static synchronized WriteStats writeStats() {

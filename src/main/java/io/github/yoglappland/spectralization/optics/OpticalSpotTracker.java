@@ -551,7 +551,7 @@ public final class OpticalSpotTracker {
     }
 
     private static SnapshotSendResult sendSnapshotToNearby(ServerLevel level, SpotOwnerSnapshot snapshot, boolean force) {
-        SpotOverlayPayload payload = new SpotOverlayPayload(snapshot.ownerId(), snapshot.spots());
+        List<SpotOverlayPayload> payloads = snapshotPayloads(snapshot);
         long gameTime = level.getGameTime();
         int sentPlayers = 0;
         int sentSpots = 0;
@@ -565,7 +565,7 @@ public final class OpticalSpotTracker {
                 continue;
             }
 
-            PacketDistributor.sendToPlayer(player, payload);
+            sendSnapshotPayloads(player, payloads);
             rememberSnapshotSent(level, player, snapshot, gameTime);
             sentPlayers++;
             sentSpots += snapshot.spots().size();
@@ -579,7 +579,7 @@ public final class OpticalSpotTracker {
             SpotOwnerSnapshot snapshot,
             BlockPos changedPos
     ) {
-        SpotOverlayPayload payload = new SpotOverlayPayload(snapshot.ownerId(), snapshot.spots());
+        List<SpotOverlayPayload> payloads = snapshotPayloads(snapshot);
         long gameTime = level.getGameTime();
         int sentPlayers = 0;
         int sentSpots = 0;
@@ -589,7 +589,7 @@ public final class OpticalSpotTracker {
                 continue;
             }
 
-            PacketDistributor.sendToPlayer(player, payload);
+            sendSnapshotPayloads(player, payloads);
             rememberSnapshotSent(level, player, snapshot, gameTime);
             sentPlayers++;
             sentSpots += snapshot.spots().size();
@@ -603,7 +603,7 @@ public final class OpticalSpotTracker {
             SpotOwnerSnapshot snapshot,
             SpotOwnerSnapshot previous
     ) {
-        SpotOverlayPayload payload = new SpotOverlayPayload(snapshot.ownerId(), snapshot.spots());
+        List<SpotOverlayPayload> payloads = snapshotPayloads(snapshot);
         long gameTime = level.getGameTime();
         int sentPlayers = 0;
         int sentSpots = 0;
@@ -613,7 +613,7 @@ public final class OpticalSpotTracker {
                 continue;
             }
 
-            PacketDistributor.sendToPlayer(player, payload);
+            sendSnapshotPayloads(player, payloads);
             rememberSnapshotSent(level, player, snapshot, gameTime);
             sentPlayers++;
             sentSpots += snapshot.spots().size();
@@ -623,7 +623,7 @@ public final class OpticalSpotTracker {
     }
 
     private static void sendClearSnapshot(ServerLevel level, int ownerId) {
-        SpotOverlayPayload payload = new SpotOverlayPayload(ownerId, List.of());
+        SpotOverlayPayload payload = SpotOverlayPayload.clear(ownerId, level.getGameTime());
         Map<UUID, Map<Integer, SentSpotSnapshot>> sentByPlayer = SENT_SNAPSHOTS_BY_PLAYER.get(level);
 
         if (sentByPlayer == null || sentByPlayer.isEmpty()) {
@@ -638,6 +638,17 @@ public final class OpticalSpotTracker {
 
             PacketDistributor.sendToPlayer(player, payload);
             playerSnapshots.remove(ownerId);
+        }
+    }
+
+    private static List<SpotOverlayPayload> snapshotPayloads(SpotOwnerSnapshot snapshot) {
+        long snapshotToken = snapshot.signature() ^ Long.rotateLeft(snapshot.gameTime(), 23);
+        return SpotOverlayPayload.chunks(snapshot.ownerId(), snapshotToken, snapshot.spots());
+    }
+
+    private static void sendSnapshotPayloads(ServerPlayer player, List<SpotOverlayPayload> payloads) {
+        for (SpotOverlayPayload payload : payloads) {
+            PacketDistributor.sendToPlayer(player, payload);
         }
     }
 

@@ -751,6 +751,7 @@ public final class OpticalTraceCache {
         CompiledSpotLayer.SpotLayer spotLayer = cachedTrace.scalarPowerSolution().reliableForReadout()
                 ? CompiledSpotLayer.sample(
                         level,
+                        cachedTrace.networkId(),
                         cachedTrace.portGraph(),
                         cachedTrace.scalarPowerSolution(),
                         cachedTrace.sourceOutput(),
@@ -1552,6 +1553,7 @@ public final class OpticalTraceCache {
         CompiledSpotLayer.SpotLayer spotLayer = scalarPowerSolution.reliableForReadout()
                 ? CompiledSpotLayer.sample(
                         level,
+                        request.networkId(),
                         portGraph,
                         scalarPowerSolution,
                         request.sourceOutput(),
@@ -3662,6 +3664,12 @@ public final class OpticalTraceCache {
             }
 
             for (int networkId : affectedNetworkIds) {
+                CompiledSpotLayer.invalidateProjectionGeometry(
+                        level,
+                        networkId,
+                        pos,
+                        "projection_dependency_changed"
+                );
                 if (!cachedTracesByNetwork.containsKey(networkId)
                         || dependencyIndex.isDirty(networkId)
                         || queuedNetworkIds.contains(networkId)) {

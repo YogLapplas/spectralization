@@ -1,22 +1,35 @@
 package io.github.yoglappland.spectralization.optics.projection;
 
+import io.github.yoglappland.spectralization.optics.BeamEnvelope;
 import io.github.yoglappland.spectralization.optics.SpotRecord;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
+import it.unimi.dsi.fastutil.longs.LongSets;
 import java.util.List;
 import java.util.Objects;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 
 public record SpotProjectionResult(
         List<SpotRecord> spots,
-        LongSet dependencies,
+        DependencySnapshot dependencySnapshot,
         List<SpotProjectionAllocation> allocations,
-        Stats stats
+        Stats stats,
+        List<SpotRecord> geometryTemplates,
+        AppearancePlan appearancePlan,
+        CacheMode cacheMode,
+        AppearanceTimings appearanceTimings
 ) {
     public static final SpotProjectionResult EMPTY =
-            new SpotProjectionResult(List.of(), new LongOpenHashSet(), List.of(), Stats.EMPTY);
+            new SpotProjectionResult(
+                    List.of(), DependencySnapshot.EMPTY, List.of(), Stats.EMPTY, List.of(), AppearancePlan.EMPTY,
+                    CacheMode.EMPTY,
+                    AppearanceTimings.EMPTY
+            );
 
     public SpotProjectionResult(List<SpotRecord> spots, LongSet dependencies) {
-        this(spots, dependencies, List.of(), Stats.EMPTY);
+        this(spots, new DependencySnapshot(dependencies), List.of(), Stats.EMPTY, spots, AppearancePlan.EMPTY,
+                CacheMode.FULL_REBUILD, AppearanceTimings.EMPTY);
     }
 
     public SpotProjectionResult(
@@ -24,17 +37,139 @@ public record SpotProjectionResult(
             LongSet dependencies,
             List<SpotProjectionAllocation> allocations
     ) {
-        this(spots, dependencies, allocations, Stats.EMPTY);
+        this(spots, new DependencySnapshot(dependencies), allocations, Stats.EMPTY, spots, AppearancePlan.EMPTY,
+                CacheMode.FULL_REBUILD, AppearanceTimings.EMPTY);
+    }
+
+    public SpotProjectionResult(
+            List<SpotRecord> spots,
+            LongSet dependencies,
+            List<SpotProjectionAllocation> allocations,
+            Stats stats
+    ) {
+        this(spots, new DependencySnapshot(dependencies), allocations, stats, spots, AppearancePlan.EMPTY,
+                CacheMode.FULL_REBUILD, AppearanceTimings.EMPTY);
     }
 
     public SpotProjectionResult {
         Objects.requireNonNull(spots, "spots");
-        Objects.requireNonNull(dependencies, "dependencies");
+        Objects.requireNonNull(dependencySnapshot, "dependencySnapshot");
         Objects.requireNonNull(allocations, "allocations");
         Objects.requireNonNull(stats, "stats");
+        Objects.requireNonNull(geometryTemplates, "geometryTemplates");
+        Objects.requireNonNull(appearancePlan, "appearancePlan");
+        Objects.requireNonNull(cacheMode, "cacheMode");
+        Objects.requireNonNull(appearanceTimings, "appearanceTimings");
         spots = List.copyOf(spots);
-        dependencies = new LongOpenHashSet(dependencies);
         allocations = List.copyOf(allocations);
+        geometryTemplates = List.copyOf(geometryTemplates);
+    }
+
+    public LongSet dependencies() {
+        return dependencySnapshot.positions();
+    }
+
+    public enum CacheMode {
+        EMPTY,
+        FULL_REBUILD,
+        APPEARANCE_ONLY
+    }
+
+    public static final class DependencySnapshot {
+        public static final DependencySnapshot EMPTY = new DependencySnapshot(new LongOpenHashSet());
+        private final LongSet positions;
+
+        public DependencySnapshot(LongSet positions) {
+            Objects.requireNonNull(positions, "positions");
+            this.positions = LongSets.unmodifiable(new LongOpenHashSet(positions));
+        }
+
+        public int size() {
+            return positions.size();
+        }
+
+        private LongSet positions() {
+            return positions;
+        }
+    }
+
+    public record AppearanceSurface(
+            BlockPos pos,
+            Direction face,
+            BeamEnvelope envelope,
+            double powerScale
+    ) {
+        public AppearanceSurface {
+            Objects.requireNonNull(pos, "pos");
+            Objects.requireNonNull(face, "face");
+            Objects.requireNonNull(envelope, "envelope");
+            if (!Double.isFinite(powerScale) || powerScale < 0.0D) {
+                throw new IllegalArgumentException("Appearance surface power scale must be finite and non-negative");
+            }
+            pos = pos.immutable();
+        }
+    }
+
+    public static final class AppearancePlan {
+        public static final AppearancePlan EMPTY = new AppearancePlan(List.of(), new int[0]);
+        private final List<AppearanceSurface> surfaces;
+        private final int[] surfaceIndexByTemplate;
+
+        public AppearancePlan(List<AppearanceSurface> surfaces, int[] surfaceIndexByTemplate) {
+            this.surfaces = List.copyOf(Objects.requireNonNull(surfaces, "surfaces"));
+            this.surfaceIndexByTemplate = Objects.requireNonNull(
+                    surfaceIndexByTemplate,
+                    "surfaceIndexByTemplate"
+            ).clone();
+            for (int surfaceIndex : this.surfaceIndexByTemplate) {
+                if (surfaceIndex < -1 || surfaceIndex >= this.surfaces.size()) {
+                    throw new IllegalArgumentException("Appearance plan contains an invalid surface index");
+                }
+            }
+        }
+
+        public int surfaceCount() {
+            return surfaces.size();
+        }
+
+        public AppearanceSurface surface(int index) {
+            return surfaces.get(index);
+        }
+
+        public int templateCount() {
+            return surfaceIndexByTemplate.length;
+        }
+
+        public int surfaceIndexForTemplate(int templateIndex) {
+            return surfaceIndexByTemplate[templateIndex];
+        }
+    }
+
+    public record AppearanceTimings(
+            long totalNanos,
+            long prepareNanos,
+            long surfaceBuildNanos,
+            long recordUpdateNanos,
+            int templates,
+            int uniqueSurfaces,
+            int surfaceBuilds,
+            int surfaceCacheHits,
+            boolean planReused
+    ) {
+        public static final AppearanceTimings EMPTY = new AppearanceTimings(
+                0L, 0L, 0L, 0L, 0, 0, 0, 0, false
+        );
+
+        public AppearanceTimings {
+            totalNanos = Math.max(0L, totalNanos);
+            prepareNanos = Math.max(0L, prepareNanos);
+            surfaceBuildNanos = Math.max(0L, surfaceBuildNanos);
+            recordUpdateNanos = Math.max(0L, recordUpdateNanos);
+            templates = Math.max(0, templates);
+            uniqueSurfaces = Math.max(0, uniqueSurfaces);
+            surfaceBuilds = Math.max(0, surfaceBuilds);
+            surfaceCacheHits = Math.max(0, surfaceCacheHits);
+        }
     }
 
     public record Stats(
@@ -83,6 +218,7 @@ public record SpotProjectionResult(
             IndexStats index,
             SubtractionStats subtraction,
             RemainingStats remaining,
+            OptimizationStats optimization,
             HotDepth hotDepth
     ) {
         public static final Stats EMPTY = new Stats(
@@ -131,6 +267,7 @@ public record SpotProjectionResult(
                 IndexStats.EMPTY,
                 SubtractionStats.EMPTY,
                 RemainingStats.EMPTY,
+                OptimizationStats.EMPTY,
                 HotDepth.EMPTY
         );
 
@@ -180,7 +317,87 @@ public record SpotProjectionResult(
             index = index == null ? IndexStats.EMPTY : index;
             subtraction = subtraction == null ? SubtractionStats.EMPTY : subtraction;
             remaining = remaining == null ? RemainingStats.EMPTY : remaining;
+            optimization = optimization == null ? OptimizationStats.EMPTY : optimization;
             hotDepth = hotDepth == null ? HotDepth.EMPTY : hotDepth;
+        }
+    }
+
+    public record OptimizationStats(
+            long footprintIntegralCalls,
+            long surfaceAppearanceBuilds,
+            long surfaceAppearanceCacheHits,
+            long sideCandidateTilesVisited,
+            long sideVisibleWindowsBeforeMerge,
+            long sideVisibleWindowsAfterMerge,
+            List<String> sideBoundaryMissingExamples,
+            List<BoundaryMissingFace> sideBoundaryMissingDetails,
+            long remainingSubtractValidationChecks,
+            long remainingSubtractValidationMismatches,
+            long sameDepthSplitIndexQueries,
+            long sameDepthTravelGroupsVisited,
+            long sameDepthPrefixIndexQueries,
+            long sameDepthPrefixIndexCandidates,
+            long sameDepthPrefixIndexHits,
+            long sameDepthSplitValidationChecks,
+            long sameDepthSplitValidationMismatches,
+            long sameDepthPrefixValidationChecks,
+            long sameDepthPrefixValidationMismatches,
+            long sideCanonicalValidationChecks,
+            long sideCanonicalValidationMismatches,
+            List<String> structuralValidationExamples
+    ) {
+        public static final OptimizationStats EMPTY = new OptimizationStats(
+                0L, 0L, 0L, 0L, 0L, 0L, List.of(), List.of(),
+                0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, List.of()
+        );
+
+        public OptimizationStats {
+            footprintIntegralCalls = Math.max(0L, footprintIntegralCalls);
+            surfaceAppearanceBuilds = Math.max(0L, surfaceAppearanceBuilds);
+            surfaceAppearanceCacheHits = Math.max(0L, surfaceAppearanceCacheHits);
+            sideCandidateTilesVisited = Math.max(0L, sideCandidateTilesVisited);
+            sideVisibleWindowsBeforeMerge = Math.max(0L, sideVisibleWindowsBeforeMerge);
+            sideVisibleWindowsAfterMerge = Math.max(0L, sideVisibleWindowsAfterMerge);
+            sideBoundaryMissingExamples = sideBoundaryMissingExamples == null
+                    ? List.of()
+                    : List.copyOf(sideBoundaryMissingExamples);
+            sideBoundaryMissingDetails = sideBoundaryMissingDetails == null
+                    ? List.of()
+                    : List.copyOf(sideBoundaryMissingDetails);
+            remainingSubtractValidationChecks = Math.max(0L, remainingSubtractValidationChecks);
+            remainingSubtractValidationMismatches = Math.max(0L, remainingSubtractValidationMismatches);
+            sameDepthSplitIndexQueries = Math.max(0L, sameDepthSplitIndexQueries);
+            sameDepthTravelGroupsVisited = Math.max(0L, sameDepthTravelGroupsVisited);
+            sameDepthPrefixIndexQueries = Math.max(0L, sameDepthPrefixIndexQueries);
+            sameDepthPrefixIndexCandidates = Math.max(0L, sameDepthPrefixIndexCandidates);
+            sameDepthPrefixIndexHits = Math.max(0L, sameDepthPrefixIndexHits);
+            sameDepthSplitValidationChecks = Math.max(0L, sameDepthSplitValidationChecks);
+            sameDepthSplitValidationMismatches = Math.max(0L, sameDepthSplitValidationMismatches);
+            sameDepthPrefixValidationChecks = Math.max(0L, sameDepthPrefixValidationChecks);
+            sameDepthPrefixValidationMismatches = Math.max(0L, sameDepthPrefixValidationMismatches);
+            sideCanonicalValidationChecks = Math.max(0L, sideCanonicalValidationChecks);
+            sideCanonicalValidationMismatches = Math.max(0L, sideCanonicalValidationMismatches);
+            structuralValidationExamples = structuralValidationExamples == null
+                    ? List.of()
+                    : List.copyOf(structuralValidationExamples);
+        }
+    }
+
+    public record BoundaryMissingFace(
+            int depth,
+            BlockPos pos,
+            Direction face,
+            String blockState,
+            String candidatePath,
+            String rejectionStage
+    ) {
+        public BoundaryMissingFace {
+            depth = Math.max(0, depth);
+            pos = Objects.requireNonNull(pos, "pos").immutable();
+            face = Objects.requireNonNull(face, "face");
+            blockState = Objects.requireNonNullElse(blockState, "unknown");
+            candidatePath = Objects.requireNonNullElse(candidatePath, "unknown");
+            rejectionStage = Objects.requireNonNullElse(rejectionStage, "unknown");
         }
     }
 
@@ -286,14 +503,24 @@ public record SpotProjectionResult(
             long blockLookupNanos,
             long projectableCheckNanos,
             long planeWindowNanos,
+            long frontPassNanos,
             long frontSubtractNanos,
             long sideScanNanos,
             long sideCandidateNanos,
             long sideEmitNanos,
             long sideTravelSplitNanos,
+            long sideOcclusionIndexBuildNanos,
+            long sideSameDepthSplitNanos,
             long sideWindowNanos,
+            long sidePrefixQueryNanos,
             long sideRemainingIntersectNanos,
+            long sideRegionIntersectNanos,
+            long sideCanonicalNormalizeNanos,
+            long sideDebugAuditNanos,
             long sidePatchEmitNanos,
+            long surfaceAppearanceBuildNanos,
+            long patchClipNanos,
+            long spotRecordPackNanos,
             long sideCandidateVerifyNanos,
             long sideSubtractNanos,
             long indexQueryNanos,
@@ -326,6 +553,16 @@ public record SpotProjectionResult(
                 0L,
                 0L,
                 0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
                 0L
         );
 
@@ -335,14 +572,24 @@ public record SpotProjectionResult(
             blockLookupNanos = Math.max(0L, blockLookupNanos);
             projectableCheckNanos = Math.max(0L, projectableCheckNanos);
             planeWindowNanos = Math.max(0L, planeWindowNanos);
+            frontPassNanos = Math.max(0L, frontPassNanos);
             frontSubtractNanos = Math.max(0L, frontSubtractNanos);
             sideScanNanos = Math.max(0L, sideScanNanos);
             sideCandidateNanos = Math.max(0L, sideCandidateNanos);
             sideEmitNanos = Math.max(0L, sideEmitNanos);
             sideTravelSplitNanos = Math.max(0L, sideTravelSplitNanos);
+            sideOcclusionIndexBuildNanos = Math.max(0L, sideOcclusionIndexBuildNanos);
+            sideSameDepthSplitNanos = Math.max(0L, sideSameDepthSplitNanos);
             sideWindowNanos = Math.max(0L, sideWindowNanos);
+            sidePrefixQueryNanos = Math.max(0L, sidePrefixQueryNanos);
             sideRemainingIntersectNanos = Math.max(0L, sideRemainingIntersectNanos);
+            sideRegionIntersectNanos = Math.max(0L, sideRegionIntersectNanos);
+            sideCanonicalNormalizeNanos = Math.max(0L, sideCanonicalNormalizeNanos);
+            sideDebugAuditNanos = Math.max(0L, sideDebugAuditNanos);
             sidePatchEmitNanos = Math.max(0L, sidePatchEmitNanos);
+            surfaceAppearanceBuildNanos = Math.max(0L, surfaceAppearanceBuildNanos);
+            patchClipNanos = Math.max(0L, patchClipNanos);
+            spotRecordPackNanos = Math.max(0L, spotRecordPackNanos);
             sideCandidateVerifyNanos = Math.max(0L, sideCandidateVerifyNanos);
             sideSubtractNanos = Math.max(0L, sideSubtractNanos);
             indexQueryNanos = Math.max(0L, indexQueryNanos);

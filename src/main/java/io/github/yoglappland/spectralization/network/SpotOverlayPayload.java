@@ -3,6 +3,7 @@ package io.github.yoglappland.spectralization.network;
 import io.github.yoglappland.spectralization.Spectralization;
 import io.github.yoglappland.spectralization.optics.SpotRecord;
 import io.github.yoglappland.spectralization.optics.SpotRecord.ProjectionMode;
+import io.github.yoglappland.spectralization.optics.SpotProjectionLimits;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.core.Direction;
@@ -11,8 +12,14 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-public record SpotOverlayPayload(int ownerId, List<SpotRecord> spots) implements CustomPacketPayload {
-    private static final int MAX_SPOTS = 8192;
+public record SpotOverlayPayload(
+        int ownerId,
+        long snapshotToken,
+        int chunkIndex,
+        int chunkCount,
+        int totalSpots,
+        List<SpotRecord> spots
+) implements CustomPacketPayload {
     public static final Type<SpotOverlayPayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(Spectralization.MODID, "spot_overlay")
     );
@@ -20,24 +27,82 @@ public record SpotOverlayPayload(int ownerId, List<SpotRecord> spots) implements
             CustomPacketPayload.codec(SpotOverlayPayload::write, SpotOverlayPayload::read);
 
     public SpotOverlayPayload {
-        spots = spots.size() > MAX_SPOTS ? List.copyOf(spots.subList(0, MAX_SPOTS)) : List.copyOf(spots);
+        spots = List.copyOf(spots);
+        if (totalSpots < 0 || totalSpots > SpotProjectionLimits.MAX_SPOTS_PER_OWNER) {
+            throw new IllegalArgumentException("Spot snapshot total is outside the protocol limit: " + totalSpots);
+        }
+        int expectedChunkCount = Math.max(1, (totalSpots + SpotProjectionLimits.SPOTS_PER_PAYLOAD_CHUNK - 1)
+                / SpotProjectionLimits.SPOTS_PER_PAYLOAD_CHUNK);
+        if (chunkCount != expectedChunkCount
+                || chunkCount > SpotProjectionLimits.MAX_PAYLOAD_CHUNKS
+                || chunkIndex < 0
+                || chunkIndex >= chunkCount) {
+            throw new IllegalArgumentException("Invalid spot snapshot chunk coordinates");
+        }
+        int expectedChunkSize = totalSpots == 0
+                ? 0
+                : Math.min(
+                        SpotProjectionLimits.SPOTS_PER_PAYLOAD_CHUNK,
+                        totalSpots - chunkIndex * SpotProjectionLimits.SPOTS_PER_PAYLOAD_CHUNK
+                );
+        if (spots.size() != expectedChunkSize) {
+            throw new IllegalArgumentException("Invalid spot snapshot chunk size");
+        }
+    }
+
+    public static List<SpotOverlayPayload> chunks(int ownerId, long snapshotToken, List<SpotRecord> spots) {
+        if (spots.size() > SpotProjectionLimits.MAX_SPOTS_PER_OWNER) {
+            throw new IllegalArgumentException("Spot snapshot exceeds the protocol limit: " + spots.size());
+        }
+        int total = spots.size();
+        int chunkCount = Math.max(1, (total + SpotProjectionLimits.SPOTS_PER_PAYLOAD_CHUNK - 1)
+                / SpotProjectionLimits.SPOTS_PER_PAYLOAD_CHUNK);
+        List<SpotOverlayPayload> payloads = new ArrayList<>(chunkCount);
+        for (int chunkIndex = 0; chunkIndex < chunkCount; chunkIndex++) {
+            int from = chunkIndex * SpotProjectionLimits.SPOTS_PER_PAYLOAD_CHUNK;
+            int to = Math.min(total, from + SpotProjectionLimits.SPOTS_PER_PAYLOAD_CHUNK);
+            payloads.add(new SpotOverlayPayload(
+                    ownerId,
+                    snapshotToken,
+                    chunkIndex,
+                    chunkCount,
+                    total,
+                    spots.subList(from, to)
+            ));
+        }
+        return List.copyOf(payloads);
+    }
+
+    public static SpotOverlayPayload clear(int ownerId, long snapshotToken) {
+        return new SpotOverlayPayload(ownerId, snapshotToken, 0, 1, 0, List.of());
     }
 
     private static SpotOverlayPayload read(RegistryFriendlyByteBuf buffer) {
         int ownerId = buffer.readVarInt();
-        int count = Math.min(MAX_SPOTS, buffer.readVarInt());
+        long snapshotToken = buffer.readVarLong();
+        int chunkIndex = buffer.readVarInt();
+        int chunkCount = buffer.readVarInt();
+        int totalSpots = buffer.readVarInt();
+        int count = buffer.readVarInt();
+        if (count < 0 || count > SpotProjectionLimits.SPOTS_PER_PAYLOAD_CHUNK) {
+            throw new IllegalArgumentException("Spot payload chunk exceeds protocol limit: " + count);
+        }
         List<SpotRecord> spots = new ArrayList<>(count);
 
         for (int index = 0; index < count; index++) {
             spots.add(readSpot(buffer));
         }
 
-        return new SpotOverlayPayload(ownerId, spots);
+        return new SpotOverlayPayload(ownerId, snapshotToken, chunkIndex, chunkCount, totalSpots, spots);
     }
 
     private void write(RegistryFriendlyByteBuf buffer) {
         buffer.writeVarInt(ownerId);
-        int count = Math.min(MAX_SPOTS, spots.size());
+        buffer.writeVarLong(snapshotToken);
+        buffer.writeVarInt(chunkIndex);
+        buffer.writeVarInt(chunkCount);
+        buffer.writeVarInt(totalSpots);
+        int count = spots.size();
         buffer.writeVarInt(count);
 
         for (int index = 0; index < count; index++) {

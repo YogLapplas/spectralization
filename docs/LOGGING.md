@@ -268,7 +268,63 @@ readout_reliable=true
 4. 如果能看到存储内容但不能交互，先确认 multiblock report 没进入 error。
 5. 如果打开 UI 后内容不同步，再查 menu 初始化和客户端同步。
 
-## 12. 场源和材料问题
+## 12. 光斑投影问题
+
+光斑问题分为三类，必须先分类再看耗时：
+
+- 正确性：穿透遮挡、楼梯踏面/立面顺序错误、UV 错位、`missing_faces`。
+- 缓存：改变功率或颜色却触发几何重建，或者缓存结果与完整重建不一致。
+- 性能：完整几何扫描、外观更新、服务器响应或客户端绘制过慢。
+
+推荐使用 `spot_test` 物品运行固定测试。右键执行当前模式，Shift + 右键在
+`quick`、`partial_geometry`、`performance` 和 `full_suite` 之间切换。性能模式会自动运行
+`sparse`、`mixed`、`dense`、`cached_power` 和 `cached_color`，不需要手工改变光源。
+
+关键 diagnostics 事件：
+
+```text
+subsystem=spot_projection_test event=suite_started
+subsystem=spot_projection_test event=case_started
+subsystem=spot_projection_test event=appearance_step
+subsystem=spot_projection_test event=case_complete
+subsystem=spot_projection_test event=suite_complete
+subsystem=spot_projection event=profile
+subsystem=spot_projection event=performance_report
+subsystem=spot_projection event=geometry_cache_invalidated
+```
+
+一次测试只读取同一次游戏启动中时间最新的一组：
+
+```text
+diagnostics_*.log
+optical_compiler_*.log
+```
+
+不要全目录搜索后把旧启动的缓存事件和新启动的性能摘要混在一起。`latest.log` 只用于补充检查主线程卡顿、网络、资源加载和崩溃。
+
+判读 `case_complete` 时按以下顺序：
+
+1. `passed=true`。
+2. `missing_faces=0` 且 `validation_mismatches=0`。
+3. 缓存测试中 `appearance_only_samples` 等于请求样本数。
+4. `cache_validation_passed=true`，外观计划和依赖快照均复用。
+5. 正确性通过后再比较 `core`、`response` 和分阶段计时。
+
+三种时间的含义不同：
+
+- `core`：投影器内部从输入到结果的算法耗时。
+- `response`：测试发出刷新请求到服务器观察到对应结果的时间，包含 tick 调度、缓存清理、编译和日志。
+- 玩家可见延迟：还包含网络分片、客户端原子组装和下一帧绘制，当前不由 `response` 完整覆盖。
+
+若 `core` 低而 `response` 高，先查测试用的 `OpticalTraceCache.clear(level)`、服务器 tick 和日志首次初始化；若两者都低但画面晚，再查 payload 分片、`ClientSpotCache` 组装和客户端帧时间。
+
+`missing_faces` 不是单纯计数。结构验证会记录期望方块、面、局部区域和实际覆盖结果。先从 `case_complete` 找失败 case，再在同一个 `run_id` / `case_id` 内查详细验证事件；不要直接打开 verbose 并重新生成一个不同随机场景。
+
+字段定义、基线和下一阶段优化见
+[SPOT_PROJECTION_CHECKPOINT_2026-07-11.md](SPOT_PROJECTION_CHECKPOINT_2026-07-11.md)。算法语义以
+[SPOT_PROJECTION_ALGORITHM.md](SPOT_PROJECTION_ALGORITHM.md) 为准。
+
+## 13. 场源和材料问题
 
 症状：
 
@@ -285,7 +341,7 @@ readout_reliable=true
 4. 如果只是数据层变化，确认没有误触发拓扑重建。
 5. 如果场范围变化，确认相关 dependency 被刷新。
 
-## 13. 可靠性问题
+## 14. 可靠性问题
 
 症状：
 
@@ -307,7 +363,7 @@ readout_reliable=true
 - `optical_dirty`
 - `topology_changed`
 
-## 14. 记录新日志事件的规则
+## 15. 记录新日志事件的规则
 
 新增日志事件时，至少回答：
 
@@ -335,7 +391,7 @@ reliable
 
 不要把每 tick 状态写进 diagnostics。Diagnostics 应记录稀疏事件、边界变化和异常。
 
-## 15. 快速结论
+## 16. 快速结论
 
 最快排查路径：
 

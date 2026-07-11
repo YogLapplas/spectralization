@@ -46,6 +46,7 @@ public final class SpectralCreativeTabItems {
         output.accept(Spectralization.GRINDING_TOOL.get());
         output.accept(Spectralization.ADVANCED_BRUSH.get());
         output.accept(Spectralization.CREATIVE_BRUSH.get());
+        output.accept(Spectralization.SPOT_TEST.get());
         output.accept(Spectralization.ROD_OF_STRAWBERRY.get());
         output.accept(Spectralization.VERITY_HELM_OF_ALL_SEEING_INSIGHT.get());
         output.accept(Spectralization.VERITY_CUIRASS_OF_COSMIC_INDIFFERENCE.get());

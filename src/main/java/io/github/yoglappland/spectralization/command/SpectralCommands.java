@@ -128,6 +128,8 @@ public final class SpectralCommands {
                                                 IntegerArgumentType.getInteger(context, "count")
                                         )))))
                 .then(OpticalExampleValidator.command())
+                .then(SpotProjectionTestCommand.command())
+                .then(SpotProjectionPerformanceCommand.command())
                 .then(Commands.literal("uidebug")
                         .executes(context -> reportUiDebugState(context.getSource()))
                         .then(Commands.literal("on")

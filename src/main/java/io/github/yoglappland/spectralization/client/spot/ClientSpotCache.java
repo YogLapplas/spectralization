@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization.client.spot;
 
 import io.github.yoglappland.spectralization.optics.SpotRecord;
+import io.github.yoglappland.spectralization.optics.SpotRecord.GeometryKey;
 import io.github.yoglappland.spectralization.optics.SpotRecord.ProjectionMode;
 import io.github.yoglappland.spectralization.optics.projection.SpotSurfaceFrame;
 import io.github.yoglappland.spectralization.network.SpotOverlayPayload;
@@ -21,41 +22,43 @@ public final class ClientSpotCache {
     private static final int LEGACY_OWNER_ID = Integer.MIN_VALUE;
     private static final double SURFACE_OFFSET = 0.001D;
     private static final double PARTIAL_QUAD_AREA_THRESHOLD = 0.985D;
-    private static final Map<Integer, Map<SpotKey, RenderedSpot>> SPOTS_BY_OWNER = new HashMap<>();
-    private static final Comparator<SpotKey> SPOT_KEY_ORDER = Comparator
-            .comparingInt((SpotKey key) -> key.pos().getX())
+    private static final Map<Integer, Map<GeometryKey, RenderedSpot>> SPOTS_BY_OWNER = new HashMap<>();
+    private static final Map<Integer, PendingSpotSnapshot> PENDING_SNAPSHOTS_BY_OWNER = new HashMap<>();
+    private static final Map<Integer, Long> COMPLETED_SNAPSHOT_TOKENS_BY_OWNER = new HashMap<>();
+    private static final Comparator<GeometryKey> SPOT_KEY_ORDER = Comparator
+            .comparingInt((GeometryKey key) -> key.pos().getX())
             .thenComparingInt(key -> key.pos().getY())
             .thenComparingInt(key -> key.pos().getZ())
             .thenComparingInt(key -> key.projectionMode().ordinal())
             .thenComparingInt(key -> key.face().ordinal())
-            .thenComparingInt(SpotKey::clipMinU)
-            .thenComparingInt(SpotKey::clipMinV)
-            .thenComparingInt(SpotKey::clipMaxU)
-            .thenComparingInt(SpotKey::clipMaxV)
-            .thenComparingInt(SpotKey::textureMinU)
-            .thenComparingInt(SpotKey::textureMinV)
-            .thenComparingInt(SpotKey::textureMaxU)
-            .thenComparingInt(SpotKey::textureMaxV)
-            .thenComparingInt(SpotKey::quadX0)
-            .thenComparingInt(SpotKey::quadY0)
-            .thenComparingInt(SpotKey::quadZ0)
-            .thenComparingInt(SpotKey::quadTextureU0)
-            .thenComparingInt(SpotKey::quadTextureV0)
-            .thenComparingInt(SpotKey::quadX1)
-            .thenComparingInt(SpotKey::quadY1)
-            .thenComparingInt(SpotKey::quadZ1)
-            .thenComparingInt(SpotKey::quadTextureU1)
-            .thenComparingInt(SpotKey::quadTextureV1)
-            .thenComparingInt(SpotKey::quadX2)
-            .thenComparingInt(SpotKey::quadY2)
-            .thenComparingInt(SpotKey::quadZ2)
-            .thenComparingInt(SpotKey::quadTextureU2)
-            .thenComparingInt(SpotKey::quadTextureV2)
-            .thenComparingInt(SpotKey::quadX3)
-            .thenComparingInt(SpotKey::quadY3)
-            .thenComparingInt(SpotKey::quadZ3)
-            .thenComparingInt(SpotKey::quadTextureU3)
-            .thenComparingInt(SpotKey::quadTextureV3);
+            .thenComparingInt(GeometryKey::clipMinU)
+            .thenComparingInt(GeometryKey::clipMinV)
+            .thenComparingInt(GeometryKey::clipMaxU)
+            .thenComparingInt(GeometryKey::clipMaxV)
+            .thenComparingInt(GeometryKey::textureMinU)
+            .thenComparingInt(GeometryKey::textureMinV)
+            .thenComparingInt(GeometryKey::textureMaxU)
+            .thenComparingInt(GeometryKey::textureMaxV)
+            .thenComparingInt(GeometryKey::quadX0)
+            .thenComparingInt(GeometryKey::quadY0)
+            .thenComparingInt(GeometryKey::quadZ0)
+            .thenComparingInt(GeometryKey::quadTextureU0)
+            .thenComparingInt(GeometryKey::quadTextureV0)
+            .thenComparingInt(GeometryKey::quadX1)
+            .thenComparingInt(GeometryKey::quadY1)
+            .thenComparingInt(GeometryKey::quadZ1)
+            .thenComparingInt(GeometryKey::quadTextureU1)
+            .thenComparingInt(GeometryKey::quadTextureV1)
+            .thenComparingInt(GeometryKey::quadX2)
+            .thenComparingInt(GeometryKey::quadY2)
+            .thenComparingInt(GeometryKey::quadZ2)
+            .thenComparingInt(GeometryKey::quadTextureU2)
+            .thenComparingInt(GeometryKey::quadTextureV2)
+            .thenComparingInt(GeometryKey::quadX3)
+            .thenComparingInt(GeometryKey::quadY3)
+            .thenComparingInt(GeometryKey::quadZ3)
+            .thenComparingInt(GeometryKey::quadTextureU3)
+            .thenComparingInt(GeometryKey::quadTextureV3);
     private static final Comparator<RenderedSpot> RENDERED_SPOT_ORDER = Comparator
             .comparingInt((RenderedSpot spot) -> projectionRenderPriority(spot.projectionMode()))
             .thenComparingInt(spot -> spot.pos().getX())
@@ -101,8 +104,8 @@ public final class ClientSpotCache {
         }
 
         clearIfLevelChanged(Minecraft.getInstance().level);
-        SpotKey key = spotKey(spot);
-        Map<SpotKey, RenderedSpot> legacySpots = SPOTS_BY_OWNER.computeIfAbsent(LEGACY_OWNER_ID, ignored -> new HashMap<>());
+        GeometryKey key = spotKey(spot);
+        Map<GeometryKey, RenderedSpot> legacySpots = SPOTS_BY_OWNER.computeIfAbsent(LEGACY_OWNER_ID, ignored -> new HashMap<>());
 
         if (!spot.visible()) {
             legacySpots.remove(key);
@@ -125,14 +128,34 @@ public final class ClientSpotCache {
 
         clearIfLevelChanged(Minecraft.getInstance().level);
 
-        if (payload.spots().isEmpty()) {
+        if (payload.totalSpots() == 0) {
             SPOTS_BY_OWNER.remove(payload.ownerId());
+            PENDING_SNAPSHOTS_BY_OWNER.remove(payload.ownerId());
+            COMPLETED_SNAPSHOT_TOKENS_BY_OWNER.remove(payload.ownerId());
             rebuildActiveSpots();
             return;
         }
 
-        Map<SpotKey, RenderedSpot> ownerSpots = new HashMap<>();
-        for (SpotRecord spot : payload.spots()) {
+        Long completedToken = COMPLETED_SNAPSHOT_TOKENS_BY_OWNER.get(payload.ownerId());
+        if (completedToken != null && completedToken == payload.snapshotToken()) {
+            return;
+        }
+
+        PendingSpotSnapshot pending = PENDING_SNAPSHOTS_BY_OWNER.get(payload.ownerId());
+        if (pending == null || !pending.matches(payload)) {
+            pending = new PendingSpotSnapshot(payload);
+            PENDING_SNAPSHOTS_BY_OWNER.put(payload.ownerId(), pending);
+        }
+        if (!pending.accept(payload) || !pending.complete()) {
+            return;
+        }
+
+        List<SpotRecord> completedSpots = pending.assemble();
+        PENDING_SNAPSHOTS_BY_OWNER.remove(payload.ownerId());
+        COMPLETED_SNAPSHOT_TOKENS_BY_OWNER.put(payload.ownerId(), payload.snapshotToken());
+
+        Map<GeometryKey, RenderedSpot> ownerSpots = new HashMap<>();
+        for (SpotRecord spot : completedSpots) {
             if (spot.visible()) {
                 ownerSpots.put(spotKey(spot), renderedSpot(spot));
             }
@@ -168,16 +191,16 @@ public final class ClientSpotCache {
         ownerIds.sort(Integer::compare);
 
         for (int ownerId : ownerIds) {
-            Map<SpotKey, RenderedSpot> ownerSpots = SPOTS_BY_OWNER.get(ownerId);
+            Map<GeometryKey, RenderedSpot> ownerSpots = SPOTS_BY_OWNER.get(ownerId);
 
             if (ownerSpots == null) {
                 continue;
             }
 
-            List<Map.Entry<SpotKey, RenderedSpot>> entries = new ArrayList<>(ownerSpots.entrySet());
+            List<Map.Entry<GeometryKey, RenderedSpot>> entries = new ArrayList<>(ownerSpots.entrySet());
             entries.sort(Map.Entry.comparingByKey(SPOT_KEY_ORDER));
 
-            for (Map.Entry<SpotKey, RenderedSpot> entry : entries) {
+            for (Map.Entry<GeometryKey, RenderedSpot> entry : entries) {
                 sortedSpots.add(entry.getValue());
             }
         }
@@ -231,6 +254,8 @@ public final class ClientSpotCache {
 
     public static void clear() {
         SPOTS_BY_OWNER.clear();
+        PENDING_SNAPSHOTS_BY_OWNER.clear();
+        COMPLETED_SNAPSHOT_TOKENS_BY_OWNER.clear();
         activeSpots = List.of();
         lastLevel = null;
         lastGeometryMergeStats = GeometryMergeStats.empty();
@@ -280,19 +305,19 @@ public final class ClientSpotCache {
                 centerZ,
                 spot.coherentAlphaLevel(),
                 renderRadius(spot.coherentRadiusLevel(), 0.82D),
-                alphaFor(spot.coherentAlphaLevel(), 1.0D),
+                alphaFor(spot.coherentAlphaLevel(), 240, 0.65D),
                 spot.coherentRed(),
                 spot.coherentGreen(),
                 spot.coherentBlue(),
                 spot.strayAlphaLevel(),
                 renderRadius(spot.strayRadiusLevel(), 1.25D),
-                alphaFor(spot.strayAlphaLevel(), 0.72D),
+                alphaFor(spot.strayAlphaLevel(), 168, 0.80D),
                 spot.strayRed(),
                 spot.strayGreen(),
                 spot.strayBlue(),
                 spot.ringAlphaLevel(),
                 renderRadius(ringRadiusLevel, 1.35D),
-                alphaFor(spot.ringAlphaLevel(), 0.72D),
+                alphaFor(spot.ringAlphaLevel(), 128, 0.90D),
                 ringRed,
                 ringGreen,
                 ringBlue,
@@ -344,12 +369,13 @@ public final class ClientSpotCache {
         };
     }
 
-    private static int alphaFor(int alphaLevel, double multiplier) {
+    private static int alphaFor(int alphaLevel, int maxAlpha, double gamma) {
         if (alphaLevel <= 0) {
             return 0;
         }
 
-        return Math.max(0, Math.min(240, (int) Math.round((88 + alphaLevel * 10) * multiplier)));
+        double normalized = Math.min(15, alphaLevel) / 15.0D;
+        return Math.max(0, Math.min(255, (int) Math.round(maxAlpha * Math.pow(normalized, gamma))));
     }
 
     private static int colorBucketMask(
@@ -424,40 +450,8 @@ public final class ClientSpotCache {
         return Math.min(1.0D, Math.abs(twiceArea) * 0.5D);
     }
 
-    private static SpotKey spotKey(SpotRecord spot) {
-        return new SpotKey(
-                spot.pos(),
-                spot.face(),
-                spot.projectionMode(),
-                spot.clipMinU(),
-                spot.clipMinV(),
-                spot.clipMaxU(),
-                spot.clipMaxV(),
-                spot.textureMinU(),
-                spot.textureMinV(),
-                spot.textureMaxU(),
-                spot.textureMaxV(),
-                spot.quadX0(),
-                spot.quadY0(),
-                spot.quadZ0(),
-                spot.quadTextureU0(),
-                spot.quadTextureV0(),
-                spot.quadX1(),
-                spot.quadY1(),
-                spot.quadZ1(),
-                spot.quadTextureU1(),
-                spot.quadTextureV1(),
-                spot.quadX2(),
-                spot.quadY2(),
-                spot.quadZ2(),
-                spot.quadTextureU2(),
-                spot.quadTextureV2(),
-                spot.quadX3(),
-                spot.quadY3(),
-                spot.quadZ3(),
-                spot.quadTextureU3(),
-                spot.quadTextureV3()
-        );
+    private static GeometryKey spotKey(SpotRecord spot) {
+        return spot.geometryKey();
     }
 
     private static double normalizedByte(int value) {
@@ -504,39 +498,55 @@ public final class ClientSpotCache {
                 + face.getStepZ() * SURFACE_OFFSET;
     }
 
-    private record SpotKey(
-            BlockPos pos,
-            Direction face,
-            ProjectionMode projectionMode,
-            int clipMinU,
-            int clipMinV,
-            int clipMaxU,
-            int clipMaxV,
-            int textureMinU,
-            int textureMinV,
-            int textureMaxU,
-            int textureMaxV,
-            int quadX0,
-            int quadY0,
-            int quadZ0,
-            int quadTextureU0,
-            int quadTextureV0,
-            int quadX1,
-            int quadY1,
-            int quadZ1,
-            int quadTextureU1,
-            int quadTextureV1,
-            int quadX2,
-            int quadY2,
-            int quadZ2,
-            int quadTextureU2,
-            int quadTextureV2,
-            int quadX3,
-            int quadY3,
-            int quadZ3,
-            int quadTextureU3,
-            int quadTextureV3
-    ) {
+    private static final class PendingSpotSnapshot {
+        private final long snapshotToken;
+        private final int chunkCount;
+        private final int totalSpots;
+        private final List<List<SpotRecord>> chunks;
+        private int receivedChunks;
+
+        private PendingSpotSnapshot(SpotOverlayPayload firstPayload) {
+            snapshotToken = firstPayload.snapshotToken();
+            chunkCount = firstPayload.chunkCount();
+            totalSpots = firstPayload.totalSpots();
+            chunks = new ArrayList<>(chunkCount);
+            for (int index = 0; index < chunkCount; index++) {
+                chunks.add(null);
+            }
+        }
+
+        private boolean matches(SpotOverlayPayload payload) {
+            return snapshotToken == payload.snapshotToken()
+                    && chunkCount == payload.chunkCount()
+                    && totalSpots == payload.totalSpots();
+        }
+
+        private boolean accept(SpotOverlayPayload payload) {
+            if (!matches(payload) || chunks.get(payload.chunkIndex()) != null) {
+                return false;
+            }
+            chunks.set(payload.chunkIndex(), payload.spots());
+            receivedChunks++;
+            return true;
+        }
+
+        private boolean complete() {
+            return receivedChunks == chunkCount;
+        }
+
+        private List<SpotRecord> assemble() {
+            List<SpotRecord> spots = new ArrayList<>(totalSpots);
+            for (List<SpotRecord> chunk : chunks) {
+                if (chunk == null) {
+                    throw new IllegalStateException("Cannot assemble an incomplete spot snapshot");
+                }
+                spots.addAll(chunk);
+            }
+            if (spots.size() != totalSpots) {
+                throw new IllegalStateException("Reassembled spot snapshot has the wrong size");
+            }
+            return spots;
+        }
     }
 
     private record PartialQuadGeometryKey(

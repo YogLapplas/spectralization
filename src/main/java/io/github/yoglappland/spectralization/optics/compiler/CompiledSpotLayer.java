@@ -9,8 +9,11 @@ import io.github.yoglappland.spectralization.optics.BeamPacket;
 import io.github.yoglappland.spectralization.optics.OutputBeam;
 import io.github.yoglappland.spectralization.optics.PlaneWaveComponent;
 import io.github.yoglappland.spectralization.optics.SpotRecord;
+import io.github.yoglappland.spectralization.optics.SpotRecord.GeometryKey;
+import io.github.yoglappland.spectralization.optics.SpotProjectionLimits;
 import io.github.yoglappland.spectralization.optics.geometry.BeamGeometryOps;
 import io.github.yoglappland.spectralization.optics.projection.SpotProjectionAllocation;
+import io.github.yoglappland.spectralization.optics.projection.SpotProjectionPerformanceTracker;
 import io.github.yoglappland.spectralization.optics.projection.SpotProjectionResult;
 import io.github.yoglappland.spectralization.optics.projection.VoxelSpotProjector;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
@@ -18,21 +21,41 @@ import it.unimi.dsi.fastutil.longs.LongSet;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
+import java.util.WeakHashMap;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.state.BlockState;
 
 public final class CompiledSpotLayer {
     private static final double MIN_SPOT_POWER = 1.0E-4;
     private static final double PROJECTED_OPTICAL_SOURCE_MAX_RADIUS = 0.5D;
-    private static final int MAX_SPOTS_PER_SAMPLE = 1024;
+    private static final int MAX_SPOTS_PER_SAMPLE = SpotProjectionLimits.MAX_SPOTS_PER_OWNER;
+    private static final int MAX_GEOMETRY_CACHE_ENTRIES_PER_LEVEL = 64;
+    private static final int MAX_GEOMETRY_TEMPLATES_PER_ENTRY = MAX_SPOTS_PER_SAMPLE;
+    private static final int MAX_GEOMETRY_TEMPLATES_PER_LEVEL = MAX_SPOTS_PER_SAMPLE * 4;
+    private static final int UNCACHED_NETWORK_ID = Integer.MIN_VALUE;
+    private static final Map<ServerLevel, LinkedHashMap<ProjectionGeometryKey, SpotProjectionResult>>
+            GEOMETRY_CACHE_BY_LEVEL = new WeakHashMap<>();
     public static final SpotLayer EMPTY = new SpotLayer(List.of(), new LongOpenHashSet(), List.of());
 
     public static SpotLayer sample(
             ServerLevel level,
+            CompiledPortGraph graph,
+            ScalarPowerSolution solution,
+            OutputBeam sourceOutput,
+            CompiledBeamProfileLayer beamProfileLayer
+    ) {
+        return sample(level, UNCACHED_NETWORK_ID, graph, solution, sourceOutput, beamProfileLayer);
+    }
+
+    public static SpotLayer sample(
+            ServerLevel level,
+            int networkId,
             CompiledPortGraph graph,
             ScalarPowerSolution solution,
             OutputBeam sourceOutput,
@@ -43,15 +66,17 @@ public final class CompiledSpotLayer {
         }
 
         Map<PortGraphNode, Integer> distanceByNode = propagationDistanceByNode(graph);
-        List<SpotRecord> primarySpots = new ArrayList<>();
-        List<SpotRecord> sideSpots = new ArrayList<>();
+        Map<GeometryKey, SpotRecord> primarySpots = new LinkedHashMap<>();
+        Map<GeometryKey, SpotRecord> sideSpots = new LinkedHashMap<>();
         List<SpotProjectionAllocation> allocations = new ArrayList<>();
         LongSet projectionDependencies = new LongOpenHashSet();
+        SpotBudgetStats budgetStats = new SpotBudgetStats();
 
         for (PortGraphNode node : graph.nodes()) {
             if (node.waveKind() != PortWaveKind.OUTGOING) {
                 continue;
             }
+            budgetStats.outgoingNodes++;
 
             double outgoingPower = solution.powerAt(node);
 
@@ -77,24 +102,209 @@ public final class CompiledSpotLayer {
                     node
             )
                     .withDirection(node.side());
-            long projectionStartNanos = SpectralizationConfig.opticalCompilerDebugLog() ? System.nanoTime() : 0L;
-            SpotProjectionResult projectionResult = VoxelSpotProjector.projectLightConeSpots(
+            long projectionStartNanos = System.nanoTime();
+            budgetStats.projectedNodes++;
+            SpotProjectionResult projectionResult = projectWithGeometryCache(
+                    level,
+                    networkId,
+                    node,
+                    profileTemplate,
+                    outgoingPower,
+                    coherentOutgoingPower,
+                    budgetStats
+            );
+            long projectionElapsedNanos = Math.max(0L, System.nanoTime() - projectionStartNanos);
+            SpotProjectionPerformanceTracker.record(
                     level,
                     node.pos(),
                     node.side(),
-                    node.side(),
-                    profileTemplate,
-                    outgoingPower,
-                    coherentOutgoingPower
+                    projectionElapsedNanos,
+                    projectionResult
             );
-            logProjectionProfile(level, node, outgoingPower, projectionResult, projectionStartNanos);
+            logProjectionProfile(level, node, outgoingPower, projectionResult, projectionElapsedNanos);
 
-            if (addVisibleSpots(primarySpots, sideSpots, allocations, projectionResult, projectionDependencies)) {
-                break;
-            }
+            addVisibleSpots(
+                    primarySpots,
+                    sideSpots,
+                    allocations,
+                    projectionResult,
+                    projectionDependencies,
+                    budgetStats,
+                    node.side()
+            );
         }
 
-        return new SpotLayer(cappedSpots(primarySpots, sideSpots), projectionDependencies, allocations);
+        List<SpotRecord> spots = cappedSpots(primarySpots, sideSpots);
+        logSpotBudget(level, spots.size(), projectionDependencies.size(), budgetStats);
+        return new SpotLayer(spots, projectionDependencies, allocations);
+    }
+
+    private static SpotProjectionResult projectWithGeometryCache(
+            ServerLevel level,
+            int networkId,
+            PortGraphNode node,
+            BeamPacket profileTemplate,
+            double outgoingPower,
+            double coherentOutgoingPower,
+            SpotBudgetStats budgetStats
+    ) {
+        boolean cacheEligible = networkId != UNCACHED_NETWORK_ID
+                && !VoxelSpotProjector.debugFaceCentersEnabled()
+                && !VoxelSpotProjector.validationEnabledFor(level, node.pos(), node.side());
+        ProjectionGeometryKey key = new ProjectionGeometryKey(
+                networkId,
+                node.pos().immutable(),
+                node.side(),
+                profileTemplate.envelope(),
+                VoxelSpotProjector.occlusionPlaneCount()
+        );
+
+        if (cacheEligible) {
+            SpotProjectionResult cached = geometryCache(level).get(key);
+            if (cached != null) {
+                budgetStats.geometryCacheHits++;
+                budgetStats.appearanceOnlyUpdates++;
+                return VoxelSpotProjector.reapplyCachedAppearance(
+                        level,
+                        node.pos(),
+                        node.side(),
+                        profileTemplate,
+                        outgoingPower,
+                        coherentOutgoingPower,
+                        cached
+                );
+            }
+            budgetStats.geometryCacheMisses++;
+        }
+
+        SpotProjectionResult rebuilt = VoxelSpotProjector.projectLightConeSpots(
+                level,
+                node.pos(),
+                node.side(),
+                node.side(),
+                profileTemplate,
+                outgoingPower,
+                coherentOutgoingPower
+        );
+        budgetStats.fullGeometryRebuilds++;
+        if (cacheEligible && rebuilt.cacheMode() == SpotProjectionResult.CacheMode.FULL_REBUILD) {
+            putGeometryCache(level, key, rebuilt);
+        }
+        return rebuilt;
+    }
+
+    private static LinkedHashMap<ProjectionGeometryKey, SpotProjectionResult> geometryCache(ServerLevel level) {
+        return GEOMETRY_CACHE_BY_LEVEL.computeIfAbsent(level, ignored -> new LinkedHashMap<>(16, 0.75F, true));
+    }
+
+    private static void putGeometryCache(
+            ServerLevel level,
+            ProjectionGeometryKey key,
+            SpotProjectionResult result
+    ) {
+        if (result.geometryTemplates().size() > MAX_GEOMETRY_TEMPLATES_PER_ENTRY) {
+            return;
+        }
+        LinkedHashMap<ProjectionGeometryKey, SpotProjectionResult> cache = geometryCache(level);
+        cache.put(key, result);
+        while (cache.size() > MAX_GEOMETRY_CACHE_ENTRIES_PER_LEVEL
+                || geometryTemplateCount(cache) > MAX_GEOMETRY_TEMPLATES_PER_LEVEL) {
+            ProjectionGeometryKey eldest = cache.keySet().iterator().next();
+            cache.remove(eldest);
+        }
+    }
+
+    private static int geometryTemplateCount(Map<ProjectionGeometryKey, SpotProjectionResult> cache) {
+        int count = 0;
+        for (SpotProjectionResult result : cache.values()) {
+            count += result.geometryTemplates().size();
+        }
+        return count;
+    }
+
+    public static void invalidateProjectionGeometry(
+            ServerLevel level,
+            int networkId,
+            BlockPos changedPos,
+            String reason
+    ) {
+        LinkedHashMap<ProjectionGeometryKey, SpotProjectionResult> cache = GEOMETRY_CACHE_BY_LEVEL.get(level);
+        if (cache == null || cache.isEmpty()) {
+            return;
+        }
+        int removed = 0;
+        int earliestDepth = Integer.MAX_VALUE;
+        var iterator = cache.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<ProjectionGeometryKey, SpotProjectionResult> entry = iterator.next();
+            ProjectionGeometryKey key = entry.getKey();
+            if (key.networkId() != networkId) {
+                continue;
+            }
+            if (changedPos != null && !entry.getValue().dependencies().contains(changedPos.asLong())) {
+                continue;
+            }
+            if (changedPos != null) {
+                earliestDepth = Math.min(earliestDepth, projectionDepth(key.sourcePos(), changedPos, key.direction()));
+            }
+            iterator.remove();
+            removed++;
+        }
+        logGeometryInvalidation(level, networkId, changedPos, reason, removed, earliestDepth);
+    }
+
+    public static void invalidateProjectionGeometry(
+            ServerLevel level,
+            BlockPos sourcePos,
+            Direction direction,
+            String reason
+    ) {
+        LinkedHashMap<ProjectionGeometryKey, SpotProjectionResult> cache = GEOMETRY_CACHE_BY_LEVEL.get(level);
+        if (cache == null || cache.isEmpty()) {
+            return;
+        }
+        int before = cache.size();
+        cache.entrySet().removeIf(entry -> entry.getKey().sourcePos().equals(sourcePos)
+                && entry.getKey().direction() == direction);
+        logGeometryInvalidation(
+                level,
+                UNCACHED_NETWORK_ID,
+                sourcePos,
+                reason,
+                before - cache.size(),
+                0
+        );
+    }
+
+    private static void logGeometryInvalidation(
+            ServerLevel level,
+            int networkId,
+            BlockPos changedPos,
+            String reason,
+            int removed,
+            int earliestDepth
+    ) {
+        if (removed <= 0 || !SpectralizationConfig.opticalCompilerDebugLog()) {
+            return;
+        }
+        SpectralDiagnostics.Event event = SpectralDiagnostics.event(
+                level, "spot_projection", "geometry_cache_invalidated"
+        )
+                .field("network_id", networkId)
+                .field("reason", reason)
+                .field("removed_entries", removed)
+                .field("earliest_invalidated_depth", earliestDepth == Integer.MAX_VALUE ? -1 : earliestDepth);
+        if (changedPos != null) {
+            event.pos("changed", changedPos);
+        }
+        event.write();
+    }
+
+    private static int projectionDepth(BlockPos sourcePos, BlockPos targetPos, Direction direction) {
+        int dx = targetPos.getX() - sourcePos.getX();
+        int dy = targetPos.getY() - sourcePos.getY();
+        int dz = targetPos.getZ() - sourcePos.getZ();
+        return Math.max(0, dx * direction.getStepX() + dy * direction.getStepY() + dz * direction.getStepZ());
     }
 
     private static void logProjectionProfile(
@@ -102,26 +312,66 @@ public final class CompiledSpotLayer {
             PortGraphNode node,
             double outgoingPower,
             SpotProjectionResult projectionResult,
-            long projectionStartNanos
+            long projectionElapsedNanos
     ) {
-        if (!SpectralizationConfig.opticalCompilerDebugLog() || projectionStartNanos <= 0L) {
+        if (!SpectralizationConfig.opticalCompilerDebugLog()) {
             return;
         }
 
-        long elapsedNanos = System.nanoTime() - projectionStartNanos;
+        if (projectionResult.cacheMode() == SpotProjectionResult.CacheMode.APPEARANCE_ONLY) {
+            SpotProjectionResult.AppearanceTimings appearance = projectionResult.appearanceTimings();
+            long residualNanos = Math.max(0L, projectionElapsedNanos - appearance.totalNanos());
+            SpectralDiagnostics.event(level, "spot_projection", "profile")
+                    .pos("source", node.pos())
+                    .field("direction", node.side())
+                    .field("power", outgoingPower)
+                    .field("cache_mode", "appearance_only")
+                    .field("log_detail", "compact_appearance")
+                    .field("geometry_templates", projectionResult.geometryTemplates().size())
+                    .field("elapsed_us", projectionElapsedNanos / 1_000.0D)
+                    .field("appearance_total_us", appearance.totalNanos() / 1_000.0D)
+                    .field("appearance_prepare_us", appearance.prepareNanos() / 1_000.0D)
+                    .field("appearance_surface_build_us", appearance.surfaceBuildNanos() / 1_000.0D)
+                    .field("appearance_record_update_us", appearance.recordUpdateNanos() / 1_000.0D)
+                    .field("appearance_residual_us", residualNanos / 1_000.0D)
+                    .field("appearance_templates", appearance.templates())
+                    .field("appearance_unique_surfaces", appearance.uniqueSurfaces())
+                    .field("appearance_surface_builds", appearance.surfaceBuilds())
+                    .field("appearance_surface_cache_hits", appearance.surfaceCacheHits())
+                    .field("appearance_plan_reused", appearance.planReused())
+                    .field("dependency_snapshot_reused", true)
+                    .field("spots", projectionResult.spots().size())
+                    .field("dependencies", projectionResult.dependencies().size())
+                    .write();
+            return;
+        }
+
         SpotProjectionResult.Stats stats = projectionResult.stats();
         SpotProjectionResult.StageTimings timings = stats.timings();
         SpotProjectionResult.SideDiagnostics sideDiagnostics = stats.sideDiagnostics();
         SpotProjectionResult.SubtractionStats subtraction = stats.subtraction();
         SpotProjectionResult.RemainingStats remaining = stats.remaining();
+        SpotProjectionResult.OptimizationStats optimization = stats.optimization();
         SpotProjectionResult.HotDepth hotDepth = stats.hotDepth();
+        long attributedProjectionNanos = timings.tileRangeNanos()
+                + timings.projectionRectNanos()
+                + timings.blockLookupNanos()
+                + timings.projectableCheckNanos()
+                + timings.planeWindowNanos()
+                + timings.frontPassNanos()
+                + timings.sideScanNanos()
+                + timings.fullOccupancyNanos()
+                + timings.occlusionAddNanos();
+        long projectionResidualNanos = Math.max(0L, projectionElapsedNanos - attributedProjectionNanos);
         SpectralDiagnostics.WriteStats logWriteStats = SpectralDiagnostics.writeStats();
         SpectralDiagnostics.event(level, "spot_projection", "profile")
                 .pos("source", node.pos())
                 .field("direction", node.side())
                 .field("power", outgoingPower)
+                .field("cache_mode", projectionResult.cacheMode().name().toLowerCase(java.util.Locale.ROOT))
+                .field("geometry_templates", projectionResult.geometryTemplates().size())
                 .field("plane_count", VoxelSpotProjector.occlusionPlaneCount())
-                .field("elapsed_us", elapsedNanos / 1_000.0D)
+                .field("elapsed_us", projectionElapsedNanos / 1_000.0D)
                 .field("spots", projectionResult.spots().size())
                 .field("allocations", projectionResult.allocations().size())
                 .field("dependencies", projectionResult.dependencies().size())
@@ -192,19 +442,52 @@ public final class CompiledSpotLayer {
                 .field("max_visible_fragments", stats.maxVisibleFragments())
                 .field("front_fragments_before_merge", stats.frontFragmentsBeforeMerge())
                 .field("front_fragments_after_merge", stats.frontFragmentsAfterMerge())
+                .field("footprint_integral_calls", optimization.footprintIntegralCalls())
+                .field("surface_appearance_builds", optimization.surfaceAppearanceBuilds())
+                .field("surface_appearance_cache_hits", optimization.surfaceAppearanceCacheHits())
+                .field("side_candidate_tiles_visited", optimization.sideCandidateTilesVisited())
+                .field("side_visible_windows_before_merge", optimization.sideVisibleWindowsBeforeMerge())
+                .field("side_visible_windows_after_merge", optimization.sideVisibleWindowsAfterMerge())
+                .field("side_boundary_missing_examples", String.join(" | ", optimization.sideBoundaryMissingExamples()))
+                .field("remaining_subtract_validation_checks", optimization.remainingSubtractValidationChecks())
+                .field("remaining_subtract_validation_mismatches", optimization.remainingSubtractValidationMismatches())
+                .field("same_depth_split_index_queries", optimization.sameDepthSplitIndexQueries())
+                .field("same_depth_travel_groups_visited", optimization.sameDepthTravelGroupsVisited())
+                .field("same_depth_prefix_index_queries", optimization.sameDepthPrefixIndexQueries())
+                .field("same_depth_prefix_index_candidates", optimization.sameDepthPrefixIndexCandidates())
+                .field("same_depth_prefix_index_hits", optimization.sameDepthPrefixIndexHits())
+                .field("same_depth_split_validation_checks", optimization.sameDepthSplitValidationChecks())
+                .field("same_depth_split_validation_mismatches", optimization.sameDepthSplitValidationMismatches())
+                .field("same_depth_prefix_validation_checks", optimization.sameDepthPrefixValidationChecks())
+                .field("same_depth_prefix_validation_mismatches", optimization.sameDepthPrefixValidationMismatches())
+                .field("side_canonical_validation_checks", optimization.sideCanonicalValidationChecks())
+                .field("side_canonical_validation_mismatches", optimization.sideCanonicalValidationMismatches())
+                .field("structural_validation_examples", String.join(" | ", optimization.structuralValidationExamples()))
+                .field("projection_attributed_us", attributedProjectionNanos / 1_000.0D)
+                .field("projection_residual_us", projectionResidualNanos / 1_000.0D)
                 .field("tile_range_us", timings.tileRangeNanos() / 1_000.0D)
                 .field("projection_rect_us", timings.projectionRectNanos() / 1_000.0D)
                 .field("block_lookup_us", timings.blockLookupNanos() / 1_000.0D)
                 .field("projectable_check_us", timings.projectableCheckNanos() / 1_000.0D)
                 .field("plane_window_us", timings.planeWindowNanos() / 1_000.0D)
+                .field("front_pass_us", timings.frontPassNanos() / 1_000.0D)
                 .field("front_intersect_us", timings.frontSubtractNanos() / 1_000.0D)
                 .field("side_scan_us", timings.sideScanNanos() / 1_000.0D)
                 .field("side_candidate_us", timings.sideCandidateNanos() / 1_000.0D)
                 .field("side_emit_us", timings.sideEmitNanos() / 1_000.0D)
                 .field("side_travel_split_us", timings.sideTravelSplitNanos() / 1_000.0D)
+                .field("side_occlusion_index_build_us", timings.sideOcclusionIndexBuildNanos() / 1_000.0D)
+                .field("side_same_depth_split_us", timings.sideSameDepthSplitNanos() / 1_000.0D)
                 .field("side_window_us", timings.sideWindowNanos() / 1_000.0D)
+                .field("side_prefix_query_us", timings.sidePrefixQueryNanos() / 1_000.0D)
                 .field("side_remaining_intersect_us", timings.sideRemainingIntersectNanos() / 1_000.0D)
+                .field("side_region_intersect_us", timings.sideRegionIntersectNanos() / 1_000.0D)
+                .field("side_canonical_normalize_us", timings.sideCanonicalNormalizeNanos() / 1_000.0D)
+                .field("side_debug_audit_us", timings.sideDebugAuditNanos() / 1_000.0D)
                 .field("side_patch_emit_us", timings.sidePatchEmitNanos() / 1_000.0D)
+                .field("surface_appearance_build_us", timings.surfaceAppearanceBuildNanos() / 1_000.0D)
+                .field("patch_clip_us", timings.patchClipNanos() / 1_000.0D)
+                .field("spot_record_pack_us", timings.spotRecordPackNanos() / 1_000.0D)
                 .field("side_candidate_verify_us", timings.sideCandidateVerifyNanos() / 1_000.0D)
                 .field("side_intersect_us", timings.sideSubtractNanos() / 1_000.0D)
                 .field("front_emit_us", timings.frontEmitNanos() / 1_000.0D)
@@ -255,6 +538,23 @@ public final class CompiledSpotLayer {
                 .field("log_write_avg_us_before", logWriteStats.averageNanos() / 1_000.0D)
                 .field("log_write_max_us_before", logWriteStats.maxNanos() / 1_000.0D)
                 .write();
+
+        for (SpotProjectionResult.BoundaryMissingFace missing : optimization.sideBoundaryMissingDetails()) {
+            BlockPos relative = missing.pos().subtract(node.pos());
+            SpectralDiagnostics.event(level, "spot_projection", "boundary_missing_face")
+                    .pos("source", node.pos())
+                    .field("direction", node.side())
+                    .field("depth", missing.depth())
+                    .pos("target", missing.pos())
+                    .field("relative_x", relative.getX())
+                    .field("relative_y", relative.getY())
+                    .field("relative_z", relative.getZ())
+                    .field("face", missing.face())
+                    .field("state", missing.blockState())
+                    .field("candidate_path", missing.candidatePath())
+                    .field("reject_stage", missing.rejectionStage())
+                    .write();
+        }
     }
 
     private static boolean isTransparentProjectionPassThrough(ServerLevel level, PortGraphNode node) {
@@ -294,46 +594,98 @@ public final class CompiledSpotLayer {
         return distanceByNode;
     }
 
-    private static boolean addVisibleSpot(List<SpotRecord> primarySpots, List<SpotRecord> sideSpots, SpotRecord spot) {
+    private static void addVisibleSpot(
+            Map<GeometryKey, SpotRecord> primarySpots,
+            Map<GeometryKey, SpotRecord> sideSpots,
+            SpotRecord spot,
+            SpotBudgetStats budgetStats,
+            Direction travelDirection
+    ) {
         if (!spot.visible()) {
-            return false;
+            return;
         }
 
-        if (spot.projectionMode() == SpotRecord.ProjectionMode.FOOTPRINT_QUAD
-                || spot.projectionMode() == SpotRecord.ProjectionMode.DEBUG_FACE_CENTER) {
-            if (sideSpots.size() < MAX_SPOTS_PER_SAMPLE) {
-                sideSpots.add(spot);
-            }
-            return false;
+        if (spot.face() != travelDirection.getOpposite()) {
+            budgetStats.generatedSide++;
+            addQuantizedSpot(sideSpots, spot, budgetStats);
+            return;
         }
 
-        primarySpots.add(spot);
-        return primarySpots.size() >= MAX_SPOTS_PER_SAMPLE;
+        budgetStats.generatedPrimary++;
+        addQuantizedSpot(primarySpots, spot, budgetStats);
     }
 
-    private static boolean addVisibleSpots(
-            List<SpotRecord> primarySpots,
-            List<SpotRecord> sideSpots,
+    private static void addQuantizedSpot(
+            Map<GeometryKey, SpotRecord> spots,
+            SpotRecord spot,
+            SpotBudgetStats budgetStats
+    ) {
+        GeometryKey geometryKey = spot.geometryKey();
+        if (spots.containsKey(geometryKey)) {
+            spots.put(geometryKey, spot);
+            budgetStats.deduplicated++;
+        } else if (spots.size() < MAX_SPOTS_PER_SAMPLE) {
+            spots.put(geometryKey, spot);
+        }
+    }
+
+    private static void addVisibleSpots(
+            Map<GeometryKey, SpotRecord> primarySpots,
+            Map<GeometryKey, SpotRecord> sideSpots,
             List<SpotProjectionAllocation> allocations,
             SpotProjectionResult projectionResult,
-            LongSet projectionDependencies
+            LongSet projectionDependencies,
+            SpotBudgetStats budgetStats,
+            Direction travelDirection
     ) {
         projectionDependencies.addAll(projectionResult.dependencies());
         allocations.addAll(projectionResult.allocations());
 
         for (SpotRecord spot : projectionResult.spots()) {
-            if (addVisibleSpot(primarySpots, sideSpots, spot)) {
-                return true;
-            }
+            addVisibleSpot(primarySpots, sideSpots, spot, budgetStats, travelDirection);
         }
-
-        return false;
     }
 
-    private static List<SpotRecord> cappedSpots(List<SpotRecord> primarySpots, List<SpotRecord> sideSpots) {
+    private static void logSpotBudget(
+            ServerLevel level,
+            int exportedSpots,
+            int dependencyCount,
+            SpotBudgetStats budgetStats
+    ) {
+        if (!SpectralizationConfig.opticalCompilerDebugLog()) {
+            return;
+        }
+
+        int generatedSpots = budgetStats.generatedPrimary + budgetStats.generatedSide;
+        int uniqueGeneratedSpots = Math.max(0, generatedSpots - budgetStats.deduplicated);
+        SpectralDiagnostics.event(level, "spot_projection", "budget")
+                .field("quota", MAX_SPOTS_PER_SAMPLE)
+                .field("generated_primary", budgetStats.generatedPrimary)
+                .field("generated_side", budgetStats.generatedSide)
+                .field("generated", generatedSpots)
+                .field("unique_generated", uniqueGeneratedSpots)
+                .field("deduplicated", budgetStats.deduplicated)
+                .field("exported", exportedSpots)
+                .field("dropped", Math.max(0, uniqueGeneratedSpots - exportedSpots))
+                .field("payload_chunks", Math.max(1, (exportedSpots + SpotProjectionLimits.SPOTS_PER_PAYLOAD_CHUNK - 1)
+                        / SpotProjectionLimits.SPOTS_PER_PAYLOAD_CHUNK))
+                .field("outgoing_nodes", budgetStats.outgoingNodes)
+                .field("projected_nodes", budgetStats.projectedNodes)
+                .field("geometry_cache_hits", budgetStats.geometryCacheHits)
+                .field("geometry_cache_misses", budgetStats.geometryCacheMisses)
+                .field("appearance_only_updates", budgetStats.appearanceOnlyUpdates)
+                .field("full_geometry_rebuilds", budgetStats.fullGeometryRebuilds)
+                .field("dependencies", dependencyCount)
+                .write();
+    }
+
+    private static List<SpotRecord> cappedSpots(
+            Map<GeometryKey, SpotRecord> primarySpots,
+            Map<GeometryKey, SpotRecord> sideSpots
+    ) {
         List<SpotRecord> spots = new ArrayList<>(Math.min(MAX_SPOTS_PER_SAMPLE, primarySpots.size() + sideSpots.size()));
 
-        for (SpotRecord spot : primarySpots) {
+        for (SpotRecord spot : primarySpots.values()) {
             if (spots.size() >= MAX_SPOTS_PER_SAMPLE) {
                 assignDebugMarkers(spots);
                 return spots;
@@ -342,7 +694,7 @@ public final class CompiledSpotLayer {
             spots.add(spot);
         }
 
-        for (SpotRecord spot : sideSpots) {
+        for (SpotRecord spot : sideSpots.values()) {
             if (spots.size() >= MAX_SPOTS_PER_SAMPLE) {
                 assignDebugMarkers(spots);
                 return spots;
@@ -417,6 +769,27 @@ public final class CompiledSpotLayer {
     }
 
     private record DebugFaceKey(BlockPos pos, net.minecraft.core.Direction face) {
+    }
+
+    private static final class SpotBudgetStats {
+        private int generatedPrimary;
+        private int generatedSide;
+        private int deduplicated;
+        private int outgoingNodes;
+        private int projectedNodes;
+        private int geometryCacheHits;
+        private int geometryCacheMisses;
+        private int appearanceOnlyUpdates;
+        private int fullGeometryRebuilds;
+    }
+
+    private record ProjectionGeometryKey(
+            int networkId,
+            BlockPos sourcePos,
+            Direction direction,
+            BeamEnvelope envelope,
+            int occlusionPlaneCount
+    ) {
     }
 
     public record SpotLayer(

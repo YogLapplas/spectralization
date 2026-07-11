@@ -131,6 +131,18 @@ public final class SpotProjectionFormalProof {
 
         int clippedGeometryChecks = proveClippedSideGeometry(failures);
         int frontOrderChecks = proveFrontPlaneOrder(failures);
+        int canonicalRegionChecks = 0;
+        int sameDepthIndexChecks = 0;
+        try {
+            canonicalRegionChecks = VoxelSpotProjector.verifyCanonicalRegionSubtractSweep();
+        } catch (RuntimeException exception) {
+            failures.add(exception.getMessage());
+        }
+        try {
+            sameDepthIndexChecks = VoxelSpotProjector.verifySameDepthOcclusionIndex();
+        } catch (RuntimeException exception) {
+            failures.add(exception.getMessage());
+        }
 
         if (rawNegativePatches == 0) {
             failures.add("formal proof did not exercise any negative-winding side patch.");
@@ -149,6 +161,8 @@ public final class SpotProjectionFormalProof {
                 rawNegativePatches,
                 clippedGeometryChecks,
                 frontOrderChecks,
+                canonicalRegionChecks,
+                sameDepthIndexChecks,
                 Map.copyOf(patchCounts),
                 failures
         );
@@ -706,6 +720,8 @@ public final class SpotProjectionFormalProof {
             int rawNegativePatches,
             int clippedGeometryChecks,
             int frontOrderChecks,
+            int canonicalRegionChecks,
+            int sameDepthIndexChecks,
             Map<Direction, Integer> patchCounts,
             List<String> failures
     ) {
@@ -717,11 +733,13 @@ public final class SpotProjectionFormalProof {
         String format() {
             return String.format(
                     Locale.ROOT,
-                    "spot_projection_formal_proof checked=%d negative_winding=%d clipped_geometry=%d front_order=%d counts=%s",
+                    "spot_projection_formal_proof checked=%d negative_winding=%d clipped_geometry=%d front_order=%d canonical_region=%d same_depth_index=%d counts=%s",
                     checkedPatches,
                     rawNegativePatches,
                     clippedGeometryChecks,
                     frontOrderChecks,
+                    canonicalRegionChecks,
+                    sameDepthIndexChecks,
                     patchCounts
             );
         }

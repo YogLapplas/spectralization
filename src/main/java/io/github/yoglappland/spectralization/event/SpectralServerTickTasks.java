@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization.event;
 
 import io.github.yoglappland.spectralization.block.HolographicStorageMultiblock;
+import io.github.yoglappland.spectralization.command.SpotProjectionTestCommand;
 import io.github.yoglappland.spectralization.microlizer.MicrolizerNetworkData;
 import io.github.yoglappland.spectralization.microlizer.MicrolizerOverlayPublisher;
 import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
@@ -13,6 +14,7 @@ public final class SpectralServerTickTasks {
 
     public static void runPostTick(MinecraftServer server) {
         SpectralBlockChangeHandlers.processPendingPistonRescans(server);
+        SpotProjectionTestCommand.tickBenchmarks(server);
         OpticalTraceCache.processQueues(server);
         HolographicStorageMultiblock.processPendingRefreshes(server);
         MicrolizerNetworkData.processPendingRefreshes(server);

@@ -11,6 +11,7 @@ import io.github.yoglappland.spectralization.client.ClientHudState;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.diagnostics.SpectralDiagnostics;
 import io.github.yoglappland.spectralization.optics.SpotRecord;
+import io.github.yoglappland.spectralization.optics.SpotProjectionLimits;
 import io.github.yoglappland.spectralization.optics.SpotRecord.ProjectionMode;
 import io.github.yoglappland.spectralization.optics.projection.SpotSurfaceFrame;
 import java.util.ArrayList;
@@ -34,7 +35,7 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 
 @EventBusSubscriber(modid = Spectralization.MODID, value = Dist.CLIENT)
 public final class SpotRenderEvents {
-    private static final int MAX_RENDERED_SPOTS = 8192;
+    private static final int MAX_RENDERED_SPOTS = SpotProjectionLimits.MAX_SPOTS_PER_OWNER;
     private static final double MAX_RENDER_DISTANCE = 48.0D;
     private static final double MAX_RENDER_DISTANCE_SQUARED = MAX_RENDER_DISTANCE * MAX_RENDER_DISTANCE;
     private static final double SURFACE_OFFSET = 0.001D;
@@ -124,7 +125,7 @@ public final class SpotRenderEvents {
                 true,
                 RenderType.CompositeState.builder()
                         .setShaderState(RenderType.RENDERTYPE_ENTITY_TRANSLUCENT_EMISSIVE_SHADER)
-                        .setTextureState(new RenderStateShard.TextureStateShard(texture, false, false))
+                        .setTextureState(new RenderStateShard.TextureStateShard(texture, true, false))
                         .setTransparencyState(ADDITIVE_LIGHT_TRANSPARENCY)
                         .setCullState(RenderType.NO_CULL)
                         .setLightmapState(RenderType.LIGHTMAP)
@@ -162,38 +163,55 @@ public final class SpotRenderEvents {
         poseStack.translate(-cameraPosition.x, -cameraPosition.y, -cameraPosition.z);
 
         PoseStack.Pose pose = poseStack.last();
-        List<ClientSpotCache.RenderedSpot> sortedSpots = new ArrayList<>(spots);
-        sortedSpots.sort(Comparator.comparingDouble(
-                        (ClientSpotCache.RenderedSpot spot) -> surfaceDistanceSquared(cameraPosition, spot)
-                ).reversed()
-                .thenComparingInt(spot -> spot.pos().getX())
-                .thenComparingInt(spot -> spot.pos().getY())
-                .thenComparingInt(spot -> spot.pos().getZ())
-                .thenComparingInt(spot -> spot.face().ordinal())
-                .thenComparingInt(spot -> spot.projectionMode().ordinal())
-                .thenComparingInt(ClientSpotCache.RenderedSpot::clipMinU)
-                .thenComparingInt(ClientSpotCache.RenderedSpot::clipMinV)
-                .thenComparingInt(ClientSpotCache.RenderedSpot::clipMaxU)
-                .thenComparingInt(ClientSpotCache.RenderedSpot::clipMaxV)
-                .thenComparingInt(ClientSpotCache.RenderedSpot::textureMinU)
-                .thenComparingInt(ClientSpotCache.RenderedSpot::textureMinV)
-                .thenComparingInt(ClientSpotCache.RenderedSpot::textureMaxU)
-                .thenComparingInt(ClientSpotCache.RenderedSpot::textureMaxV)
-                .thenComparingInt(ClientSpotCache.RenderedSpot::quadX0)
-                .thenComparingInt(ClientSpotCache.RenderedSpot::quadY0)
-                .thenComparingInt(ClientSpotCache.RenderedSpot::quadZ0)
-                .thenComparingInt(ClientSpotCache.RenderedSpot::quadTextureU0)
-                .thenComparingInt(ClientSpotCache.RenderedSpot::quadTextureV0));
-
+        Iterable<ClientSpotCache.RenderedSpot> renderCandidates = spots;
+        int candidateCount = spots.size();
         int renderedSpots = 0;
         int culledSpots = 0;
 
-        for (ClientSpotCache.RenderedSpot spot : sortedSpots) {
+        if (spots.size() > MAX_RENDERED_SPOTS) {
+            List<ClientSpotCache.RenderedSpot> nearbySpots = new ArrayList<>(MAX_RENDERED_SPOTS);
+            for (ClientSpotCache.RenderedSpot spot : spots) {
+                if (isNearCamera(cameraPosition, spot)) {
+                    nearbySpots.add(spot);
+                } else {
+                    culledSpots++;
+                }
+            }
+
+            if (nearbySpots.size() > MAX_RENDERED_SPOTS) {
+                nearbySpots.sort(Comparator.comparingDouble(
+                                (ClientSpotCache.RenderedSpot spot) -> surfaceDistanceSquared(cameraPosition, spot)
+                        )
+                        .thenComparingInt(spot -> spot.pos().getX())
+                        .thenComparingInt(spot -> spot.pos().getY())
+                        .thenComparingInt(spot -> spot.pos().getZ())
+                        .thenComparingInt(spot -> spot.face().ordinal())
+                        .thenComparingInt(spot -> spot.projectionMode().ordinal())
+                        .thenComparingInt(ClientSpotCache.RenderedSpot::clipMinU)
+                        .thenComparingInt(ClientSpotCache.RenderedSpot::clipMinV)
+                        .thenComparingInt(ClientSpotCache.RenderedSpot::clipMaxU)
+                        .thenComparingInt(ClientSpotCache.RenderedSpot::clipMaxV)
+                        .thenComparingInt(ClientSpotCache.RenderedSpot::textureMinU)
+                        .thenComparingInt(ClientSpotCache.RenderedSpot::textureMinV)
+                        .thenComparingInt(ClientSpotCache.RenderedSpot::textureMaxU)
+                        .thenComparingInt(ClientSpotCache.RenderedSpot::textureMaxV)
+                        .thenComparingInt(ClientSpotCache.RenderedSpot::quadX0)
+                        .thenComparingInt(ClientSpotCache.RenderedSpot::quadY0)
+                        .thenComparingInt(ClientSpotCache.RenderedSpot::quadZ0)
+                        .thenComparingInt(ClientSpotCache.RenderedSpot::quadTextureU0)
+                        .thenComparingInt(ClientSpotCache.RenderedSpot::quadTextureV0));
+            }
+
+            renderCandidates = nearbySpots;
+            candidateCount = nearbySpots.size();
+        }
+
+        for (ClientSpotCache.RenderedSpot spot : renderCandidates) {
             if (renderedSpots >= MAX_RENDERED_SPOTS) {
                 break;
             }
 
-            if (!isNearCamera(cameraPosition, spot)) {
+            if (spots.size() <= MAX_RENDERED_SPOTS && !isNearCamera(cameraPosition, spot)) {
                 culledSpots++;
                 continue;
             }
@@ -220,7 +238,7 @@ public final class SpotRenderEvents {
             recordRenderProfile(
                     Minecraft.getInstance(),
                     spots.size(),
-                    sortedSpots.size(),
+                    candidateCount,
                     renderedSpots,
                     culledSpots,
                     currentFrameQuadCalls,

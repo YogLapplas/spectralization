@@ -273,7 +273,60 @@ debug_log_verbose = false
 
 如果某个效果需要大量面数或每帧高成本计算，优先降级视觉效果，而不是牺牲基础玩法。
 
-## 10. 日志采样计划
+## 10. 光斑投影自动测试
+
+光斑算法、缓存、网络容量或渲染发生变化时，优先使用注册物品 `spectralization:spot_test`。测试者需要权限等级 2：
+
+- 右键运行当前测试模式。
+- Shift + 右键切换 `quick`、`partial_geometry`、`performance`、`full_suite`。
+- 套件运行时再次右键只显示进度，不启动重叠任务。
+
+模式覆盖：
+
+1. `quick`：物品注册、结构生成、投影刷新和日志冒烟。
+2. `partial_geometry`：楼梯、台阶和局部方块的踏面/立面遮挡顺序。
+3. `performance`：固定 sparse、mixed、dense 完整重建，以及功率/颜色外观缓存。
+4. `full_suite`：提交前运行全部场景。
+
+命令入口用于细分排查：
+
+```text
+/spectralization spottest random
+/spectralization spottest rerun
+/spectralization spottest report
+/spectralization spottest benchmark
+/spectralization spottest clear
+/spectralization spotperf report
+/spectralization spotperf reset
+```
+
+自动通过标准：
+
+- 所有 case 的 `passed=true`。
+- `missing_faces=0`。
+- `validation_mismatches=0`。
+- 功率和颜色测试的全部样本都走 `appearance_only`。
+- 几何缓存、`AppearancePlan` 和依赖快照均按预期复用。
+- 输出没有超过每 owner 32768 条共享上限，网络分片没有缺失或重复。
+
+人工视觉检查仍需覆盖：
+
+1. 同一个楼梯内部，踏面正确阻挡内部立面。
+2. 不同楼梯在同一传播深度/同一 `z` 时，前方踏面仍正确阻挡后方立面。
+3. 楼梯处在不同深度时，遮挡连续且没有纹理重新铺满。
+4. 散杂光模式和较大扩散下没有明显硬边、颜色跳变或透明排序错误。
+5. 大快照更新期间旧画面保持完整，客户端只在分片到齐后整体替换。
+
+性能报告必须区分：
+
+- `core`：算法本体。
+- `response`：服务器测试请求到结果，包含 tick 和测试清缓存成本。
+- 玩家可见延迟：另含网络和客户端绘制。
+
+提交性能结论前，只读取时间最新且属于同一次启动的一组 `diagnostics_*.log` 与 `optical_compiler_*.log`。完整流程和当前基线见
+[SPOT_PROJECTION_CHECKPOINT_2026-07-11.md](SPOT_PROJECTION_CHECKPOINT_2026-07-11.md)。
+
+## 11. 日志采样计划
 
 默认配置：
 
@@ -312,7 +365,7 @@ debug_log_verbose = true
 - 优先保留 `diagnostics_*.log`、`optical_compiler_*.log` 和 `latest.log`。
 - 看日志前先读 [LOGGING.md](LOGGING.md)。
 
-## 11. 发布前检查
+## 12. 发布前检查
 
 准备 commit 或 push 前检查：
 
@@ -325,7 +378,7 @@ debug_log_verbose = true
 
 如果只修改文档，可以不跑 build，但提交说明中应明确“只改文档，未运行 build”。
 
-## 12. 后续自动化方向
+## 13. 后续自动化方向
 
 当前本地测试以人工游戏内验证为主。后续应逐步补自动化：
 

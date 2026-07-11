@@ -6,10 +6,12 @@ public final class SpotFootprintKernel {
 
     private final int resolution;
     private final double[] weights;
+    private final double[] prefixWeights;
 
     private SpotFootprintKernel(int resolution, double[] weights) {
         this.resolution = resolution;
         this.weights = weights.clone();
+        this.prefixWeights = buildPrefixWeights(resolution, this.weights);
     }
 
     public double integral(double minU, double minV, double maxU, double maxV) {
@@ -22,36 +24,60 @@ public final class SpotFootprintKernel {
             return 0.0D;
         }
 
-        int x0 = clampCell((int) Math.floor(clampedMinU * resolution));
-        int y0 = clampCell((int) Math.floor(clampedMinV * resolution));
-        int x1 = clampCell((int) Math.ceil(clampedMaxU * resolution));
-        int y1 = clampCell((int) Math.ceil(clampedMaxV * resolution));
-        double cellScale = resolution * resolution;
-        double fraction = 0.0D;
+        double fraction = cumulative(clampedMaxU, clampedMaxV)
+                - cumulative(clampedMinU, clampedMaxV)
+                - cumulative(clampedMaxU, clampedMinV)
+                + cumulative(clampedMinU, clampedMinV);
 
-        for (int y = y0; y < y1; y++) {
-            double cellMinV = (double) y / resolution;
-            double cellMaxV = (double) (y + 1) / resolution;
-            double overlapV = Math.min(clampedMaxV, cellMaxV) - Math.max(clampedMinV, cellMinV);
+        return Math.max(0.0D, fraction);
+    }
 
-            if (overlapV <= 0.0D) {
-                continue;
-            }
+    private double cumulative(double u, double v) {
+        double scaledU = clamp01(u) * resolution;
+        double scaledV = clamp01(v) * resolution;
+        int fullX = clampCell((int) Math.floor(scaledU));
+        int fullY = clampCell((int) Math.floor(scaledV));
+        double partialX = fullX >= resolution ? 0.0D : scaledU - fullX;
+        double partialY = fullY >= resolution ? 0.0D : scaledV - fullY;
+        double fraction = sumCells(0, 0, fullX, fullY);
 
-            for (int x = x0; x < x1; x++) {
-                double cellMinU = (double) x / resolution;
-                double cellMaxU = (double) (x + 1) / resolution;
-                double overlapU = Math.min(clampedMaxU, cellMaxU) - Math.max(clampedMinU, cellMinU);
+        if (partialX > 0.0D && fullY > 0) {
+            fraction += partialX * sumCells(fullX, 0, fullX + 1, fullY);
+        }
 
-                if (overlapU <= 0.0D) {
-                    continue;
-                }
+        if (partialY > 0.0D && fullX > 0) {
+            fraction += partialY * sumCells(0, fullY, fullX, fullY + 1);
+        }
 
-                fraction += weights[index(x, y)] * overlapU * overlapV * cellScale;
+        if (partialX > 0.0D && partialY > 0.0D) {
+            fraction += partialX * partialY * weights[index(fullX, fullY)];
+        }
+
+        return fraction;
+    }
+
+    private double sumCells(int minX, int minY, int maxX, int maxY) {
+        int stride = resolution + 1;
+        return prefixWeights[maxY * stride + maxX]
+                - prefixWeights[minY * stride + maxX]
+                - prefixWeights[maxY * stride + minX]
+                + prefixWeights[minY * stride + minX];
+    }
+
+    private static double[] buildPrefixWeights(int resolution, double[] weights) {
+        int stride = resolution + 1;
+        double[] prefix = new double[stride * stride];
+
+        for (int y = 0; y < resolution; y++) {
+            double row = 0.0D;
+
+            for (int x = 0; x < resolution; x++) {
+                row += weights[y * resolution + x];
+                prefix[(y + 1) * stride + x + 1] = prefix[y * stride + x + 1] + row;
             }
         }
 
-        return Math.max(0.0D, fraction);
+        return prefix;
     }
 
     private int clampCell(int value) {

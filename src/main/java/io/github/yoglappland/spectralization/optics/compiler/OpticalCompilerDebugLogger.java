@@ -767,6 +767,18 @@ public final class OpticalCompilerDebugLogger {
             return;
         }
 
+        if (sentSpots <= 0) {
+            builder.append("spot_overlay_detail=skipped_no_sent_spots\n\n");
+            write(builder.toString());
+            return;
+        }
+
+        if (!verboseLog()) {
+            builder.append("spot_overlay_detail=skipped_non_verbose\n\n");
+            write(builder.toString());
+            return;
+        }
+
         EnumMap<SpotRecord.ProjectionMode, Integer> projectionCounts =
                 new EnumMap<>(SpotRecord.ProjectionMode.class);
         EnumMap<Direction, Integer> quadFaceCounts = new EnumMap<>(Direction.class);
@@ -805,21 +817,10 @@ public final class OpticalCompilerDebugLogger {
                 .append(" large_stretch_patches=").append(metricSummary.largeStretchPatches())
                 .append('\n');
         appendProjectionFaceMetrics(builder, activeSpots);
-        if (verboseLog()) {
-            appendProjectionAllocationMetrics(builder, allocations);
-        } else {
-            builder.append("spot_projection_allocation_summary=skipped_non_verbose\n");
-            builder.append("spot_projection_allocation_metrics=skipped_non_verbose\n");
-        }
+        appendProjectionAllocationMetrics(builder, allocations);
 
         for (SpotProjectionContinuity.Mismatch mismatch : continuityReport.mismatches()) {
             builder.append("  continuity_mismatch ").append(mismatch.format()).append('\n');
-        }
-
-        if (!verboseLog()) {
-            builder.append("spot_details=skipped_non_verbose\n\n");
-            write(builder.toString());
-            return;
         }
 
         builder.append("spot_details:\n");

@@ -133,6 +133,7 @@ public final class SpotProjectionFormalProof {
         int frontOrderChecks = proveFrontPlaneOrder(failures);
         int canonicalRegionChecks = 0;
         int sameDepthIndexChecks = 0;
+        int cuboidSweepChecks = 0;
         try {
             canonicalRegionChecks = VoxelSpotProjector.verifyCanonicalRegionSubtractSweep();
         } catch (RuntimeException exception) {
@@ -140,6 +141,11 @@ public final class SpotProjectionFormalProof {
         }
         try {
             sameDepthIndexChecks = VoxelSpotProjector.verifySameDepthOcclusionIndex();
+        } catch (RuntimeException exception) {
+            failures.add(exception.getMessage());
+        }
+        try {
+            cuboidSweepChecks = VoxelSpotProjector.verifyCuboidSweeps();
         } catch (RuntimeException exception) {
             failures.add(exception.getMessage());
         }
@@ -163,6 +169,7 @@ public final class SpotProjectionFormalProof {
                 frontOrderChecks,
                 canonicalRegionChecks,
                 sameDepthIndexChecks,
+                cuboidSweepChecks,
                 Map.copyOf(patchCounts),
                 failures
         );
@@ -722,6 +729,7 @@ public final class SpotProjectionFormalProof {
             int frontOrderChecks,
             int canonicalRegionChecks,
             int sameDepthIndexChecks,
+            int cuboidSweepChecks,
             Map<Direction, Integer> patchCounts,
             List<String> failures
     ) {
@@ -733,13 +741,14 @@ public final class SpotProjectionFormalProof {
         String format() {
             return String.format(
                     Locale.ROOT,
-                    "spot_projection_formal_proof checked=%d negative_winding=%d clipped_geometry=%d front_order=%d canonical_region=%d same_depth_index=%d counts=%s",
+                    "spot_projection_formal_proof checked=%d negative_winding=%d clipped_geometry=%d front_order=%d canonical_region=%d same_depth_index=%d cuboid_sweep=%d counts=%s",
                     checkedPatches,
                     rawNegativePatches,
                     clippedGeometryChecks,
                     frontOrderChecks,
                     canonicalRegionChecks,
                     sameDepthIndexChecks,
+                    cuboidSweepChecks,
                     patchCounts
             );
         }

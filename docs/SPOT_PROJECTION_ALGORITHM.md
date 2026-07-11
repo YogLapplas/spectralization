@@ -115,8 +115,8 @@ exit cross-section at travel t1
 -> SpotRecord.FOOTPRINT_QUAD
 ```
 
-Side rendering is visual. Downstream occlusion is currently handled by parallel
-occlusion planes, not by exact side polygons.
+Side rendering is visual. Downstream occlusion is handled by conservative cuboid
+sweeps, not by exact side polygons.
 
 ### 3.4 Projection surface descriptor
 
@@ -224,8 +224,8 @@ valid piece of the spot.
 ### 4.6 Proof boundary
 
 `SpotProjectionFormalProof` currently proves local side-patch orientation,
-local clipping properties, and the four-way classification of one sampled front
-plane as `BEFORE`, `CONTINUING`, `STARTING`, or `AFTER`. It does not prove the
+local clipping properties, cuboid-sweep prefix properties, and retains the old
+four-way plane classification as a migration regression. It does not prove the
 complete multi-event cursor transaction, global area conservation, dependency
 correctness, or player-facing shadow correctness.
 
@@ -258,16 +258,16 @@ For each integer depth from `1` to `MAX_PROJECTED_DEPTH`:
 3. Scan transverse tiles `(du, dv)` that may intersect the beam.
 4. Convert each intersecting front tile into a `ProjectionRect`.
 5. Check the world block at that tile.
-6. If the block is projectable, collect its cuboid front candidates and
-   occlusion planes for the current depth.
-7. Sort the front candidates by cuboid-local `minTravel`, and sort the sampled
-   occlusion planes by their travel coordinate.
-8. For each coplanar front group, advance the sampled-plane prefix to that
-   travel, emit every face in the group from the same incoming region, then
-   activate planes belonging to volumes that start at that travel.
+6. If the block is projectable, collect its cuboid front candidates and construct
+   exactly one `CuboidSweep` for each optical cuboid.
+7. Sort the front candidates by cuboid-local `minTravel`; index the sweeps by
+   start travel and their cached full canonical hull.
+8. For each coplanar front group, subtract `prefixHull(groupTravel)` for volumes
+   that started earlier, emit every face in the group from the same incoming
+   region, then allow volumes starting at that travel to affect later groups.
 9. Emit side visual patches for open side faces.
-10. Union the current depth blockers and subtract them from the global remaining
-    texture region.
+10. Union one cached `fullHull()` per cuboid and subtract those blockers from the
+    global remaining texture region.
 11. Stop if the remaining texture domain is empty.
 
 Projection geometry prepares one radius evaluator from the source envelope and
@@ -319,7 +319,7 @@ fences as a set of smaller cuboids requires enumerating those cuboid side faces
 wherever the cuboid itself was a projected tile candidate.
 
 Projectable tiles that are only in the side scan range still contribute their
-occlusion-plane windows for the current depth. A side-visible cuboid can block
+cuboid sweeps for the current depth. A side-visible cuboid can block
 another side or internal face even when its front face is not an ordinary
 front-tile visual candidate at that exact depth.
 
@@ -340,16 +340,16 @@ visible spot.
 For a block with several optical collision boxes, the boxes are sorted by
 `minTravel` in the beam frame. Surface exposure is still resolved as a union of
 the block's boxes, so internal decomposition contacts do not become receiving
-faces. Optical ordering, however, is depth-wide: once a sampled plane from an
-earlier volume becomes active, it may clip a later receiving face in either the
+faces. Optical ordering, however, is depth-wide: once a prefix from an earlier
+volume becomes active, it may clip a later receiving face in either the
 same block or a different block. Block ownership is diagnostic identity, not an
 occlusion partition.
 
 The cuboid is now the projection primitive. A visible receiving face is not
 automatically the whole face of the cuboid; it is the cuboid face after sibling
 cuboids in the same block have removed their contact rectangles. This applies to
-front faces and side faces. The full cuboid footprint is still used for sampled
-occlusion planes and depth-local/downstream remaining, because the solid volume
+front faces and side faces. The full cuboid sweep is used for depth-local and
+downstream remaining, because the solid volume
 exists even where its receiving face is covered by another cuboid. In short:
 
 ```text
@@ -367,7 +367,7 @@ excludes the receiving cuboid's own planes. These two rules prevent a cuboid fro
 erasing its own front or side surface while still allowing its volume to block
 surfaces farther along the beam.
 
-#### Depth-wide front ordering through sampled-plane events
+#### Depth-wide front ordering through cuboid prefixes
 
 Front-face ordering is global across one Minecraft depth slice. The depth scan
 first collects every cuboid front candidate without emitting it. After the scan,
@@ -377,32 +377,25 @@ path.
 
 Grouping only the visible cuboid front rectangles is insufficient. A ray may
 enter an earlier cuboid through its side as the beam envelope changes inside the
-depth slice, so the cuboid's sampled `q` or back plane can cover a later front
-receiver even when its minimum-travel front rectangle did not. The July 10 west-
-travel reproduction establishes that the affected east-facing internal stair
-riser is a **front** receiver in the beam frame. Side-allocation diagnostics do
-not exercise this path.
-
-Each sampled plane therefore carries both its own `travel` and the
-`volumeStartTravel` of its cuboid. For a front group at travel `tau`, the event
-order is:
+depth slice, so a continuous cuboid prefix can cover a later front receiver even
+when its minimum-travel front rectangle did not. For a front group at travel
+`tau`, the event order is:
 
 ```text
 remaining at integer depth d
 -> collect every cuboid front candidate in that depth
--> collect every sampled occlusion plane in that depth
--> for front travel tau, subtract every plane with travel < tau
--> subtract planes at tau whose volumeStartTravel < tau
+-> construct one sweep for every cuboid in that depth
+-> for front travel tau, subtract prefixHull(tau) for sweeps with start < tau
 -> every coplanar face in group tau reads the same incoming region
--> subtract planes at tau whose volumeStartTravel == tau
+-> sweeps starting at tau become eligible for later groups
 -> continue with the next travel group
--> publish the final blocker union as remaining at depth d + 1
+-> publish the union of fullHull() values as remaining at depth d + 1
 ```
 
-The middle distinction is essential. A `q` or back plane from a volume that
-started earlier represents occupancy already present at `tau` and must block the
-front group. A front plane belonging to a volume that starts at `tau` becomes
-active only after all coplanar receivers have read the region.
+The start-travel distinction is essential. A volume that started earlier is
+already occupied at `tau` and must block the front group. A volume whose front is
+coplanar with the group becomes active only after all coplanar receivers have read
+the region.
 
 The transaction boundary is the whole depth slice, not one block. Sorting must
 use the beam-frame `minTravel` carried by each cuboid. World block position may
@@ -413,33 +406,31 @@ original stair-row A/B scene has confirmed this repair: a tread in a different
 stair block now clips the internal riser, while removing that tread restores the
 visible patch.
 
-### 5.4 Parallel occlusion planes
+### 5.4 Single-cuboid sweeps
 
-Each projectable block contributes several occlusion planes between its front and
-back faces along the travel direction. For model-based optical collision boxes,
-each box contributes planes only across that box's local travel interval and only
-inside that box's local `u/v` footprint. The count is controlled by:
+Each optical collision box contributes exactly one immutable `CuboidSweep` over
+its local travel interval and local `u/v` footprint:
 
 ```text
-spot_projection_occlusion_planes
+CuboidSweep:
+  cached fullHull()
+  prefixHull(travel)
 ```
 
-The default is `5`.
+`fullHull()` is constructed once during the depth scan and is the downstream
+shadow authority. It conservatively bounds every continuous cross-section of the
+cuboid, including a beam waist inside the interval. `prefixHull(travel)` uses the
+same evaluator and supplies only the occupied prefix before a same-depth
+receiver.
 
-These planes remain an intentional approximation for downstream/global shadow
-authority. They are also the depth-local event stream for later front receivers
-and the production same-depth authority for side receivers. Increasing the
-plane count improves side-entry coverage but increases projection work.
+The same-depth index bins each sweep by its cached full hull and sorts candidates
+by start travel. A side query visits only intersecting bins, excludes the
+receiving cuboid, and materializes prefix hulls for the surviving local set. The
+index also exposes start, end, and in-range waist boundaries for side travel
+segmentation. This avoids the rejected candidate-by-all-cuboids adaptive scan.
 
-A July 10 experiment replaced side clipping with a continuous cuboid-prefix
-sweep, but that neither fixed the cross-block stair reproduction nor preserved
-bounded cost: every side candidate multiplied the cuboid count by adaptive sweep
-segments. That path was removed. Do not reintroduce it without first identifying
-the failed ordering/coverage predicate and designing a local index with a bounded
-candidate set.
-
-The important point: these planes are occlusion-only. They are not extra rendered
-surfaces.
+`spot_projection_occlusion_planes` remains a compatibility/debug configuration
+during migration, but it no longer changes production occlusion authority.
 
 ### 5.5 Side spots
 
@@ -467,19 +458,21 @@ A side patch segment reads:
 
 ```text
 incoming = previous_depth_remaining
-incoming -= sampled_same_depth_occluders_before(segment_midpoint)
+incoming -= indexed_sweep_prefixes_before(segment_end)
 incoming excludes only the receiving cuboid itself
 visible = side_window intersect incoming
 ```
 
+The segment-end prefix conservatively contains every earlier prefix inside that
+segment. Sweep start/end/waist boundaries and the existing side subdivision keep
+the interval local; using the midpoint would permit false light on the latter
+half of a changing prefix.
+
 In verbose mode, internal side allocation records include an `occlusion_audit`
-field. It compares all cuboids collected in the same depth slice against the
-sampled planes that reached the side clipper. Its `sample_gaps` value means a
-conservative cuboid prefix overlaps the candidate window but none of that
-cuboid's sampled planes did. This is diagnostic evidence, not an alternate
-authority path; conservative-prefix overlap can overestimate a true swept
-intersection. It must not be used to diagnose a receiver already classified as
-a front face.
+field. It compares the cuboid probes collected in the depth slice against the
+indexed sweep prefixes that reached the side clipper. Compatibility field names
+such as `sampled_hits` and `sample_gaps` are retained temporarily; under sweep
+authority a nonzero `sample_gaps` value is an index/query correctness alarm.
 
 When two boxes in the same block touch a side plane, that contact is resolved as
 a rectangle difference on the side face itself before the optical-order clipping
@@ -526,7 +519,7 @@ Side travel should be adaptively subdivided when the beam radius changes. A
 single endpoint rectangle is not a safe approximation for a side face when the
 beam converges, diverges, or has a waist inside the cuboid.
 
-The downstream approximation is handled by parallel occlusion planes.
+The downstream conservative approximation is handled by one full cuboid sweep.
 
 Do not name side visual windows as blockers unless they are actually inserted
 into the downstream occupancy authority. Misleading names such as
@@ -615,11 +608,9 @@ A real cube under oblique projection can create a five- or six-sided silhouette 
 a later screen. The current rectangle-window model does not represent exact
 diagonal polygon boundaries.
 
-The current implementation uses a parallel-plane volume approximation. It can
-create stepped side-like shadows, but it is no longer considered topologically
-complete: a finite union of isolated cross-sections does not necessarily preserve
-the connectivity of the cuboid that produced them. Section 7.6 records the known
-edge-contact failure and the approved replacement direction.
+The current implementation uses a conservative axis-aligned sweep hull. It
+preserves cuboid connectivity but can add bounded extra shadow at correlated
+`u/v` corners; it still does not represent an exact diagonal polygon silhouette.
 
 ### 7.2 Side visual patches are not full occluders
 
@@ -674,7 +665,7 @@ client render receives the patch
 This bug should stay documented until an in-game test confirms that internal
 x/z and y/z faces receive spots continuously and without floating patches.
 
-### 7.6 Unresolved: edge-connected cuboids can leak between sampled planes
+### 7.6 Implemented, awaiting in-game confirmation: edge-connected cuboids
 
 Two axis-aligned cuboids that share only one world edge can still produce a thin
 light seam when their occlusion is represented by independent parallel planes.
@@ -691,9 +682,7 @@ continuous cuboid volume
   -> a gap may remain between samples
 ```
 
-The approved next representation is one continuous conservative sweep per
-optical cuboid. It is a design decision, not yet the implementation in this
-checkpoint:
+Production now uses one continuous conservative sweep per optical cuboid:
 
 ```text
 CuboidSweep:
@@ -712,9 +701,11 @@ CuboidSweep:
   rejected July 10 experiment recomputed continuous prefixes per side candidate;
   that candidate-by-cuboid multiplication must not return.
 
-Until this object replaces sampled-plane authority in downstream remaining and
-same-depth prefix queries, the shared-edge light seam remains an open correctness
-bug.
+The formal verifier checks prefix monotonicity, containment of continuous sampled
+sections, front-before-activation, owner exclusion, indexed/serial equivalence,
+and canonical connectivity for a pair of edge-connected cuboids. The original
+in-game same-world-z reproduction must still be rerun before this limitation is
+marked fully closed.
 
 ## 8. Debug and diagnostics
 
@@ -740,6 +731,9 @@ Useful commands and logs:
 /spectralization spotperf report <count>
 /spectralization spotperf reset
 ```
+
+The `spotdebug planes` command is retained for configuration and old comparison
+workflows. Its value no longer changes production cuboid-sweep occlusion.
 
 The creative inventory also contains the operator-only `spot_test` instrument.
 Right-click starts its selected automatic suite or reports the current case;
@@ -871,7 +865,7 @@ Relevant diagnostics:
 - `spot_projection_continuity`
 
 `spot_projection/profile` is the lightweight performance log. It records tile,
-surface, occlusion-plane, and rectangle-subtraction counts even when verbose
+surface, blocker-hull, and rectangle-subtraction counts even when verbose
 allocation tracing is off. Per-face `SpotProjectionAllocation` probes are heavy
 and should be gated by `compilerdebug verbose`.
 
@@ -899,10 +893,11 @@ Internal side records also include `occlusion_audit` with:
 - `probes`, `own`, `after`, and `prior` cuboid counts for the depth slice,
 - `cross_block_prior` and `nearby_cross_block_prior` for non-owner cuboids
   geometrically before the segment,
-- `conservative_hits` and `sampled_hits` for candidate-window overlap,
-- `sample_gaps` for conservative-prefix hits absent from the sampled planes,
+- `conservative_hits` and compatibility field `sampled_hits` for candidate-window overlap,
+- `sample_gaps` for conservative-prefix hits absent from the indexed sweep result;
+  this must remain zero,
 - bounded per-cuboid entries containing block position, tile, box geometry,
-  ownership relation, prefix endpoint, and sampled-hit result.
+  ownership relation, prefix endpoint, and indexed-hit result.
 
 The audit is constructed only for verbose internal-side allocations. Ordinary
 profile mode does not collect the cuboid probe list or run this comparison.
@@ -936,8 +931,11 @@ separate neighboring fragments:
 
 The profile line also includes phase timings and hot-spot counters:
 
+- `occlusion_authority=cuboid_sweep` identifies the production representation;
+  `plane_count` is the retained compatibility setting and
+  `plane_count_effective=1` records one authoritative blocker object per cuboid.
 - `*_us` timing fields split projection generation into tile range setup,
-  rectangle creation, block lookup, projectability checks, occlusion-plane
+  rectangle creation, block lookup, projectability checks, cuboid-sweep
   creation, front remaining-intersection queries, side scanning, side
   remaining-intersection queries, spot emission, and remaining-region updates.
 - `subtract_*` fields measure rectangle subtraction work after candidate windows
@@ -950,12 +948,13 @@ The profile line also includes phase timings and hot-spot counters:
 - `depth_boundary_radius_*` verifies that adjacent depth slices evaluate their
   shared physical plane with bit-identical radii. Any mismatch is a correctness
   alarm because touching blocker windows can otherwise leave a false light seam.
-- `plane_window_candidates` counts plane windows before the exact remaining-region
-  prefilter. `plane_window_remaining_culled` counts windows rejected by the set
-  identity above, and `plane_windows` / `plane_windows_effective` counts the
-  windows that actually enter the downstream remaining update.
+- Compatibility counters `plane_window_candidates`,
+  `plane_window_remaining_culled`, `plane_windows`, and
+  `plane_windows_effective` now count cuboid sweep full hulls before/after the
+  exact remaining-region prefilter. One accepted cuboid contributes one, not the
+  configured historical plane count.
 - `remaining_prefilter_*` fields measure the cheap boolean intersection tests
-  used by the plane-window prefilter. They are separate from
+  used by the blocker-hull prefilter. They are separate from
   `remaining_intersection_*`, which measures visible fragment generation.
 - `side_*` fields measure side visual candidate enumeration. Side spots are still
   visual readout objects, but the counters show how many side tiles, open-face
@@ -1080,7 +1079,7 @@ micro-costs. The stable architecture should be split into three layers:
 
 ```text
 geometry layer
-  source position, direction, radius, divergence, aperture, plane count, blocks
+  source position, direction, radius, divergence, aperture, cuboid shapes, blocks
   -> candidate faces, texture-domain windows, dependencies
 
 occlusion layer
@@ -1097,7 +1096,7 @@ These layers have different invalidation rules:
 
 - A block placement or removal invalidates geometry and downstream occlusion for
   the cone subtree that depends on that block.
-- A radius, divergence, aperture, direction, or plane-count change invalidates
+- A radius, divergence, aperture, or direction change invalidates
   geometry for the affected source output.
 - A power, coherent-power, or frequency-only change should normally reuse the
   same geometry and occlusion assignment, then update appearance.
@@ -1141,11 +1140,11 @@ DepthSliceSnapshot:
   tile facts: loaded, air-like, projectable, block position
   exposed side boundaries
   front candidate windows
-  occlusion-plane candidate windows
+  cuboid sweep candidates and cached full hulls
   dependency positions
 ```
 
-Front spots, side spots, and occlusion planes should be derived from the same
+Front spots, side spots, and cuboid sweeps should be derived from the same
 snapshot. They should not independently rediscover the same block state, side
 openness, or cone intersection facts.
 
@@ -1212,8 +1211,7 @@ travel interval monotone and permits this early rejection without sampling.
 
 ### 9.1 Optimize the light-cone tree first
 
-The first optimization target is the light-cone tree, not rendering and not the
-number of occlusion planes.
+The first optimization target is the light-cone tree, not rendering.
 
 The conceptual tree is:
 
@@ -1245,9 +1243,8 @@ projection pass. The long-term optimized implementation should keep a structured
 projection tree internally and derive the flat dependency set from that tree for
 compatibility with the existing dirty system.
 
-Do this before tuning plane count. More planes make single-pass shadows better,
-but they also increase the amount of work per tree node. If the tree update is
-wrong, extra planes only make the wrong computation larger.
+Do this before tuning local sweep-index details. If the tree update is wrong,
+faster hull queries only make the wrong invalidation boundary harder to see.
 
 ### 9.2 Cull visually irrelevant sources earlier
 
@@ -1271,21 +1268,12 @@ For each depth, compute exact integer ranges for `du` and `dv` that can intersec
 the radius. This is a simple geometric intersection problem and should reduce the
 number of checked tiles for circular spots.
 
-### 9.4 Adaptive plane count
+### 9.4 Keep sweep construction and prefix queries local
 
-The occlusion plane count should not always be fixed. A beam with almost constant
-radius does not need many internal planes. A rapidly diverging beam may need more.
-
-A deterministic rule can use:
-
-```text
-radiusDeltaInsideBlock
-radiusRatioInsideBlock
-distanceFromSource
-configuredQualityCap
-```
-
-The result should be clamped by `spot_projection_occlusion_planes`.
+One cuboid creates one cached full hull. Same-depth prefix hulls are evaluated
+only after the full-hull spatial bins and start-travel ordering have rejected
+irrelevant sweeps. Do not trade the removed plane count for adaptive sweep
+segments or a candidate-by-all-cuboids scan.
 
 ### 9.5 Maintain the remaining region
 
@@ -1297,7 +1285,7 @@ receive:
 visible = candidate intersect remaining
 ```
 
-Current-depth occlusion planes are applied only after all faces in that depth
+Current-depth sweep full hulls are applied only after all faces in that depth
 have read the old remaining region:
 
 ```text
@@ -1337,7 +1325,7 @@ R_d - union(B_d)
 ```
 
 This is an exact set identity, not a visual approximation. It is especially
-important when internal occlusion planes generate many windows after most of the
+important when model-derived cuboids generate blocker hulls after most of the
 texture domain has already been consumed. The prefilter should be a cheap boolean
 query against the remaining slabs and intervals; it must not allocate visible
 rectangle fragments or modify `R_d`.
@@ -1408,8 +1396,8 @@ logging and reserve per-face allocation construction for verbose debug logging.
 
 ### 9.7 Cache empty or unchanged cones
 
-Projection output can be cached by source, direction, envelope class, plane count,
-and dependency epochs.
+Projection output can be cached by source, direction, envelope class, cuboid-sweep
+rule, and dependency epochs.
 
 If the dependency set has not changed, reuse the previous projection result.
 This fits the existing event-driven architecture better than per-frame tracing.
@@ -1434,7 +1422,7 @@ world geometry are unchanged.
 
 The first production cache stage stores the complete assigned patch geometry for
 one network source output. Its key contains network id, source position,
-direction, exact beam envelope, and occlusion-plane count; it deliberately omits
+direction and exact beam envelope; it deliberately omits
 power, coherent power, frequency/color weights, and material appearance. A cache
 hit rebuilds those appearance fields from the current solved packet and current
 receiving material, while copying only the cached patch mapping. Geometry
@@ -1500,7 +1488,7 @@ Side travel sampling frequently needs only the propagated beam radius. Each sour
 output prepares one `BeamGeometryOps.RadiusPropagation`; a depth slice receives a
 lightweight offset view of the same invariant `xx`, `xt`, and `tt` coefficients.
 Candidate enumeration, interval-boundary searches, endpoint nudging, adaptive
-subdivision, and sampled occlusion planes share that evaluator. Each lookup uses
+subdivision and cuboid sweep hulls share that evaluator. Each lookup uses
 the same absolute-travel second-moment expression and clamps to the same radius
 range as `BeamGeometryOps.propagate(...).radius()`, without constructing a complete
 propagated envelope or rebuilding moments per depth. The formal beam-profile
@@ -1542,8 +1530,8 @@ superset only when later side-window filtering discards the extra candidates.
 If side shadows need improvement, prefer:
 
 ```text
-more/better chosen parallel occlusion planes
--> adaptive plane placement
+the existing full-hull spatial index
+-> tighter prefix candidate rejection
 -> local rectangle-window merging
 ```
 

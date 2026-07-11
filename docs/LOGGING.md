@@ -332,13 +332,17 @@ optical_compiler_*.log
 
 当前 profile 还包含两组边界诊断：
 
+- `occlusion_authority=cuboid_sweep` 表示生产遮挡由单 cuboid sweep 驱动；
+  `plane_count` 只保留兼容配置值，`plane_count_effective=1` 表示每个 cuboid
+  只有一个权威遮挡对象。兼容的 `plane_window_*` 计数现在统计 sweep full hull。
+
 - `depth_boundary_radius_checks`、`depth_boundary_radius_mismatches`、
   `depth_boundary_radius_max_gap` 检查相邻 depth 是否从同一个全局半径求值器读取共享平面。
-  mismatch 必须为 0，但它只能排除半径重建误差，不能证明 sampled-plane 体积连续。
+  mismatch 必须为 0，但它只能排除半径重建误差，不能单独证明 sweep 与实机场景正确。
 
 两个只共用一条棱的 cuboid 出现亮线时，即使上述半径 mismatch 为 0，也要检查
-sampled occlusion planes 的架构限制。当前计划用每 cuboid 一个连续 conservative sweep
-替换离散平面 authority；该迁移尚未完成。
+`occlusion_authority`、`sample_gaps` 和同深度索引 validation。每 cuboid 一个连续
+conservative sweep 已替换离散平面 authority；原始同 world-z 场景仍需实机确认。
 
 `missing_faces` 不是单纯计数。结构验证会记录期望方块、面、局部区域和实际覆盖结果。先从 `case_complete` 找失败 case，再在同一个 `run_id` / `case_id` 内查详细验证事件；不要直接打开 verbose 并重新生成一个不同随机场景。
 

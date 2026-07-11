@@ -155,8 +155,7 @@ public final class CompiledSpotLayer {
                 networkId,
                 node.pos().immutable(),
                 node.side(),
-                profileTemplate.envelope(),
-                VoxelSpotProjector.occlusionPlaneCount()
+                profileTemplate.envelope()
         );
 
         if (cacheEligible) {
@@ -370,7 +369,9 @@ public final class CompiledSpotLayer {
                 .field("power", outgoingPower)
                 .field("cache_mode", projectionResult.cacheMode().name().toLowerCase(java.util.Locale.ROOT))
                 .field("geometry_templates", projectionResult.geometryTemplates().size())
+                .field("occlusion_authority", "cuboid_sweep")
                 .field("plane_count", VoxelSpotProjector.occlusionPlaneCount())
+                .field("plane_count_effective", 1)
                 .field("elapsed_us", projectionElapsedNanos / 1_000.0D)
                 .field("spots", projectionResult.spots().size())
                 .field("allocations", projectionResult.allocations().size())
@@ -790,8 +791,7 @@ public final class CompiledSpotLayer {
             int networkId,
             BlockPos sourcePos,
             Direction direction,
-            BeamEnvelope envelope,
-            int occlusionPlaneCount
+            BeamEnvelope envelope
     ) {
     }
 

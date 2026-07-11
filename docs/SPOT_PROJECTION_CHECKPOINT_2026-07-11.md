@@ -221,7 +221,7 @@ subsystem=spot_projection event=geometry_cache_invalidated
 
 缓存场景包含 14175 个依赖位置；功率和颜色样本都命中几何缓存并复用了外观计划及依赖快照。完整套件为 6/6 通过，没有结构缺面或强制校验不一致。
 
-这说明外观拆分已经生效：对同一结构改变功率或颜色时，成本不再随体素扫描和遮挡构造增长。下一阶段不应继续在这条路径上做微小优化。首先必须把长方体遮挡从离散平行面改为单个连续 sweep，解决共棱方块仍可能漏出亮线的正确性问题；之后再缩小完整几何失效后的重算范围。
+这说明外观拆分已经生效：对同一结构改变功率或颜色时，成本不再随体素扫描和遮挡构造增长。单 cuboid 单 sweep 已进入生产遮挡路径；下一阶段在实机确认共棱场景后，再缩小完整几何失效后的重算范围。
 
 ## 9. 已知限制
 
@@ -234,11 +234,11 @@ subsystem=spot_projection event=geometry_cache_invalidated
 7. 性能测试为隔离样本会清理较大范围缓存，`response` 因而可能高于普通游戏更新。
 8. `response` 不是客户端端到端计时；网络分片和实际绘制仍需用 `latest.log`、帧分析或客户端专用计时判断。
 9. 进程首次创建日志文件或加载类时可能出现一次性尖峰，不应用单个冷样本评价稳态性能。
-10. 当前每个 optical cuboid 仍以有限个平行截面充当遮挡 authority。两个只共用一条棱的 cuboid 可能在截面之间留下 canonical 亮缝；提高精度、统一相邻 depth 半径或焊接最终 quad 均未修复该问题。
+10. 每个 optical cuboid 现在使用一个保守 sweep 作为遮挡 authority。形式验证已确认共棱 canonical 连通性，但原始同 world-z 实机场景仍需复测后才能关闭该限制。
 
-## 10. 下一阶段：单 cuboid 单 sweep
+## 10. 已实现：单 cuboid 单 sweep
 
-当前已确定的下一层遮挡对象是：
+当前生产遮挡对象是：
 
 ```text
 一个 OpticalCollisionBox
@@ -247,16 +247,16 @@ subsystem=spot_projection event=geometry_cache_invalidated
      -> prefixHull(travel)
 ```
 
-实现约束：
+已落实的实现约束：
 
 1. 每个 cuboid 只构造一次 sweep，不按 side/front candidate 重复扫描 cuboid。
 2. `fullHull()` 替代完整深度后的 sampled-plane blocker 集合。
 3. `prefixHull(travel)` 替代同深度接收面之前的离散 plane prefix，同时保留 receiving cuboid 自身排除与 front-before-activation 规则。
 4. 不使用中间平面作为生产遮挡 authority；配置中的 plane count 在迁移完成后应废弃或仅保留兼容诊断。
 5. sweep 是保守矩形域：允许有限额外阴影，不允许共棱体之间出现错误漏光。
-6. 在形式验证和实机场景同时确认共棱连通后，才能删除旧 sampled-plane authority。
+6. 形式验证覆盖前缀单调性、连续截面包含、front-before-activation、自身排除、索引等价与共棱连通；实机场景仍是最终确认门。
 
-这次提交只记录该决定和当前失败边界，并未实现 `CuboidSweep`。当前运行时代码仍使用平行面，因此不能把共棱亮线标记为已解决。
+运行时代码已不再生成中间平面作为生产 authority。`spot_projection_occlusion_planes` 暂时保留为兼容配置，但不会改变 sweep 遮挡结果。性能基线仍来自旧平面版本，必须在新的 `partial_geometry` 与 `performance` 实机套件完成后更新。
 
 ### 10.1 sweep 完成后的性能工作：深度切片与后缀失效
 

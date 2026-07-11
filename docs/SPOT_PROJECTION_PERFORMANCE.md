@@ -19,6 +19,10 @@ optical_compiler_20260711_162114_UTC.log
 
 所有性能 case 均通过；完整套件结果为 6/6，没有 boundary missing、结构验证不一致或缓存路径错误。
 
+> 该日志组来自 sampled-plane authority 版本。生产代码现已切换为每 cuboid 一个
+> conservative sweep，因此这些数字只保留为迁移前基线；必须完成新的
+> `partial_geometry` 与 `performance` 实机套件后才能给出 sweep 版本结论。
+
 ## 2. 测试输入
 
 公共输入：
@@ -28,7 +32,8 @@ optical_compiler_20260711_162114_UTC.log
 - 初始半径：0.5 block。
 - 投影最大深度：32 blocks。
 - 末端白色接收屏：深度 16。
-- 默认遮挡平面上限：5；自动套件不主动覆盖该配置。
+- 兼容遮挡平面配置：5；sweep 版本中该值不再改变生产遮挡，每个 cuboid 的
+  `plane_count_effective` 为 1。
 - 完整重建 case：每项 5 个样本。
 - partial geometry：3 个样本并启用 targeted verbose validation。
 - 缓存 case：先进行不计时的几何暖机和外观暖机，再记录 5 个 `appearance_only` 样本。

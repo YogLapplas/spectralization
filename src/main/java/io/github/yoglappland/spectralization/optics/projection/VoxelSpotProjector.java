@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceKey;
@@ -55,6 +56,9 @@ public final class VoxelSpotProjector {
     private static final int CONE_TRAVEL_SAMPLES = 16;
     private static final int SIDE_OCCLUSION_INDEX_BINS = 8;
     private static final CanonicalRect FULL_FOOTPRINT = new CanonicalRect(0.0D, 0.0D, 1.0D, 1.0D);
+    private static final List<OpticalCollisionBox> FULL_OPTICAL_BOXES = List.of(OpticalCollisionBox.full());
+    private static final Map<ModelShapeFrameKey, List<OpticalCollisionBox>> MODEL_SHAPE_BOX_CACHE =
+            new ConcurrentHashMap<>();
     private static volatile boolean debugFaceCentersEnabled = false;
     private static volatile ValidationTarget targetedValidation;
 
@@ -126,6 +130,9 @@ public final class VoxelSpotProjector {
         boolean collectAllocations = validationEnabledFor(level, sourcePos, travelDirection);
         ProjectionStatsBuilder stats = new ProjectionStatsBuilder(collectAllocations);
         List<OcclusionWindow> occupiedDebugWindows = collectAllocations ? new ArrayList<>() : List.of();
+        BeamGeometryOps.RadiusPropagation sourceRadiusPropagation =
+                BeamGeometryOps.prepareRadiusPropagation(projectionTemplate.envelope());
+        double previousDepthExitRadius = Double.NaN;
         stats.recordRemainingRegion(remainingRayWindows);
 
         for (int depth = 1; depth <= MAX_PROJECTED_DEPTH; depth++) {
@@ -141,7 +148,12 @@ public final class VoxelSpotProjector {
             int depthSpotStart = fragments.size();
             stats.depths++;
             BeamEnvelope envelope = envelopeAtDepth(projectionTemplate.envelope(), depth);
-            double radius = envelope.radius();
+            BeamGeometryOps.RadiusPropagation radiusPropagation = sourceRadiusPropagation.offset(depth);
+            double radius = radiusPropagation.radiusAt(0.0D);
+            if (Double.isFinite(previousDepthExitRadius)) {
+                stats.recordDepthBoundaryRadius(previousDepthExitRadius, radius);
+            }
+            previousDepthExitRadius = radiusPropagation.radiusAt(1.0D);
 
             if (!Double.isFinite(radius) || radius <= 0.0D) {
                 stats.finishDepth(
@@ -165,7 +177,7 @@ public final class VoxelSpotProjector {
             Direction displayFace = travelDirection.getOpposite();
             Direction uDirection = SpotSurfaceFrame.uDirection(displayFace);
             Direction vDirection = SpotSurfaceFrame.vDirection(displayFace);
-            double maxUnitRadius = maxEnvelopeRadiusOverUnit(envelope);
+            double maxUnitRadius = maxEnvelopeRadiusOverUnit(radiusPropagation);
             int minTile = projectedMinTile(maxUnitRadius);
             int maxTile = projectedMaxTile(maxUnitRadius);
             int tileRadius = Math.max(Math.abs(minTile), Math.abs(maxTile));
@@ -204,9 +216,11 @@ public final class VoxelSpotProjector {
                         continue;
                     }
 
-                    BlockPos targetPos = depthOrigin
-                            .relative(uDirection, du)
-                            .relative(vDirection, dv);
+                    BlockPos targetPos = new BlockPos(
+                            depthOrigin.getX() + uDirection.getStepX() * du + vDirection.getStepX() * dv,
+                            depthOrigin.getY() + uDirection.getStepY() * du + vDirection.getStepY() * dv,
+                            depthOrigin.getZ() + uDirection.getStepZ() * du + vDirection.getStepZ() * dv
+                    );
 
                     if (frontCandidateTile) {
                         stats.candidateTiles++;
@@ -301,7 +315,7 @@ public final class VoxelSpotProjector {
 
                         long planeStartNanos = stats.startTimer();
                         List<OcclusionWindow> blockOcclusionWindows = blockPlaneOcclusionWindows(
-                                targetTemplate.envelope(),
+                                radiusPropagation,
                                 du,
                                 dv,
                                 targetPos,
@@ -391,6 +405,7 @@ public final class VoxelSpotProjector {
                         depthTileCache,
                         sideProjectableTiles,
                         targetTemplate,
+                        radiusPropagation,
                         beamPower,
                         coherentBeamPower,
                         visualDistanceFactor,
@@ -1025,6 +1040,7 @@ public final class VoxelSpotProjector {
             DepthTileCache depthTileCache,
             List<DepthTile> sideProjectableTiles,
             BeamPacket targetTemplate,
+            BeamGeometryOps.RadiusPropagation radiusPropagation,
             double beamPower,
             double coherentBeamPower,
             double visualDistanceFactor,
@@ -1057,7 +1073,7 @@ public final class VoxelSpotProjector {
                 uDirection,
                 vDirection,
                 depthTileCache,
-                targetTemplate.envelope(),
+                radiusPropagation,
                 collectAllocations,
                 stats,
                 dependencies,
@@ -1080,6 +1096,7 @@ public final class VoxelSpotProjector {
                     uDirection,
                     vDirection,
                     targetTemplate,
+                    radiusPropagation,
                     beamPower,
                     coherentBeamPower,
                     visualDistanceFactor,
@@ -1122,7 +1139,7 @@ public final class VoxelSpotProjector {
             Direction uDirection,
             Direction vDirection,
             DepthTileCache depthTileCache,
-            BeamEnvelope envelope,
+            BeamGeometryOps.RadiusPropagation radiusPropagation,
             boolean collectAllocationDetails,
             ProjectionStatsBuilder stats,
             LongSet dependencies,
@@ -1148,7 +1165,7 @@ public final class VoxelSpotProjector {
                             tileV,
                             false,
                             depthTileCache,
-                            envelope,
+                            radiusPropagation,
                             collectAllocationDetails,
                             stats,
                             dependencies,
@@ -1166,7 +1183,7 @@ public final class VoxelSpotProjector {
                             tileV,
                             true,
                             depthTileCache,
-                            envelope,
+                            radiusPropagation,
                             collectAllocationDetails,
                             stats,
                             dependencies,
@@ -1184,7 +1201,7 @@ public final class VoxelSpotProjector {
                             tileU,
                             false,
                             depthTileCache,
-                            envelope,
+                            radiusPropagation,
                             collectAllocationDetails,
                             stats,
                             dependencies,
@@ -1202,7 +1219,7 @@ public final class VoxelSpotProjector {
                             tileU,
                             true,
                             depthTileCache,
-                            envelope,
+                            radiusPropagation,
                             collectAllocationDetails,
                             stats,
                             dependencies,
@@ -1226,7 +1243,7 @@ public final class VoxelSpotProjector {
             int tileV,
             boolean positiveSide,
             DepthTileCache depthTileCache,
-            BeamEnvelope envelope,
+            BeamGeometryOps.RadiusPropagation radiusPropagation,
             boolean collectAllocationDetails,
             ProjectionStatsBuilder stats,
             LongSet dependencies,
@@ -1249,7 +1266,7 @@ public final class VoxelSpotProjector {
         for (ReceivingSideRegion receivingRegion : exposedRegions) {
             CanonicalRect exposedRegion = receivingRegion.region();
             List<TravelInterval> travels = uSideTravelIntervals(
-                    envelope,
+                    radiusPropagation,
                     boundaryWorldU,
                     tileV,
                     exposedRegion.minV(),
@@ -1324,7 +1341,7 @@ public final class VoxelSpotProjector {
             int tileU,
             boolean positiveSide,
             DepthTileCache depthTileCache,
-            BeamEnvelope envelope,
+            BeamGeometryOps.RadiusPropagation radiusPropagation,
             boolean collectAllocationDetails,
             ProjectionStatsBuilder stats,
             LongSet dependencies,
@@ -1347,7 +1364,7 @@ public final class VoxelSpotProjector {
         for (ReceivingSideRegion receivingRegion : exposedRegions) {
             CanonicalRect exposedRegion = receivingRegion.region();
             List<TravelInterval> travels = vSideTravelIntervals(
-                    envelope,
+                    radiusPropagation,
                     boundaryWorldV,
                     tileU,
                     exposedRegion.minV(),
@@ -2238,6 +2255,7 @@ public final class VoxelSpotProjector {
             Direction uDirection,
             Direction vDirection,
             BeamPacket targetTemplate,
+            BeamGeometryOps.RadiusPropagation radiusPropagation,
             double beamPower,
             double coherentBeamPower,
             double visualDistanceFactor,
@@ -2275,6 +2293,7 @@ public final class VoxelSpotProjector {
                     candidate.boundaryWorld(),
                     candidate.visibleTravels(),
                     targetTemplate,
+                    radiusPropagation,
                     beamPower,
                     coherentBeamPower,
                     visualDistanceFactor,
@@ -2310,6 +2329,7 @@ public final class VoxelSpotProjector {
                     candidate.boundaryWorld(),
                     candidate.visibleTravels(),
                     targetTemplate,
+                    radiusPropagation,
                     beamPower,
                     coherentBeamPower,
                     visualDistanceFactor,
@@ -2345,22 +2365,31 @@ public final class VoxelSpotProjector {
 
         if (state.getBlock() instanceof LensHolderBlock) {
             return level.getBlockEntity(pos) instanceof LensHolderBlockEntity lensHolder && lensHolder.hasLens()
-                    ? List.of(OpticalCollisionBox.full())
+                    ? FULL_OPTICAL_BOXES
                     : List.of();
         }
 
         if (state.isCollisionShapeFullBlock(level, pos)
                 || state.getBlock() instanceof OpticalElement
                 || state.getBlock() instanceof OpticalSource) {
-            return List.of(OpticalCollisionBox.full());
+            return FULL_OPTICAL_BOXES;
         }
 
         if (!usesModelOpticalShape(state)) {
             return List.of();
         }
 
+        ModelShapeFrameKey cacheKey = new ModelShapeFrameKey(
+                state, travelDirection, uDirection, vDirection
+        );
+        List<OpticalCollisionBox> cached = MODEL_SHAPE_BOX_CACHE.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+
         VoxelShape shape = state.getShape(level, pos);
         if (shape.isEmpty()) {
+            MODEL_SHAPE_BOX_CACHE.putIfAbsent(cacheKey, List.of());
             return List.of();
         }
 
@@ -2379,7 +2408,9 @@ public final class VoxelSpotProjector {
                 .thenComparingDouble(OpticalCollisionBox::maxTravel)
                 .thenComparingDouble(OpticalCollisionBox::maxU)
                 .thenComparingDouble(OpticalCollisionBox::maxV));
-        return boxes.isEmpty() ? List.of() : List.copyOf(boxes);
+        List<OpticalCollisionBox> immutable = boxes.isEmpty() ? List.of() : List.copyOf(boxes);
+        List<OpticalCollisionBox> existing = MODEL_SHAPE_BOX_CACHE.putIfAbsent(cacheKey, immutable);
+        return existing == null ? immutable : existing;
     }
 
     private static boolean usesModelOpticalShape(BlockState state) {
@@ -2522,6 +2553,7 @@ public final class VoxelSpotProjector {
                 boundaryWorldU,
                 visibleTravels,
                 targetTemplate,
+                BeamGeometryOps.prepareRadiusPropagation(targetTemplate.envelope()),
                 beamPower,
                 coherentBeamPower,
                 visualDistanceFactor,
@@ -2592,6 +2624,7 @@ public final class VoxelSpotProjector {
                 boundaryWorldV,
                 visibleTravels,
                 targetTemplate,
+                BeamGeometryOps.prepareRadiusPropagation(targetTemplate.envelope()),
                 beamPower,
                 coherentBeamPower,
                 visualDistanceFactor,
@@ -2628,6 +2661,7 @@ public final class VoxelSpotProjector {
             double boundaryWorldU,
             List<TravelInterval> visibleTravels,
             BeamPacket targetTemplate,
+            BeamGeometryOps.RadiusPropagation radiusPropagation,
             double beamPower,
             double coherentBeamPower,
             double visualDistanceFactor,
@@ -2650,11 +2684,12 @@ public final class VoxelSpotProjector {
         boolean internalSide = isInternalProjectionSide(fixedULocal);
         double sidePower = visualSidePower(beamPower, visualDistanceFactor);
         double sideCoherentPower = visualSidePower(coherentBeamPower, visualDistanceFactor);
+        SpotRecord candidateSurfaceSpot = null;
 
         for (TravelInterval visibleTravel : visibleTravels) {
             long travelSplitStartNanos = stats.startTimer();
             List<TravelInterval> chartTravels = splitSideTravelAtCrossBoundaries(
-                    targetTemplate.envelope(),
+                    radiusPropagation,
                     visibleTravel,
                     tileV - 0.5D + crossMinLocal,
                     tileV - 0.5D + crossMaxLocal
@@ -2662,8 +2697,8 @@ public final class VoxelSpotProjector {
             stats.addSideTravelSplitNanos(travelSplitStartNanos);
 
             for (TravelInterval chartTravel : chartTravels) {
-                double chartEntryRadius = radiusAt(targetTemplate.envelope(), chartTravel.min());
-                double chartExitRadius = radiusAt(targetTemplate.envelope(), chartTravel.max());
+                double chartEntryRadius = radiusAt(radiusPropagation, chartTravel.min());
+                double chartExitRadius = radiusAt(radiusPropagation, chartTravel.max());
                 if (!isRenderableSide(boundaryWorldU, positiveSide, chartEntryRadius, chartExitRadius)) {
                     stats.recordSideWindowAttempt(internalSide);
                     stats.recordSideNotRenderable(internalSide);
@@ -2713,7 +2748,7 @@ public final class VoxelSpotProjector {
                 for (TravelInterval occlusionTravel : occlusionTravels) {
                     long travelSubdivisionStartNanos = stats.startTimer();
                     int travelSteps = sideChartTravelSubdivisionCount(
-                            targetTemplate.envelope(),
+                            radiusPropagation,
                             occlusionTravel.min(),
                             occlusionTravel.max()
                     );
@@ -2724,8 +2759,8 @@ public final class VoxelSpotProjector {
                     long sideWindowStartNanos = stats.startTimer();
                     double rawTravel0 = lerp(occlusionTravel.min(), occlusionTravel.max(), travelIndex / (double) travelSteps);
                     double rawTravel1 = lerp(occlusionTravel.min(), occlusionTravel.max(), (travelIndex + 1) / (double) travelSteps);
-                    double crossTravel0 = nudgeUSideTravelEndpoint(targetTemplate.envelope(), rawTravel0, rawTravel1, boundaryWorldU, tileV, crossMinLocal, crossMaxLocal);
-                    double crossTravel1 = nudgeUSideTravelEndpoint(targetTemplate.envelope(), rawTravel1, rawTravel0, boundaryWorldU, tileV, crossMinLocal, crossMaxLocal);
+                    double crossTravel0 = nudgeUSideTravelEndpoint(radiusPropagation, rawTravel0, rawTravel1, boundaryWorldU, tileV, crossMinLocal, crossMaxLocal);
+                    double crossTravel1 = nudgeUSideTravelEndpoint(radiusPropagation, rawTravel1, rawTravel0, boundaryWorldU, tileV, crossMinLocal, crossMaxLocal);
 
                     if (crossTravel1 - crossTravel0 <= EDGE_TOUCH_EPSILON) {
                         stats.recordSideDegenerateTravel(internalSide);
@@ -2733,10 +2768,8 @@ public final class VoxelSpotProjector {
                         continue;
                     }
 
-                    BeamEnvelope envelope0 = envelopeAtOffset(targetTemplate.envelope(), crossTravel0);
-                    BeamEnvelope envelope1 = envelopeAtOffset(targetTemplate.envelope(), crossTravel1);
-                    double radius0 = envelope0.radius();
-                    double radius1 = envelope1.radius();
+                    double radius0 = radiusAt(radiusPropagation, crossTravel0);
+                    double radius1 = radiusAt(radiusPropagation, crossTravel1);
 
                     SideCrossSection cross0 = uSideCrossSection(radius0, boundaryWorldU, tileV, crossMinLocal, crossMaxLocal);
                     SideCrossSection cross1 = uSideCrossSection(radius1, boundaryWorldU, tileV, crossMinLocal, crossMaxLocal);
@@ -2880,19 +2913,21 @@ public final class VoxelSpotProjector {
                         }
 
                         long sidePatchStartNanos = stats.startTimer();
-                        SpotRecord surfaceSpot = cachedSurfaceSpot(
-                                appearanceCache,
-                                level,
-                                targetPos,
-                                sideFace,
-                                targetState,
-                                targetTemplate,
-                                sidePower,
-                                sideCoherentPower,
-                                stats
-                        );
+                        if (candidateSurfaceSpot == null) {
+                            candidateSurfaceSpot = cachedSurfaceSpot(
+                                    appearanceCache,
+                                    level,
+                                    targetPos,
+                                    sideFace,
+                                    targetState,
+                                    targetTemplate,
+                                    sidePower,
+                                    sideCoherentPower,
+                                    stats
+                            );
+                        }
                         PatchEmissionReport emission = addUSideChartSpot(
-                                surfaceSpot,
+                                candidateSurfaceSpot,
                                 sideFace,
                                 travelDirection,
                                 uDirection,
@@ -2954,6 +2989,7 @@ public final class VoxelSpotProjector {
             double boundaryWorldV,
             List<TravelInterval> visibleTravels,
             BeamPacket targetTemplate,
+            BeamGeometryOps.RadiusPropagation radiusPropagation,
             double beamPower,
             double coherentBeamPower,
             double visualDistanceFactor,
@@ -2976,11 +3012,12 @@ public final class VoxelSpotProjector {
         boolean internalSide = isInternalProjectionSide(fixedVLocal);
         double sidePower = visualSidePower(beamPower, visualDistanceFactor);
         double sideCoherentPower = visualSidePower(coherentBeamPower, visualDistanceFactor);
+        SpotRecord candidateSurfaceSpot = null;
 
         for (TravelInterval visibleTravel : visibleTravels) {
             long travelSplitStartNanos = stats.startTimer();
             List<TravelInterval> chartTravels = splitSideTravelAtCrossBoundaries(
-                    targetTemplate.envelope(),
+                    radiusPropagation,
                     visibleTravel,
                     tileU - 0.5D + crossMinLocal,
                     tileU - 0.5D + crossMaxLocal
@@ -2988,8 +3025,8 @@ public final class VoxelSpotProjector {
             stats.addSideTravelSplitNanos(travelSplitStartNanos);
 
             for (TravelInterval chartTravel : chartTravels) {
-                double chartEntryRadius = radiusAt(targetTemplate.envelope(), chartTravel.min());
-                double chartExitRadius = radiusAt(targetTemplate.envelope(), chartTravel.max());
+                double chartEntryRadius = radiusAt(radiusPropagation, chartTravel.min());
+                double chartExitRadius = radiusAt(radiusPropagation, chartTravel.max());
                 if (!isRenderableSide(boundaryWorldV, positiveSide, chartEntryRadius, chartExitRadius)) {
                     stats.recordSideWindowAttempt(internalSide);
                     stats.recordSideNotRenderable(internalSide);
@@ -3039,7 +3076,7 @@ public final class VoxelSpotProjector {
                 for (TravelInterval occlusionTravel : occlusionTravels) {
                     long travelSubdivisionStartNanos = stats.startTimer();
                     int travelSteps = sideChartTravelSubdivisionCount(
-                            targetTemplate.envelope(),
+                            radiusPropagation,
                             occlusionTravel.min(),
                             occlusionTravel.max()
                     );
@@ -3050,8 +3087,8 @@ public final class VoxelSpotProjector {
                     long sideWindowStartNanos = stats.startTimer();
                     double rawTravel0 = lerp(occlusionTravel.min(), occlusionTravel.max(), travelIndex / (double) travelSteps);
                     double rawTravel1 = lerp(occlusionTravel.min(), occlusionTravel.max(), (travelIndex + 1) / (double) travelSteps);
-                    double crossTravel0 = nudgeVSideTravelEndpoint(targetTemplate.envelope(), rawTravel0, rawTravel1, boundaryWorldV, tileU, crossMinLocal, crossMaxLocal);
-                    double crossTravel1 = nudgeVSideTravelEndpoint(targetTemplate.envelope(), rawTravel1, rawTravel0, boundaryWorldV, tileU, crossMinLocal, crossMaxLocal);
+                    double crossTravel0 = nudgeVSideTravelEndpoint(radiusPropagation, rawTravel0, rawTravel1, boundaryWorldV, tileU, crossMinLocal, crossMaxLocal);
+                    double crossTravel1 = nudgeVSideTravelEndpoint(radiusPropagation, rawTravel1, rawTravel0, boundaryWorldV, tileU, crossMinLocal, crossMaxLocal);
 
                     if (crossTravel1 - crossTravel0 <= EDGE_TOUCH_EPSILON) {
                         stats.recordSideDegenerateTravel(internalSide);
@@ -3059,10 +3096,8 @@ public final class VoxelSpotProjector {
                         continue;
                     }
 
-                    BeamEnvelope envelope0 = envelopeAtOffset(targetTemplate.envelope(), crossTravel0);
-                    BeamEnvelope envelope1 = envelopeAtOffset(targetTemplate.envelope(), crossTravel1);
-                    double radius0 = envelope0.radius();
-                    double radius1 = envelope1.radius();
+                    double radius0 = radiusAt(radiusPropagation, crossTravel0);
+                    double radius1 = radiusAt(radiusPropagation, crossTravel1);
 
                     SideCrossSection cross0 = vSideCrossSection(radius0, boundaryWorldV, tileU, crossMinLocal, crossMaxLocal);
                     SideCrossSection cross1 = vSideCrossSection(radius1, boundaryWorldV, tileU, crossMinLocal, crossMaxLocal);
@@ -3206,19 +3241,21 @@ public final class VoxelSpotProjector {
                         }
 
                         long sidePatchStartNanos = stats.startTimer();
-                        SpotRecord surfaceSpot = cachedSurfaceSpot(
-                                appearanceCache,
-                                level,
-                                targetPos,
-                                sideFace,
-                                targetState,
-                                targetTemplate,
-                                sidePower,
-                                sideCoherentPower,
-                                stats
-                        );
+                        if (candidateSurfaceSpot == null) {
+                            candidateSurfaceSpot = cachedSurfaceSpot(
+                                    appearanceCache,
+                                    level,
+                                    targetPos,
+                                    sideFace,
+                                    targetState,
+                                    targetTemplate,
+                                    sidePower,
+                                    sideCoherentPower,
+                                    stats
+                            );
+                        }
                         PatchEmissionReport emission = addVSideChartSpot(
-                                surfaceSpot,
+                                candidateSurfaceSpot,
                                 sideFace,
                                 travelDirection,
                                 uDirection,
@@ -3311,7 +3348,7 @@ public final class VoxelSpotProjector {
         }
 
         double previousT = t0;
-        double previousRadius = envelopeAtOffset(envelope, previousT).radius();
+        double previousRadius = radiusAt(envelope, previousT);
 
         if (!Double.isFinite(previousRadius) || previousRadius <= 0.0D) {
             return null;
@@ -3323,7 +3360,7 @@ public final class VoxelSpotProjector {
 
         for (int sample = 1; sample <= CONE_TRAVEL_SAMPLES; sample++) {
             double currentT = lerp(t0, t1, sample / (double) CONE_TRAVEL_SAMPLES);
-            double currentRadius = envelopeAtOffset(envelope, currentT).radius();
+            double currentRadius = radiusAt(envelope, currentT);
 
             if (!Double.isFinite(currentRadius) || currentRadius <= 0.0D) {
                 previousT = currentT;
@@ -3368,7 +3405,15 @@ public final class VoxelSpotProjector {
             double boundaryWorldU,
             int tileV
     ) {
-        return uSideTravelIntervals(envelope, boundaryWorldU, tileV, 0.0D, 1.0D, 0.0D, 1.0D);
+        return uSideTravelIntervals(
+                BeamGeometryOps.prepareRadiusPropagation(envelope),
+                boundaryWorldU,
+                tileV,
+                0.0D,
+                1.0D,
+                0.0D,
+                1.0D
+        );
     }
 
     private static List<TravelInterval> uSideTravelIntervals(
@@ -3380,8 +3425,33 @@ public final class VoxelSpotProjector {
             double minTravel,
             double maxTravel
     ) {
+        return uSideTravelIntervals(
+                BeamGeometryOps.prepareRadiusPropagation(envelope),
+                boundaryWorldU,
+                tileV,
+                minLocalV,
+                maxLocalV,
+                minTravel,
+                maxTravel
+        );
+    }
+
+    private static List<TravelInterval> uSideTravelIntervals(
+            BeamGeometryOps.RadiusPropagation radiusPropagation,
+            double boundaryWorldU,
+            int tileV,
+            double minLocalV,
+            double maxLocalV,
+            double minTravel,
+            double maxTravel
+    ) {
         return sideTravelIntervals(
-                travel -> uSideIntersectsAt(envelope, boundaryWorldU, tileV, minLocalV, maxLocalV, travel),
+                radiusPropagation,
+                true,
+                boundaryWorldU,
+                tileV,
+                minLocalV,
+                maxLocalV,
                 minTravel,
                 maxTravel
         );
@@ -3392,7 +3462,15 @@ public final class VoxelSpotProjector {
             double boundaryWorldV,
             int tileU
     ) {
-        return vSideTravelIntervals(envelope, boundaryWorldV, tileU, 0.0D, 1.0D, 0.0D, 1.0D);
+        return vSideTravelIntervals(
+                BeamGeometryOps.prepareRadiusPropagation(envelope),
+                boundaryWorldV,
+                tileU,
+                0.0D,
+                1.0D,
+                0.0D,
+                1.0D
+        );
     }
 
     private static List<TravelInterval> vSideTravelIntervals(
@@ -3404,19 +3482,45 @@ public final class VoxelSpotProjector {
             double minTravel,
             double maxTravel
     ) {
-        return sideTravelIntervals(
-                travel -> vSideIntersectsAt(envelope, boundaryWorldV, tileU, minLocalU, maxLocalU, travel),
+        return vSideTravelIntervals(
+                BeamGeometryOps.prepareRadiusPropagation(envelope),
+                boundaryWorldV,
+                tileU,
+                minLocalU,
+                maxLocalU,
                 minTravel,
                 maxTravel
         );
     }
 
-    private static List<TravelInterval> sideTravelIntervals(SideIntersectionPredicate predicate) {
-        return sideTravelIntervals(predicate, 0.0D, 1.0D);
+    private static List<TravelInterval> vSideTravelIntervals(
+            BeamGeometryOps.RadiusPropagation radiusPropagation,
+            double boundaryWorldV,
+            int tileU,
+            double minLocalU,
+            double maxLocalU,
+            double minTravel,
+            double maxTravel
+    ) {
+        return sideTravelIntervals(
+                radiusPropagation,
+                false,
+                boundaryWorldV,
+                tileU,
+                minLocalU,
+                maxLocalU,
+                minTravel,
+                maxTravel
+        );
     }
 
     private static List<TravelInterval> sideTravelIntervals(
-            SideIntersectionPredicate predicate,
+            BeamGeometryOps.RadiusPropagation radiusPropagation,
+            boolean uSide,
+            double boundaryWorld,
+            int crossTile,
+            double minLocalCross,
+            double maxLocalCross,
             double minTravel,
             double maxTravel
     ) {
@@ -3426,15 +3530,29 @@ public final class VoxelSpotProjector {
         }
 
         double previousT = minTravel;
-        boolean previousInside = predicate.intersects(previousT);
+        boolean previousInside = sideIntersectsAt(
+                radiusPropagation, uSide, boundaryWorld, crossTile, minLocalCross, maxLocalCross, previousT
+        );
         double start = previousInside ? previousT : Double.NaN;
 
         for (int sample = 1; sample <= CONE_TRAVEL_SAMPLES; sample++) {
             double currentT = lerp(minTravel, maxTravel, sample / (double) CONE_TRAVEL_SAMPLES);
-            boolean currentInside = predicate.intersects(currentT);
+            boolean currentInside = sideIntersectsAt(
+                    radiusPropagation, uSide, boundaryWorld, crossTile, minLocalCross, maxLocalCross, currentT
+            );
 
             if (previousInside != currentInside) {
-                double boundary = sideIntersectionBoundary(predicate, previousT, currentT, previousInside);
+                double boundary = sideIntersectionBoundary(
+                        radiusPropagation,
+                        uSide,
+                        boundaryWorld,
+                        crossTile,
+                        minLocalCross,
+                        maxLocalCross,
+                        previousT,
+                        currentT,
+                        previousInside
+                );
 
                 if (currentInside) {
                     start = boundary;
@@ -3469,12 +3587,26 @@ public final class VoxelSpotProjector {
             double firstBoundary,
             double secondBoundary
     ) {
+        return splitSideTravelAtCrossBoundaries(
+                BeamGeometryOps.prepareRadiusPropagation(envelope),
+                interval,
+                firstBoundary,
+                secondBoundary
+        );
+    }
+
+    private static List<TravelInterval> splitSideTravelAtCrossBoundaries(
+            BeamGeometryOps.RadiusPropagation radiusPropagation,
+            TravelInterval interval,
+            double firstBoundary,
+            double secondBoundary
+    ) {
         List<Double> cuts = new ArrayList<>();
         cuts.add(interval.min());
         cuts.add(interval.max());
-        addBeamWaistCut(cuts, envelope, interval);
-        addRadiusBoundaryCuts(cuts, envelope, interval, Math.abs(firstBoundary));
-        addRadiusBoundaryCuts(cuts, envelope, interval, Math.abs(secondBoundary));
+        addBeamWaistCut(cuts, radiusPropagation, interval);
+        addRadiusBoundaryCuts(cuts, radiusPropagation, interval, Math.abs(firstBoundary));
+        addRadiusBoundaryCuts(cuts, radiusPropagation, interval, Math.abs(secondBoundary));
         cuts.sort(Double::compare);
 
         List<TravelInterval> intervals = new ArrayList<>();
@@ -3496,10 +3628,10 @@ public final class VoxelSpotProjector {
 
     private static void addBeamWaistCut(
             List<Double> cuts,
-            BeamEnvelope envelope,
+            BeamGeometryOps.RadiusPropagation radiusPropagation,
             TravelInterval interval
     ) {
-        double waistTravel = envelope.focusDistance();
+        double waistTravel = radiusPropagation.waistTravel();
         if (Double.isFinite(waistTravel)
                 && waistTravel > interval.min() + EDGE_TOUCH_EPSILON
                 && waistTravel < interval.max() - EDGE_TOUCH_EPSILON) {
@@ -3509,7 +3641,7 @@ public final class VoxelSpotProjector {
 
     private static void addRadiusBoundaryCuts(
             List<Double> cuts,
-            BeamEnvelope envelope,
+            BeamGeometryOps.RadiusPropagation radiusPropagation,
             TravelInterval interval,
             double requiredRadius
     ) {
@@ -3518,14 +3650,16 @@ public final class VoxelSpotProjector {
         }
 
         double previousT = interval.min();
-        boolean previousInside = radiusAt(envelope, previousT) + EDGE_TOUCH_EPSILON >= requiredRadius;
+        boolean previousInside = radiusAt(radiusPropagation, previousT) + EDGE_TOUCH_EPSILON >= requiredRadius;
 
         for (int sample = 1; sample <= CONE_TRAVEL_SAMPLES; sample++) {
             double currentT = lerp(interval.min(), interval.max(), sample / (double) CONE_TRAVEL_SAMPLES);
-            boolean currentInside = radiusAt(envelope, currentT) + EDGE_TOUCH_EPSILON >= requiredRadius;
+            boolean currentInside = radiusAt(radiusPropagation, currentT) + EDGE_TOUCH_EPSILON >= requiredRadius;
 
             if (previousInside != currentInside) {
-                double crossing = radiusThresholdBoundary(envelope, previousT, currentT, previousInside, requiredRadius);
+                double crossing = radiusThresholdBoundary(
+                        radiusPropagation, previousT, currentT, previousInside, requiredRadius
+                );
 
                 if (crossing > interval.min() + EDGE_TOUCH_EPSILON && crossing < interval.max() - EDGE_TOUCH_EPSILON) {
                     cuts.add(crossing);
@@ -3538,7 +3672,7 @@ public final class VoxelSpotProjector {
     }
 
     private static double radiusThresholdBoundary(
-            BeamEnvelope envelope,
+            BeamGeometryOps.RadiusPropagation radiusPropagation,
             double t0,
             double t1,
             boolean insideAtT0,
@@ -3550,7 +3684,7 @@ public final class VoxelSpotProjector {
         for (int iteration = 0; iteration < 24; iteration++) {
             double mid = (valid + invalid) * 0.5D;
 
-            if (radiusAt(envelope, mid) + EDGE_TOUCH_EPSILON >= requiredRadius) {
+            if (radiusAt(radiusPropagation, mid) + EDGE_TOUCH_EPSILON >= requiredRadius) {
                 valid = mid;
             } else {
                 invalid = mid;
@@ -3561,12 +3695,24 @@ public final class VoxelSpotProjector {
     }
 
     private static double radiusAt(BeamEnvelope envelope, double travel) {
-        double radius = envelopeAtOffset(envelope, travel).radius();
+        return radiusAt(BeamGeometryOps.prepareRadiusPropagation(envelope), travel);
+    }
+
+    private static double radiusAt(
+            BeamGeometryOps.RadiusPropagation radiusPropagation,
+            double travel
+    ) {
+        double radius = radiusPropagation.radiusAt(Math.max(0.0D, travel));
         return Double.isFinite(radius) ? radius : 0.0D;
     }
 
     private static double sideIntersectionBoundary(
-            SideIntersectionPredicate predicate,
+            BeamGeometryOps.RadiusPropagation radiusPropagation,
+            boolean uSide,
+            double boundaryWorld,
+            int crossTile,
+            double minLocalCross,
+            double maxLocalCross,
             double t0,
             double t1,
             boolean insideAtT0
@@ -3577,7 +3723,9 @@ public final class VoxelSpotProjector {
         for (int iteration = 0; iteration < 24; iteration++) {
             double mid = (valid + invalid) * 0.5D;
 
-            if (predicate.intersects(mid)) {
+            if (sideIntersectsAt(
+                    radiusPropagation, uSide, boundaryWorld, crossTile, minLocalCross, maxLocalCross, mid
+            )) {
                 valid = mid;
             } else {
                 invalid = mid;
@@ -3594,7 +3742,15 @@ public final class VoxelSpotProjector {
             double boundaryWorldU,
             int tileV
     ) {
-        return nudgeUSideTravelEndpoint(envelope, endpoint, toward, boundaryWorldU, tileV, 0.0D, 1.0D);
+        return nudgeUSideTravelEndpoint(
+                BeamGeometryOps.prepareRadiusPropagation(envelope),
+                endpoint,
+                toward,
+                boundaryWorldU,
+                tileV,
+                0.0D,
+                1.0D
+        );
     }
 
     private static double nudgeUSideTravelEndpoint(
@@ -3606,10 +3762,35 @@ public final class VoxelSpotProjector {
             double minLocalV,
             double maxLocalV
     ) {
-        return nudgeSideTravelEndpoint(
+        return nudgeUSideTravelEndpoint(
+                BeamGeometryOps.prepareRadiusPropagation(envelope),
                 endpoint,
                 toward,
-                travel -> uSideIntersectsAt(envelope, boundaryWorldU, tileV, minLocalV, maxLocalV, travel)
+                boundaryWorldU,
+                tileV,
+                minLocalV,
+                maxLocalV
+        );
+    }
+
+    private static double nudgeUSideTravelEndpoint(
+            BeamGeometryOps.RadiusPropagation radiusPropagation,
+            double endpoint,
+            double toward,
+            double boundaryWorldU,
+            int tileV,
+            double minLocalV,
+            double maxLocalV
+    ) {
+        return nudgeSideTravelEndpoint(
+                radiusPropagation,
+                true,
+                boundaryWorldU,
+                tileV,
+                minLocalV,
+                maxLocalV,
+                endpoint,
+                toward
         );
     }
 
@@ -3620,7 +3801,15 @@ public final class VoxelSpotProjector {
             double boundaryWorldV,
             int tileU
     ) {
-        return nudgeVSideTravelEndpoint(envelope, endpoint, toward, boundaryWorldV, tileU, 0.0D, 1.0D);
+        return nudgeVSideTravelEndpoint(
+                BeamGeometryOps.prepareRadiusPropagation(envelope),
+                endpoint,
+                toward,
+                boundaryWorldV,
+                tileU,
+                0.0D,
+                1.0D
+        );
     }
 
     private static double nudgeVSideTravelEndpoint(
@@ -3632,23 +3821,58 @@ public final class VoxelSpotProjector {
             double minLocalU,
             double maxLocalU
     ) {
-        return nudgeSideTravelEndpoint(
+        return nudgeVSideTravelEndpoint(
+                BeamGeometryOps.prepareRadiusPropagation(envelope),
                 endpoint,
                 toward,
-                travel -> vSideIntersectsAt(envelope, boundaryWorldV, tileU, minLocalU, maxLocalU, travel)
+                boundaryWorldV,
+                tileU,
+                minLocalU,
+                maxLocalU
+        );
+    }
+
+    private static double nudgeVSideTravelEndpoint(
+            BeamGeometryOps.RadiusPropagation radiusPropagation,
+            double endpoint,
+            double toward,
+            double boundaryWorldV,
+            int tileU,
+            double minLocalU,
+            double maxLocalU
+    ) {
+        return nudgeSideTravelEndpoint(
+                radiusPropagation,
+                false,
+                boundaryWorldV,
+                tileU,
+                minLocalU,
+                maxLocalU,
+                endpoint,
+                toward
         );
     }
 
     private static double nudgeSideTravelEndpoint(
+            BeamGeometryOps.RadiusPropagation radiusPropagation,
+            boolean uSide,
+            double boundaryWorld,
+            int crossTile,
+            double minLocalCross,
+            double maxLocalCross,
             double endpoint,
-            double toward,
-            SideIntersectionPredicate predicate
+            double toward
     ) {
-        if (predicate.intersects(endpoint)) {
+        if (sideIntersectsAt(
+                radiusPropagation, uSide, boundaryWorld, crossTile, minLocalCross, maxLocalCross, endpoint
+        )) {
             return endpoint;
         }
 
-        if (Math.abs(toward - endpoint) <= EDGE_TOUCH_EPSILON || !predicate.intersects(toward)) {
+        if (Math.abs(toward - endpoint) <= EDGE_TOUCH_EPSILON
+                || !sideIntersectsAt(
+                        radiusPropagation, uSide, boundaryWorld, crossTile, minLocalCross, maxLocalCross, toward
+                )) {
             return endpoint;
         }
 
@@ -3658,7 +3882,9 @@ public final class VoxelSpotProjector {
         for (int iteration = 0; iteration < 24; iteration++) {
             double mid = (invalid + valid) * 0.5D;
 
-            if (predicate.intersects(mid)) {
+            if (sideIntersectsAt(
+                    radiusPropagation, uSide, boundaryWorld, crossTile, minLocalCross, maxLocalCross, mid
+            )) {
                 valid = mid;
             } else {
                 invalid = mid;
@@ -3668,46 +3894,19 @@ public final class VoxelSpotProjector {
         return valid;
     }
 
-    private static boolean uSideIntersectsAt(
-            BeamEnvelope envelope,
-            double boundaryWorldU,
-            int tileV,
+    private static boolean sideIntersectsAt(
+            BeamGeometryOps.RadiusPropagation radiusPropagation,
+            boolean uSide,
+            double boundaryWorld,
+            int crossTile,
+            double minLocalCross,
+            double maxLocalCross,
             double travel
     ) {
-        return uSideIntersectsAt(envelope, boundaryWorldU, tileV, 0.0D, 1.0D, travel);
-    }
-
-    private static boolean uSideIntersectsAt(
-            BeamEnvelope envelope,
-            double boundaryWorldU,
-            int tileV,
-            double minLocalV,
-            double maxLocalV,
-            double travel
-    ) {
-        double radius = envelopeAtOffset(envelope, travel).radius();
-        return uSideCrossSection(radius, boundaryWorldU, tileV, minLocalV, maxLocalV) != null;
-    }
-
-    private static boolean vSideIntersectsAt(
-            BeamEnvelope envelope,
-            double boundaryWorldV,
-            int tileU,
-            double travel
-    ) {
-        return vSideIntersectsAt(envelope, boundaryWorldV, tileU, 0.0D, 1.0D, travel);
-    }
-
-    private static boolean vSideIntersectsAt(
-            BeamEnvelope envelope,
-            double boundaryWorldV,
-            int tileU,
-            double minLocalU,
-            double maxLocalU,
-            double travel
-    ) {
-        double radius = envelopeAtOffset(envelope, travel).radius();
-        return vSideCrossSection(radius, boundaryWorldV, tileU, minLocalU, maxLocalU) != null;
+        double radius = radiusAt(radiusPropagation, travel);
+        return uSide
+                ? uSideCrossSection(radius, boundaryWorld, crossTile, minLocalCross, maxLocalCross) != null
+                : vSideCrossSection(radius, boundaryWorld, crossTile, minLocalCross, maxLocalCross) != null;
     }
 
     private static double radiusCrossing(
@@ -3736,7 +3935,7 @@ public final class VoxelSpotProjector {
             double toward,
             double requiredRadius
     ) {
-        double radius = envelopeAtOffset(envelope, endpoint).radius();
+        double radius = radiusAt(envelope, endpoint);
         if (Double.isFinite(radius) && radius > requiredRadius + EDGE_TOUCH_EPSILON) {
             return endpoint;
         }
@@ -4017,7 +4216,22 @@ public final class VoxelSpotProjector {
             double travel0,
             double travel1
     ) {
-        if (envelope == null || travel1 - travel0 <= EDGE_TOUCH_EPSILON) {
+        if (envelope == null) {
+            return 1;
+        }
+        return adaptiveSideTravelSubdivisionCount(
+                BeamGeometryOps.prepareRadiusPropagation(envelope),
+                travel0,
+                travel1
+        );
+    }
+
+    private static int adaptiveSideTravelSubdivisionCount(
+            BeamGeometryOps.RadiusPropagation radiusPropagation,
+            double travel0,
+            double travel1
+    ) {
+        if (travel1 - travel0 <= EDGE_TOUCH_EPSILON) {
             return 1;
         }
 
@@ -4026,7 +4240,7 @@ public final class VoxelSpotProjector {
 
         for (int sample = 0; sample <= 4; sample++) {
             double travel = lerp(travel0, travel1, sample / 4.0D);
-            double radius = envelopeAtOffset(envelope, travel).radius();
+            double radius = radiusAt(radiusPropagation, travel);
 
             if (!Double.isFinite(radius) || radius <= EDGE_TOUCH_EPSILON) {
                 return MAX_SIDE_PATCH_TRAVEL_SUBDIVISIONS;
@@ -4059,6 +4273,14 @@ public final class VoxelSpotProjector {
             double travel1
     ) {
         return adaptiveSideTravelSubdivisionCount(envelope, travel0, travel1);
+    }
+
+    private static int sideChartTravelSubdivisionCount(
+            BeamGeometryOps.RadiusPropagation radiusPropagation,
+            double travel0,
+            double travel1
+    ) {
+        return adaptiveSideTravelSubdivisionCount(radiusPropagation, travel0, travel1);
     }
 
     private static SpotProjectionAllocation sideAllocation(
@@ -5309,9 +5531,9 @@ public final class VoxelSpotProjector {
         return BeamGeometryOps.propagate(sourceEnvelope, offset);
     }
 
-    private static double maxEnvelopeRadiusOverUnit(BeamEnvelope envelope) {
-        double entryRadius = envelope.radius();
-        double exitRadius = envelopeAtOffset(envelope, 1.0D).radius();
+    private static double maxEnvelopeRadiusOverUnit(BeamGeometryOps.RadiusPropagation radiusPropagation) {
+        double entryRadius = radiusPropagation.radiusAt(0.0D);
+        double exitRadius = radiusPropagation.radiusAt(1.0D);
         double maxRadius = Math.max(
                 Double.isFinite(entryRadius) ? entryRadius : 0.0D,
                 Double.isFinite(exitRadius) ? exitRadius : 0.0D
@@ -5585,7 +5807,7 @@ public final class VoxelSpotProjector {
     }
 
     private static List<OcclusionWindow> blockPlaneOcclusionWindows(
-            BeamEnvelope envelope,
+            BeamGeometryOps.RadiusPropagation radiusPropagation,
             int tileU,
             int tileV,
             BlockPos pos,
@@ -5602,9 +5824,8 @@ public final class VoxelSpotProjector {
 
         for (int index = 0; index < planeCount; index++) {
             double offset = lerp(opticalBox.minTravel(), opticalBox.maxTravel(), occlusionPlaneOffset(index, planeCount));
-            BeamEnvelope planeEnvelope = envelopeAtOffset(envelope, offset);
             ProjectionRect planeRect = projectionRectForLocalFace(
-                    planeEnvelope.radius(),
+                    radiusAt(radiusPropagation, offset),
                     tileU,
                     tileV,
                     opticalBox.minU(),
@@ -7712,9 +7933,12 @@ public final class VoxelSpotProjector {
         return Math.max(0.0D, Math.min(1.0D, value));
     }
 
-    @FunctionalInterface
-    private interface SideIntersectionPredicate {
-        boolean intersects(double travel);
+    private record ModelShapeFrameKey(
+            BlockState state,
+            Direction travelDirection,
+            Direction uDirection,
+            Direction vDirection
+    ) {
     }
 
     private record OpticalCollisionBox(
@@ -8248,6 +8472,9 @@ public final class VoxelSpotProjector {
         private long sameDepthPrefixValidationMismatches;
         private long sideCanonicalValidationChecks;
         private long sideCanonicalValidationMismatches;
+        private long depthBoundaryRadiusChecks;
+        private long depthBoundaryRadiusMismatches;
+        private double depthBoundaryRadiusMaxGap;
         private long tileRangeNanos;
         private long projectionRectNanos;
         private long blockLookupNanos;
@@ -8611,6 +8838,15 @@ public final class VoxelSpotProjector {
         private void recordSideVisibleWindowMerge(int before, int after) {
             sideVisibleWindowsBeforeMerge += Math.max(0, before);
             sideVisibleWindowsAfterMerge += Math.max(0, after);
+        }
+
+        private void recordDepthBoundaryRadius(double previousExit, double nextEntry) {
+            depthBoundaryRadiusChecks++;
+            double gap = Math.abs(previousExit - nextEntry);
+            depthBoundaryRadiusMaxGap = Math.max(depthBoundaryRadiusMaxGap, gap);
+            if (Double.doubleToLongBits(previousExit) != Double.doubleToLongBits(nextEntry)) {
+                depthBoundaryRadiusMismatches++;
+            }
         }
 
         private void recordSideCanonicalComparison(CanonicalRegion legacy, CanonicalRegion optimized) {
@@ -9022,6 +9258,9 @@ public final class VoxelSpotProjector {
                             sameDepthPrefixValidationMismatches,
                             sideCanonicalValidationChecks,
                             sideCanonicalValidationMismatches,
+                            depthBoundaryRadiusChecks,
+                            depthBoundaryRadiusMismatches,
+                            depthBoundaryRadiusMaxGap,
                             structuralValidationExamples
                     ),
                     new SpotProjectionResult.HotDepth(

@@ -2558,6 +2558,12 @@ tasks.register('verifyBeamProfileQuantization', JavaExec) {
     mainClass = 'io.github.yoglappland.spectralization.optics.validation.BeamProfileQuantizationVerifier'
 }
 
+tasks.register('verifySpotProjectionTestHarness', JavaExec) {
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'io.github.yoglappland.spectralization.command.SpotProjectionTestHarnessVerifier'
+}
+
 tasks.named('check') {
     dependsOn tasks.named('verifyThermalSmelterUiLayout')
     dependsOn tasks.named('verifyLensGrindingBenchUiLayout')
@@ -2574,6 +2580,7 @@ tasks.named('check') {
     dependsOn tasks.named('verifySpotProjectionContinuity')
     dependsOn tasks.named('verifySpotProjectionFormalProof')
     dependsOn tasks.named('verifyBeamProfileQuantization')
+    dependsOn tasks.named('verifySpotProjectionTestHarness')
 }
 
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.

@@ -1,9 +1,13 @@
 package io.github.yoglappland.spectralization.optics.projection;
 
 import io.github.yoglappland.spectralization.diagnostics.SpectralDiagnostics;
+import io.github.yoglappland.spectralization.config.SpectralizationConfig;
+import io.github.yoglappland.spectralization.optics.SpotRecord;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -34,7 +38,10 @@ public final class SpotProjectionPerformanceTracker {
                 result.dependencies().size(),
                 result.stats(),
                 result.cacheMode(),
-                result.appearanceTimings()
+                result.appearanceTimings(),
+                SpectralizationConfig.opticalCompilerDebugLog()
+                        ? result.spots()
+                        : List.of()
         ));
 
         while (samples.size() > MAX_REPORT_SAMPLES) {
@@ -249,6 +256,28 @@ public final class SpotProjectionPerformanceTracker {
         return SpotProjectionResult.Stats.EMPTY;
     }
 
+    public static synchronized OutputFingerprint latestOutputFingerprint(
+            ServerLevel level,
+            BlockPos sourcePos,
+            Direction direction
+    ) {
+        ArrayDeque<Sample> stored = SAMPLES_BY_LEVEL.get(level);
+        if (stored == null || stored.isEmpty()) {
+            return OutputFingerprint.EMPTY;
+        }
+
+        Sample[] samples = stored.toArray(Sample[]::new);
+        for (int index = samples.length - 1; index >= 0; index--) {
+            Sample sample = samples[index];
+            if (sample.sourcePos().equals(sourcePos) && sample.direction() == direction) {
+                return sample.spotsSnapshot().isEmpty()
+                        ? OutputFingerprint.EMPTY
+                        : fingerprintOutputForDiagnostics(sourcePos, direction, sample.spotsSnapshot());
+            }
+        }
+        return OutputFingerprint.EMPTY;
+    }
+
     public static synchronized void reset(ServerLevel level) {
         SAMPLES_BY_LEVEL.remove(level);
     }
@@ -269,6 +298,9 @@ public final class SpotProjectionPerformanceTracker {
         if (report.empty()) {
             return;
         }
+        OutputFingerprint outputFingerprint = latestOutputFingerprint(
+                level, report.latestSource(), report.latestDirection()
+        );
 
         SpectralDiagnostics.event(level, "spot_projection", "performance_report")
                 .field("samples", report.samples())
@@ -315,6 +347,12 @@ public final class SpotProjectionPerformanceTracker {
                 .field("appearance_residual_avg_us", report.appearanceResidualAverageUs())
                 .field("appearance_templates_avg", report.appearanceTemplatesAverage())
                 .field("appearance_unique_surfaces_avg", report.appearanceUniqueSurfacesAverage())
+                .field("output_coverage_signature", Long.toUnsignedString(
+                        outputFingerprint.coverageSignature(), 16
+                ))
+                .field("output_fragmentation_signature", Long.toUnsignedString(
+                        outputFingerprint.fragmentationSignature(), 16
+                ))
                 .write();
     }
 
@@ -343,6 +381,147 @@ public final class SpotProjectionPerformanceTracker {
         return nanos / 1_000.0D;
     }
 
+    public static OutputFingerprint fingerprintOutputForDiagnostics(
+            BlockPos sourcePos,
+            Direction direction,
+            List<SpotRecord> spots
+    ) {
+        Direction lateral = direction.getClockWise();
+        Map<OutputSurfaceKey, MutableOutputSurface> grouped = new HashMap<>();
+        for (SpotRecord spot : spots) {
+            if (!spot.visible()) {
+                continue;
+            }
+            int dx = spot.pos().getX() - sourcePos.getX();
+            int dy = spot.pos().getY() - sourcePos.getY();
+            int dz = spot.pos().getZ() - sourcePos.getZ();
+            OutputSurfaceKey key = new OutputSurfaceKey(
+                    dx * direction.getStepX() + dz * direction.getStepZ(),
+                    dx * lateral.getStepX() + dz * lateral.getStepZ(),
+                    dy,
+                    spot.face().getStepX() * direction.getStepX()
+                            + spot.face().getStepZ() * direction.getStepZ(),
+                    spot.face().getStepX() * lateral.getStepX()
+                            + spot.face().getStepZ() * lateral.getStepZ(),
+                    spot.face().getStepY()
+            );
+            grouped.computeIfAbsent(key, ignored -> new MutableOutputSurface()).add(spot);
+        }
+
+        List<OutputSurface> surfaces = grouped.entrySet().stream()
+                .map(entry -> entry.getValue().freeze(entry.getKey()))
+                .sorted(Comparator.comparing(OutputSurface::key))
+                .toList();
+        long coverage = 0xcbf29ce484222325L;
+        long fragmentation = 0xcbf29ce484222325L;
+        for (OutputSurface surface : surfaces) {
+            coverage = mixSurfaceKey(coverage, surface.key());
+            coverage = mix(coverage, surface.sliceArea());
+            coverage = mix(coverage, surface.textureArea());
+            coverage = mix(coverage, surface.textureMomentU());
+            coverage = mix(coverage, surface.textureMomentV());
+            coverage = mix(coverage, surface.quadAreaTwice());
+            coverage = mix(coverage, surface.quadTextureAreaTwice());
+
+            fragmentation = mixSurfaceKey(fragmentation, surface.key());
+            fragmentation = mix(fragmentation, surface.records());
+            fragmentation = mix(fragmentation, surface.centeredRecords());
+            fragmentation = mix(fragmentation, surface.sliceRecords());
+            fragmentation = mix(fragmentation, surface.quadRecords());
+        }
+        coverage = mix(coverage, surfaces.size());
+        fragmentation = mix(fragmentation, surfaces.size());
+        return new OutputFingerprint(coverage, fragmentation, surfaces);
+    }
+
+    private static long mixSurfaceKey(long hash, OutputSurfaceKey key) {
+        hash = mix(hash, key.along());
+        hash = mix(hash, key.side());
+        hash = mix(hash, key.vertical());
+        hash = mix(hash, key.faceAlong());
+        hash = mix(hash, key.faceSide());
+        return mix(hash, key.faceVertical());
+    }
+
+    private static long mix(long hash, long value) {
+        for (int shift = 0; shift < Long.SIZE; shift += Byte.SIZE) {
+            hash ^= (value >>> shift) & 0xffL;
+            hash *= 0x100000001b3L;
+        }
+        return hash;
+    }
+
+    private static long canonicalQuadAreaTwice(SpotRecord spot) {
+        int[] a;
+        int[] b;
+        if (spot.face().getAxis() == Direction.Axis.X) {
+            a = new int[]{spot.quadY0(), spot.quadY1(), spot.quadY2(), spot.quadY3()};
+            b = new int[]{spot.quadZ0(), spot.quadZ1(), spot.quadZ2(), spot.quadZ3()};
+        } else if (spot.face().getAxis() == Direction.Axis.Y) {
+            a = new int[]{spot.quadX0(), spot.quadX1(), spot.quadX2(), spot.quadX3()};
+            b = new int[]{spot.quadZ0(), spot.quadZ1(), spot.quadZ2(), spot.quadZ3()};
+        } else {
+            a = new int[]{spot.quadX0(), spot.quadX1(), spot.quadX2(), spot.quadX3()};
+            b = new int[]{spot.quadY0(), spot.quadY1(), spot.quadY2(), spot.quadY3()};
+        }
+        return polygonAreaTwice(quantizeQuadCoordinates(a), quantizeQuadCoordinates(b));
+    }
+
+    private static long canonicalQuadTextureAreaTwice(SpotRecord spot) {
+        return polygonAreaTwice(
+                quantizeQuadCoordinates(new int[]{
+                        spot.quadTextureU0(), spot.quadTextureU1(),
+                        spot.quadTextureU2(), spot.quadTextureU3()
+                }),
+                quantizeQuadCoordinates(new int[]{
+                        spot.quadTextureV0(), spot.quadTextureV1(),
+                        spot.quadTextureV2(), spot.quadTextureV3()
+                })
+        );
+    }
+
+    private static long rawQuadAreaTwice(SpotRecord spot) {
+        int[] a;
+        int[] b;
+        if (spot.face().getAxis() == Direction.Axis.X) {
+            a = new int[]{spot.quadY0(), spot.quadY1(), spot.quadY2(), spot.quadY3()};
+            b = new int[]{spot.quadZ0(), spot.quadZ1(), spot.quadZ2(), spot.quadZ3()};
+        } else if (spot.face().getAxis() == Direction.Axis.Y) {
+            a = new int[]{spot.quadX0(), spot.quadX1(), spot.quadX2(), spot.quadX3()};
+            b = new int[]{spot.quadZ0(), spot.quadZ1(), spot.quadZ2(), spot.quadZ3()};
+        } else {
+            a = new int[]{spot.quadX0(), spot.quadX1(), spot.quadX2(), spot.quadX3()};
+            b = new int[]{spot.quadY0(), spot.quadY1(), spot.quadY2(), spot.quadY3()};
+        }
+        return polygonAreaTwice(a, b);
+    }
+
+    private static long rawQuadTextureAreaTwice(SpotRecord spot) {
+        return polygonAreaTwice(
+                new int[]{spot.quadTextureU0(), spot.quadTextureU1(), spot.quadTextureU2(), spot.quadTextureU3()},
+                new int[]{spot.quadTextureV0(), spot.quadTextureV1(), spot.quadTextureV2(), spot.quadTextureV3()}
+        );
+    }
+
+    private static int[] quantizeQuadCoordinates(int[] coordinates) {
+        int[] quantized = new int[coordinates.length];
+        for (int index = 0; index < coordinates.length; index++) {
+            quantized[index] = (coordinates[index] * SpotRecord.SLICE_QUANTIZATION_LEVEL
+                    + SpotRecord.QUAD_QUANTIZATION_LEVEL / 2)
+                    / SpotRecord.QUAD_QUANTIZATION_LEVEL;
+        }
+        return quantized;
+    }
+
+    private static long polygonAreaTwice(int[] a, int[] b) {
+        long areaTwice = 0L;
+        for (int index = 0; index < 4; index++) {
+            int next = (index + 1) & 3;
+            areaTwice += (long) a[index] * b[next] - (long) a[next] * b[index];
+        }
+        return Math.abs(areaTwice);
+    }
+
     private record Sample(
             long tick,
             BlockPos sourcePos,
@@ -352,8 +531,155 @@ public final class SpotProjectionPerformanceTracker {
             int dependencies,
             SpotProjectionResult.Stats stats,
             SpotProjectionResult.CacheMode cacheMode,
-            SpotProjectionResult.AppearanceTimings appearanceTimings
+            SpotProjectionResult.AppearanceTimings appearanceTimings,
+            List<SpotRecord> spotsSnapshot
     ) {
+        private Sample {
+            spotsSnapshot = List.copyOf(spotsSnapshot);
+        }
+    }
+
+    public record OutputFingerprint(
+            long coverageSignature,
+            long fragmentationSignature,
+            List<OutputSurface> surfaces
+    ) {
+        public static final OutputFingerprint EMPTY = new OutputFingerprint(0L, 0L, List.of());
+
+        public OutputFingerprint {
+            surfaces = List.copyOf(surfaces);
+        }
+    }
+
+    public record OutputSurfaceKey(
+            int along,
+            int side,
+            int vertical,
+            int faceAlong,
+            int faceSide,
+            int faceVertical
+    ) implements Comparable<OutputSurfaceKey> {
+        @Override
+        public int compareTo(OutputSurfaceKey other) {
+            int result = Integer.compare(along, other.along);
+            if (result == 0) result = Integer.compare(side, other.side);
+            if (result == 0) result = Integer.compare(vertical, other.vertical);
+            if (result == 0) result = Integer.compare(faceAlong, other.faceAlong);
+            if (result == 0) result = Integer.compare(faceSide, other.faceSide);
+            if (result == 0) result = Integer.compare(faceVertical, other.faceVertical);
+            return result;
+        }
+
+        public String summary() {
+            return "pos=" + along + "," + side + "," + vertical
+                    + ",face=" + faceAlong + "," + faceSide + "," + faceVertical;
+        }
+    }
+
+    public record OutputSurface(
+            OutputSurfaceKey key,
+            int records,
+            int centeredRecords,
+            int sliceRecords,
+            int quadRecords,
+            long sliceArea,
+            long textureArea,
+            long textureMomentU,
+            long textureMomentV,
+            long quadAreaTwice,
+            long quadTextureAreaTwice,
+            long rawQuadAreaTwice,
+            long rawQuadTextureAreaTwice
+    ) {
+        public boolean sameCoverage(OutputSurface other) {
+            return other != null
+                    && key.equals(other.key)
+                    && sliceArea == other.sliceArea
+                    && textureArea == other.textureArea
+                    && textureMomentU == other.textureMomentU
+                    && textureMomentV == other.textureMomentV
+                    && quadAreaTwice == other.quadAreaTwice
+                    && quadTextureAreaTwice == other.quadTextureAreaTwice;
+        }
+
+        public boolean sameFragmentation(OutputSurface other) {
+            return sameCoverage(other)
+                    && records == other.records
+                    && centeredRecords == other.centeredRecords
+                    && sliceRecords == other.sliceRecords
+                    && quadRecords == other.quadRecords;
+        }
+
+        public String summary() {
+            return key.summary()
+                    + ",records=" + records
+                    + ",centered=" + centeredRecords
+                    + ",slices=" + sliceRecords
+                    + ",quads=" + quadRecords
+                    + ",slice_area=" + sliceArea
+                    + ",texture_area=" + textureArea
+                    + ",quad_area2=" + quadAreaTwice
+                    + ",raw_quad_area2=" + rawQuadAreaTwice
+                    + ",raw_quad_texture_area2=" + rawQuadTextureAreaTwice;
+        }
+    }
+
+    private static final class MutableOutputSurface {
+        private int records;
+        private int centeredRecords;
+        private int sliceRecords;
+        private int quadRecords;
+        private long sliceArea;
+        private long textureArea;
+        private long textureMomentU;
+        private long textureMomentV;
+        private long quadAreaTwice;
+        private long quadTextureAreaTwice;
+        private long rawQuadAreaTwice;
+        private long rawQuadTextureAreaTwice;
+
+        private void add(SpotRecord spot) {
+            records++;
+            if (spot.projectionMode() == SpotRecord.ProjectionMode.FOOTPRINT_QUAD) {
+                quadRecords++;
+                quadAreaTwice += canonicalQuadAreaTwice(spot);
+                quadTextureAreaTwice += canonicalQuadTextureAreaTwice(spot);
+                rawQuadAreaTwice += rawQuadAreaTwice(spot);
+                rawQuadTextureAreaTwice += rawQuadTextureAreaTwice(spot);
+                return;
+            }
+            if (spot.projectionMode() == SpotRecord.ProjectionMode.FOOTPRINT_SLICE) {
+                sliceRecords++;
+            } else {
+                centeredRecords++;
+            }
+            long area = (long) (spot.clipMaxU() - spot.clipMinU())
+                    * (spot.clipMaxV() - spot.clipMinV());
+            long mappedArea = (long) (spot.textureMaxU() - spot.textureMinU())
+                    * (spot.textureMaxV() - spot.textureMinV());
+            sliceArea += area;
+            textureArea += mappedArea;
+            textureMomentU += mappedArea * (spot.textureMinU() + spot.textureMaxU());
+            textureMomentV += mappedArea * (spot.textureMinV() + spot.textureMaxV());
+        }
+
+        private OutputSurface freeze(OutputSurfaceKey key) {
+            return new OutputSurface(
+                    key,
+                    records,
+                    centeredRecords,
+                    sliceRecords,
+                    quadRecords,
+                    sliceArea,
+                    textureArea,
+                    textureMomentU,
+                    textureMomentV,
+                    quadAreaTwice,
+                    quadTextureAreaTwice,
+                    rawQuadAreaTwice,
+                    rawQuadTextureAreaTwice
+            );
+        }
     }
 
     public record Report(

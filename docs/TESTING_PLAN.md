@@ -278,7 +278,7 @@ debug_log_verbose = false
 光斑算法、缓存、网络容量或渲染发生变化时，优先使用注册物品 `spectralization:spot_test`。测试者需要权限等级 2：
 
 - 右键运行当前测试模式。
-- Shift + 右键切换 `quick`、`partial_geometry`、`performance`、`full_suite`。
+- Shift + 右键切换 `quick`、`partial_geometry`、`performance`、`direction_matrix`、`random_stress`。
 - 套件运行时再次右键只显示进度，不启动重叠任务。
 
 模式覆盖：
@@ -286,7 +286,16 @@ debug_log_verbose = false
 1. `quick`：物品注册、结构生成、投影刷新和日志冒烟。
 2. `partial_geometry`：楼梯、台阶和局部方块的踏面/立面遮挡顺序。
 3. `performance`：固定 sparse、mixed、dense 完整重建，以及功率/颜色外观缓存。
-4. `full_suite`：提交前运行全部场景。
+4. `direction_matrix`：四方向稳定化预热后，以 4 个固定 seed 和平衡顺序验证输入场景、最终输出覆盖、输出分片及内部 workload。输入/覆盖不一致为失败；只有分片/workload 不一致为黄色性能警告。
+5. `random_stress`：运行 1000 个不含固定夹具的匿名纯随机场景；每个场景测量一次完整重建，不记录 seed，只输出聚合进度和最终平均/P50/P95。
+
+当前还必须保留一个尚未自动化通过的手工正确性夹具：沿主传播方向前后错开的两个
+完整 cuboid 只共用一条棱，并保持该共享棱位于相同 world z；后方白色接收屏不应在
+两块阴影之间出现对角亮线。sampled-plane 实现目前仍会失败。单 cuboid 单 sweep
+替换遮挡 authority 后，必须先让该夹具通过，再更新自动套件和性能基线。
+
+提交前分别运行 `partial_geometry` 和 `performance`；`random_stress` 用于长尾压力测试，
+不代替固定场景回归基线。
 
 命令入口用于细分排查：
 

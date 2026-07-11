@@ -42,6 +42,52 @@ public final class BeamGeometryOps {
         return output.withDivergence(divergence).withScatter(scatter);
     }
 
+    /**
+     * Returns the radius produced by {@link #propagate(BeamEnvelope, double)}
+     * without constructing the propagated envelope and its derived appearance
+     * fields. Projection geometry samples this value many times while locating
+     * cone/voxel boundaries.
+     */
+    public static double propagatedRadius(BeamEnvelope envelope, double distance) {
+        Objects.requireNonNull(envelope, "envelope");
+        if (!Double.isFinite(distance) || distance < 0.0D) {
+            throw new IllegalArgumentException("Propagation distance must be finite and non-negative");
+        }
+        if (distance == 0.0D || envelope.model() == BeamModel.PLANE_WAVE) {
+            return envelope.radius();
+        }
+
+        return momentsFromEnvelope(envelope, true).propagatedRadius(distance);
+    }
+
+    /**
+     * Precomputes the invariant second-moment coefficients used by repeated
+     * radius samples of one beam envelope.
+     */
+    public static RadiusPropagation prepareRadiusPropagation(BeamEnvelope envelope) {
+        Objects.requireNonNull(envelope, "envelope");
+        if (envelope.model() == BeamModel.PLANE_WAVE) {
+            return new RadiusPropagation(
+                    envelope.radius(),
+                    envelope.focusDistance(),
+                    0.0D,
+                    0.0D,
+                    0.0D,
+                    true
+            );
+        }
+
+        BeamMoments moments = momentsFromEnvelope(envelope, true);
+        return new RadiusPropagation(
+                envelope.radius(),
+                envelope.focusDistance(),
+                moments.xx(),
+                moments.xt(),
+                moments.tt(),
+                false
+        );
+    }
+
     private static double effectiveDivergence(BeamEnvelope envelope) {
         if (envelope.model() == BeamModel.PLANE_WAVE) {
             return envelope.divergence();
@@ -270,6 +316,12 @@ public final class BeamGeometryOps {
             return new BeamMoments(Math.max(0.0, outputXx), outputXt, tt);
         }
 
+        private double propagatedRadius(double distance) {
+            double outputXx = xx + 2.0D * distance * xt + distance * distance * tt;
+            double radius = Math.sqrt(Math.max(0.0D, outputXx));
+            return Math.min(MAX_REASONABLE_RADIUS, Math.max(MIN_RADIUS, radius));
+        }
+
         private BeamMoments thinLens(double focalLength) {
             double outputXt = xt - xx / focalLength;
             double outputTt = tt - 2.0 * xt / focalLength + xx / (focalLength * focalLength);
@@ -282,6 +334,89 @@ public final class BeamGeometryOps {
             }
 
             return new BeamMoments(xx, xt, tt + angularNoise * angularNoise);
+        }
+    }
+
+    public static final class RadiusPropagation {
+        private final double sourceRadius;
+        private final double waistTravel;
+        private final double xx;
+        private final double xt;
+        private final double tt;
+        private final boolean constant;
+        private final double originDistance;
+
+        private RadiusPropagation(
+                double sourceRadius,
+                double waistTravel,
+                double xx,
+                double xt,
+                double tt,
+                boolean constant
+        ) {
+            this(sourceRadius, waistTravel, xx, xt, tt, constant, 0.0D);
+        }
+
+        private RadiusPropagation(
+                double sourceRadius,
+                double waistTravel,
+                double xx,
+                double xt,
+                double tt,
+                boolean constant,
+                double originDistance
+        ) {
+            this.sourceRadius = sourceRadius;
+            this.waistTravel = waistTravel;
+            this.xx = xx;
+            this.xt = xt;
+            this.tt = tt;
+            this.constant = constant;
+            this.originDistance = originDistance;
+        }
+
+        public double radiusAt(double distance) {
+            if (!Double.isFinite(distance) || distance < 0.0D) {
+                throw new IllegalArgumentException("Propagation distance must be finite and non-negative");
+            }
+            double absoluteDistance = originDistance + distance;
+            if (absoluteDistance == 0.0D || constant) {
+                return sourceRadius;
+            }
+
+            double outputXx = xx
+                    + 2.0D * absoluteDistance * xt
+                    + absoluteDistance * absoluteDistance * tt;
+            double radius = Math.sqrt(Math.max(0.0D, outputXx));
+            return Math.min(MAX_REASONABLE_RADIUS, Math.max(MIN_RADIUS, radius));
+        }
+
+        /**
+         * Returns a view whose local zero is shifted forward from this view's
+         * current origin. Offset views retain the same moment coefficients, so
+         * adjacent depth slices evaluate their shared boundary with the exact
+         * same floating-point expression.
+         */
+        public RadiusPropagation offset(double distance) {
+            if (!Double.isFinite(distance) || distance < 0.0D) {
+                throw new IllegalArgumentException("Propagation offset must be finite and non-negative");
+            }
+            if (distance == 0.0D) {
+                return this;
+            }
+            return new RadiusPropagation(
+                    sourceRadius,
+                    waistTravel,
+                    xx,
+                    xt,
+                    tt,
+                    constant,
+                    originDistance + distance
+            );
+        }
+
+        public double waistTravel() {
+            return waistTravel - originDistance;
         }
     }
 

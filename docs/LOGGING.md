@@ -277,8 +277,16 @@ readout_reliable=true
 - 性能：完整几何扫描、外观更新、服务器响应或客户端绘制过慢。
 
 推荐使用 `spot_test` 物品运行固定测试。右键执行当前模式，Shift + 右键在
-`quick`、`partial_geometry`、`performance` 和 `full_suite` 之间切换。性能模式会自动运行
+`quick`、`partial_geometry`、`performance`、`direction_matrix` 和 `random_stress` 之间切换。性能模式会自动运行
 `sparse`、`mixed`、`dense`、`cached_power` 和 `cached_color`，不需要手工改变光源。
+方向矩阵先完成四方向稳定化预热，再比较 4 个固定 seed 的旋转等价场景；千次随机
+压力测试不记录 seed，并且只每 100 次写一条聚合进度，避免逐 case 测试日志反过来
+污染测量。
+
+方向矩阵的红色门槛仅包含输入场景与最终输出覆盖。覆盖一致但输出分片数或内部
+workload 不一致时显示黄色警告。`direction_matrix_difference` 的
+`difference_class=coverage|fragmentation|intermediate_workload_only` 用于区分可见输出
+问题和纯内部工作量差异；输出差异还会携带首个相对位置、面、方块状态和 shape box 数。
 
 关键 diagnostics 事件：
 
@@ -287,6 +295,10 @@ subsystem=spot_projection_test event=suite_started
 subsystem=spot_projection_test event=case_started
 subsystem=spot_projection_test event=appearance_step
 subsystem=spot_projection_test event=case_complete
+subsystem=spot_projection_test event=direction_matrix_difference
+subsystem=spot_projection_test event=direction_matrix_complete
+subsystem=spot_projection_test event=random_stress_progress
+subsystem=spot_projection_test event=random_stress_complete
 subsystem=spot_projection_test event=suite_complete
 subsystem=spot_projection event=profile
 subsystem=spot_projection event=performance_report
@@ -317,6 +329,16 @@ optical_compiler_*.log
 - 玩家可见延迟：还包含网络分片、客户端原子组装和下一帧绘制，当前不由 `response` 完整覆盖。
 
 若 `core` 低而 `response` 高，先查测试用的 `OpticalTraceCache.clear(level)`、服务器 tick 和日志首次初始化；若两者都低但画面晚，再查 payload 分片、`ClientSpotCache` 组装和客户端帧时间。
+
+当前 profile 还包含两组边界诊断：
+
+- `depth_boundary_radius_checks`、`depth_boundary_radius_mismatches`、
+  `depth_boundary_radius_max_gap` 检查相邻 depth 是否从同一个全局半径求值器读取共享平面。
+  mismatch 必须为 0，但它只能排除半径重建误差，不能证明 sampled-plane 体积连续。
+
+两个只共用一条棱的 cuboid 出现亮线时，即使上述半径 mismatch 为 0，也要检查
+sampled occlusion planes 的架构限制。当前计划用每 cuboid 一个连续 conservative sweep
+替换离散平面 authority；该迁移尚未完成。
 
 `missing_faces` 不是单纯计数。结构验证会记录期望方块、面、局部区域和实际覆盖结果。先从 `case_complete` 找失败 case，再在同一个 `run_id` / `case_id` 内查详细验证事件；不要直接打开 verbose 并重新生成一个不同随机场景。
 

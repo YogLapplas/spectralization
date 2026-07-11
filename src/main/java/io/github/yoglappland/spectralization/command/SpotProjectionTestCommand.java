@@ -3,30 +3,26 @@ package io.github.yoglappland.spectralization.command;
 import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
-import io.github.yoglappland.spectralization.Spectralization;
-import io.github.yoglappland.spectralization.block.CreativeLightSourceBlock;
 import io.github.yoglappland.spectralization.blockentity.CreativeLightSourceBlockEntity;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.diagnostics.SpectralDiagnostics;
-import io.github.yoglappland.spectralization.optics.BeamModel;
-import io.github.yoglappland.spectralization.optics.CoherenceKind;
-import io.github.yoglappland.spectralization.optics.FrequencyKey;
-import io.github.yoglappland.spectralization.optics.OpticalSpotTracker;
-import io.github.yoglappland.spectralization.optics.SpectralColorMap;
 import io.github.yoglappland.spectralization.optics.SpectralRegion;
-import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledSpotLayer;
-import io.github.yoglappland.spectralization.optics.topology.OpticalNetworkIndex;
 import io.github.yoglappland.spectralization.optics.projection.SpotProjectionPerformanceTracker;
+import io.github.yoglappland.spectralization.optics.projection.SpotProjectionPerformanceTracker.OutputFingerprint;
+import io.github.yoglappland.spectralization.optics.projection.SpotProjectionPerformanceTracker.OutputSurface;
+import io.github.yoglappland.spectralization.optics.projection.SpotProjectionPerformanceTracker.OutputSurfaceKey;
 import io.github.yoglappland.spectralization.optics.projection.SpotProjectionResult;
 import io.github.yoglappland.spectralization.optics.projection.VoxelSpotProjector;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Locale;
-import java.util.Random;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -37,52 +33,37 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.state.properties.BlockStateProperties;
-import net.minecraft.world.level.block.state.properties.Half;
-import net.minecraft.world.level.block.state.properties.SlabType;
 
 public final class SpotProjectionTestCommand {
     private static final int DEFAULT_BENCHMARK_SAMPLES = 5;
     private static final int MAX_BENCHMARK_SAMPLES = 16;
     private static final long BENCHMARK_RETRY_TICKS = 40L;
     private static final long BENCHMARK_TIMEOUT_TICKS = 400L;
-    private static final int MIN_ALONG = -1;
-    private static final int MAX_ALONG = 17;
-    private static final int MIN_SIDE = -6;
-    private static final int MAX_SIDE = 6;
-    private static final int MIN_VERTICAL = -3;
-    private static final int MAX_VERTICAL = 5;
-    private static final int FIRST_RANDOM_DEPTH = 3;
-    private static final int LAST_RANDOM_DEPTH = 13;
-    private static final int SCREEN_DEPTH = 16;
-    private static final int SOURCE_POWER_CENTI = 30_000;
-    private static final int SOURCE_RADIUS_MILLI = 500;
-    private static final int SOURCE_DIVERGENCE_MILLI = 500;
-    private static final int[] CACHE_POWER_SEQUENCE_CENTI = {
-            7_500, 15_000, 30_000, 45_000, 22_500
-    };
-    private static final int[] CACHE_COLOR_SEQUENCE_BINS = {
-            SpectralColorMap.VISIBLE_RED_BIN,
-            SpectralColorMap.VISIBLE_GREEN_BIN,
-            SpectralColorMap.VISIBLE_BLUE_BIN,
-            SpectralColorMap.VISIBLE_MAGENTA_BIN,
-            SpectralColorMap.VISIBLE_CYAN_BIN
-    };
-    private static final CoherenceKind SOURCE_COHERENCE = CoherenceKind.INCOHERENT;
     private static final double RANDOM_OCCUPANCY = 0.17D;
+    private static final int RANDOM_STRESS_CASES = 1_000;
+    private static final int RANDOM_STRESS_PROGRESS_INTERVAL = 100;
+    private static final long[] DIRECTION_MATRIX_WARMUP_SEEDS = {
+            0x13579bdf2468aceL,
+            0x2468ace13579bdfL,
+            0x6a09e667f3bcc909L,
+            0xbb67ae8584caa73bL
+    };
+    private static final long[] DIRECTION_MATRIX_SEEDS = {
+            42L,
+            20_260_711L,
+            -6_495_254_288_592_929_499L,
+            0x5deece66dL
+    };
+    private static final Direction[][] DIRECTION_MATRIX_ORDERS = {
+            {Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST},
+            {Direction.WEST, Direction.SOUTH, Direction.EAST, Direction.NORTH},
+            {Direction.EAST, Direction.NORTH, Direction.WEST, Direction.SOUTH},
+            {Direction.SOUTH, Direction.WEST, Direction.NORTH, Direction.EAST}
+    };
     private static final Map<UUID, GeneratedTest> LAST_TEST_BY_PLAYER = new HashMap<>();
     private static final Map<UUID, BenchmarkRun> BENCHMARKS_BY_PLAYER = new HashMap<>();
     private static ItemSuiteRun activeItemSuite;
-    private static final Direction[] HORIZONTAL_DIRECTIONS = {
-            Direction.NORTH,
-            Direction.EAST,
-            Direction.SOUTH,
-            Direction.WEST
-    };
 
     static LiteralArgumentBuilder<CommandSourceStack> command() {
         return Commands.literal("spottest")
@@ -142,11 +123,12 @@ public final class SpotProjectionTestCommand {
             return Component.translatable("item.spectralization.spot_test.message.idle");
         }
         SuiteCase testCase = activeItemSuite.currentCase();
+        SpotTestLayout layout = activeItemSuite.currentLayout();
         return Component.translatable(
                 "item.spectralization.spot_test.message.status",
                 activeItemSuite.caseIndex + 1,
                 activeItemSuite.cases.size(),
-                Component.translatable(testCase.translationKey())
+                testCase.displayName(layout.direction())
         );
     }
 
@@ -165,16 +147,19 @@ public final class SpotProjectionTestCommand {
             return 0;
         }
 
-        Direction direction = player.getDirection();
-        if (!direction.getAxis().isHorizontal()) {
-            direction = Direction.SOUTH;
-        }
-        TestLayout layout = new TestLayout(
-                player.blockPosition().relative(direction, 4).above(4),
-                direction
-        );
-        if (!validateVolume(source, player.serverLevel(), layout)) {
-            return 0;
+        SpotTestLayout layout = SpotTestLayout.inFrontOf(player);
+        List<SuiteCase> cases = suiteCases(mode);
+        for (Direction direction : cases.stream()
+                .map(testCase -> testCase.directionOr(layout.direction()))
+                .distinct()
+                .toList()) {
+            if (!SpotProjectionTestScene.validateVolume(
+                    source,
+                    player.serverLevel(),
+                    layout.withDirection(direction)
+            )) {
+                return 0;
+            }
         }
 
         GeneratedTest previous = LAST_TEST_BY_PLAYER.remove(player.getUUID());
@@ -182,7 +167,6 @@ public final class SpotProjectionTestCommand {
             clearGeneratedTest(source, previous);
         }
 
-        List<SuiteCase> cases = suiteCases(mode);
         ItemSuiteRun run = new ItemSuiteRun(
                 UUID.randomUUID(),
                 player.getUUID(),
@@ -193,12 +177,18 @@ public final class SpotProjectionTestCommand {
                 DebugConfigSnapshot.capture()
         );
         activeItemSuite = run;
+        SpotTestLayout firstLayout = run.currentLayout();
         SpectralDiagnostics.event(player.serverLevel(), "spot_projection_test", "suite_started")
                 .field("run_id", run.runId)
                 .field("suite", mode.serializedName())
                 .field("cases", cases.size())
-                .pos("source", layout.source())
-                .field("direction", layout.direction())
+                .field("repeats", switch (mode) {
+                    case DIRECTION_MATRIX -> DIRECTION_MATRIX_SEEDS.length;
+                    case RANDOM_STRESS -> RANDOM_STRESS_CASES;
+                    default -> 1;
+                })
+                .pos("source", firstLayout.source())
+                .field("direction", firstLayout.direction())
                 .write();
         player.sendSystemMessage(Component.translatable(
                 "item.spectralization.spot_test.message.started",
@@ -211,18 +201,32 @@ public final class SpotProjectionTestCommand {
 
     private static void startItemSuiteCase(ServerPlayer player, ItemSuiteRun run) {
         SuiteCase testCase = run.currentCase();
-        applyDebugPolicy(run, testCase.verboseValidation());
+        SpotTestLayout caseLayout = run.currentLayout();
+        applyDebugPolicy(run, caseLayout, testCase.verboseValidation());
         GeneratedTest generatedTest = new GeneratedTest(
                 run.dimension,
-                run.layout,
+                caseLayout,
                 testCase
         );
-        int placed = build(player.serverLevel(), generatedTest);
+        GeneratedTest previous = LAST_TEST_BY_PLAYER.remove(player.getUUID());
+        if (previous != null && !previous.layout().equals(caseLayout)) {
+            clearGeneratedTest(player.createCommandSourceStack(), previous);
+        }
+        if (run.mode == SpotTestMode.DIRECTION_MATRIX) {
+            SpotProjectionTestScene.clearAllHorizontalDirections(player.serverLevel(), run.layout);
+        }
+        SpotProjectionTestScene.BuildResult buildResult = build(
+                player.serverLevel(),
+                generatedTest,
+                run.mode != SpotTestMode.RANDOM_STRESS
+        );
+        int placed = buildResult.placed();
+        run.currentSceneSignature = buildResult.sceneSignature();
         LAST_TEST_BY_PLAYER.put(player.getUUID(), generatedTest);
         SpotProjectionPerformanceTracker.reset(
                 player.serverLevel(),
-                run.layout.source(),
-                run.layout.direction()
+                caseLayout.source(),
+                caseLayout.direction()
         );
         long gameTime = player.serverLevel().getGameTime();
         BENCHMARKS_BY_PLAYER.put(player.getUUID(), new BenchmarkRun(
@@ -235,41 +239,56 @@ public final class SpotProjectionTestCommand {
                 testCase.benchmarkMode()
         ));
         startBenchmarkProjection(player.serverLevel(), BENCHMARKS_BY_PLAYER.get(player.getUUID()));
-        player.sendSystemMessage(Component.translatable(
-                "item.spectralization.spot_test.message.case_started",
-                run.caseIndex + 1,
-                run.cases.size(),
-                Component.translatable(testCase.translationKey()),
-                Component.translatable(testCase.benchmarkDescriptionKey()),
-                testCase.samples()
-        ).withStyle(ChatFormatting.AQUA));
-        SpectralDiagnostics.event(player.serverLevel(), "spot_projection_test", "case_started")
-                .field("run_id", run.runId)
-                .field("suite", run.mode.serializedName())
-                .field("case_id", testCase.id())
-                .field("case_index", run.caseIndex)
-                .field("seed", testCase.seed())
-                .field("occupancy", testCase.occupancy())
-                .field("fixtures", testCase.fixtures())
-                .field("divergence", testCase.divergenceMilli() / 1000.0D)
-                .field("samples", testCase.samples())
-                .field("benchmark_mode", testCase.benchmarkMode().serializedName)
-                .field("appearance_mutation", testCase.appearanceMutation().serializedName)
-                .field("verbose_validation", testCase.verboseValidation())
-                .field("placed", placed)
-                .write();
+        if (run.mode != SpotTestMode.RANDOM_STRESS) {
+            player.sendSystemMessage(Component.translatable(
+                    "item.spectralization.spot_test.message.case_started",
+                    run.caseIndex + 1,
+                    run.cases.size(),
+                    testCase.displayName(caseLayout.direction()),
+                    Component.translatable(testCase.benchmarkDescriptionKey()),
+                    testCase.samples()
+            ).withStyle(ChatFormatting.AQUA));
+        }
+        if (run.mode != SpotTestMode.RANDOM_STRESS) {
+            SpectralDiagnostics.Event startedEvent = SpectralDiagnostics
+                    .event(player.serverLevel(), "spot_projection_test", "case_started")
+                    .field("run_id", run.runId)
+                    .field("suite", run.mode.serializedName())
+                    .field("case_id", testCase.id())
+                    .field("case_index", run.caseIndex)
+                    .field("repeat", testCase.repeatIndex())
+                    .field("direction", caseLayout.direction());
+            if (testCase.recordSeed()) {
+                startedEvent.field("seed", testCase.seed());
+            }
+            startedEvent
+                    .field("scene_signature", Long.toUnsignedString(buildResult.sceneSignature(), 16))
+                    .field("occupancy", testCase.occupancy())
+                    .field("fixtures", testCase.fixtures())
+                    .field("divergence", testCase.divergenceMilli() / 1000.0D)
+                    .field("samples", testCase.samples())
+                    .field("benchmark_mode", testCase.benchmarkMode().serializedName)
+                    .field("appearance_mutation", testCase.appearanceMutation().serializedName)
+                    .field("verbose_validation", testCase.verboseValidation())
+                    .field("placed", placed)
+                    .write();
+        }
     }
 
-    private static void applyDebugPolicy(ItemSuiteRun run, boolean verboseValidation) {
-        SpectralizationConfig.setOpticalCompilerDebugLog(true);
+    private static void applyDebugPolicy(
+            ItemSuiteRun run,
+            SpotTestLayout layout,
+            boolean verboseValidation
+    ) {
+        SpectralizationConfig.setOpticalCompilerDebugLog(run.mode != SpotTestMode.RANDOM_STRESS);
         SpectralizationConfig.setOpticalCompilerDebugVerbose(false);
         SpectralizationConfig.setSpotColorDebug(false);
         VoxelSpotProjector.setDebugFaceCentersEnabled(false);
         if (verboseValidation) {
             VoxelSpotProjector.setTargetedValidation(
                     run.dimension,
-                    run.layout.source(),
-                    run.layout.direction()
+                    layout.source(),
+                    layout.direction()
             );
         } else {
             VoxelSpotProjector.clearTargetedValidation();
@@ -285,16 +304,8 @@ public final class SpotProjectionTestCommand {
             return 0;
         }
 
-        Direction direction = player.getDirection();
-        if (!direction.getAxis().isHorizontal()) {
-            direction = Direction.SOUTH;
-        }
-
-        TestLayout layout = new TestLayout(
-                player.blockPosition().relative(direction, 4).above(4),
-                direction
-        );
-        if (!validateVolume(source, player.serverLevel(), layout)) {
+        SpotTestLayout layout = SpotTestLayout.inFrontOf(player);
+        if (!SpotProjectionTestScene.validateVolume(source, player.serverLevel(), layout)) {
             return 0;
         }
 
@@ -305,15 +316,15 @@ public final class SpotProjectionTestCommand {
         }
 
         GeneratedTest generatedTest = new GeneratedTest(player.serverLevel().dimension(), layout, seed);
-        int placed = build(player.serverLevel(), generatedTest);
+        int placed = build(player.serverLevel(), generatedTest).placed();
         LAST_TEST_BY_PLAYER.put(player.getUUID(), generatedTest);
         source.sendSuccess(() -> Component.literal(String.format(
                 "Generated spot test seed=%d source=%s direction=%s coherence=%s divergence=%.3f placed=%d. Use /spectralization spottest rerun or clear.",
                 seed,
                 layout.source().toShortString(),
                 layout.direction().getSerializedName(),
-                SOURCE_COHERENCE.name().toLowerCase(java.util.Locale.ROOT),
-                SOURCE_DIVERGENCE_MILLI / 1000.0D,
+                SpotProjectionTestScene.sourceCoherenceName(),
+                SpotProjectionTestScene.DEFAULT_DIVERGENCE_MILLI / 1000.0D,
                 placed
         )), true);
         return Math.max(1, placed);
@@ -335,11 +346,11 @@ public final class SpotProjectionTestCommand {
         }
 
         ServerLevel level = source.getServer().getLevel(generatedTest.dimension());
-        if (level == null || !validateVolume(source, level, generatedTest.layout())) {
+        if (level == null || !SpotProjectionTestScene.validateVolume(source, level, generatedTest.layout())) {
             return 0;
         }
 
-        int placed = build(level, generatedTest);
+        int placed = build(level, generatedTest).placed();
         source.sendSuccess(() -> Component.literal(String.format(
                 "Rebuilt spot test seed=%d source=%s direction=%s placed=%d",
                 generatedTest.seed(),
@@ -394,7 +405,7 @@ public final class SpotProjectionTestCommand {
         }
 
         ServerLevel level = source.getServer().getLevel(test.dimension());
-        if (level == null || !validateVolume(source, level, test.layout())) {
+        if (level == null || !SpotProjectionTestScene.validateVolume(source, level, test.layout())) {
             return 0;
         }
 
@@ -476,7 +487,11 @@ public final class SpotProjectionTestCommand {
                     sendReport(player, level, report);
                     player.sendSystemMessage(Component.literal("Spot benchmark complete."));
                 } else {
-                    SpotProjectionPerformanceTracker.log(level, report);
+                    if (activeItemSuite == null
+                            || !activeItemSuite.runId.equals(run.suiteRunId)
+                            || activeItemSuite.mode != SpotTestMode.RANDOM_STRESS) {
+                        SpotProjectionPerformanceTracker.log(level, report);
+                    }
                     suiteCompletions.add(new SuiteBenchmarkCompletion(
                             entry.getKey(),
                             run.suiteRunId,
@@ -555,7 +570,7 @@ public final class SpotProjectionTestCommand {
                         "item.spectralization.spot_test.message.case_aborted",
                         run.caseIndex + 1,
                         run.cases.size(),
-                        Component.translatable(run.currentCase().translationKey()),
+                        run.currentCase().displayName(run.currentLayout().direction()),
                         completion.reason()
                 ).withStyle(ChatFormatting.RED));
             }
@@ -564,10 +579,16 @@ public final class SpotProjectionTestCommand {
         }
 
         SuiteCase testCase = run.currentCase();
+        SpotTestLayout caseLayout = run.currentLayout();
         SpotProjectionResult.Stats stats = SpotProjectionPerformanceTracker.latestStats(
                 level,
-                run.layout.source(),
-                run.layout.direction()
+                caseLayout.source(),
+                caseLayout.direction()
+        );
+        OutputFingerprint outputFingerprint = SpotProjectionPerformanceTracker.latestOutputFingerprint(
+                level,
+                caseLayout.source(),
+                caseLayout.direction()
         );
         SpotProjectionResult.OptimizationStats optimization = stats.optimization();
         long structuralMismatches = optimization.remainingSubtractValidationMismatches()
@@ -584,39 +605,57 @@ public final class SpotProjectionTestCommand {
                 ? (testCase.verboseValidation() ? "pass" : "complete")
                 : "fail";
 
-        SpectralDiagnostics.event(level, "spot_projection_test", "case_complete")
-                .field("run_id", run.runId)
-                .field("suite", run.mode.serializedName())
-                .field("case_id", testCase.id())
-                .field("case_index", run.caseIndex)
-                .field("samples", completion.report().samples())
-                .field("elapsed_avg_us", completion.report().elapsedAverageUs())
-                .field("elapsed_p50_us", completion.report().elapsedP50Us())
-                .field("elapsed_p95_us", completion.report().elapsedP95Us())
-                .field("response_samples", completion.latency().samples())
-                .field("response_avg_us", completion.latency().averageUs())
-                .field("response_p95_us", completion.latency().p95Us())
-                .field("response_max_us", completion.latency().maxUs())
-                .field("spots_avg", completion.report().spotsAverage())
-                .field("benchmark_mode", testCase.benchmarkMode().serializedName)
-                .field("appearance_mutation", testCase.appearanceMutation().serializedName)
-                .field("full_rebuild_samples", completion.report().fullRebuildSamples())
-                .field("appearance_only_samples", completion.report().appearanceOnlySamples())
-                .field("validation_enabled", testCase.verboseValidation())
-                .field("boundary_missing", stats.sideBoundaryMissingFaces())
-                .field("boundary_missing_details", optimization.sideBoundaryMissingDetails().size())
-                .field("remaining_validation_checks", optimization.remainingSubtractValidationChecks())
-                .field("same_depth_split_validation_checks", optimization.sameDepthSplitValidationChecks())
-                .field("same_depth_prefix_validation_checks", optimization.sameDepthPrefixValidationChecks())
-                .field("side_canonical_validation_checks", optimization.sideCanonicalValidationChecks())
-                .field("structural_mismatches", structuralMismatches)
-                .field("cache_expected_appearance_only", testCase.benchmarkMode() == BenchmarkMode.CACHE_REUSE
-                        ? testCase.samples() : 0)
-                .field("cache_validation_passed", cachePassed)
-                .field("result", result)
-                .write();
-
-        sendItemSuiteCaseSummary(player, run, testCase, completion.report(), completion.latency(), passed);
+        if (run.mode == SpotTestMode.RANDOM_STRESS) {
+            run.recordRandomStressResult(completion.report(), completion.latency());
+        } else {
+            SpectralDiagnostics.Event completedEvent = SpectralDiagnostics
+                    .event(level, "spot_projection_test", "case_complete")
+                    .field("run_id", run.runId)
+                    .field("suite", run.mode.serializedName())
+                    .field("case_id", testCase.id())
+                    .field("case_index", run.caseIndex)
+                    .field("repeat", testCase.repeatIndex())
+                    .field("direction", caseLayout.direction());
+            if (testCase.recordSeed()) {
+                completedEvent.field("seed", testCase.seed());
+            }
+            completedEvent
+                    .field("scene_signature", Long.toUnsignedString(run.currentSceneSignature, 16))
+                    .field("output_coverage_signature", Long.toUnsignedString(
+                            outputFingerprint.coverageSignature(), 16
+                    ))
+                    .field("output_fragmentation_signature", Long.toUnsignedString(
+                            outputFingerprint.fragmentationSignature(), 16
+                    ))
+                    .field("output_surfaces", outputFingerprint.surfaces().size())
+                    .field("samples", completion.report().samples())
+                    .field("elapsed_avg_us", completion.report().elapsedAverageUs())
+                    .field("elapsed_p50_us", completion.report().elapsedP50Us())
+                    .field("elapsed_p95_us", completion.report().elapsedP95Us())
+                    .field("response_samples", completion.latency().samples())
+                    .field("response_avg_us", completion.latency().averageUs())
+                    .field("response_p95_us", completion.latency().p95Us())
+                    .field("response_max_us", completion.latency().maxUs())
+                    .field("spots_avg", completion.report().spotsAverage())
+                    .field("benchmark_mode", testCase.benchmarkMode().serializedName)
+                    .field("appearance_mutation", testCase.appearanceMutation().serializedName)
+                    .field("full_rebuild_samples", completion.report().fullRebuildSamples())
+                    .field("appearance_only_samples", completion.report().appearanceOnlySamples())
+                    .field("validation_enabled", testCase.verboseValidation())
+                    .field("boundary_missing", stats.sideBoundaryMissingFaces())
+                    .field("boundary_missing_details", optimization.sideBoundaryMissingDetails().size())
+                    .field("remaining_validation_checks", optimization.remainingSubtractValidationChecks())
+                    .field("same_depth_split_validation_checks", optimization.sameDepthSplitValidationChecks())
+                    .field("same_depth_prefix_validation_checks", optimization.sameDepthPrefixValidationChecks())
+                    .field("side_canonical_validation_checks", optimization.sideCanonicalValidationChecks())
+                    .field("structural_mismatches", structuralMismatches)
+                    .field("cache_expected_appearance_only", testCase.benchmarkMode() == BenchmarkMode.CACHE_REUSE
+                            ? testCase.samples() : 0)
+                    .field("cache_validation_passed", cachePassed)
+                    .field("result", result)
+                    .write();
+            sendItemSuiteCaseSummary(player, run, testCase, completion.report(), completion.latency(), passed);
+        }
 
         if (!passed) {
             if (!cachePassed) {
@@ -638,8 +677,39 @@ public final class SpotProjectionTestCommand {
         }
 
         run.passedCases++;
+        if (run.mode == SpotTestMode.RANDOM_STRESS
+                && (run.passedCases % RANDOM_STRESS_PROGRESS_INTERVAL == 0
+                || run.passedCases == run.cases.size())) {
+            RandomStressSummary summary = run.randomStressSummary();
+            player.sendSystemMessage(Component.translatable(
+                    "item.spectralization.spot_test.message.random_stress_progress",
+                    run.passedCases,
+                    run.cases.size(),
+                    formatMillis(summary.elapsedAverageUs()),
+                    Math.round(summary.spotsAverage())
+            ).withStyle(ChatFormatting.AQUA));
+            writeRandomStressProgress(level, run, summary);
+        }
+        DirectionMatrixComparison matrixComparison = run.recordDirectionMatrixResult(
+                testCase,
+                caseLayout,
+                completion.report(),
+                outputFingerprint
+        );
+        if (matrixComparison != null && !matrixComparison.allMetricsMatch()) {
+            writeDirectionMatrixDifference(level, run, caseLayout, matrixComparison);
+        }
         if (run.caseIndex + 1 >= run.cases.size()) {
-            finishItemSuite(player, level, true, "complete");
+            boolean matrixPassed = run.directionMatrixPassed();
+            boolean matrixAsymmetric = run.directionMatrixHasAsymmetry();
+            finishItemSuite(
+                    player,
+                    level,
+                    matrixPassed,
+                    matrixPassed
+                            ? (matrixAsymmetric ? "direction_matrix_asymmetry" : "complete")
+                            : "direction_matrix_correctness_mismatch"
+            );
             return;
         }
 
@@ -666,7 +736,7 @@ public final class SpotProjectionTestCommand {
                 passed ? "✓" : "✗",
                 run.caseIndex + 1,
                 run.cases.size(),
-                Component.translatable(testCase.translationKey()),
+                testCase.displayName(run.currentLayout().direction()),
                 formatMillis(report.elapsedAverageUs()),
                 formatMillis(report.elapsedP95Us()),
                 formatMillis(latency.averageUs()),
@@ -679,6 +749,66 @@ public final class SpotProjectionTestCommand {
 
     private static String formatMillis(double microseconds) {
         return String.format(Locale.ROOT, "%.2f", microseconds / 1_000.0D);
+    }
+
+    private static void writeDirectionMatrixDifference(
+            ServerLevel level,
+            ItemSuiteRun run,
+            SpotTestLayout layout,
+            DirectionMatrixComparison comparison
+    ) {
+        DirectionMatrixResult baseline = comparison.baseline();
+        DirectionMatrixResult current = comparison.current();
+        SpectralDiagnostics.Event event = SpectralDiagnostics
+                .event(level, "spot_projection_test", "direction_matrix_difference")
+                .field("run_id", run.runId)
+                .field("repeat", current.repeatIndex())
+                .field("seed", current.seed())
+                .field("baseline_direction", baseline.direction())
+                .field("direction", current.direction())
+                .field("correctness_match", comparison.correctnessMatches())
+                .field("scene_signature_match", comparison.sceneSignatureMatch())
+                .field("output_coverage_match", comparison.outputCoverageMatch())
+                .field("output_fragmentation_match", comparison.outputFragmentationMatch())
+                .field("workload_match", comparison.workloadMatch())
+                .field("baseline_scene_signature", Long.toUnsignedString(baseline.sceneSignature(), 16))
+                .field("scene_signature", Long.toUnsignedString(current.sceneSignature(), 16))
+                .field("baseline_output_coverage_signature", Long.toUnsignedString(
+                        baseline.outputFingerprint().coverageSignature(), 16
+                ))
+                .field("output_coverage_signature", Long.toUnsignedString(
+                        current.outputFingerprint().coverageSignature(), 16
+                ))
+                .field("baseline_output_fragmentation_signature", Long.toUnsignedString(
+                        baseline.outputFingerprint().fragmentationSignature(), 16
+                ))
+                .field("output_fragmentation_signature", Long.toUnsignedString(
+                        current.outputFingerprint().fragmentationSignature(), 16
+                ))
+                .field("baseline_workload", baseline.workloadSummary())
+                .field("workload", current.workloadSummary());
+
+        OutputSurfaceDifference outputDifference = comparison.firstOutputDifference();
+        if (outputDifference == null) {
+            event.field("first_output_difference", "none")
+                    .field("difference_class", comparison.workloadMatch()
+                            ? "none" : "intermediate_workload_only");
+        } else {
+            OutputSurfaceKey key = outputDifference.key();
+            BlockPos pos = layout.at(key.along(), key.side(), key.vertical());
+            var state = level.getBlockState(pos);
+            event.field("first_output_difference", key.summary())
+                    .field("difference_class", outputDifference.coverageMatch()
+                            ? "fragmentation" : "coverage")
+                    .pos("output_pos", pos)
+                    .field("block_state", state)
+                    .field("shape_boxes", state.getShape(level, pos).toAabbs().size())
+                    .field("baseline_surface", outputDifference.baseline() == null
+                            ? "absent" : outputDifference.baseline().summary())
+                    .field("surface", outputDifference.current() == null
+                            ? "absent" : outputDifference.current().summary());
+        }
+        event.write();
     }
 
     private static void finishItemSuite(
@@ -696,6 +826,11 @@ public final class SpotProjectionTestCommand {
         run.previousDebugConfig.restore();
 
         if (level != null) {
+            if (run.mode == SpotTestMode.DIRECTION_MATRIX) {
+                writeDirectionMatrixSummary(level, run);
+            } else if (run.mode == SpotTestMode.RANDOM_STRESS) {
+                writeRandomStressSummary(level, run, passed);
+            }
             SpectralDiagnostics.event(level, "spot_projection_test", "suite_complete")
                     .field("run_id", run.runId)
                     .field("suite", run.mode.serializedName())
@@ -706,15 +841,102 @@ public final class SpotProjectionTestCommand {
                     .write();
         }
         if (player != null) {
+            if (run.mode == SpotTestMode.DIRECTION_MATRIX) {
+                ChatFormatting matrixStyle = !run.directionMatrixPassed()
+                        ? ChatFormatting.RED
+                        : (run.directionMatrixHasAsymmetry() ? ChatFormatting.YELLOW : ChatFormatting.GREEN);
+                player.sendSystemMessage(Component.translatable(
+                        "item.spectralization.spot_test.message.direction_matrix_summary",
+                        DIRECTION_MATRIX_SEEDS.length,
+                        run.sceneSignatureMismatches,
+                        run.outputCoverageMismatches,
+                        run.outputFragmentationMismatches,
+                        run.workloadMismatches,
+                        formatMillis(run.directionAverageUs(Direction.NORTH)),
+                        formatMillis(run.directionAverageUs(Direction.EAST)),
+                        formatMillis(run.directionAverageUs(Direction.SOUTH)),
+                        formatMillis(run.directionAverageUs(Direction.WEST))
+                ).withStyle(matrixStyle));
+            } else if (run.mode == SpotTestMode.RANDOM_STRESS) {
+                RandomStressSummary summary = run.randomStressSummary();
+                player.sendSystemMessage(Component.translatable(
+                        "item.spectralization.spot_test.message.random_stress_summary",
+                        summary.cases(),
+                        formatMillis(summary.elapsedAverageUs()),
+                        formatMillis(summary.elapsedP50Us()),
+                        formatMillis(summary.elapsedP95Us()),
+                        formatMillis(summary.responseAverageUs()),
+                        Math.round(summary.spotsAverage())
+                ).withStyle(passed ? ChatFormatting.GREEN : ChatFormatting.RED));
+            }
             player.sendSystemMessage(Component.translatable(
-                    passed
+                    run.mode == SpotTestMode.DIRECTION_MATRIX
+                            && passed
+                            && run.directionMatrixHasAsymmetry()
+                            ? "item.spectralization.spot_test.message.complete_warning"
+                            : (passed
                             ? "item.spectralization.spot_test.message.complete"
-                            : "item.spectralization.spot_test.message.failed",
+                            : "item.spectralization.spot_test.message.failed"),
                     Component.translatable(run.mode.translationKey()),
                     run.passedCases,
                     run.cases.size()
-            ).withStyle(passed ? ChatFormatting.GREEN : ChatFormatting.RED));
+            ).withStyle(run.mode == SpotTestMode.DIRECTION_MATRIX
+                    && passed
+                    && run.directionMatrixHasAsymmetry()
+                    ? ChatFormatting.YELLOW
+                    : (passed ? ChatFormatting.GREEN : ChatFormatting.RED)));
         }
+    }
+
+    private static void writeDirectionMatrixSummary(ServerLevel level, ItemSuiteRun run) {
+        SpectralDiagnostics.event(level, "spot_projection_test", "direction_matrix_complete")
+                .field("run_id", run.runId)
+                .field("repeats", DIRECTION_MATRIX_SEEDS.length)
+                .field("directions", 4)
+                .field("cases", run.directionMatrixResults.size())
+                .field("scene_signature_mismatches", run.sceneSignatureMismatches)
+                .field("output_coverage_mismatches", run.outputCoverageMismatches)
+                .field("output_fragmentation_mismatches", run.outputFragmentationMismatches)
+                .field("workload_asymmetries", run.workloadMismatches)
+                .field("north_avg_us", run.directionAverageUs(Direction.NORTH))
+                .field("east_avg_us", run.directionAverageUs(Direction.EAST))
+                .field("south_avg_us", run.directionAverageUs(Direction.SOUTH))
+                .field("west_avg_us", run.directionAverageUs(Direction.WEST))
+                .field("result", !run.directionMatrixPassed()
+                        ? "fail"
+                        : (run.directionMatrixHasAsymmetry() ? "pass_with_asymmetry" : "pass"))
+                .write();
+    }
+
+    private static void writeRandomStressProgress(
+            ServerLevel level,
+            ItemSuiteRun run,
+            RandomStressSummary summary
+    ) {
+        SpectralDiagnostics.event(level, "spot_projection_test", "random_stress_progress")
+                .field("run_id", run.runId)
+                .field("completed", summary.cases())
+                .field("total", RANDOM_STRESS_CASES)
+                .field("elapsed_avg_us", summary.elapsedAverageUs())
+                .field("elapsed_p95_us", summary.elapsedP95Us())
+                .field("response_avg_us", summary.responseAverageUs())
+                .field("spots_avg", summary.spotsAverage())
+                .write();
+    }
+
+    private static void writeRandomStressSummary(ServerLevel level, ItemSuiteRun run, boolean passed) {
+        RandomStressSummary summary = run.randomStressSummary();
+        SpectralDiagnostics.event(level, "spot_projection_test", "random_stress_complete")
+                .field("run_id", run.runId)
+                .field("cases", summary.cases())
+                .field("elapsed_avg_us", summary.elapsedAverageUs())
+                .field("elapsed_p50_us", summary.elapsedP50Us())
+                .field("elapsed_p95_us", summary.elapsedP95Us())
+                .field("response_avg_us", summary.responseAverageUs())
+                .field("response_p95_us", summary.responseP95Us())
+                .field("spots_avg", summary.spotsAverage())
+                .field("result", passed ? "pass" : "fail")
+                .write();
     }
 
     private static void sendReport(
@@ -745,195 +967,56 @@ public final class SpotProjectionTestCommand {
         }
 
         int cleared = clearGeneratedTest(source, generatedTest);
-        source.sendSuccess(() -> Component.literal(String.format(
-                "Cleared spot test seed=%d blocks=%d",
-                generatedTest.seed(),
-                cleared
-        )), true);
+        source.sendSuccess(() -> Component.literal(generatedTest.testCase().recordSeed()
+                ? String.format(Locale.ROOT, "Cleared spot test seed=%d blocks=%d", generatedTest.seed(), cleared)
+                : String.format(Locale.ROOT, "Cleared anonymous random spot test blocks=%d", cleared)), true);
         return Math.max(1, cleared);
     }
 
-    private static int build(ServerLevel level, GeneratedTest generatedTest) {
-        TestLayout layout = generatedTest.layout();
-        clearVolume(level, layout);
-        Random random = new Random(generatedTest.seed());
-        int randomObstacles = placeRandomObstacles(
-                level,
-                layout,
-                random,
-                generatedTest.testCase().occupancy()
-        );
-        int fixtures = generatedTest.testCase().fixtures()
-                ? placeRegressionFixtures(level, layout)
-                : 0;
-        int screenBlocks = placeScreen(level, layout);
-        int sourceBlocks = placeSource(level, layout, generatedTest.testCase());
-        int placed = randomObstacles + fixtures + screenBlocks + sourceBlocks;
-        refreshProjection(level);
-        SpectralDiagnostics.event(level, "spot_projection_test", "generated")
-                .pos("source", layout.source())
-                .field("direction", layout.direction())
-                .field("case_id", generatedTest.testCase().id())
-                .field("seed", generatedTest.seed())
-                .field("power", SOURCE_POWER_CENTI / (double) CreativeLightSourceBlockEntity.POWER_SCALE)
-                .field("coherence", SOURCE_COHERENCE)
-                .field("radius", SOURCE_RADIUS_MILLI / 1000.0D)
-                .field("divergence", generatedTest.testCase().divergenceMilli() / 1000.0D)
-                .field("occupancy", generatedTest.testCase().occupancy())
-                .field("random_obstacles", randomObstacles)
-                .field("fixtures", fixtures)
-                .field("screen_blocks", screenBlocks)
-                .field("placed", placed)
-                .write();
-        return placed;
-    }
-
-    private static int placeRandomObstacles(
+    private static SpotProjectionTestScene.BuildResult build(
             ServerLevel level,
-            TestLayout layout,
-            Random random,
-            double occupancy
+            GeneratedTest generatedTest
     ) {
-        int placed = 0;
-
-        for (int along = FIRST_RANDOM_DEPTH; along <= LAST_RANDOM_DEPTH; along++) {
-            for (int side = -4; side <= 4; side++) {
-                for (int vertical = -2; vertical <= 3; vertical++) {
-                    if (random.nextDouble() >= occupancy) {
-                        continue;
-                    }
-
-                    level.setBlock(layout.at(along, side, vertical), randomProjectionState(random), 3);
-                    placed++;
-                }
-            }
-        }
-
-        return placed;
+        return build(level, generatedTest, true);
     }
 
-    private static int placeRegressionFixtures(ServerLevel level, TestLayout layout) {
-        int placed = 0;
-        Direction lateral = layout.lateral();
-        Direction oppositeLateral = lateral.getOpposite();
-
-        placed += place(level, layout.at(5, -2, -1), stairState(lateral, Half.BOTTOM));
-        placed += place(level, layout.at(5, -1, -1), stairState(oppositeLateral, Half.TOP));
-        placed += place(level, layout.at(5, 0, -1), stairState(lateral, Half.BOTTOM));
-        placed += place(level, layout.at(5, 1, -1), stairState(oppositeLateral, Half.TOP));
-
-        placed += place(level, layout.at(8, -2, 1), slabState(SlabType.BOTTOM));
-        placed += place(level, layout.at(8, -1, 1), slabState(SlabType.TOP));
-        placed += place(level, layout.at(8, 1, 0), slabState(SlabType.BOTTOM));
-        placed += place(level, layout.at(8, 2, 0), slabState(SlabType.TOP));
-
-        placed += place(level, layout.at(11, -1, 0), Blocks.OAK_FENCE.defaultBlockState());
-        placed += place(level, layout.at(11, 0, 0), Blocks.OAK_FENCE.defaultBlockState());
-        placed += place(level, layout.at(11, 1, 0), Blocks.OAK_FENCE.defaultBlockState());
-        placed += place(level, layout.at(11, 0, 1), Blocks.OAK_FENCE.defaultBlockState());
-
-        placed += place(level, layout.at(13, -1, -1), stairState(layout.direction(), Half.BOTTOM));
-        placed += place(level, layout.at(13, 0, 0), stairState(layout.direction().getOpposite(), Half.TOP));
-        placed += place(level, layout.at(13, 1, 1), stairState(lateral, Half.BOTTOM));
-
-        // Reproductions captured by boundary-missing diagnostics on 2026-07-11.
-        // Keep the source-relative coordinates stable so the structured event can be compared directly.
-        placed += place(level, layout.at(4, 3, 0), Blocks.OAK_FENCE.defaultBlockState());
-        placed += place(level, layout.at(6, -4, 0), Blocks.NETHER_BRICK_FENCE.defaultBlockState());
-        placed += place(level, layout.at(6, 4, -1), stairState(layout.direction(), Half.TOP));
-        return placed;
-    }
-
-    private static int placeScreen(ServerLevel level, TestLayout layout) {
-        int placed = 0;
-
-        for (int side = -5; side <= 5; side++) {
-            for (int vertical = MIN_VERTICAL; vertical <= MAX_VERTICAL; vertical++) {
-                level.setBlock(
-                        layout.at(SCREEN_DEPTH, side, vertical),
-                        Blocks.WHITE_CONCRETE.defaultBlockState(),
-                        3
-                );
-                placed++;
-            }
-        }
-
-        return placed;
-    }
-
-    private static int placeSource(ServerLevel level, TestLayout layout, SuiteCase testCase) {
-        level.setBlock(
-                layout.source(),
-                Spectralization.CREATIVE_LIGHT_SOURCE.get()
-                        .defaultBlockState()
-                        .setValue(CreativeLightSourceBlock.FACING, layout.direction()),
-                3
+    private static SpotProjectionTestScene.BuildResult build(
+            ServerLevel level,
+            GeneratedTest generatedTest,
+            boolean logDetails
+    ) {
+        SpotProjectionTestScene.BuildResult result = SpotProjectionTestScene.build(
+                level,
+                generatedTest.layout(),
+                generatedTest.seed(),
+                generatedTest.testCase().occupancy(),
+                generatedTest.testCase().fixtures(),
+                generatedTest.testCase().divergenceMilli(),
+                logDetails
         );
-
-        if (level.getBlockEntity(layout.source()) instanceof CreativeLightSourceBlockEntity source) {
-            ContainerData data = source.createDataAccess();
-            data.set(CreativeLightSourceBlockEntity.DATA_REGION, FrequencyKey.DEBUG_VISIBLE.region().ordinal());
-            data.set(CreativeLightSourceBlockEntity.DATA_BIN, FrequencyKey.DEBUG_VISIBLE.bin());
-            data.set(CreativeLightSourceBlockEntity.DATA_POWER, SOURCE_POWER_CENTI);
-            data.set(CreativeLightSourceBlockEntity.DATA_COHERENCE, SOURCE_COHERENCE.ordinal());
-            data.set(CreativeLightSourceBlockEntity.DATA_BEAM_MODEL, BeamModel.DIVERGING.ordinal());
-            data.set(CreativeLightSourceBlockEntity.DATA_RADIUS_MILLI, SOURCE_RADIUS_MILLI);
-            data.set(CreativeLightSourceBlockEntity.DATA_DIVERGENCE_MILLI, testCase.divergenceMilli());
-            data.set(CreativeLightSourceBlockEntity.DATA_FOCUS_DISTANCE_MILLI, 0);
-            data.set(CreativeLightSourceBlockEntity.DATA_MODE_M, 0);
-            data.set(CreativeLightSourceBlockEntity.DATA_MODE_N, 0);
-
-            for (int index = CreativeLightSourceBlockEntity.DATA_SPECTRUM_START;
-                 index < CreativeLightSourceBlockEntity.DATA_COUNT;
-                 index++) {
-                data.set(index, 0);
+        if (logDetails) {
+            SpectralDiagnostics.Event event = SpectralDiagnostics
+                    .event(level, "spot_projection_test", "generated")
+                    .pos("source", generatedTest.layout().source())
+                    .field("direction", generatedTest.layout().direction())
+                    .field("case_id", generatedTest.testCase().id())
+                    .field("repeat", generatedTest.testCase().repeatIndex());
+            if (generatedTest.testCase().recordSeed()) {
+                event.field("seed", generatedTest.seed());
             }
+            event.field("scene_signature", Long.toUnsignedString(result.sceneSignature(), 16))
+                    .field("power", SpotProjectionTestScene.sourcePower())
+                    .field("coherence", SpotProjectionTestScene.sourceCoherence())
+                    .field("radius", SpotProjectionTestScene.sourceRadius())
+                    .field("divergence", generatedTest.testCase().divergenceMilli() / 1000.0D)
+                    .field("occupancy", generatedTest.testCase().occupancy())
+                    .field("random_obstacles", result.randomObstacles())
+                    .field("fixtures", result.fixtures())
+                    .field("screen_blocks", result.screenBlocks())
+                    .field("placed", result.placed())
+                    .write();
         }
-
-        return 1;
-    }
-
-    private static BlockState randomProjectionState(Random random) {
-        int roll = random.nextInt(100);
-
-        if (roll < 45) {
-            return stairState(
-                    HORIZONTAL_DIRECTIONS[random.nextInt(HORIZONTAL_DIRECTIONS.length)],
-                    random.nextBoolean() ? Half.BOTTOM : Half.TOP
-            );
-        }
-
-        if (roll < 72) {
-            return slabState(random.nextBoolean() ? SlabType.BOTTOM : SlabType.TOP);
-        }
-
-        if (roll < 88) {
-            return random.nextBoolean()
-                    ? Blocks.OAK_FENCE.defaultBlockState()
-                    : Blocks.NETHER_BRICK_FENCE.defaultBlockState();
-        }
-
-        return switch (random.nextInt(3)) {
-            case 0 -> Blocks.STONE_BRICKS.defaultBlockState();
-            case 1 -> Blocks.SMOOTH_QUARTZ.defaultBlockState();
-            default -> Blocks.POLISHED_DEEPSLATE.defaultBlockState();
-        };
-    }
-
-    private static BlockState stairState(Direction facing, Half half) {
-        return Blocks.STONE_BRICK_STAIRS.defaultBlockState()
-                .setValue(BlockStateProperties.HORIZONTAL_FACING, facing)
-                .setValue(BlockStateProperties.HALF, half);
-    }
-
-    private static BlockState slabState(SlabType type) {
-        return Blocks.SMOOTH_STONE_SLAB.defaultBlockState()
-                .setValue(BlockStateProperties.SLAB_TYPE, type);
-    }
-
-    private static int place(ServerLevel level, BlockPos pos, BlockState state) {
-        level.setBlock(pos, state, 3);
-        return 1;
+        return result;
     }
 
     private static int clearGeneratedTest(CommandSourceStack source, GeneratedTest generatedTest) {
@@ -942,12 +1025,15 @@ public final class SpotProjectionTestCommand {
             return 0;
         }
 
-        int cleared = clearVolume(level, generatedTest.layout());
-        refreshProjection(level);
-        SpectralDiagnostics.event(level, "spot_projection_test", "cleared")
+        int cleared = SpotProjectionTestScene.clear(level, generatedTest.layout());
+        SpotProjectionTestScene.refreshProjection(level);
+        SpectralDiagnostics.Event event = SpectralDiagnostics.event(level, "spot_projection_test", "cleared")
                 .pos("source", generatedTest.layout().source())
-                .field("direction", generatedTest.layout().direction())
-                .field("seed", generatedTest.seed())
+                .field("direction", generatedTest.layout().direction());
+        if (generatedTest.testCase().recordSeed()) {
+            event.field("seed", generatedTest.seed());
+        }
+        event
                 .field("cleared", cleared)
                 .write();
         return cleared;
@@ -959,53 +1045,6 @@ public final class SpotProjectionTestCommand {
         }
         source.sendFailure(Component.translatable("item.spectralization.spot_test.message.busy"));
         return true;
-    }
-
-    private static int clearVolume(ServerLevel level, TestLayout layout) {
-        level.setBlock(layout.source(), Blocks.AIR.defaultBlockState(), 3);
-        int cleared = 0;
-
-        for (int along = MIN_ALONG; along <= MAX_ALONG; along++) {
-            for (int side = MIN_SIDE; side <= MAX_SIDE; side++) {
-                for (int vertical = MIN_VERTICAL; vertical <= MAX_VERTICAL; vertical++) {
-                    BlockPos pos = layout.at(along, side, vertical);
-                    if (!level.getBlockState(pos).isAir()) {
-                        cleared++;
-                    }
-                    level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
-                }
-            }
-        }
-
-        return cleared;
-    }
-
-    private static boolean validateVolume(CommandSourceStack source, ServerLevel level, TestLayout layout) {
-        int minY = layout.source().getY() + MIN_VERTICAL;
-        int maxY = layout.source().getY() + MAX_VERTICAL;
-        if (minY < level.getMinBuildHeight() || maxY >= level.getMaxBuildHeight()) {
-            source.sendFailure(Component.literal("Spot test volume would leave the world's build height."));
-            return false;
-        }
-
-        for (int along = MIN_ALONG; along <= MAX_ALONG; along++) {
-            for (int side = MIN_SIDE; side <= MAX_SIDE; side++) {
-                if (!level.isLoaded(layout.at(along, side, 0))) {
-                    source.sendFailure(Component.literal(
-                            "Spot test volume crosses unloaded chunks. Move closer to the intended test area."
-                    ));
-                    return false;
-                }
-            }
-        }
-
-        return true;
-    }
-
-    private static void refreshProjection(ServerLevel level) {
-        OpticalSpotTracker.clear(level);
-        OpticalTraceCache.clear(level);
-        OpticalNetworkIndex.markDirty(level);
     }
 
     private static void requestBenchmarkProjection(ServerLevel level, BenchmarkRun run) {
@@ -1020,7 +1059,7 @@ public final class SpotProjectionTestCommand {
                     "benchmark_forced_rebuild"
             );
         }
-        refreshProjection(level);
+        SpotProjectionTestScene.refreshProjection(level);
     }
 
     private static void startBenchmarkProjection(ServerLevel level, BenchmarkRun run) {
@@ -1045,13 +1084,7 @@ public final class SpotProjectionTestCommand {
         if (mutation == AppearanceMutation.NONE) {
             return true;
         }
-        if (!(level.getBlockEntity(run.test.layout().source())
-                instanceof CreativeLightSourceBlockEntity source)) {
-            return false;
-        }
-
-        ContainerData data = source.createDataAccess();
-        int step = run.appearanceStep++;
+        int step = run.appearanceStep;
         SpectralDiagnostics.Event event = SpectralDiagnostics.event(
                         level,
                         "spot_projection_test",
@@ -1063,15 +1096,18 @@ public final class SpotProjectionTestCommand {
                 .field("step", step);
         switch (mutation) {
             case POWER_SEQUENCE -> {
-                int powerCenti = CACHE_POWER_SEQUENCE_CENTI[step % CACHE_POWER_SEQUENCE_CENTI.length];
-                data.set(CreativeLightSourceBlockEntity.DATA_POWER, powerCenti);
+                int powerCenti = SpotProjectionTestScene.cachePowerCenti(step);
+                if (!SpotProjectionTestScene.setSourcePower(level, run.test.layout(), powerCenti)) {
+                    return false;
+                }
                 event.field("power_centi", powerCenti)
                         .field("power", powerCenti / (double) CreativeLightSourceBlockEntity.POWER_SCALE);
             }
             case COLOR_SEQUENCE -> {
-                int bin = CACHE_COLOR_SEQUENCE_BINS[step % CACHE_COLOR_SEQUENCE_BINS.length];
-                data.set(CreativeLightSourceBlockEntity.DATA_REGION, SpectralRegion.VISIBLE.ordinal());
-                data.set(CreativeLightSourceBlockEntity.DATA_BIN, bin);
+                int bin = SpotProjectionTestScene.cacheColorBin(step);
+                if (!SpotProjectionTestScene.setSourceColor(level, run.test.layout(), bin)) {
+                    return false;
+                }
                 event.field("region", SpectralRegion.VISIBLE.id())
                         .field("bin", bin);
             }
@@ -1079,6 +1115,7 @@ public final class SpotProjectionTestCommand {
                 return true;
             }
         }
+        run.appearanceStep++;
         event.write();
         return true;
     }
@@ -1095,11 +1132,13 @@ public final class SpotProjectionTestCommand {
     private static List<SuiteCase> suiteCases(SpotTestMode mode) {
         SuiteCase quick = new SuiteCase(
                 "quick_seed_42", 42L, RANDOM_OCCUPANCY, true,
-                SOURCE_DIVERGENCE_MILLI, 3, false, BenchmarkMode.FULL_REBUILD, AppearanceMutation.NONE
+                SpotProjectionTestScene.DEFAULT_DIVERGENCE_MILLI,
+                3, false, BenchmarkMode.FULL_REBUILD, AppearanceMutation.NONE
         );
         SuiteCase partial = new SuiteCase(
                 "partial_geometry", 42L, 0.0D, true,
-                SOURCE_DIVERGENCE_MILLI, 3, true, BenchmarkMode.FULL_REBUILD, AppearanceMutation.NONE
+                SpotProjectionTestScene.DEFAULT_DIVERGENCE_MILLI,
+                3, true, BenchmarkMode.FULL_REBUILD, AppearanceMutation.NONE
         );
         List<SuiteCase> performance = List.of(
                 new SuiteCase("performance_sparse", 42L, 0.08D, true, 500, 5, false, BenchmarkMode.FULL_REBUILD, AppearanceMutation.NONE),
@@ -1108,27 +1147,130 @@ public final class SpotProjectionTestCommand {
                 new SuiteCase("performance_cached_power", 20_260_711L, 0.17D, true, 500, 5, false, BenchmarkMode.CACHE_REUSE, AppearanceMutation.POWER_SEQUENCE),
                 new SuiteCase("performance_cached_color", 20_260_711L, 0.17D, true, 500, 5, false, BenchmarkMode.CACHE_REUSE, AppearanceMutation.COLOR_SEQUENCE)
         );
-
         return switch (mode) {
             case QUICK -> List.of(quick);
             case PARTIAL_GEOMETRY -> List.of(partial);
             case PERFORMANCE -> performance;
-            case FULL_SUITE -> {
-                List<SuiteCase> full = new ArrayList<>(performance.size() + 1);
-                full.add(partial);
-                full.addAll(performance);
-                yield List.copyOf(full);
-            }
+            case DIRECTION_MATRIX -> directionMatrixCases();
+            case RANDOM_STRESS -> randomStressCases();
         };
     }
 
-    private record TestLayout(BlockPos source, Direction direction) {
-        private Direction lateral() {
-            return direction.getClockWise();
+    private static List<SuiteCase> directionMatrixCases() {
+        validateDirectionMatrixDefinition();
+        List<SuiteCase> cases = new ArrayList<>(
+                DIRECTION_MATRIX_WARMUP_SEEDS.length + DIRECTION_MATRIX_SEEDS.length * 4
+        );
+        Direction[] warmupDirections = {
+                Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST
+        };
+        for (int index = 0; index < DIRECTION_MATRIX_WARMUP_SEEDS.length; index++) {
+            cases.add(new SuiteCase(
+                    "direction_matrix_warmup",
+                    DIRECTION_MATRIX_WARMUP_SEEDS[index],
+                    0.17D,
+                    true,
+                    500,
+                    MAX_BENCHMARK_SAMPLES,
+                    false,
+                    BenchmarkMode.FULL_REBUILD,
+                    AppearanceMutation.NONE,
+                    warmupDirections[index],
+                    -1,
+                    true
+            ));
         }
+        for (int repeat = 0; repeat < DIRECTION_MATRIX_SEEDS.length; repeat++) {
+            long seed = DIRECTION_MATRIX_SEEDS[repeat];
+            for (Direction direction : DIRECTION_MATRIX_ORDERS[repeat]) {
+                cases.add(new SuiteCase(
+                        "direction_matrix",
+                        seed,
+                        0.17D,
+                        true,
+                        500,
+                        5,
+                        false,
+                        BenchmarkMode.FULL_REBUILD,
+                        AppearanceMutation.NONE,
+                        direction,
+                        repeat,
+                        true
+                ));
+            }
+        }
+        return List.copyOf(cases);
+    }
 
-        private BlockPos at(int along, int side, int vertical) {
-            return source.relative(direction, along).relative(lateral(), side).above(vertical);
+    private static List<SuiteCase> randomStressCases() {
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        List<SuiteCase> cases = new ArrayList<>(RANDOM_STRESS_CASES);
+        for (int index = 0; index < RANDOM_STRESS_CASES; index++) {
+            cases.add(new SuiteCase(
+                    "random_stress",
+                    random.nextLong(),
+                    RANDOM_OCCUPANCY,
+                    false,
+                    SpotProjectionTestScene.DEFAULT_DIVERGENCE_MILLI,
+                    1,
+                    false,
+                    BenchmarkMode.FULL_REBUILD,
+                    AppearanceMutation.NONE,
+                    null,
+                    index,
+                    false
+            ));
+        }
+        return List.copyOf(cases);
+    }
+
+    static void validateDirectionMatrixDefinition() {
+        if (DIRECTION_MATRIX_WARMUP_SEEDS.length != 4) {
+            throw new IllegalStateException("Direction matrix must warm all four horizontal directions");
+        }
+        if (DIRECTION_MATRIX_ORDERS.length != DIRECTION_MATRIX_SEEDS.length) {
+            throw new IllegalStateException("Direction-matrix seed and order counts must match");
+        }
+        Set<Long> seeds = new HashSet<>();
+        int[][] positions = new int[4][4];
+        for (int repeat = 0; repeat < DIRECTION_MATRIX_ORDERS.length; repeat++) {
+            if (!seeds.add(DIRECTION_MATRIX_SEEDS[repeat])) {
+                throw new IllegalStateException("Direction-matrix seeds must be unique");
+            }
+            Direction[] order = DIRECTION_MATRIX_ORDERS[repeat];
+            if (order.length != 4 || Set.of(order).size() != 4) {
+                throw new IllegalStateException("Each direction-matrix order must contain four unique directions");
+            }
+            for (int position = 0; position < order.length; position++) {
+                Direction direction = order[position];
+                if (!direction.getAxis().isHorizontal()) {
+                    throw new IllegalStateException("Direction matrix only supports horizontal directions");
+                }
+                positions[direction.get2DDataValue()][position]++;
+            }
+        }
+        for (int direction = 0; direction < positions.length; direction++) {
+            for (int position = 0; position < positions[direction].length; position++) {
+                if (positions[direction][position] != 1) {
+                    throw new IllegalStateException("Direction-matrix execution positions must be balanced");
+                }
+            }
+        }
+    }
+
+    static void validateRandomStressDefinition() {
+        List<SuiteCase> cases = randomStressCases();
+        if (cases.size() != RANDOM_STRESS_CASES) {
+            throw new IllegalStateException("Random stress suite must contain exactly 1000 cases");
+        }
+        for (int index = 0; index < cases.size(); index++) {
+            SuiteCase testCase = cases.get(index);
+            if (testCase.recordSeed()
+                    || testCase.samples() != 1
+                    || testCase.fixtures()
+                    || testCase.repeatIndex() != index) {
+                throw new IllegalStateException("Random stress cases must be anonymous, pure-random single samples");
+            }
         }
     }
 
@@ -1141,14 +1283,47 @@ public final class SpotProjectionTestCommand {
             int samples,
             boolean verboseValidation,
             BenchmarkMode benchmarkMode,
-            AppearanceMutation appearanceMutation
+            AppearanceMutation appearanceMutation,
+            Direction direction,
+            int repeatIndex,
+            boolean recordSeed
     ) {
+        private SuiteCase(
+                String id,
+                long seed,
+                double occupancy,
+                boolean fixtures,
+                int divergenceMilli,
+                int samples,
+                boolean verboseValidation,
+                BenchmarkMode benchmarkMode,
+                AppearanceMutation appearanceMutation
+        ) {
+            this(
+                    id,
+                    seed,
+                    occupancy,
+                    fixtures,
+                    divergenceMilli,
+                    samples,
+                    verboseValidation,
+                    benchmarkMode,
+                    appearanceMutation,
+                    null,
+                    -1,
+                    true
+            );
+        }
+
         private SuiteCase {
             occupancy = Math.max(0.0D, Math.min(1.0D, occupancy));
             divergenceMilli = Math.max(0, divergenceMilli);
             samples = Math.max(1, Math.min(MAX_BENCHMARK_SAMPLES, samples));
             benchmarkMode = benchmarkMode == null ? BenchmarkMode.FULL_REBUILD : benchmarkMode;
             appearanceMutation = appearanceMutation == null ? AppearanceMutation.NONE : appearanceMutation;
+            if (direction != null && !direction.getAxis().isHorizontal()) {
+                throw new IllegalArgumentException("Spot test direction must be horizontal");
+            }
         }
 
         private static SuiteCase manual(long seed) {
@@ -1157,7 +1332,7 @@ public final class SpotProjectionTestCommand {
                     seed,
                     RANDOM_OCCUPANCY,
                     true,
-                    SOURCE_DIVERGENCE_MILLI,
+                    SpotProjectionTestScene.DEFAULT_DIVERGENCE_MILLI,
                     DEFAULT_BENCHMARK_SAMPLES,
                     SpectralizationConfig.opticalCompilerDebugVerbose(),
                     BenchmarkMode.FULL_REBUILD,
@@ -1167,6 +1342,25 @@ public final class SpotProjectionTestCommand {
 
         private String translationKey() {
             return "item.spectralization.spot_test.case." + id;
+        }
+
+        private Component displayName(Direction actualDirection) {
+            Component name = Component.translatable(translationKey());
+            if (repeatIndex < 0) {
+                return name;
+            }
+            return name.copy()
+                    .append(" #")
+                    .append(Integer.toString(repeatIndex + 1))
+                    .append(recordSeed ? " seed=" + seed : "")
+                    .append(" ")
+                    .append(Component.translatable(
+                            "direction.spectralization." + actualDirection.getSerializedName()
+                    ));
+        }
+
+        private Direction directionOr(Direction fallback) {
+            return direction == null ? fallback : direction;
         }
 
         private String benchmarkDescriptionKey() {
@@ -1201,14 +1395,123 @@ public final class SpotProjectionTestCommand {
         }
     }
 
-    private record GeneratedTest(ResourceKey<Level> dimension, TestLayout layout, SuiteCase testCase) {
-        private GeneratedTest(ResourceKey<Level> dimension, TestLayout layout, long seed) {
+    private record GeneratedTest(ResourceKey<Level> dimension, SpotTestLayout layout, SuiteCase testCase) {
+        private GeneratedTest(ResourceKey<Level> dimension, SpotTestLayout layout, long seed) {
             this(dimension, layout, SuiteCase.manual(seed));
         }
 
         private long seed() {
             return testCase.seed();
         }
+    }
+
+    private record DirectionMatrixResult(
+            int repeatIndex,
+            long seed,
+            Direction direction,
+            long sceneSignature,
+            SpotProjectionPerformanceTracker.Report report,
+            OutputFingerprint outputFingerprint
+    ) {
+        private boolean sameWorkload(DirectionMatrixResult other) {
+            return rounded(report.spotsAverage()) == rounded(other.report.spotsAverage())
+                    && rounded(report.dependenciesAverage()) == rounded(other.report.dependenciesAverage())
+                    && rounded(report.tilesAverage()) == rounded(other.report.tilesAverage())
+                    && rounded(report.projectableTilesAverage()) == rounded(other.report.projectableTilesAverage())
+                    && rounded(report.sideWindowsAverage()) == rounded(other.report.sideWindowsAverage())
+                    && rounded(report.sideQuadsAverage()) == rounded(other.report.sideQuadsAverage());
+        }
+
+        private static long rounded(double value) {
+            return Math.round(value);
+        }
+
+        private String workloadSummary() {
+            return "spots=" + rounded(report.spotsAverage())
+                    + ",deps=" + rounded(report.dependenciesAverage())
+                    + ",tiles=" + rounded(report.tilesAverage())
+                    + ",projectable=" + rounded(report.projectableTilesAverage())
+                    + ",windows=" + rounded(report.sideWindowsAverage())
+                    + ",quads=" + rounded(report.sideQuadsAverage());
+        }
+    }
+
+    private record DirectionMatrixComparison(
+            DirectionMatrixResult baseline,
+            DirectionMatrixResult current,
+            boolean sceneSignatureMatch,
+            boolean outputCoverageMatch,
+            boolean outputFragmentationMatch,
+            boolean workloadMatch
+    ) {
+        private boolean correctnessMatches() {
+            return sceneSignatureMatch && outputCoverageMatch;
+        }
+
+        private boolean allMetricsMatch() {
+            return correctnessMatches() && outputFragmentationMatch && workloadMatch;
+        }
+
+        private OutputSurfaceDifference firstOutputDifference() {
+            List<OutputSurface> baselineSurfaces = baseline.outputFingerprint().surfaces();
+            List<OutputSurface> currentSurfaces = current.outputFingerprint().surfaces();
+            int baselineIndex = 0;
+            int currentIndex = 0;
+            while (baselineIndex < baselineSurfaces.size() || currentIndex < currentSurfaces.size()) {
+                OutputSurface baselineSurface = baselineIndex < baselineSurfaces.size()
+                        ? baselineSurfaces.get(baselineIndex) : null;
+                OutputSurface currentSurface = currentIndex < currentSurfaces.size()
+                        ? currentSurfaces.get(currentIndex) : null;
+                int comparison;
+                if (baselineSurface == null) {
+                    comparison = 1;
+                } else if (currentSurface == null) {
+                    comparison = -1;
+                } else {
+                    comparison = baselineSurface.key().compareTo(currentSurface.key());
+                }
+                if (comparison < 0) {
+                    return new OutputSurfaceDifference(
+                            baselineSurface.key(), baselineSurface, null, false
+                    );
+                }
+                if (comparison > 0) {
+                    return new OutputSurfaceDifference(
+                            currentSurface.key(), null, currentSurface, false
+                    );
+                }
+                if (!baselineSurface.sameFragmentation(currentSurface)) {
+                    return new OutputSurfaceDifference(
+                            baselineSurface.key(),
+                            baselineSurface,
+                            currentSurface,
+                            baselineSurface.sameCoverage(currentSurface)
+                    );
+                }
+                baselineIndex++;
+                currentIndex++;
+            }
+            return null;
+        }
+    }
+
+    private record OutputSurfaceDifference(
+            OutputSurfaceKey key,
+            OutputSurface baseline,
+            OutputSurface current,
+            boolean coverageMatch
+    ) {
+    }
+
+    private record RandomStressSummary(
+            int cases,
+            double elapsedAverageUs,
+            double elapsedP50Us,
+            double elapsedP95Us,
+            double responseAverageUs,
+            double responseP95Us,
+            double spotsAverage
+    ) {
     }
 
     private record DebugConfigSnapshot(
@@ -1238,18 +1541,27 @@ public final class SpotProjectionTestCommand {
         private final UUID runId;
         private final UUID owner;
         private final ResourceKey<Level> dimension;
-        private final TestLayout layout;
+        private final SpotTestLayout layout;
         private final SpotTestMode mode;
         private final List<SuiteCase> cases;
         private final DebugConfigSnapshot previousDebugConfig;
+        private final List<DirectionMatrixResult> directionMatrixResults = new ArrayList<>();
+        private final List<Double> randomStressElapsedUs = new ArrayList<>();
+        private final List<Double> randomStressResponseUs = new ArrayList<>();
+        private final List<Double> randomStressSpots = new ArrayList<>();
         private int caseIndex;
         private int passedCases;
+        private int sceneSignatureMismatches;
+        private int outputCoverageMismatches;
+        private int outputFragmentationMismatches;
+        private int workloadMismatches;
+        private long currentSceneSignature;
 
         private ItemSuiteRun(
                 UUID runId,
                 UUID owner,
                 ResourceKey<Level> dimension,
-                TestLayout layout,
+                SpotTestLayout layout,
                 SpotTestMode mode,
                 List<SuiteCase> cases,
                 DebugConfigSnapshot previousDebugConfig
@@ -1265,6 +1577,128 @@ public final class SpotProjectionTestCommand {
 
         private SuiteCase currentCase() {
             return cases.get(caseIndex);
+        }
+
+        private SpotTestLayout currentLayout() {
+            return layout.withDirection(currentCase().directionOr(layout.direction()));
+        }
+
+        private DirectionMatrixComparison recordDirectionMatrixResult(
+                SuiteCase testCase,
+                SpotTestLayout caseLayout,
+                SpotProjectionPerformanceTracker.Report report,
+                OutputFingerprint outputFingerprint
+        ) {
+            if (mode != SpotTestMode.DIRECTION_MATRIX) {
+                return null;
+            }
+            if (testCase.repeatIndex() < 0) {
+                return null;
+            }
+            DirectionMatrixResult result = new DirectionMatrixResult(
+                    testCase.repeatIndex(),
+                    testCase.seed(),
+                    caseLayout.direction(),
+                    currentSceneSignature,
+                    report,
+                    outputFingerprint
+            );
+            DirectionMatrixResult baseline = directionMatrixResults.stream()
+                    .filter(existing -> existing.repeatIndex() == result.repeatIndex())
+                    .findFirst()
+                    .orElse(null);
+            DirectionMatrixComparison comparison = null;
+            if (baseline != null) {
+                boolean signatureMatch = baseline.sceneSignature() == result.sceneSignature();
+                boolean outputCoverageMatch = baseline.outputFingerprint().coverageSignature()
+                        == result.outputFingerprint().coverageSignature();
+                boolean outputFragmentationMatch = baseline.outputFingerprint().fragmentationSignature()
+                        == result.outputFingerprint().fragmentationSignature();
+                boolean workloadMatch = baseline.sameWorkload(result);
+                if (!signatureMatch) {
+                    sceneSignatureMismatches++;
+                }
+                if (!workloadMatch) {
+                    workloadMismatches++;
+                }
+                if (!outputCoverageMatch) {
+                    outputCoverageMismatches++;
+                }
+                if (!outputFragmentationMatch) {
+                    outputFragmentationMismatches++;
+                }
+                comparison = new DirectionMatrixComparison(
+                        baseline,
+                        result,
+                        signatureMatch,
+                        outputCoverageMatch,
+                        outputFragmentationMatch,
+                        workloadMatch
+                );
+            }
+            directionMatrixResults.add(result);
+            return comparison;
+        }
+
+        private boolean directionMatrixPassed() {
+            return mode != SpotTestMode.DIRECTION_MATRIX
+                    || (directionMatrixResults.size() == DIRECTION_MATRIX_SEEDS.length * 4
+                    && sceneSignatureMismatches == 0
+                    && outputCoverageMismatches == 0);
+        }
+
+        private boolean directionMatrixHasAsymmetry() {
+            return mode == SpotTestMode.DIRECTION_MATRIX
+                    && (outputFragmentationMismatches > 0 || workloadMismatches > 0);
+        }
+
+        private double directionAverageUs(Direction direction) {
+            return directionMatrixResults.stream()
+                    .filter(result -> result.direction() == direction)
+                    .mapToDouble(result -> result.report().elapsedAverageUs())
+                    .average()
+                    .orElse(0.0D);
+        }
+
+        private void recordRandomStressResult(
+                SpotProjectionPerformanceTracker.Report report,
+                RequestLatencyReport latency
+        ) {
+            if (mode != SpotTestMode.RANDOM_STRESS) {
+                return;
+            }
+            randomStressElapsedUs.add(report.elapsedAverageUs());
+            randomStressResponseUs.add(latency.averageUs());
+            randomStressSpots.add(report.spotsAverage());
+        }
+
+        private RandomStressSummary randomStressSummary() {
+            return new RandomStressSummary(
+                    randomStressElapsedUs.size(),
+                    average(randomStressElapsedUs),
+                    percentile(randomStressElapsedUs, 0.50D),
+                    percentile(randomStressElapsedUs, 0.95D),
+                    average(randomStressResponseUs),
+                    percentile(randomStressResponseUs, 0.95D),
+                    average(randomStressSpots)
+            );
+        }
+
+        private static double average(List<Double> values) {
+            return values.stream().mapToDouble(Double::doubleValue).average().orElse(0.0D);
+        }
+
+        private static double percentile(List<Double> values, double quantile) {
+            if (values.isEmpty()) {
+                return 0.0D;
+            }
+            List<Double> sorted = new ArrayList<>(values);
+            sorted.sort(Double::compareTo);
+            int index = Math.max(0, Math.min(
+                    sorted.size() - 1,
+                    (int) Math.ceil(quantile * sorted.size()) - 1
+            ));
+            return sorted.get(index);
         }
     }
 

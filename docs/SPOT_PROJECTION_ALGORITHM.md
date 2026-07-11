@@ -7,7 +7,8 @@ projection code.
 The implementation and performance checkpoint for the current branch is
 [SPOT_PROJECTION_CHECKPOINT_2026-07-11.md](SPOT_PROJECTION_CHECKPOINT_2026-07-11.md).
 It records the test entry points, measured baseline, cache state, and the next
-depth-suffix invalidation milestone. This document remains the semantic authority.
+single-cuboid sweep milestone followed by depth-suffix invalidation. This document
+remains the semantic authority.
 
 The projection layer is a visual/readout export layer. It helps the player infer
 where light would land. It does not drive the optical power solve, and it must not
@@ -163,6 +164,13 @@ case. Existing mod optical elements, optical sources, full blocks, and lens
 holders with lenses retain the historical full-block projection box unless a
 separate descriptor is added for that block.
 
+The derived model boxes are immutable for the selected vanilla block-state
+families. Runtime caches their transformed, sorted box list by immutable
+`BlockState` and `(travel,u,v)` frame. Cache hits must return the same cuboid order
+and coordinates as a fresh `VoxelShape.toAabbs()` conversion. The depth tile scan
+also computes its target `BlockPos` directly from the depth origin and frame steps,
+avoiding intermediate relative-position objects without changing dependency keys.
+
 The first correctness target for partial geometry is a single arbitrary
 axis-aligned cuboid contained in one Minecraft block. Cross-block cuboids may be
 split at block boundaries, and stairs/fences should be treated later as unions of
@@ -261,6 +269,14 @@ For each integer depth from `1` to `MAX_PROJECTED_DEPTH`:
 10. Union the current depth blockers and subtract them from the global remaining
     texture region.
 11. Stop if the remaining texture domain is empty.
+
+Projection geometry prepares one radius evaluator from the source envelope and
+uses absolute `depth + localTravel` coordinates throughout the cone. Per-depth
+envelopes remain available for appearance, but must not be re-prepared as the
+geometry authority. In particular, the back plane of depth `d` and the front
+plane of depth `d + 1` share the exact evaluator call at `d + 1`; edge-touching
+blocks must not acquire a canonical light sliver from independently reconstructed
+beam moments or divergence floors.
 
 The implementation may keep a depth-local tile cache for the world block checks
 performed in steps 3-8. This cache is not a gameplay authority and is discarded
@@ -599,9 +615,11 @@ A real cube under oblique projection can create a five- or six-sided silhouette 
 a later screen. The current rectangle-window model does not represent exact
 diagonal polygon boundaries.
 
-The accepted current simplification is the parallel-plane volume approximation.
-It can create stepped side-like shadows and is stable inside the existing
-rectangular subtraction model.
+The current implementation uses a parallel-plane volume approximation. It can
+create stepped side-like shadows, but it is no longer considered topologically
+complete: a finite union of isolated cross-sections does not necessarily preserve
+the connectivity of the cuboid that produced them. Section 7.6 records the known
+edge-contact failure and the approved replacement direction.
 
 ### 7.2 Side visual patches are not full occluders
 
@@ -656,6 +674,48 @@ client render receives the patch
 This bug should stay documented until an in-game test confirms that internal
 x/z and y/z faces receive spots continuously and without floating patches.
 
+### 7.6 Unresolved: edge-connected cuboids can leak between sampled planes
+
+Two axis-aligned cuboids that share only one world edge can still produce a thin
+light seam when their occlusion is represented by independent parallel planes.
+The failure is easiest to expose when the shared edge has the same world z and
+the cuboids occupy successive travel ranges. Increasing floating-point precision,
+welding final render quads, or rebuilding adjacent depth radii from one evaluator
+does not solve it. Those changes operate after, or below, the real loss of
+topology:
+
+```text
+continuous cuboid volume
+  -> finite isolated cross-sections
+  -> union of sampled canonical rectangles
+  -> a gap may remain between samples
+```
+
+The approved next representation is one continuous conservative sweep per
+optical cuboid. It is a design decision, not yet the implementation in this
+checkpoint:
+
+```text
+CuboidSweep:
+  fullHull()
+  prefixHull(travel)
+```
+
+- `fullHull()` is the downstream blocker for the cuboid's complete travel range.
+- `prefixHull(travel)` supplies same-depth front/side ordering without activating
+  volume that lies after the receiver.
+- One cuboid produces one sweep object. Intermediate planes are not production
+  occlusion authority and are not required for correctness.
+- The hull is conservative: false light gaps are forbidden, while bounded extra
+  shadow at correlated u/v corners is accepted for this voxel-native readout.
+- Sweep construction occurs once per cuboid and must be indexed/reused. The
+  rejected July 10 experiment recomputed continuous prefixes per side candidate;
+  that candidate-by-cuboid multiplication must not return.
+
+Until this object replaces sampled-plane authority in downstream remaining and
+same-depth prefix queries, the shared-edge light seam remains an open correctness
+bug.
+
 ## 8. Debug and diagnostics
 
 Useful commands and logs:
@@ -683,15 +743,60 @@ Useful commands and logs:
 
 The creative inventory also contains the operator-only `spot_test` instrument.
 Right-click starts its selected automatic suite or reports the current case;
-Shift-right-click cycles through quick, partial-geometry, performance, and full
-suite modes. The selected mode is stored on the item, while the active run is
+Shift-right-click cycles through quick, partial-geometry, performance,
+direction-matrix, and anonymous 1,000-scene random-stress modes. The selected mode is stored on the item,
+while the active run is
 server-owned and keyed by player UUID. Only one automatic suite may hold the
-global debug-configuration lease at a time. Each case builds a deterministic
-scattered-light scene, gathers source-bound samples, writes `suite_started`,
+global debug-configuration lease at a time. Ordinary cases build a deterministic
+scattered-light scene, gather source-bound samples, and write `suite_started`,
 `case_started`, `case_complete`, and `suite_complete` diagnostics, and restores
 the previous compiler/spot debug settings on completion or failure. The item has
 no recipe and requires operator permission level 2 because it clears and rebuilds
 a reserved world volume.
+
+The direction matrix begins with four unreported 16-sample warmup cases, one for
+each horizontal direction, then runs four
+different deterministic seeds through all four horizontal travel directions.
+Its four direction orders are balanced, so every direction occupies the first,
+second, third, and fourth execution position once. Random stair facings are
+generated relative to beam forward/right/back/left, not from absolute world
+directions. Before every case, the union of all four rotated test volumes is
+cleared. The terminal screen and cleared transverse/vertical bounds cover the
+complete default radius at depth 16, so terrain outside the reserved volume
+cannot enter through the edge of the divergent cone. Each generated scene writes a rotation-normalized `scene_signature`
+using fixed 16x16x16 shape occupancy rather than the axis-order-dependent AABB
+partition returned by `VoxelShape.toAabbs()`;
+the matrix compares that signature, a rotation-normalized final-output coverage
+signature, a final-output fragmentation signature, and the complete workload
+tuple `(spots, dependencies, tiles, projectable tiles, side windows, side quads)`
+within each seed. The coverage signature groups visible output by source-relative
+block and face and hashes additive world/texture coverage measures. Quad coverage
+is normalized from its 16-bit vertex representation to the same 8-bit grid used
+by slice footprints before comparison; raw 16-bit quad areas remain in difference
+details. The fragmentation signature separately hashes record and projection-mode counts.
+Reference/debug comparison remains diagnostic and never drives projection authority.
+
+Each difference writes `event=direction_matrix_difference` with the repeat, seed,
+baseline/current directions, input/coverage/fragmentation/workload comparisons,
+both signatures, and both workload tuples. When final output differs, it also
+writes the first differing source-relative block/face, current block state, shape
+box count, and baseline/current surface summaries. If output matches and only raw
+work differs, the event class is `intermediate_workload_only`.
+
+Input-scene or final-output-coverage mismatch is a red correctness failure.
+Fragmentation or raw workload asymmetry with matching coverage is a yellow
+performance warning and does not fail the suite. The final
+`event=direction_matrix_complete` reports all four counters and direction averages
+with `result=pass|pass_with_asymmetry|fail`.
+
+The random-stress mode replaces the former redundant full-suite mode. It builds
+1,000 independently randomized scenes at the standard occupancy, without fixed
+regression fixtures, and measures one forced full rebuild per scene. Seeds remain
+internal only: they are not written to chat, generated/case diagnostics, cleanup
+messages, or the final report. Detailed optical compiler logging and per-case chat
+are disabled for this mode. Chat and diagnostics receive aggregate progress every
+100 scenes and a final `event=random_stress_complete` summary with core and
+response percentiles.
 
 Automatic structural validation is source-scoped by dimension, source position,
 and travel direction. It must not turn global compiler verbose mode on for every
@@ -709,8 +814,8 @@ side windows. A whole-block envelope is not a valid oracle for an isolated fence
 or a stair: reporting a full-block boundary that contains no optical cuboid face
 would be a validator false positive, not evidence that production omitted a face.
 
-The performance and full suites separate forced geometry rebuilds from cache
-reuse. Sparse, mixed, and dense cases invalidate the selected source geometry
+The performance suite separates forced geometry rebuilds from cache reuse.
+Sparse, mixed, and dense cases invalidate the selected source geometry
 before every measured sample. Two cached mixed-scene cases perform one forced
 unmeasured geometry rebuild followed by one unmeasured appearance-only refresh,
 reset their source-bound sample windows, and then step through either source
@@ -842,6 +947,9 @@ The profile line also includes phase timings and hot-spot counters:
   slab/interval counts, remaining area, query counts, blocker input count,
   blocker hits after clipping to the current remaining region, and update work.
   `remaining_slabs=0` is the exact early-stop condition.
+- `depth_boundary_radius_*` verifies that adjacent depth slices evaluate their
+  shared physical plane with bit-identical radii. Any mismatch is a correctness
+  alarm because touching blocker windows can otherwise leave a false light seam.
 - `plane_window_candidates` counts plane windows before the exact remaining-region
   prefilter. `plane_window_remaining_culled` counts windows rejected by the set
   identity above, and `plane_windows` / `plane_windows_effective` counts the
@@ -958,6 +1066,12 @@ first. Do not begin with global searches over all historical logs.
 The current algorithm should be faster than normal ray tracing because it works
 with texture-domain regions and voxel tiles, not per-pixel or per-ray samples.
 The main remaining costs are avoidable.
+
+The current reproducible workload, steady-state timing baseline, phase breakdown,
+and comparison protocol are recorded in
+[SPOT_PROJECTION_PERFORMANCE.md](SPOT_PROJECTION_PERFORMANCE.md). Optimization
+claims must preserve its correctness gates and workload counters; reducing emitted
+faces, dependencies, or validation coverage is not a valid speedup.
 
 ### 9.0 Optimization architecture
 
@@ -1381,6 +1495,26 @@ This is a visual cutoff only.
 
 Side spots should remain a visualization aid. They should not force full polygon
 CSG or per-cell ray casting in production.
+
+Side travel sampling frequently needs only the propagated beam radius. Each source
+output prepares one `BeamGeometryOps.RadiusPropagation`; a depth slice receives a
+lightweight offset view of the same invariant `xx`, `xt`, and `tt` coefficients.
+Candidate enumeration, interval-boundary searches, endpoint nudging, adaptive
+subdivision, and sampled occlusion planes share that evaluator. Each lookup uses
+the same absolute-travel second-moment expression and clamps to the same radius
+range as `BeamGeometryOps.propagate(...).radius()`, without constructing a complete
+propagated envelope or rebuilding moments per depth. The formal beam-profile
+verifier compares the one-shot scalar path, the prepared evaluator, and adjacent
+offset views against full-envelope propagation across plane-wave, collimated,
+diverging, and focused envelopes. This is an exact representation optimization:
+it must not alter sample counts, interval boundary search, side candidate
+acceptance, or emitted geometry.
+
+The side intersection and endpoint searches pass their sampling parameters
+directly rather than allocating capturing predicates. A receiving candidate also
+resolves its cached surface appearance at most once, and only after it produces a
+visible window. These lifetime reductions must preserve publication order and
+the same `(position, face)` appearance key.
 
 Side candidate enumeration may use the current `remaining` region's texture-domain
 bounding box to conservatively shrink the scanned tile range. This is allowed

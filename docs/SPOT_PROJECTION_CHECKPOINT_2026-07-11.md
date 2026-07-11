@@ -142,9 +142,14 @@ missing_faces == 0
 | `quick` | 小型固定场景 | 注册、生成、投影和基本日志冒烟测试 |
 | `partial_geometry` | 楼梯、台阶等局部方块组合 | 遮挡顺序、内部立面和 `missing_faces` 回归 |
 | `performance` | sparse、mixed、dense、cached power、cached color | 完整重建与外观缓存性能 |
-| `full_suite` | 合并以上测试 | 提交前完整回归 |
+| `direction_matrix` | 四方向稳定化预热后，以 4 个不同 seed 按平衡顺序运行四个水平方向 | 旋转等价性、方向性能与执行顺序偏差 |
+| `random_stress` | 1000 个不记录 seed 的纯随机场景，每场景测量一次完整重建 | 长尾性能、随机几何覆盖和压力测试 |
 
-性能模式的完整重建场景使用固定种子和占用率；缓存场景会先暖几何，再自动改变光源功率或颜色。固定输入让不同提交之间的数据可比较。
+性能模式的完整重建场景使用固定种子和占用率；缓存场景会先暖几何，再自动改变光源功率或颜色。方向矩阵使用相对光束方向生成楼梯朝向，并记录基于固定体素占用的旋转归一化场景签名。它在一次运行中先执行四个方向各 16 个样本的稳定化预热，再执行 `4 seeds × 4 directions`；每个方向在四种执行位置各出现一次。每个 case 前会清理四个旋转测试体积的并集，深度 16 的终止屏幕覆盖完整默认扩散锥，阻止测试区外地形进入测量。固定且旋转等价的输入让不同方向和不同提交之间的数据可比较。
+
+方向矩阵把结果分为三层：输入场景签名、最终输出覆盖/分片签名、内部 workload。输入或输出覆盖不一致是红色正确性失败；覆盖相同但分片或 workload 不同是黄色方向性能不对称，不再冒充“场景签名失败”。差异事件会定位首个不同的相对方块和面；只有内部窗口计数不同时标记为 `intermediate_workload_only`。
+
+`random_stress` 不包含固定回归夹具，每个场景使用新的内部随机 seed；seed 不进入聊天、诊断日志或清理消息。该模式关闭详细 compiler 日志与逐 case 聊天，只每 100 次输出聚合进度，最终记录平均值、P50 和 P95。
 
 ### 6.2 命令
 
@@ -188,6 +193,10 @@ subsystem=spot_projection_test event=suite_started
 subsystem=spot_projection_test event=case_started
 subsystem=spot_projection_test event=appearance_step
 subsystem=spot_projection_test event=case_complete
+subsystem=spot_projection_test event=direction_matrix_difference
+subsystem=spot_projection_test event=direction_matrix_complete
+subsystem=spot_projection_test event=random_stress_progress
+subsystem=spot_projection_test event=random_stress_complete
 subsystem=spot_projection_test event=suite_complete
 subsystem=spot_projection event=profile
 subsystem=spot_projection event=performance_report
@@ -198,19 +207,21 @@ subsystem=spot_projection event=geometry_cache_invalidated
 
 ## 8. 最近一次已验证基线
 
-以下数据来自 2026-07-11 的固定性能套件，测试环境和 JVM 状态会影响绝对值，因此它们是本机回归基线，不是跨机器承诺。
+详细工作量、阶段耗时和提交间比较协议见
+[SPOT_PROJECTION_PERFORMANCE.md](SPOT_PROJECTION_PERFORMANCE.md)。以下数据来自
+`diagnostics_20260711_162114_UTC.log` 中第二次完整套件；测试环境和 JVM 状态会影响绝对值，因此它们是本机回归基线，不是跨机器承诺。
 
-| 场景 | 光斑数 | 平均 core | 平均 response | 结果 |
-| --- | ---: | ---: | ---: | --- |
-| sparse 完整重建 | 930 | 27.66 ms | 40.70 ms | 通过 |
-| mixed 完整重建 | 2238 | 40.93 ms | 59.22 ms | 通过 |
-| dense 完整重建 | 1986 | 48.09 ms | 81.38 ms | 通过 |
-| mixed，仅功率变化 | 2238 | 1.24 ms | 17.67 ms | 通过 |
-| mixed，仅颜色变化 | 2238 | 1.69 ms | 26.63 ms | 通过 |
+| 场景 | 光斑数 | 平均 core | P95 core | 平均 response | 结果 |
+| --- | ---: | ---: | ---: | ---: | --- |
+| sparse 完整重建 | 930 | 27.66 ms | 39.14 ms | 40.70 ms | 通过 |
+| mixed 完整重建 | 2238 | 40.93 ms | 45.65 ms | 59.22 ms | 通过 |
+| dense 完整重建 | 1986 | 48.09 ms | 54.69 ms | 81.38 ms | 通过 |
+| mixed，仅功率变化 | 2238 | 1.24 ms | 1.43 ms | 17.67 ms | 通过 |
+| mixed，仅颜色变化 | 2238 | 1.69 ms | 2.39 ms | 26.63 ms | 通过 |
 
 缓存场景包含 14175 个依赖位置；功率和颜色样本都命中几何缓存并复用了外观计划及依赖快照。完整套件为 6/6 通过，没有结构缺面或强制校验不一致。
 
-这说明外观拆分已经生效：对同一结构改变功率或颜色时，成本不再随体素扫描和遮挡构造增长。下一阶段不应继续在这条路径上做微小优化，而应缩小完整几何失效后的重算范围。
+这说明外观拆分已经生效：对同一结构改变功率或颜色时，成本不再随体素扫描和遮挡构造增长。下一阶段不应继续在这条路径上做微小优化。首先必须把长方体遮挡从离散平行面改为单个连续 sweep，解决共棱方块仍可能漏出亮线的正确性问题；之后再缩小完整几何失效后的重算范围。
 
 ## 9. 已知限制
 
@@ -223,8 +234,31 @@ subsystem=spot_projection event=geometry_cache_invalidated
 7. 性能测试为隔离样本会清理较大范围缓存，`response` 因而可能高于普通游戏更新。
 8. `response` 不是客户端端到端计时；网络分片和实际绘制仍需用 `latest.log`、帧分析或客户端专用计时判断。
 9. 进程首次创建日志文件或加载类时可能出现一次性尖峰，不应用单个冷样本评价稳态性能。
+10. 当前每个 optical cuboid 仍以有限个平行截面充当遮挡 authority。两个只共用一条棱的 cuboid 可能在截面之间留下 canonical 亮缝；提高精度、统一相邻 depth 半径或焊接最终 quad 均未修复该问题。
 
-## 10. 下一阶段：深度切片与后缀失效
+## 10. 下一阶段：单 cuboid 单 sweep
+
+当前已确定的下一层遮挡对象是：
+
+```text
+一个 OpticalCollisionBox
+  -> 一个 CuboidSweep
+     -> fullHull()
+     -> prefixHull(travel)
+```
+
+实现约束：
+
+1. 每个 cuboid 只构造一次 sweep，不按 side/front candidate 重复扫描 cuboid。
+2. `fullHull()` 替代完整深度后的 sampled-plane blocker 集合。
+3. `prefixHull(travel)` 替代同深度接收面之前的离散 plane prefix，同时保留 receiving cuboid 自身排除与 front-before-activation 规则。
+4. 不使用中间平面作为生产遮挡 authority；配置中的 plane count 在迁移完成后应废弃或仅保留兼容诊断。
+5. sweep 是保守矩形域：允许有限额外阴影，不允许共棱体之间出现错误漏光。
+6. 在形式验证和实机场景同时确认共棱连通后，才能删除旧 sampled-plane authority。
+
+这次提交只记录该决定和当前失败边界，并未实现 `CuboidSweep`。当前运行时代码仍使用平行面，因此不能把共棱亮线标记为已解决。
+
+### 10.1 sweep 完成后的性能工作：深度切片与后缀失效
 
 完整重建按传播深度从近到远扫描，天然适合保存前缀检查点。计划引入 `DepthSliceSnapshot`：
 
@@ -276,17 +310,19 @@ DepthSliceSnapshot
 | 共享容量 | `SpotProjectionLimits.java` |
 | 网络分片 | `SpotOverlayPayload.java`, `SpectralNetwork.java` |
 | 客户端快照和绘制 | `ClientSpotCache.java`, `SpotRenderEvents.java` |
-| 自动场景和套件 | `SpotProjectionTestCommand.java`, `SpotTestMode.java` |
+| 自动场景和套件调度 | `SpotProjectionTestCommand.java`, `SpotTestMode.java` |
+| 测试世界搭建与坐标 | `SpotProjectionTestScene.java`, `SpotTestLayout.java` |
 | 测试物品 | `SpotTestItem.java` |
 
 ## 12. 提交前验证
 
 光斑投影改动至少执行：
 
-1. `full_suite`，确认所有 case 通过且无 `missing_faces`。
-2. 比较最新一组日志中的完整重建和外观缓存数据。
-3. `./gradlew.bat build`。
-4. 将 `build/libs/spectralization-1.0.0.jar` 覆盖到实际测试实例的 `mods` 目录。
-5. 比较源 jar 和目标 jar 的 SHA-256，确认测试的确使用本次构建。
+1. `partial_geometry`，确认结构验证通过且无 `missing_faces`。
+2. `performance`，确认完整重建和外观缓存 case 全部通过。
+3. 比较最新一组日志中的完整重建和外观缓存数据。
+4. `./gradlew.bat build`。
+5. 将 `build/libs/spectralization-1.0.0.jar` 覆盖到实际测试实例的 `mods` 目录。
+6. 比较源 jar 和目标 jar 的 SHA-256，确认测试的确使用本次构建。
 
 如果只修改诊断字段，也必须更新 [LOGGING.md](LOGGING.md)；如果改变场景、通过标准或测试物品行为，也必须更新 [TESTING_PLAN.md](TESTING_PLAN.md)。

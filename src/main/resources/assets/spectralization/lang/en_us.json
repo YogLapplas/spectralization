@@ -618,7 +618,8 @@
   "item.spectralization.spot_test.mode.quick": "Quick check",
   "item.spectralization.spot_test.mode.partial_geometry": "Partial-geometry validation",
   "item.spectralization.spot_test.mode.performance": "Performance suite",
-  "item.spectralization.spot_test.mode.full_suite": "Full suite",
+  "item.spectralization.spot_test.mode.direction_matrix": "Directional matrix",
+  "item.spectralization.spot_test.mode.random_stress": "1,000-scene random stress",
   "item.spectralization.spot_test.tooltip.mode": "Mode: %s",
   "item.spectralization.spot_test.tooltip.use": "Right-click to start or view progress",
   "item.spectralization.spot_test.tooltip.switch": "Shift + right-click to switch mode",
@@ -637,7 +638,11 @@
   "item.spectralization.spot_test.message.case_failed": "Details: boundary missing=%s | structural mismatches=%s",
   "item.spectralization.spot_test.message.case_failed_cache": "Details: appearance-only=%s/%s | unexpected rebuilds=%s",
   "item.spectralization.spot_test.message.case_aborted": "✗ [%s/%s] %s | aborted: %s",
+  "item.spectralization.spot_test.message.direction_matrix_summary": "Directional matrix: %s seeds | input mismatches %s | output coverage mismatches %s | fragmentation asymmetries %s | workload asymmetries %s | N/E/S/W avg %s/%s/%s/%s ms",
+  "item.spectralization.spot_test.message.random_stress_progress": "Random stress: %s/%s | running core avg %s ms | spots %s",
+  "item.spectralization.spot_test.message.random_stress_summary": "Random stress: %s anonymous scenes | core avg/P50/P95 %s/%s/%s ms | response avg %s ms | spots %s",
   "item.spectralization.spot_test.message.complete": "%s complete | passed %s/%s",
+  "item.spectralization.spot_test.message.complete_warning": "%s complete with directional workload asymmetry | cases %s/%s",
   "item.spectralization.spot_test.message.failed": "%s stopped | passed %s/%s",
   "item.spectralization.spot_test.benchmark.full_rebuild": "forced full rebuild",
   "item.spectralization.spot_test.benchmark.cache_reuse": "cached appearance refresh",
@@ -650,5 +655,8 @@
   "item.spectralization.spot_test.case.performance_mixed": "Mixed scattered-light scene",
   "item.spectralization.spot_test.case.performance_dense": "Dense wide-diffusion scene",
   "item.spectralization.spot_test.case.performance_cached_power": "Cached power-change refresh",
-  "item.spectralization.spot_test.case.performance_cached_color": "Cached color-change refresh"
+  "item.spectralization.spot_test.case.performance_cached_color": "Cached color-change refresh",
+  "item.spectralization.spot_test.case.direction_matrix_warmup": "Directional matrix warmup",
+  "item.spectralization.spot_test.case.direction_matrix": "Directional matrix",
+  "item.spectralization.spot_test.case.random_stress": "Anonymous random scene"
 }

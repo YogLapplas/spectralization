@@ -6,7 +6,8 @@ public enum SpotTestMode {
     QUICK,
     PARTIAL_GEOMETRY,
     PERFORMANCE,
-    FULL_SUITE;
+    DIRECTION_MATRIX,
+    RANDOM_STRESS;
 
     private static final SpotTestMode[] VALUES = values();
 
@@ -23,6 +24,9 @@ public enum SpotTestMode {
     }
 
     public static SpotTestMode byName(String name) {
+        if ("full_suite".equals(name)) {
+            return RANDOM_STRESS;
+        }
         if (name != null) {
             for (SpotTestMode mode : VALUES) {
                 if (mode.serializedName().equals(name)) {

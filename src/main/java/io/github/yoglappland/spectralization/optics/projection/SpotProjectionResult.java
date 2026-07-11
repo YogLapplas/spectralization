@@ -344,11 +344,15 @@ public record SpotProjectionResult(
             long sameDepthPrefixValidationMismatches,
             long sideCanonicalValidationChecks,
             long sideCanonicalValidationMismatches,
+            long depthBoundaryRadiusChecks,
+            long depthBoundaryRadiusMismatches,
+            double depthBoundaryRadiusMaxGap,
             List<String> structuralValidationExamples
     ) {
         public static final OptimizationStats EMPTY = new OptimizationStats(
                 0L, 0L, 0L, 0L, 0L, 0L, List.of(), List.of(),
-                0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, List.of()
+                0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
+                0L, 0L, 0.0D, List.of()
         );
 
         public OptimizationStats {
@@ -377,6 +381,11 @@ public record SpotProjectionResult(
             sameDepthPrefixValidationMismatches = Math.max(0L, sameDepthPrefixValidationMismatches);
             sideCanonicalValidationChecks = Math.max(0L, sideCanonicalValidationChecks);
             sideCanonicalValidationMismatches = Math.max(0L, sideCanonicalValidationMismatches);
+            depthBoundaryRadiusChecks = Math.max(0L, depthBoundaryRadiusChecks);
+            depthBoundaryRadiusMismatches = Math.max(0L, depthBoundaryRadiusMismatches);
+            depthBoundaryRadiusMaxGap = Double.isFinite(depthBoundaryRadiusMaxGap)
+                    ? Math.max(0.0D, depthBoundaryRadiusMaxGap)
+                    : 0.0D;
             structuralValidationExamples = structuralValidationExamples == null
                     ? List.of()
                     : List.copyOf(structuralValidationExamples);

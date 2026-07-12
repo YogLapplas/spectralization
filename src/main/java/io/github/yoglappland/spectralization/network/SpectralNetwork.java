@@ -103,6 +103,12 @@ public final class SpectralNetwork {
                 StrawberryMovementInputPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> handleStrawberryMovementInput(payload, context.player()))
         );
+
+        registrar.playToServer(
+                SpotTestLoadTogglePayload.TYPE,
+                SpotTestLoadTogglePayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> handleSpotTestLoadToggle(context.player()))
+        );
     }
 
     private static void handleSpotUpdate(SpotUpdatePayload payload) {
@@ -246,6 +252,12 @@ public final class SpectralNetwork {
                 payload.leftImpulse(),
                 payload.forwardImpulse()
         );
+    }
+
+    private static void handleSpotTestLoadToggle(net.minecraft.world.entity.player.Player player) {
+        if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+            io.github.yoglappland.spectralization.item.SpotTestItem.toggleLoad(serverPlayer);
+        }
     }
 
     private static void contextReply(

@@ -278,24 +278,36 @@ debug_log_verbose = false
 光斑算法、缓存、网络容量或渲染发生变化时，优先使用注册物品 `spectralization:spot_test`。测试者需要权限等级 2：
 
 - 右键运行当前测试模式。
-- Shift + 右键切换 `quick`、`partial_geometry`、`performance`、`direction_matrix`、`random_stress`。
+- 对空气左键切换独立的 `lightweight` / `stress` 负载档位。
+- Shift + 右键切换 `smart`、`quick`、`partial_geometry`、`performance`、`direction_matrix`、`random_stress`。
 - 套件运行时再次右键只显示进度，不启动重叠任务。
 
 模式覆盖：
 
-1. `quick`：物品注册、结构生成、投影刷新和日志冒烟。
-2. `partial_geometry`：楼梯、台阶和局部方块的踏面/立面遮挡顺序。
-3. `performance`：固定 sparse、mixed、dense 完整重建，以及功率/颜色外观缓存。
-4. `direction_matrix`：四方向稳定化预热后，以 4 个固定 seed 和平衡顺序验证输入场景、最终输出覆盖、输出分片及内部 workload。输入/覆盖不一致为失败；只有分片/workload 不一致为黄色性能警告。
-5. `random_stress`：运行 1000 个不含固定夹具的匿名纯随机场景；每个场景测量一次完整重建，不记录 seed，只输出聚合进度和最终平均/P50/P95。
+1. `smart`：先做 8 次不计入报告的预热，再用 verbose 结构验证把正确性设为硬门槛；通过后分别采集 sparse、mixed、dense 各 12 个样本，以及功率/颜色缓存各 7 个样本。
+2. `quick`：物品注册、结构生成、投影刷新和日志冒烟。
+3. `partial_geometry`：楼梯、台阶和局部方块的踏面/立面遮挡顺序。
+4. `performance`：固定 sparse、mixed、dense 完整重建，以及功率/颜色外观缓存。
+5. `direction_matrix`：四方向稳定化预热后，以 4 个固定 seed 和平衡顺序验证输入场景、最终输出覆盖、输出分片及内部 workload。输入/覆盖不一致为失败；只有分片/workload 不一致为黄色性能警告。
+6. `random_stress`：运行 1000 个不含固定夹具的匿名纯随机场景；每个场景测量一次完整重建，不记录 seed，只输出聚合进度和最终平均/P50/P95。
 
-当前还必须保留一个尚未自动化通过的手工正确性夹具：沿主传播方向前后错开的两个
-完整 cuboid 只共用一条棱，并保持该共享棱位于相同 world z；后方白色接收屏不应在
-两块阴影之间出现对角亮线。sampled-plane 实现目前仍会失败。单 cuboid 单 sweep
-替换遮挡 authority 后，必须先让该夹具通过，再更新自动套件和性能基线。
+负载档位不改变模式、case 数、样本数、repeat 数或匿名 seed 规则：
 
-提交前分别运行 `partial_geometry` 和 `performance`；`random_stress` 用于长尾压力测试，
-不代替固定场景回归基线。
+- `lightweight`（默认）：非正确性专用场景移除固定夹具，并将随机障碍替换为完整方块；用于模拟普通玩法中局部方块不会持续高频变化的负载。
+- `stress`：保留偏重楼梯、台阶、栅栏的随机障碍和固定夹具；用于投影算法压力回归。
+- `partial_geometry` 以及 smart 的 verbose 正确性 case 在轻量档仍保留局部方块，因为这些 case 的目的就是验证局部几何。
+
+`smart` 的聊天摘要使用 core P50/P95，报告 dense 场景中耗时最大的阶段、P95/P50
+稳定性、结构检查数和缓存 P50。相同玩家在同一次服务端生命周期内再次运行时，还会
+自动比较 sparse/mixed/dense P50；负百分比表示更快。完整机器可读结果写入
+`event=smart_suite_complete`，未通过正确性门槛时不应把该次结果保存为新基线。
+
+日常修改先选择 `lightweight` 负载并运行所需模式；投影算法、局部方块语义或发布候选
+发生变化时选择 `stress` 负载。只有专项排查时才分别运行 `partial_geometry` 或 `performance`；
+`random_stress` 用于长尾压力测试，不代替固定场景回归基线。
+
+左键空气事件只在客户端产生，因此客户端仅发送切换意图。服务端必须重新验证主手物品、
+权限和套件忙碌状态，并由服务端修改物品 `CUSTOM_DATA` 中的负载字段；客户端不得直接决定负载状态。
 
 命令入口用于细分排查：
 
@@ -401,3 +413,22 @@ debug_log_verbose = true
 - 资源路径和模型引用检查。
 
 自动化测试不能替代游戏内测试。它负责保护数学和数据结构；游戏内测试负责保护注册、资源、交互、渲染和事件边界。
+
+## 14. 光斑串行收尾发布协议
+
+使用 `spot_test` 时：右键运行当前模式；Shift + 右键循环测试模式；对空气左键只切换
+独立的 `lightweight` / `stress` 负载，不改变模式的 case 数、样本数或 repeat 数。
+
+光斑算法提交前的最小游戏内序列：
+
+1. lightweight `random_stress` 连续两次；每次必须 1000/1000 pass，以第二次作为热态随机基线。
+2. stress `random_stress` 一次；必须 1000/1000 pass，并同时记录平均/P50/P95 与 spots。
+3. stress `smart` 至少一次；必须 7/7 pass、647 validation checks、`boundary_missing=0`、`structural_mismatches=0`。
+4. 对固定 sparse/mixed/dense 同时记录覆盖签名、分片签名、spots、tiles、projectable、dependencies、side windows 和 side quads。
+5. cached power/color 必须全部走 appearance-only，完整几何重建数为 0。
+6. 只读取本次启动中时间最新且时间戳匹配的一组 diagnostics / optical_compiler 日志。
+7. 运行 `./gradlew.bat build`，覆盖实际游戏 `mods/spectralization-1.0.0.jar`，并核对源/目标 SHA-256。
+
+`random_stress` 的 seed 匿名且每场景只测一次，因此用于发现长尾和持续分配压力；固定
+smart case 才是提交间同工作量比较。`response` 包含 Minecraft tick、测试调度、compiler、
+网络与日志外围延迟，算法优化以 `elapsed/core` 及 profile 阶段字段为准。

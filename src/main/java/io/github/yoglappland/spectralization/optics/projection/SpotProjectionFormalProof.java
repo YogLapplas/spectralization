@@ -137,6 +137,7 @@ public final class SpotProjectionFormalProof {
         int cuboidSweepChecks = 0;
         int polygonSweepChecks = 0;
         int analyticSideTravelChecks = 0;
+        int remainingBoundedScanChecks = 0;
         try {
             canonicalRegionChecks = VoxelSpotProjector.verifyCanonicalRegionSubtractSweep();
         } catch (RuntimeException exception) {
@@ -162,6 +163,11 @@ public final class SpotProjectionFormalProof {
         } catch (RuntimeException exception) {
             failures.add(exception.getMessage());
         }
+        try {
+            remainingBoundedScanChecks = VoxelSpotProjector.verifyRemainingBoundedTileScan();
+        } catch (RuntimeException exception) {
+            failures.add(exception.getMessage());
+        }
 
         if (rawNegativePatches == 0) {
             failures.add("formal proof did not exercise any negative-winding side patch.");
@@ -179,6 +185,10 @@ public final class SpotProjectionFormalProof {
             failures.add("formal proof did not exercise analytic side travel intervals.");
         }
 
+        if (remainingBoundedScanChecks == 0) {
+            failures.add("formal proof did not exercise remaining-bounded tile scans.");
+        }
+
         return new ProofResult(
                 checkedPatches,
                 rawNegativePatches,
@@ -189,6 +199,7 @@ public final class SpotProjectionFormalProof {
                 cuboidSweepChecks,
                 polygonSweepChecks,
                 analyticSideTravelChecks,
+                remainingBoundedScanChecks,
                 Map.copyOf(patchCounts),
                 failures
         );
@@ -264,6 +275,117 @@ public final class SpotProjectionFormalProof {
         }
         checked += indexedResult.polygons().size();
 
+        Random batchRandom = new Random(0xBA7C4EEDL);
+        List<CanonicalPolygonOps.Bounds> batchRectangles = new ArrayList<>();
+        List<List<CanonicalPolygonOps.Polygon>> scalarBatchReference = new ArrayList<>();
+        for (int queryIndexValue = 0; queryIndexValue < 128; queryIndexValue++) {
+            double minU = batchRandom.nextDouble() * 0.85D;
+            double minV = batchRandom.nextDouble() * 0.85D;
+            double maxU = Math.min(1.0D, minU + 0.03D + batchRandom.nextDouble() * 0.25D);
+            double maxV = Math.min(1.0D, minV + 0.03D + batchRandom.nextDouble() * 0.25D);
+            batchRectangles.add(new CanonicalPolygonOps.Bounds(minU, minV, maxU, maxV));
+            scalarBatchReference.add(indexedRegion.intersectRectangleDetailed(minU, minV, maxU, maxV).polygons());
+        }
+        CanonicalPolygonOps.BatchIntersectionResult batchResult =
+                indexedRegion.intersectRectanglesDetailed(batchRectangles);
+        if (batchResult.queryStats().queries() != batchRectangles.size()
+                || batchResult.queryStats().indexedQueries() != batchRectangles.size()
+                || !batchResult.polygonsByRectangle().equals(scalarBatchReference)) {
+            throw new IllegalStateException("batched rectangle intersection changed scalar query output");
+        }
+        checked += batchResult.visiblePolygons();
+
+        CanonicalPolygonOps.QueryWorkspace reusableQueryWorkspace =
+                new CanonicalPolygonOps.QueryWorkspace();
+        List<CanonicalPolygonOps.Polygon> reusableRectangleOutput = new ArrayList<>();
+        for (int queryIndexValue = 0; queryIndexValue < batchRectangles.size(); queryIndexValue++) {
+            CanonicalPolygonOps.Bounds rectangle = batchRectangles.get(queryIndexValue);
+            CanonicalPolygonOps.RectangleIntersectionStats reusableStats = indexedRegion.intersectRectangleInto(
+                    rectangle.minU(),
+                    rectangle.minV(),
+                    rectangle.maxU(),
+                    rectangle.maxV(),
+                    reusableQueryWorkspace,
+                    reusableRectangleOutput
+            );
+            if (!reusableStats.queryStats().indexed()
+                    || !reusableRectangleOutput.equals(scalarBatchReference.get(queryIndexValue))) {
+                throw new IllegalStateException("reused rectangle query workspace changed exact output");
+            }
+            CanonicalPolygonOps.Polygon rectanglePolygon = CanonicalPolygonOps.rectangle(
+                    rectangle.minU(), rectangle.minV(), rectangle.maxU(), rectangle.maxV()
+            );
+            boolean scalarHit = indexedRegion.intersectsDetailed(rectanglePolygon).hit();
+            boolean reusableHit = indexedRegion.intersectsDetailed(
+                    rectanglePolygon, reusableQueryWorkspace
+            ).hit();
+            if (scalarHit != reusableHit) {
+                throw new IllegalStateException("reused polygon query workspace changed intersection membership");
+            }
+            checked += 2;
+        }
+
+        Random workspaceRandom = new Random(0xA110CA7EL);
+        CanonicalPolygonOps.PolygonWorkspace reusedWorkspace = new CanonicalPolygonOps.PolygonWorkspace();
+        for (int iteration = 0; iteration < 2048; iteration++) {
+            List<CanonicalPolygonOps.Point> subjectPoints = new ArrayList<>();
+            List<CanonicalPolygonOps.Point> clipPoints = new ArrayList<>();
+            double subjectMinU = -0.15D + workspaceRandom.nextDouble() * 0.8D;
+            double subjectMinV = -0.15D + workspaceRandom.nextDouble() * 0.8D;
+            double clipMinU = -0.15D + workspaceRandom.nextDouble() * 0.9D;
+            double clipMinV = -0.15D + workspaceRandom.nextDouble() * 0.9D;
+            addScaledRectangle(
+                    subjectPoints,
+                    subjectMinU,
+                    subjectMinV,
+                    subjectMinU + 0.12D + workspaceRandom.nextDouble() * 0.3D,
+                    subjectMinV + 0.12D + workspaceRandom.nextDouble() * 0.3D,
+                    0.7D
+            );
+            addScaledRectangle(
+                    subjectPoints,
+                    subjectMinU,
+                    subjectMinV,
+                    subjectMinU + 0.12D + workspaceRandom.nextDouble() * 0.3D,
+                    subjectMinV + 0.12D + workspaceRandom.nextDouble() * 0.3D,
+                    1.25D
+            );
+            addScaledRectangle(
+                    clipPoints,
+                    clipMinU,
+                    clipMinV,
+                    clipMinU + 0.1D + workspaceRandom.nextDouble() * 0.35D,
+                    clipMinV + 0.1D + workspaceRandom.nextDouble() * 0.35D,
+                    0.75D
+            );
+            addScaledRectangle(
+                    clipPoints,
+                    clipMinU,
+                    clipMinV,
+                    clipMinU + 0.1D + workspaceRandom.nextDouble() * 0.35D,
+                    clipMinV + 0.1D + workspaceRandom.nextDouble() * 0.35D,
+                    1.2D
+            );
+            CanonicalPolygonOps.Polygon subject = CanonicalPolygonOps.clippedConvexHull(subjectPoints);
+            CanonicalPolygonOps.Polygon clipPolygon = CanonicalPolygonOps.clippedConvexHull(clipPoints);
+            if (subject == null || clipPolygon == null) {
+                continue;
+            }
+            List<CanonicalPolygonOps.Polygon> freshSubtract = CanonicalPolygonOps.subtract(subject, clipPolygon);
+            List<CanonicalPolygonOps.Polygon> reusedSubtract = new ArrayList<>();
+            CanonicalPolygonOps.subtractInto(subject, clipPolygon, reusedWorkspace, reusedSubtract);
+            if (!freshSubtract.equals(reusedSubtract)) {
+                throw new IllegalStateException("reused polygon subtraction workspace changed fragment output");
+            }
+            CanonicalPolygonOps.Polygon freshIntersection = CanonicalPolygonOps.intersection(subject, clipPolygon);
+            CanonicalPolygonOps.Polygon reusedIntersection =
+                    CanonicalPolygonOps.intersection(subject, clipPolygon, reusedWorkspace);
+            if (freshIntersection == null ? reusedIntersection != null : !freshIntersection.equals(reusedIntersection)) {
+                throw new IllegalStateException("reused polygon clipping workspace changed intersection output");
+            }
+            checked += freshSubtract.size() + (freshIntersection == null ? 0 : 1);
+        }
+
         Random bulkRandom = new Random(0xB10C5EEDL);
         List<CanonicalPolygonOps.Polygon> bulkBlockers = new ArrayList<>();
         for (int blockerIndex = 0; blockerIndex < 24; blockerIndex++) {
@@ -281,9 +403,16 @@ public final class SpotProjectionFormalProof {
         }
         CanonicalPolygonOps.Region sequentialDifference = indexedRegion.subtractAll(bulkBlockers);
         CanonicalPolygonOps.BulkSubtractionResult bulkDifference = indexedRegion.subtractIndexed(bulkBlockers);
+        CanonicalPolygonOps.BulkSubtractionResult compactedBulkDifference =
+                indexedRegion.subtractIndexedCompacted(bulkBlockers);
         if (!bulkDifference.indexed()
                 || Math.abs(sequentialDifference.area() - bulkDifference.region().area()) > 1.0E-8D) {
             throw new IllegalStateException("indexed bulk polygon subtraction changed remaining area");
+        }
+        if (Math.abs(bulkDifference.region().area() - compactedBulkDifference.region().area()) > 1.0E-8D
+                || compactedBulkDifference.compactionCellsBefore() != bulkDifference.region().cellCount()
+                || compactedBulkDifference.compactionCellsAfter() > compactedBulkDifference.compactionCellsBefore()) {
+            throw new IllegalStateException("integrated bulk compaction changed remaining coverage or cell accounting");
         }
         for (int probeIndex = 0; probeIndex < 64; probeIndex++) {
             double minU = bulkRandom.nextDouble() * 0.8D;
@@ -296,12 +425,15 @@ public final class SpotProjectionFormalProof {
             );
             double sequentialArea = intersectionArea(sequentialDifference, probe);
             double bulkArea = intersectionArea(bulkDifference.region(), probe);
-            if (Math.abs(sequentialArea - bulkArea) > 1.0E-8D) {
+            double compactedBulkArea = intersectionArea(compactedBulkDifference.region(), probe);
+            if (Math.abs(sequentialArea - bulkArea) > 1.0E-8D
+                    || Math.abs(bulkArea - compactedBulkArea) > 1.0E-8D) {
                 throw new IllegalStateException("indexed bulk polygon subtraction changed probe coverage");
             }
             checked++;
         }
         assertDisjointCells(bulkDifference.region(), "indexed bulk polygon subtraction");
+        assertDisjointCells(compactedBulkDifference.region(), "integrated compacted bulk polygon subtraction");
 
         CanonicalPolygonOps.Region splitSquare = CanonicalPolygonOps.Region.ofCells(List.of(
                 CanonicalPolygonOps.polygon(List.of(
@@ -987,6 +1119,7 @@ public final class SpotProjectionFormalProof {
             int cuboidSweepChecks,
             int polygonSweepChecks,
             int analyticSideTravelChecks,
+            int remainingBoundedScanChecks,
             Map<Direction, Integer> patchCounts,
             List<String> failures
     ) {
@@ -998,7 +1131,7 @@ public final class SpotProjectionFormalProof {
         String format() {
             return String.format(
                     Locale.ROOT,
-                    "spot_projection_formal_proof checked=%d negative_winding=%d clipped_geometry=%d front_order=%d canonical_region=%d same_depth_index=%d cuboid_sweep=%d polygon_sweep=%d analytic_side_travel=%d counts=%s",
+                    "spot_projection_formal_proof checked=%d negative_winding=%d clipped_geometry=%d front_order=%d canonical_region=%d same_depth_index=%d cuboid_sweep=%d polygon_sweep=%d analytic_side_travel=%d remaining_scan=%d counts=%s",
                     checkedPatches,
                     rawNegativePatches,
                     clippedGeometryChecks,
@@ -1008,6 +1141,7 @@ public final class SpotProjectionFormalProof {
                     cuboidSweepChecks,
                     polygonSweepChecks,
                     analyticSideTravelChecks,
+                    remainingBoundedScanChecks,
                     patchCounts
             );
         }

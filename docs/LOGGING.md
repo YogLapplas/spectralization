@@ -277,7 +277,10 @@ readout_reliable=true
 - 性能：完整几何扫描、外观更新、服务器响应或客户端绘制过慢。
 
 推荐使用 `spot_test` 物品运行固定测试。右键执行当前模式，Shift + 右键在
-`quick`、`partial_geometry`、`performance`、`direction_matrix` 和 `random_stress` 之间切换。性能模式会自动运行
+`smart`、`quick`、`partial_geometry`、`performance`、`direction_matrix` 和 `random_stress` 之间切换。
+对空气左键切换独立的 `lightweight` / `stress` 负载档位。负载档位不改变模式的 case 数、
+样本数或 repeat；`lightweight` 仅把非正确性专用场景换成完整方块分布，`stress` 保留偏重局部方块的分布。
+`smart` 会依次执行预热、verbose 正确性门槛、三种密度的性能采样以及功率/颜色缓存回归。性能模式会自动运行
 `sparse`、`mixed`、`dense`、`cached_power` 和 `cached_color`，不需要手工改变光源。
 方向矩阵先完成四方向稳定化预热，再比较 4 个固定 seed 的旋转等价场景；千次随机
 压力测试不记录 seed，并且只每 100 次写一条聚合进度，避免逐 case 测试日志反过来
@@ -299,6 +302,7 @@ subsystem=spot_projection_test event=direction_matrix_difference
 subsystem=spot_projection_test event=direction_matrix_complete
 subsystem=spot_projection_test event=random_stress_progress
 subsystem=spot_projection_test event=random_stress_complete
+subsystem=spot_projection_test event=smart_suite_complete
 subsystem=spot_projection_test event=suite_complete
 subsystem=spot_projection event=profile
 subsystem=spot_projection event=performance_report
@@ -321,6 +325,16 @@ optical_compiler_*.log
 3. 缓存测试中 `appearance_only_samples` 等于请求样本数。
 4. `cache_validation_passed=true`，外观计划和依赖快照均复用。
 5. 正确性通过后再比较 `core`、`response` 和分阶段计时。
+
+`smart_suite_complete` 是一次智能测试的机器可读结论。优先看 `complete` 和 `result`，
+再看 `validation_checks`、三种密度的 `*_p50_us` / `*_p95_us`、`dense_tail_ratio`、
+`hotspot` / `hotspot_share_percent` 以及两个缓存 P50。存在同一玩家的上一轮成功结果时，
+事件还包含 `*_p50_delta_percent`；负值表示当前更快。预热样本不会进入这些统计。
+
+`suite_started`、`case_started`、`case_complete` 和最终套件摘要包含
+`load=lightweight|stress`。每个 `generated` 事件还包含
+`obstacle_profile=full_blocks_only|partial_heavy`。轻量负载的普通场景必须是
+`full_blocks_only` 且 `fixtures=0`；正确性专用 case 仍可保留 `partial_heavy`。
 
 真实世界依赖变更可产生 `cache_mode=suffix_rebuild`。该 profile 额外记录
 `earliest_invalidated_depth`、`reused_depth_slices`、`rebuilt_depth_slices`、
@@ -355,6 +369,36 @@ optical_compiler_*.log
   查询会直接复用完全落在窗口内的 immutable convex cell，只裁剪边界 cell；
 - `side_prefix_subtraction_buffers=reused_pair` 表示 same-depth prefix polygon
   subtraction 交替复用两个 fragment buffer，不构造中间 `Region`；
+- `side_visibility_query_strategy=remaining_first_joined_prefix` 表示侧面查询先取得
+  remaining 的实际 surviving cells，再用这些 cell 的 bounds 联合筛选同深度 prefix；
+  已被前层完全消耗的窗口不会建立 prefix 查询，只碰到 side 大矩形而没有碰到
+  surviving cell 的遮挡体也不会进入 polygon subtraction；
+- `side_remaining_query_workspace=reused_per_depth` 表示同一 depth 的 side rectangle
+  查询复用 remaining index candidate 数组与 polygon clipping workspace；
+- `side_prefix_subtraction_workspace=reused_per_depth` 表示同一 depth 的 side prefix
+  subtraction 复用双 fragment buffer 与 clipping workspace，结果在下一个 side window
+  查询前消费完毕；
+- `sweep_construction_workspace=reused_per_depth` 与
+  `sweep_prefilter_query_workspace=reused_per_depth` 分别表示 full sweep 的 extrema 列表
+  和 remaining prefilter 查询缓冲按 depth 复用；
+- `front_sweep_update_strategy=incremental_travel_segments` 表示 front travel group
+  只应用上一个 group 到当前 group 的新增连续 sweep 区段，不再重复应用从 cuboid
+  起点开始的累计 prefix；
+- `remaining_handoff_strategy=front_prefix_region_plus_tail` 表示 depth 结束时直接接管
+  front pass 已扣除 prefix 的临时 remaining，并只应用最后一个 front group 之后的
+  sweep tail；side pass 仍读取进入当前 depth 时的原始 remaining；
+- `front_receiver_query_strategy=travel_group_batch_reusable_workspace` 表示同一 front
+  travel group 的 exposed receivers 一次提交给 remaining cell index；候选 gather/sort
+  workspace 在组内复用，同时保持 receiver 顺序与每个 receiver 内的 cell 顺序；
+- `remaining_bulk_finalize_strategy=integrated_compaction_before_region` 表示 indexed bulk
+  subtraction 的 fragment 输出先直接执行 incremental convex compaction，最后只构造一次
+  immutable Region，不再构造未压缩 Region 后又构造压缩 Region；
+- `polygon_clip_workspace=reused_per_operation` 表示 intersection/subtraction 的左右
+  half-plane 顶点缓冲在一次 batch、bulk 或 prefix 操作内复用；
+- `polygon_subtract_output=append_into_reused_buffers` 表示 subtraction 直接把 fragments
+  追加到调用方的双缓冲列表，不再为每个 exact test 创建 pieces list 与 immutable copy；
+- `polygon_vertex_storage=owned_normalized_list` 表示 `Polygon.create` 生成的新 normalized
+  顶点列表由 Polygon 直接持有并只读暴露，不再执行第二次数组复制；
 - `side_debug_bounds=on_demand` 表示 visible polygon 的 bounds 只在 allocation/debug
   明细需要时物化；
   `remaining_polygon_cells` / `remaining_polygon_vertices` 是当前 remaining 复杂度，

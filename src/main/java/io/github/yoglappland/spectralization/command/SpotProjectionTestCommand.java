@@ -43,6 +43,10 @@ public final class SpotProjectionTestCommand {
     private static final double RANDOM_OCCUPANCY = 0.17D;
     private static final int RANDOM_STRESS_CASES = 1_000;
     private static final int RANDOM_STRESS_PROGRESS_INTERVAL = 100;
+    private static final int SMART_WARMUP_SAMPLES = 8;
+    private static final int SMART_VALIDATION_SAMPLES = 3;
+    private static final int SMART_PERFORMANCE_SAMPLES = 12;
+    private static final int SMART_CACHE_SAMPLES = 7;
     private static final long[] DIRECTION_MATRIX_WARMUP_SEEDS = {
             0x13579bdf2468aceL,
             0x2468ace13579bdfL,
@@ -63,6 +67,7 @@ public final class SpotProjectionTestCommand {
     };
     private static final Map<UUID, GeneratedTest> LAST_TEST_BY_PLAYER = new HashMap<>();
     private static final Map<UUID, BenchmarkRun> BENCHMARKS_BY_PLAYER = new HashMap<>();
+    private static final Map<SmartBaselineKey, SmartSuiteSummary> LAST_SMART_SUMMARY_BY_PLAYER = new HashMap<>();
     private static ItemSuiteRun activeItemSuite;
 
     static LiteralArgumentBuilder<CommandSourceStack> command() {
@@ -132,7 +137,7 @@ public final class SpotProjectionTestCommand {
         );
     }
 
-    public static int startItemSuite(ServerPlayer player, SpotTestMode mode) {
+    public static int startItemSuite(ServerPlayer player, SpotTestMode mode, SpotTestLoad load) {
         CommandSourceStack source = player.createCommandSourceStack();
         if (!source.hasPermission(2)) {
             source.sendFailure(Component.translatable("item.spectralization.spot_test.message.permission"));
@@ -148,7 +153,7 @@ public final class SpotProjectionTestCommand {
         }
 
         SpotTestLayout layout = SpotTestLayout.inFrontOf(player);
-        List<SuiteCase> cases = suiteCases(mode);
+        List<SuiteCase> cases = suiteCases(mode, load);
         for (Direction direction : cases.stream()
                 .map(testCase -> testCase.directionOr(layout.direction()))
                 .distinct()
@@ -173,6 +178,7 @@ public final class SpotProjectionTestCommand {
                 player.serverLevel().dimension(),
                 layout,
                 mode,
+                load,
                 cases,
                 DebugConfigSnapshot.capture()
         );
@@ -181,6 +187,7 @@ public final class SpotProjectionTestCommand {
         SpectralDiagnostics.event(player.serverLevel(), "spot_projection_test", "suite_started")
                 .field("run_id", run.runId)
                 .field("suite", mode.serializedName())
+                .field("load", load.serializedName())
                 .field("cases", cases.size())
                 .field("repeats", switch (mode) {
                     case DIRECTION_MATRIX -> DIRECTION_MATRIX_SEEDS.length;
@@ -193,6 +200,7 @@ public final class SpotProjectionTestCommand {
         player.sendSystemMessage(Component.translatable(
                 "item.spectralization.spot_test.message.started",
                 Component.translatable(mode.translationKey()),
+                Component.translatable(load.translationKey()),
                 cases.size()
         ).withStyle(ChatFormatting.GOLD));
         startItemSuiteCase(player, run);
@@ -254,6 +262,7 @@ public final class SpotProjectionTestCommand {
                     .event(player.serverLevel(), "spot_projection_test", "case_started")
                     .field("run_id", run.runId)
                     .field("suite", run.mode.serializedName())
+                    .field("load", run.load.serializedName())
                     .field("case_id", testCase.id())
                     .field("case_index", run.caseIndex)
                     .field("repeat", testCase.repeatIndex())
@@ -595,8 +604,17 @@ public final class SpotProjectionTestCommand {
                 + optimization.sameDepthSplitValidationMismatches()
                 + optimization.sameDepthPrefixValidationMismatches()
                 + optimization.sideCanonicalValidationMismatches();
+        long structuralChecks = optimization.remainingSubtractValidationChecks()
+                + optimization.sameDepthSplitValidationChecks()
+                + optimization.sameDepthPrefixValidationChecks()
+                + optimization.sideCanonicalValidationChecks();
+        boolean validationEvidencePresent = run.mode != SpotTestMode.SMART
+                || !testCase.verboseValidation()
+                || structuralChecks > 0L;
         boolean validationPassed = !testCase.verboseValidation()
-                || (stats.sideBoundaryMissingFaces() == 0L && structuralMismatches == 0L);
+                || (stats.sideBoundaryMissingFaces() == 0L
+                && structuralMismatches == 0L
+                && validationEvidencePresent);
         boolean cachePassed = testCase.benchmarkMode() != BenchmarkMode.CACHE_REUSE
                 || (completion.report().appearanceOnlySamples() == testCase.samples()
                 && completion.report().fullRebuildSamples() == 0);
@@ -612,6 +630,7 @@ public final class SpotProjectionTestCommand {
                     .event(level, "spot_projection_test", "case_complete")
                     .field("run_id", run.runId)
                     .field("suite", run.mode.serializedName())
+                    .field("load", run.load.serializedName())
                     .field("case_id", testCase.id())
                     .field("case_index", run.caseIndex)
                     .field("repeat", testCase.repeatIndex())
@@ -648,14 +667,19 @@ public final class SpotProjectionTestCommand {
                     .field("same_depth_split_validation_checks", optimization.sameDepthSplitValidationChecks())
                     .field("same_depth_prefix_validation_checks", optimization.sameDepthPrefixValidationChecks())
                     .field("side_canonical_validation_checks", optimization.sideCanonicalValidationChecks())
+                    .field("structural_validation_checks", structuralChecks)
+                    .field("validation_evidence_present", validationEvidencePresent)
                     .field("structural_mismatches", structuralMismatches)
                     .field("cache_expected_appearance_only", testCase.benchmarkMode() == BenchmarkMode.CACHE_REUSE
                             ? testCase.samples() : 0)
                     .field("cache_validation_passed", cachePassed)
                     .field("result", result)
                     .write();
-            sendItemSuiteCaseSummary(player, run, testCase, completion.report(), completion.latency(), passed);
+            if (run.mode != SpotTestMode.SMART || !"smart_warmup".equals(testCase.id())) {
+                sendItemSuiteCaseSummary(player, run, testCase, completion.report(), completion.latency(), passed);
+            }
         }
+        run.recordSmartResult(testCase, completion.report(), completion.latency(), structuralChecks);
 
         if (!passed) {
             if (!cachePassed) {
@@ -669,7 +693,8 @@ public final class SpotProjectionTestCommand {
                 player.sendSystemMessage(Component.translatable(
                         "item.spectralization.spot_test.message.case_failed",
                         stats.sideBoundaryMissingFaces(),
-                        structuralMismatches
+                        structuralMismatches,
+                        structuralChecks
                 ).withStyle(ChatFormatting.RED));
             }
             finishItemSuite(player, level, false, cachePassed ? "validation_failed" : "cache_validation_failed");
@@ -733,11 +758,11 @@ public final class SpotProjectionTestCommand {
                 : report.fullRebuildSamples();
         player.sendSystemMessage(Component.translatable(
                 key,
-                passed ? "✓" : "✗",
+                passed ? "PASS" : "FAIL",
                 run.caseIndex + 1,
                 run.cases.size(),
                 testCase.displayName(run.currentLayout().direction()),
-                formatMillis(report.elapsedAverageUs()),
+                formatMillis(report.elapsedP50Us()),
                 formatMillis(report.elapsedP95Us()),
                 formatMillis(latency.averageUs()),
                 formatMillis(latency.p95Us()),
@@ -824,9 +849,15 @@ public final class SpotProjectionTestCommand {
         activeItemSuite = null;
         VoxelSpotProjector.clearTargetedValidation();
         run.previousDebugConfig.restore();
+        SmartSuiteSummary smartSummary = run.mode == SpotTestMode.SMART ? run.smartSummary() : null;
+        SmartSuiteSummary previousSmartSummary = run.mode == SpotTestMode.SMART
+                ? LAST_SMART_SUMMARY_BY_PLAYER.get(new SmartBaselineKey(run.owner, run.load))
+                : null;
 
         if (level != null) {
-            if (run.mode == SpotTestMode.DIRECTION_MATRIX) {
+            if (run.mode == SpotTestMode.SMART && smartSummary != null) {
+                writeSmartSummary(level, run, smartSummary, previousSmartSummary, passed);
+            } else if (run.mode == SpotTestMode.DIRECTION_MATRIX) {
                 writeDirectionMatrixSummary(level, run);
             } else if (run.mode == SpotTestMode.RANDOM_STRESS) {
                 writeRandomStressSummary(level, run, passed);
@@ -834,6 +865,7 @@ public final class SpotProjectionTestCommand {
             SpectralDiagnostics.event(level, "spot_projection_test", "suite_complete")
                     .field("run_id", run.runId)
                     .field("suite", run.mode.serializedName())
+                    .field("load", run.load.serializedName())
                     .field("cases", run.cases.size())
                     .field("passed_cases", run.passedCases)
                     .field("result", passed ? "pass" : "fail")
@@ -841,7 +873,9 @@ public final class SpotProjectionTestCommand {
                     .write();
         }
         if (player != null) {
-            if (run.mode == SpotTestMode.DIRECTION_MATRIX) {
+            if (run.mode == SpotTestMode.SMART && smartSummary != null) {
+                sendSmartSummary(player, smartSummary, previousSmartSummary, passed);
+            } else if (run.mode == SpotTestMode.DIRECTION_MATRIX) {
                 ChatFormatting matrixStyle = !run.directionMatrixPassed()
                         ? ChatFormatting.RED
                         : (run.directionMatrixHasAsymmetry() ? ChatFormatting.YELLOW : ChatFormatting.GREEN);
@@ -886,11 +920,131 @@ public final class SpotProjectionTestCommand {
                     ? ChatFormatting.YELLOW
                     : (passed ? ChatFormatting.GREEN : ChatFormatting.RED)));
         }
+        if (run.mode == SpotTestMode.SMART
+                && passed
+                && smartSummary != null
+                && smartSummary.complete()) {
+            LAST_SMART_SUMMARY_BY_PLAYER.put(new SmartBaselineKey(run.owner, run.load), smartSummary);
+        }
+    }
+
+    private static void sendSmartSummary(
+            ServerPlayer player,
+            SmartSuiteSummary summary,
+            SmartSuiteSummary previous,
+            boolean passed
+    ) {
+        if (!summary.complete()) {
+            player.sendSystemMessage(Component.translatable(
+                    "item.spectralization.spot_test.message.smart_incomplete"
+            ).withStyle(ChatFormatting.RED));
+            return;
+        }
+        player.sendSystemMessage(Component.translatable(
+                "item.spectralization.spot_test.message.smart_core",
+                formatMillis(summary.sparse().report().elapsedP50Us()),
+                formatMillis(summary.sparse().report().elapsedP95Us()),
+                formatMillis(summary.mixed().report().elapsedP50Us()),
+                formatMillis(summary.mixed().report().elapsedP95Us()),
+                formatMillis(summary.dense().report().elapsedP50Us()),
+                formatMillis(summary.dense().report().elapsedP95Us())
+        ).withStyle(passed ? ChatFormatting.GREEN : ChatFormatting.RED));
+        SmartHotspot hotspot = summary.hotspot();
+        player.sendSystemMessage(Component.translatable(
+                "item.spectralization.spot_test.message.smart_hotspot",
+                Component.translatable(hotspot.translationKey()),
+                formatMillis(hotspot.averageUs()),
+                String.format(Locale.ROOT, "%.1f", hotspot.sharePercent()),
+                Component.translatable(summary.stabilityTranslationKey()),
+                String.format(Locale.ROOT, "%.2f", summary.denseTailRatio())
+        ).withStyle(ChatFormatting.AQUA));
+        player.sendSystemMessage(Component.translatable(
+                "item.spectralization.spot_test.message.smart_validation",
+                summary.validation().structuralChecks(),
+                formatMillis(summary.cachedPower().report().elapsedP50Us()),
+                formatMillis(summary.cachedColor().report().elapsedP50Us())
+        ).withStyle(summary.validation().structuralChecks() > 0L
+                ? ChatFormatting.GREEN : ChatFormatting.RED));
+        if (previous != null && previous.complete()) {
+            player.sendSystemMessage(Component.translatable(
+                    "item.spectralization.spot_test.message.smart_comparison",
+                    formatSignedPercent(percentDelta(
+                            previous.sparse().report().elapsedP50Us(), summary.sparse().report().elapsedP50Us()
+                    )),
+                    formatSignedPercent(percentDelta(
+                            previous.mixed().report().elapsedP50Us(), summary.mixed().report().elapsedP50Us()
+                    )),
+                    formatSignedPercent(percentDelta(
+                            previous.dense().report().elapsedP50Us(), summary.dense().report().elapsedP50Us()
+                    ))
+            ).withStyle(ChatFormatting.YELLOW));
+        } else {
+            player.sendSystemMessage(Component.translatable(
+                    "item.spectralization.spot_test.message.smart_baseline"
+            ).withStyle(ChatFormatting.GRAY));
+        }
+    }
+
+    private static void writeSmartSummary(
+            ServerLevel level,
+            ItemSuiteRun run,
+            SmartSuiteSummary summary,
+            SmartSuiteSummary previous,
+            boolean passed
+    ) {
+        SpectralDiagnostics.Event event = SpectralDiagnostics
+                .event(level, "spot_projection_test", "smart_suite_complete")
+                .field("run_id", run.runId)
+                .field("load", run.load.serializedName())
+                .field("complete", summary.complete())
+                .field("result", passed ? "pass" : "fail");
+        if (!summary.complete()) {
+            event.write();
+            return;
+        }
+        SmartHotspot hotspot = summary.hotspot();
+        event.field("validation_checks", summary.validation().structuralChecks())
+                .field("sparse_p50_us", summary.sparse().report().elapsedP50Us())
+                .field("sparse_p95_us", summary.sparse().report().elapsedP95Us())
+                .field("mixed_p50_us", summary.mixed().report().elapsedP50Us())
+                .field("mixed_p95_us", summary.mixed().report().elapsedP95Us())
+                .field("dense_p50_us", summary.dense().report().elapsedP50Us())
+                .field("dense_p95_us", summary.dense().report().elapsedP95Us())
+                .field("dense_tail_ratio", summary.denseTailRatio())
+                .field("hotspot", hotspot.id())
+                .field("hotspot_avg_us", hotspot.averageUs())
+                .field("hotspot_share_percent", hotspot.sharePercent())
+                .field("cached_power_p50_us", summary.cachedPower().report().elapsedP50Us())
+                .field("cached_color_p50_us", summary.cachedColor().report().elapsedP50Us());
+        if (previous != null && previous.complete()) {
+            event.field("previous_available", true)
+                    .field("sparse_p50_delta_percent", percentDelta(
+                            previous.sparse().report().elapsedP50Us(), summary.sparse().report().elapsedP50Us()
+                    ))
+                    .field("mixed_p50_delta_percent", percentDelta(
+                            previous.mixed().report().elapsedP50Us(), summary.mixed().report().elapsedP50Us()
+                    ))
+                    .field("dense_p50_delta_percent", percentDelta(
+                            previous.dense().report().elapsedP50Us(), summary.dense().report().elapsedP50Us()
+                    ));
+        } else {
+            event.field("previous_available", false);
+        }
+        event.write();
+    }
+
+    private static double percentDelta(double previous, double current) {
+        return previous <= 0.0D ? 0.0D : (current - previous) * 100.0D / previous;
+    }
+
+    private static String formatSignedPercent(double value) {
+        return String.format(Locale.ROOT, "%+.1f%%", value);
     }
 
     private static void writeDirectionMatrixSummary(ServerLevel level, ItemSuiteRun run) {
         SpectralDiagnostics.event(level, "spot_projection_test", "direction_matrix_complete")
                 .field("run_id", run.runId)
+                .field("load", run.load.serializedName())
                 .field("repeats", DIRECTION_MATRIX_SEEDS.length)
                 .field("directions", 4)
                 .field("cases", run.directionMatrixResults.size())
@@ -928,6 +1082,7 @@ public final class SpotProjectionTestCommand {
         RandomStressSummary summary = run.randomStressSummary();
         SpectralDiagnostics.event(level, "spot_projection_test", "random_stress_complete")
                 .field("run_id", run.runId)
+                .field("load", run.load.serializedName())
                 .field("cases", summary.cases())
                 .field("elapsed_avg_us", summary.elapsedAverageUs())
                 .field("elapsed_p50_us", summary.elapsedP50Us())
@@ -992,6 +1147,7 @@ public final class SpotProjectionTestCommand {
                 generatedTest.testCase().occupancy(),
                 generatedTest.testCase().fixtures(),
                 generatedTest.testCase().divergenceMilli(),
+                generatedTest.testCase().obstacleProfile(),
                 logDetails
         );
         if (logDetails) {
@@ -1010,6 +1166,7 @@ public final class SpotProjectionTestCommand {
                     .field("radius", SpotProjectionTestScene.sourceRadius())
                     .field("divergence", generatedTest.testCase().divergenceMilli() / 1000.0D)
                     .field("occupancy", generatedTest.testCase().occupancy())
+                    .field("obstacle_profile", generatedTest.testCase().obstacleProfile().serializedName())
                     .field("random_obstacles", result.randomObstacles())
                     .field("fixtures", result.fixtures())
                     .field("screen_blocks", result.screenBlocks())
@@ -1129,7 +1286,7 @@ public final class SpotProjectionTestCommand {
         }
     }
 
-    private static List<SuiteCase> suiteCases(SpotTestMode mode) {
+    private static List<SuiteCase> suiteCases(SpotTestMode mode, SpotTestLoad load) {
         SuiteCase quick = new SuiteCase(
                 "quick_seed_42", 42L, RANDOM_OCCUPANCY, true,
                 SpotProjectionTestScene.DEFAULT_DIVERGENCE_MILLI,
@@ -1147,13 +1304,95 @@ public final class SpotProjectionTestCommand {
                 new SuiteCase("performance_cached_power", 20_260_711L, 0.17D, true, 500, 5, false, BenchmarkMode.CACHE_REUSE, AppearanceMutation.POWER_SEQUENCE),
                 new SuiteCase("performance_cached_color", 20_260_711L, 0.17D, true, 500, 5, false, BenchmarkMode.CACHE_REUSE, AppearanceMutation.COLOR_SEQUENCE)
         );
-        return switch (mode) {
+        List<SuiteCase> cases = switch (mode) {
+            case SMART -> smartCases();
             case QUICK -> List.of(quick);
             case PARTIAL_GEOMETRY -> List.of(partial);
             case PERFORMANCE -> performance;
             case DIRECTION_MATRIX -> directionMatrixCases();
             case RANDOM_STRESS -> randomStressCases();
         };
+        if (load == SpotTestLoad.STRESS) {
+            return cases;
+        }
+        return cases.stream().map(SuiteCase::lightweightVariant).toList();
+    }
+
+    private static List<SuiteCase> smartCases() {
+        return List.of(
+                new SuiteCase(
+                        "smart_warmup", 20_260_711L, 0.17D, true, 500,
+                        SMART_WARMUP_SAMPLES, false, BenchmarkMode.FULL_REBUILD, AppearanceMutation.NONE
+                ),
+                new SuiteCase(
+                        "smart_validation", 20_260_711L, 0.17D, true, 500,
+                        SMART_VALIDATION_SAMPLES, true, BenchmarkMode.FULL_REBUILD, AppearanceMutation.NONE
+                ),
+                new SuiteCase(
+                        "performance_sparse", 42L, 0.08D, true, 500,
+                        SMART_PERFORMANCE_SAMPLES, false, BenchmarkMode.FULL_REBUILD, AppearanceMutation.NONE
+                ),
+                new SuiteCase(
+                        "performance_mixed", 20_260_711L, 0.17D, true, 500,
+                        SMART_PERFORMANCE_SAMPLES, false, BenchmarkMode.FULL_REBUILD, AppearanceMutation.NONE
+                ),
+                new SuiteCase(
+                        "performance_dense", -6_495_254_288_592_929_499L, 0.30D, true, 650,
+                        SMART_PERFORMANCE_SAMPLES, false, BenchmarkMode.FULL_REBUILD, AppearanceMutation.NONE
+                ),
+                new SuiteCase(
+                        "performance_cached_power", 20_260_711L, 0.17D, true, 500,
+                        SMART_CACHE_SAMPLES, false, BenchmarkMode.CACHE_REUSE, AppearanceMutation.POWER_SEQUENCE
+                ),
+                new SuiteCase(
+                        "performance_cached_color", 20_260_711L, 0.17D, true, 500,
+                        SMART_CACHE_SAMPLES, false, BenchmarkMode.CACHE_REUSE, AppearanceMutation.COLOR_SEQUENCE
+                )
+        );
+    }
+
+    static void validateSmartSuiteDefinition() {
+        List<SuiteCase> cases = smartCases();
+        if (cases.size() != 7
+                || !"smart_warmup".equals(cases.get(0).id())
+                || !"smart_validation".equals(cases.get(1).id())
+                || !cases.get(1).verboseValidation()
+                || cases.stream().filter(testCase -> testCase.samples() == SMART_PERFORMANCE_SAMPLES).count() != 3
+                || cases.stream().filter(testCase -> testCase.benchmarkMode() == BenchmarkMode.CACHE_REUSE).count() != 2) {
+            throw new IllegalStateException("Smart spot-test suite definition lost warmup, validation, performance, or cache coverage");
+        }
+    }
+
+    static void validateLoadVariants() {
+        for (SpotTestMode mode : SpotTestMode.values()) {
+            List<SuiteCase> stressCases = suiteCases(mode, SpotTestLoad.STRESS);
+            List<SuiteCase> lightweightCases = suiteCases(mode, SpotTestLoad.LIGHTWEIGHT);
+            if (stressCases.size() != lightweightCases.size()) {
+                throw new IllegalStateException("Spot-test load changed the selected mode's case count");
+            }
+            for (int index = 0; index < stressCases.size(); index++) {
+                SuiteCase stress = stressCases.get(index);
+                SuiteCase lightweight = lightweightCases.get(index);
+                if (!stress.id().equals(lightweight.id())
+                        || stress.samples() != lightweight.samples()
+                        || stress.repeatIndex() != lightweight.repeatIndex()
+                        || stress.recordSeed() != lightweight.recordSeed()) {
+                    throw new IllegalStateException("Spot-test load changed mode identity, samples, or repeats");
+                }
+                boolean keepsPartialGeometry = lightweight.verboseValidation()
+                        || "partial_geometry".equals(lightweight.id());
+                SpotProjectionTestScene.ObstacleProfile expected = keepsPartialGeometry
+                        ? SpotProjectionTestScene.ObstacleProfile.PARTIAL_HEAVY
+                        : SpotProjectionTestScene.ObstacleProfile.FULL_BLOCKS_ONLY;
+                if (lightweight.obstacleProfile() != expected
+                        || (!keepsPartialGeometry && lightweight.fixtures())) {
+                    throw new IllegalStateException("Lightweight load did not preserve only required partial geometry");
+                }
+                if (stress.obstacleProfile() != SpotProjectionTestScene.ObstacleProfile.PARTIAL_HEAVY) {
+                    throw new IllegalStateException("Stress load lost the partial-heavy obstacle profile");
+                }
+            }
+        }
     }
 
     private static List<SuiteCase> directionMatrixCases() {
@@ -1286,7 +1525,8 @@ public final class SpotProjectionTestCommand {
             AppearanceMutation appearanceMutation,
             Direction direction,
             int repeatIndex,
-            boolean recordSeed
+            boolean recordSeed,
+            SpotProjectionTestScene.ObstacleProfile obstacleProfile
     ) {
         private SuiteCase(
                 String id,
@@ -1311,7 +1551,49 @@ public final class SpotProjectionTestCommand {
                     appearanceMutation,
                     null,
                     -1,
-                    true
+                    true,
+                    SpotProjectionTestScene.ObstacleProfile.PARTIAL_HEAVY
+            );
+        }
+
+        private SuiteCase(
+                String id,
+                long seed,
+                double occupancy,
+                boolean fixtures,
+                int divergenceMilli,
+                int samples,
+                boolean verboseValidation,
+                BenchmarkMode benchmarkMode,
+                AppearanceMutation appearanceMutation,
+                SpotProjectionTestScene.ObstacleProfile obstacleProfile
+        ) {
+            this(
+                    id, seed, occupancy, fixtures, divergenceMilli, samples,
+                    verboseValidation, benchmarkMode, appearanceMutation,
+                    null, -1, true, obstacleProfile
+            );
+        }
+
+        private SuiteCase(
+                String id,
+                long seed,
+                double occupancy,
+                boolean fixtures,
+                int divergenceMilli,
+                int samples,
+                boolean verboseValidation,
+                BenchmarkMode benchmarkMode,
+                AppearanceMutation appearanceMutation,
+                Direction direction,
+                int repeatIndex,
+                boolean recordSeed
+        ) {
+            this(
+                    id, seed, occupancy, fixtures, divergenceMilli, samples,
+                    verboseValidation, benchmarkMode, appearanceMutation,
+                    direction, repeatIndex, recordSeed,
+                    SpotProjectionTestScene.ObstacleProfile.PARTIAL_HEAVY
             );
         }
 
@@ -1321,9 +1603,33 @@ public final class SpotProjectionTestCommand {
             samples = Math.max(1, Math.min(MAX_BENCHMARK_SAMPLES, samples));
             benchmarkMode = benchmarkMode == null ? BenchmarkMode.FULL_REBUILD : benchmarkMode;
             appearanceMutation = appearanceMutation == null ? AppearanceMutation.NONE : appearanceMutation;
+            obstacleProfile = obstacleProfile == null
+                    ? SpotProjectionTestScene.ObstacleProfile.PARTIAL_HEAVY
+                    : obstacleProfile;
             if (direction != null && !direction.getAxis().isHorizontal()) {
                 throw new IllegalArgumentException("Spot test direction must be horizontal");
             }
+        }
+
+        private SuiteCase lightweightVariant() {
+            if (verboseValidation || "partial_geometry".equals(id)) {
+                return this;
+            }
+            return new SuiteCase(
+                    id,
+                    seed,
+                    occupancy,
+                    false,
+                    divergenceMilli,
+                    samples,
+                    false,
+                    benchmarkMode,
+                    appearanceMutation,
+                    direction,
+                    repeatIndex,
+                    recordSeed,
+                    SpotProjectionTestScene.ObstacleProfile.FULL_BLOCKS_ONLY
+            );
         }
 
         private static SuiteCase manual(long seed) {
@@ -1503,6 +1809,89 @@ public final class SpotProjectionTestCommand {
     ) {
     }
 
+    private record SmartCaseResult(
+            SpotProjectionPerformanceTracker.Report report,
+            RequestLatencyReport latency,
+            long structuralChecks
+    ) {
+    }
+
+    private record SmartBaselineKey(UUID owner, SpotTestLoad load) {
+    }
+
+    private record SmartHotspot(String id, double averageUs, double sharePercent) {
+        private String translationKey() {
+            return "item.spectralization.spot_test.hotspot." + id;
+        }
+    }
+
+    private record SmartSuiteSummary(
+            SmartCaseResult validation,
+            SmartCaseResult sparse,
+            SmartCaseResult mixed,
+            SmartCaseResult dense,
+            SmartCaseResult cachedPower,
+            SmartCaseResult cachedColor
+    ) {
+        private static SmartSuiteSummary from(Map<String, SmartCaseResult> results) {
+            return new SmartSuiteSummary(
+                    results.get("smart_validation"),
+                    results.get("performance_sparse"),
+                    results.get("performance_mixed"),
+                    results.get("performance_dense"),
+                    results.get("performance_cached_power"),
+                    results.get("performance_cached_color")
+            );
+        }
+
+        private boolean complete() {
+            return validation != null
+                    && sparse != null
+                    && mixed != null
+                    && dense != null
+                    && cachedPower != null
+                    && cachedColor != null;
+        }
+
+        private SmartHotspot hotspot() {
+            if (dense == null) {
+                return new SmartHotspot("unavailable", 0.0D, 0.0D);
+            }
+            SpotProjectionPerformanceTracker.Report report = dense.report();
+            String id = "side";
+            double value = report.sideScanAverageUs();
+            if (report.frontPassAverageUs() > value) {
+                id = "front";
+                value = report.frontPassAverageUs();
+            }
+            if (report.remainingAverageUs() > value) {
+                id = "remaining";
+                value = report.remainingAverageUs();
+            }
+            if (report.projectionResidualAverageUs() > value) {
+                id = "residual";
+                value = report.projectionResidualAverageUs();
+            }
+            double share = report.elapsedAverageUs() <= 0.0D
+                    ? 0.0D
+                    : value * 100.0D / report.elapsedAverageUs();
+            return new SmartHotspot(id, value, share);
+        }
+
+        private double denseTailRatio() {
+            if (dense == null || dense.report().elapsedP50Us() <= 0.0D) {
+                return 0.0D;
+            }
+            return dense.report().elapsedP95Us() / dense.report().elapsedP50Us();
+        }
+
+        private String stabilityTranslationKey() {
+            double ratio = denseTailRatio();
+            String suffix = ratio <= 1.35D ? "stable" : (ratio <= 1.60D ? "variable" : "noisy");
+            return "item.spectralization.spot_test.stability." + suffix;
+        }
+    }
+
     private record RandomStressSummary(
             int cases,
             double elapsedAverageUs,
@@ -1543,12 +1932,14 @@ public final class SpotProjectionTestCommand {
         private final ResourceKey<Level> dimension;
         private final SpotTestLayout layout;
         private final SpotTestMode mode;
+        private final SpotTestLoad load;
         private final List<SuiteCase> cases;
         private final DebugConfigSnapshot previousDebugConfig;
         private final List<DirectionMatrixResult> directionMatrixResults = new ArrayList<>();
         private final List<Double> randomStressElapsedUs = new ArrayList<>();
         private final List<Double> randomStressResponseUs = new ArrayList<>();
         private final List<Double> randomStressSpots = new ArrayList<>();
+        private final Map<String, SmartCaseResult> smartResults = new HashMap<>();
         private int caseIndex;
         private int passedCases;
         private int sceneSignatureMismatches;
@@ -1563,6 +1954,7 @@ public final class SpotProjectionTestCommand {
                 ResourceKey<Level> dimension,
                 SpotTestLayout layout,
                 SpotTestMode mode,
+                SpotTestLoad load,
                 List<SuiteCase> cases,
                 DebugConfigSnapshot previousDebugConfig
         ) {
@@ -1571,6 +1963,7 @@ public final class SpotProjectionTestCommand {
             this.dimension = dimension;
             this.layout = layout;
             this.mode = mode;
+            this.load = load;
             this.cases = cases;
             this.previousDebugConfig = previousDebugConfig;
         }
@@ -1670,6 +2063,22 @@ public final class SpotProjectionTestCommand {
             randomStressElapsedUs.add(report.elapsedAverageUs());
             randomStressResponseUs.add(latency.averageUs());
             randomStressSpots.add(report.spotsAverage());
+        }
+
+        private void recordSmartResult(
+                SuiteCase testCase,
+                SpotProjectionPerformanceTracker.Report report,
+                RequestLatencyReport latency,
+                long structuralChecks
+        ) {
+            if (mode != SpotTestMode.SMART || "smart_warmup".equals(testCase.id())) {
+                return;
+            }
+            smartResults.put(testCase.id(), new SmartCaseResult(report, latency, structuralChecks));
+        }
+
+        private SmartSuiteSummary smartSummary() {
+            return SmartSuiteSummary.from(smartResults);
         }
 
         private RandomStressSummary randomStressSummary() {

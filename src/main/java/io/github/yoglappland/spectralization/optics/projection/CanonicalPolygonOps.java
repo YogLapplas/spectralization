@@ -3,6 +3,7 @@ package io.github.yoglappland.spectralization.optics.projection;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -96,106 +97,57 @@ final class CanonicalPolygonOps {
     }
 
     static Polygon intersection(Polygon subject, Polygon clip) {
+        return intersection(subject, clip, new PolygonWorkspace());
+    }
+
+    static Polygon intersection(Polygon subject, Polygon clip, PolygonWorkspace workspace) {
         if (subject == null || clip == null || !subject.bounds().intersects(clip.bounds())) {
             return null;
         }
+        Objects.requireNonNull(workspace, "workspace");
         Polygon current = subject;
         List<Point> clipPoints = clip.vertices();
         for (int index = 0; index < clipPoints.size() && current != null; index++) {
             Point a = clipPoints.get(index);
             Point b = clipPoints.get((index + 1) % clipPoints.size());
-            current = clipHalfPlane(current, a, b, true);
+            current = workspace.clipHalfPlane(current, a, b, true);
         }
         return current;
     }
 
     static List<Polygon> subtract(Polygon subject, Polygon clip) {
+        List<Polygon> output = new ArrayList<>();
+        subtractInto(subject, clip, new PolygonWorkspace(), output);
+        return output.isEmpty() ? List.of() : List.copyOf(output);
+    }
+
+    static void subtractInto(
+            Polygon subject,
+            Polygon clip,
+            PolygonWorkspace workspace,
+            List<Polygon> output
+    ) {
+        Objects.requireNonNull(workspace, "workspace");
+        Objects.requireNonNull(output, "output");
         if (subject == null) {
-            return List.of();
+            return;
         }
         if (clip == null || !subject.bounds().intersects(clip.bounds())) {
-            return List.of(subject);
+            output.add(subject);
+            return;
         }
 
         Polygon inside = subject;
-        List<Polygon> outside = new ArrayList<>();
         List<Point> clipPoints = clip.vertices();
         for (int index = 0; index < clipPoints.size() && inside != null; index++) {
             Point a = clipPoints.get(index);
             Point b = clipPoints.get((index + 1) % clipPoints.size());
-            HalfPlaneSplit split = splitHalfPlane(inside, a, b);
-            if (split.right() != null) {
-                outside.add(split.right());
+            workspace.splitHalfPlane(inside, a, b);
+            if (workspace.rightPolygon != null) {
+                output.add(workspace.rightPolygon);
             }
-            inside = split.left();
+            inside = workspace.leftPolygon;
         }
-        return outside.isEmpty() ? List.of() : List.copyOf(outside);
-    }
-
-    private static HalfPlaneSplit splitHalfPlane(Polygon polygon, Point a, Point b) {
-        List<Point> input = polygon.vertices();
-        List<Point> leftOutput = new ArrayList<>(input.size() + 2);
-        List<Point> rightOutput = new ArrayList<>(input.size() + 2);
-        Point previous = input.get(input.size() - 1);
-        double previousSide = cross(a, b, previous);
-        boolean previousLeft = halfPlaneContains(previousSide, true);
-        boolean previousRight = halfPlaneContains(previousSide, false);
-
-        for (Point current : input) {
-            double currentSide = cross(a, b, current);
-            boolean currentLeft = halfPlaneContains(currentSide, true);
-            boolean currentRight = halfPlaneContains(currentSide, false);
-            Point crossing = null;
-            if (currentLeft != previousLeft || currentRight != previousRight) {
-                crossing = lineIntersection(previous, current, previousSide, currentSide);
-            }
-            if (currentLeft != previousLeft && crossing != null) {
-                appendDistinct(leftOutput, crossing);
-            }
-            if (currentLeft) {
-                appendDistinct(leftOutput, current);
-            }
-            if (currentRight != previousRight && crossing != null) {
-                appendDistinct(rightOutput, crossing);
-            }
-            if (currentRight) {
-                appendDistinct(rightOutput, current);
-            }
-            previous = current;
-            previousSide = currentSide;
-            previousLeft = currentLeft;
-            previousRight = currentRight;
-        }
-        trimClosingDuplicate(leftOutput);
-        trimClosingDuplicate(rightOutput);
-        return new HalfPlaneSplit(Polygon.create(leftOutput), Polygon.create(rightOutput));
-    }
-
-    private static Polygon clipHalfPlane(Polygon polygon, Point a, Point b, boolean keepLeft) {
-        List<Point> input = polygon.vertices();
-        List<Point> output = new ArrayList<>(input.size() + 2);
-        Point previous = input.get(input.size() - 1);
-        double previousSide = cross(a, b, previous);
-        boolean previousInside = halfPlaneContains(previousSide, keepLeft);
-
-        for (Point current : input) {
-            double currentSide = cross(a, b, current);
-            boolean currentInside = halfPlaneContains(currentSide, keepLeft);
-            if (currentInside != previousInside) {
-                Point crossing = lineIntersection(previous, current, previousSide, currentSide);
-                if (crossing != null) {
-                    appendDistinct(output, crossing);
-                }
-            }
-            if (currentInside) {
-                appendDistinct(output, current);
-            }
-            previous = current;
-            previousSide = currentSide;
-            previousInside = currentInside;
-        }
-        trimClosingDuplicate(output);
-        return Polygon.create(output);
     }
 
     private static void trimClosingDuplicate(List<Point> points) {
@@ -244,7 +196,85 @@ final class CanonicalPolygonOps {
         return true;
     }
 
-    private record HalfPlaneSplit(Polygon left, Polygon right) {
+    static final class PolygonWorkspace {
+        private final ArrayList<Point> leftPoints = new ArrayList<>();
+        private final ArrayList<Point> rightPoints = new ArrayList<>();
+        private Polygon leftPolygon;
+        private Polygon rightPolygon;
+
+        private void splitHalfPlane(Polygon polygon, Point a, Point b) {
+            leftPoints.clear();
+            rightPoints.clear();
+            List<Point> input = polygon.vertices();
+            ensurePointCapacity(input.size() + 2);
+            Point previous = input.get(input.size() - 1);
+            double previousSide = cross(a, b, previous);
+            boolean previousLeft = halfPlaneContains(previousSide, true);
+            boolean previousRight = halfPlaneContains(previousSide, false);
+
+            for (Point current : input) {
+                double currentSide = cross(a, b, current);
+                boolean currentLeft = halfPlaneContains(currentSide, true);
+                boolean currentRight = halfPlaneContains(currentSide, false);
+                Point crossing = null;
+                if (currentLeft != previousLeft || currentRight != previousRight) {
+                    crossing = lineIntersection(previous, current, previousSide, currentSide);
+                }
+                if (currentLeft != previousLeft && crossing != null) {
+                    appendDistinct(leftPoints, crossing);
+                }
+                if (currentLeft) {
+                    appendDistinct(leftPoints, current);
+                }
+                if (currentRight != previousRight && crossing != null) {
+                    appendDistinct(rightPoints, crossing);
+                }
+                if (currentRight) {
+                    appendDistinct(rightPoints, current);
+                }
+                previous = current;
+                previousSide = currentSide;
+                previousLeft = currentLeft;
+                previousRight = currentRight;
+            }
+            trimClosingDuplicate(leftPoints);
+            trimClosingDuplicate(rightPoints);
+            leftPolygon = Polygon.create(leftPoints);
+            rightPolygon = Polygon.create(rightPoints);
+        }
+
+        private Polygon clipHalfPlane(Polygon polygon, Point a, Point b, boolean keepLeft) {
+            leftPoints.clear();
+            List<Point> input = polygon.vertices();
+            leftPoints.ensureCapacity(input.size() + 2);
+            Point previous = input.get(input.size() - 1);
+            double previousSide = cross(a, b, previous);
+            boolean previousInside = halfPlaneContains(previousSide, keepLeft);
+
+            for (Point current : input) {
+                double currentSide = cross(a, b, current);
+                boolean currentInside = halfPlaneContains(currentSide, keepLeft);
+                if (currentInside != previousInside) {
+                    Point crossing = lineIntersection(previous, current, previousSide, currentSide);
+                    if (crossing != null) {
+                        appendDistinct(leftPoints, crossing);
+                    }
+                }
+                if (currentInside) {
+                    appendDistinct(leftPoints, current);
+                }
+                previous = current;
+                previousSide = currentSide;
+                previousInside = currentInside;
+            }
+            trimClosingDuplicate(leftPoints);
+            return Polygon.create(leftPoints);
+        }
+
+        private void ensurePointCapacity(int capacity) {
+            leftPoints.ensureCapacity(capacity);
+            rightPoints.ensureCapacity(capacity);
+        }
     }
 
     record Point(double u, double v) {
@@ -277,7 +307,8 @@ final class CanonicalPolygonOps {
         private final double area;
 
         private Polygon(List<Point> vertices, double area) {
-            this.vertices = List.copyOf(vertices);
+            // Polygon.create always supplies a fresh normalized list that is never mutated again.
+            this.vertices = Collections.unmodifiableList(vertices);
             this.area = area;
             double minU = Double.POSITIVE_INFINITY;
             double minV = Double.POSITIVE_INFINITY;
@@ -487,13 +518,14 @@ final class CanonicalPolygonOps {
             }
             CandidateQuery candidates = queryCandidates(polygon.bounds());
             List<Polygon> output = new ArrayList<>();
+            PolygonWorkspace polygonWorkspace = new PolygonWorkspace();
             int testedCells = 0;
             int testedVertices = 0;
             for (int candidateIndex : candidates.indices()) {
                 Polygon cell = cells.get(candidateIndex);
                 testedCells++;
                 testedVertices += cell.vertices().size();
-                Polygon clipped = intersection(cell, polygon);
+                Polygon clipped = intersection(cell, polygon, polygonWorkspace);
                 if (clipped != null) {
                     output.add(clipped);
                 }
@@ -514,6 +546,7 @@ final class CanonicalPolygonOps {
             CandidateQuery candidates = queryCandidates(rectangleBounds);
             List<Polygon> output = new ArrayList<>(candidates.indices().length);
             Polygon clip = null;
+            PolygonWorkspace polygonWorkspace = new PolygonWorkspace();
             int testedCells = 0;
             int testedVertices = 0;
             for (int candidateIndex : candidates.indices()) {
@@ -527,7 +560,7 @@ final class CanonicalPolygonOps {
                 if (clip == null) {
                     clip = rectangle(minU, minV, maxU, maxV);
                 }
-                Polygon clipped = intersection(cell, clip);
+                Polygon clipped = intersection(cell, clip, polygonWorkspace);
                 if (clipped != null) {
                     output.add(clipped);
                 }
@@ -540,18 +573,204 @@ final class CanonicalPolygonOps {
             );
         }
 
+        RectangleIntersectionStats intersectRectangleInto(
+                double minU,
+                double minV,
+                double maxU,
+                double maxV,
+                QueryWorkspace workspace,
+                List<Polygon> output
+        ) {
+            Objects.requireNonNull(workspace, "workspace");
+            Objects.requireNonNull(output, "output");
+            output.clear();
+            Bounds rectangleBounds = new Bounds(minU, minV, maxU, maxV);
+            if (bounds == null || !bounds.intersects(rectangleBounds)) {
+                return new RectangleIntersectionStats(QueryStats.empty(), 0, 0);
+            }
+
+            CandidateSlice candidates = queryCandidatesReusable(rectangleBounds, workspace.candidates);
+            Polygon clip = null;
+            int testedCells = 0;
+            int testedVertices = 0;
+            for (int candidate = 0; candidate < candidates.count(); candidate++) {
+                Polygon cell = cells.get(candidates.indices()[candidate]);
+                testedCells++;
+                testedVertices += cell.vertices().size();
+                if (rectangleBounds.contains(cell.bounds())) {
+                    output.add(cell);
+                    continue;
+                }
+                if (clip == null) {
+                    clip = rectangle(minU, minV, maxU, maxV);
+                }
+                Polygon clipped = intersection(cell, clip, workspace.polygons);
+                if (clipped != null) {
+                    output.add(clipped);
+                }
+            }
+            return new RectangleIntersectionStats(candidates.stats(), testedCells, testedVertices);
+        }
+
+        BatchIntersectionResult intersectRectanglesDetailed(List<Bounds> rectangles) {
+            Objects.requireNonNull(rectangles, "rectangles");
+            if (rectangles.isEmpty()) {
+                return BatchIntersectionResult.empty();
+            }
+
+            CellIndex index = null;
+            boolean indexBuilt = false;
+            long indexBuildNanos = 0L;
+            if (cells.size() >= MIN_INDEXED_CELLS) {
+                index = cellIndex;
+                if (index == null) {
+                    long buildStartNanos = System.nanoTime();
+                    synchronized (this) {
+                        index = cellIndex;
+                        if (index == null) {
+                            index = CellIndex.build(cells);
+                            cellIndex = index;
+                            indexBuilt = true;
+                        }
+                    }
+                    if (indexBuilt) {
+                        indexBuildNanos = Math.max(0L, System.nanoTime() - buildStartNanos);
+                    }
+                }
+            }
+
+            CandidateWorkspace workspace = new CandidateWorkspace();
+            PolygonWorkspace polygonWorkspace = new PolygonWorkspace();
+            List<List<Polygon>> output = new ArrayList<>(rectangles.size());
+            int indexedQueries = 0;
+            int linearQueries = 0;
+            long bucketVisits = 0L;
+            long bucketEntries = 0L;
+            long duplicateSkips = 0L;
+            long boundsRejects = 0L;
+            long candidateCount = 0L;
+            int maxCandidates = 0;
+            int testedCells = 0;
+            int testedVertices = 0;
+            int visiblePolygons = 0;
+
+            for (Bounds rectangleBounds : rectangles) {
+                if (rectangleBounds == null || bounds == null || !bounds.intersects(rectangleBounds)) {
+                    output.add(List.of());
+                    linearQueries++;
+                    continue;
+                }
+
+                int[] candidateIndices;
+                int candidates;
+                if (index == null) {
+                    workspace.ensureCapacity(cells.size());
+                    candidates = 0;
+                    int rejected = 0;
+                    for (int cellIndex = 0; cellIndex < cells.size(); cellIndex++) {
+                        if (cells.get(cellIndex).bounds().intersects(rectangleBounds)) {
+                            workspace.indices[candidates++] = cellIndex;
+                        } else {
+                            rejected++;
+                        }
+                    }
+                    candidateIndices = workspace.indices;
+                    linearQueries++;
+                    boundsRejects += rejected;
+                } else {
+                    CandidateSlice slice = index.queryReusable(cells, rectangleBounds, workspace);
+                    candidateIndices = slice.indices();
+                    candidates = slice.count();
+                    indexedQueries++;
+                    QueryStats queryStats = slice.stats();
+                    bucketVisits += queryStats.bucketVisits();
+                    bucketEntries += queryStats.bucketEntries();
+                    duplicateSkips += queryStats.duplicateSkips();
+                    boundsRejects += queryStats.boundsRejects();
+                }
+                candidateCount += candidates;
+                maxCandidates = Math.max(maxCandidates, candidates);
+
+                List<Polygon> queryOutput = new ArrayList<>(candidates);
+                Polygon clip = null;
+                for (int candidate = 0; candidate < candidates; candidate++) {
+                    Polygon cell = cells.get(candidateIndices[candidate]);
+                    testedCells++;
+                    testedVertices += cell.vertices().size();
+                    if (rectangleBounds.contains(cell.bounds())) {
+                        queryOutput.add(cell);
+                        continue;
+                    }
+                    if (clip == null) {
+                        clip = rectangle(
+                                rectangleBounds.minU(),
+                                rectangleBounds.minV(),
+                                rectangleBounds.maxU(),
+                                rectangleBounds.maxV()
+                        );
+                    }
+                    Polygon clipped = intersection(cell, clip, polygonWorkspace);
+                    if (clipped != null) {
+                        queryOutput.add(clipped);
+                    }
+                }
+                visiblePolygons += queryOutput.size();
+                output.add(queryOutput.isEmpty() ? List.of() : List.copyOf(queryOutput));
+            }
+
+            return new BatchIntersectionResult(
+                    output,
+                    new BatchQueryStats(
+                            rectangles.size(),
+                            indexedQueries,
+                            linearQueries,
+                            indexBuilt ? 1 : 0,
+                            indexBuildNanos,
+                            bucketVisits,
+                            bucketEntries,
+                            duplicateSkips,
+                            boundsRejects,
+                            candidateCount,
+                            maxCandidates
+                    ),
+                    testedCells,
+                    testedVertices,
+                    visiblePolygons
+            );
+        }
+
         IntersectionTest intersectsDetailed(Polygon polygon) {
             if (polygon == null || bounds == null || !bounds.intersects(polygon.bounds())) {
                 return new IntersectionTest(false, QueryStats.empty(), 0, 0);
             }
             CandidateQuery candidates = queryCandidates(polygon.bounds());
+            PolygonWorkspace polygonWorkspace = new PolygonWorkspace();
             int testedCells = 0;
             int testedVertices = 0;
             for (int candidateIndex : candidates.indices()) {
                 Polygon cell = cells.get(candidateIndex);
                 testedCells++;
                 testedVertices += cell.vertices().size();
-                if (intersection(cell, polygon) != null) {
+                if (intersection(cell, polygon, polygonWorkspace) != null) {
+                    return new IntersectionTest(true, candidates.stats(), testedCells, testedVertices);
+                }
+            }
+            return new IntersectionTest(false, candidates.stats(), testedCells, testedVertices);
+        }
+
+        IntersectionTest intersectsDetailed(Polygon polygon, QueryWorkspace workspace) {
+            Objects.requireNonNull(workspace, "workspace");
+            if (polygon == null || bounds == null || !bounds.intersects(polygon.bounds())) {
+                return new IntersectionTest(false, QueryStats.empty(), 0, 0);
+            }
+            CandidateSlice candidates = queryCandidatesReusable(polygon.bounds(), workspace.candidates);
+            int testedCells = 0;
+            int testedVertices = 0;
+            for (int candidate = 0; candidate < candidates.count(); candidate++) {
+                Polygon cell = cells.get(candidates.indices()[candidate]);
+                testedCells++;
+                testedVertices += cell.vertices().size();
+                if (intersection(cell, polygon, workspace.polygons) != null) {
                     return new IntersectionTest(true, candidates.stats(), testedCells, testedVertices);
                 }
             }
@@ -563,6 +782,10 @@ final class CanonicalPolygonOps {
         }
 
         SubtractionResult subtractTracked(Polygon blocker) {
+            return subtractTracked(blocker, new PolygonWorkspace());
+        }
+
+        SubtractionResult subtractTracked(Polygon blocker, PolygonWorkspace polygonWorkspace) {
             if (blocker == null || cells.isEmpty() || bounds == null || !bounds.intersects(blocker.bounds())) {
                 return new SubtractionResult(this, false, 0, 0);
             }
@@ -577,11 +800,12 @@ final class CanonicalPolygonOps {
                 }
                 testedCells++;
                 testedVertices += cell.vertices().size();
-                List<Polygon> pieces = CanonicalPolygonOps.subtract(cell, blocker);
-                if (pieces.size() != 1 || !pieces.get(0).equals(cell)) {
+                int outputStart = output.size();
+                CanonicalPolygonOps.subtractInto(cell, blocker, polygonWorkspace, output);
+                int pieceCount = output.size() - outputStart;
+                if (pieceCount != 1 || !output.get(outputStart).equals(cell)) {
                     changed = true;
                 }
-                output.addAll(pieces);
             }
             return changed
                     ? new SubtractionResult(ofCells(output), true, testedCells, testedVertices)
@@ -590,16 +814,25 @@ final class CanonicalPolygonOps {
 
         Region subtractAll(List<Polygon> blockers) {
             Region current = this;
+            PolygonWorkspace polygonWorkspace = new PolygonWorkspace();
             for (Polygon blocker : blockers) {
                 if (current.isEmpty()) {
                     break;
                 }
-                current = current.subtract(blocker);
+                current = current.subtractTracked(blocker, polygonWorkspace).region();
             }
             return current;
         }
 
         BulkSubtractionResult subtractIndexed(List<Polygon> blockers) {
+            return subtractIndexed(blockers, false);
+        }
+
+        BulkSubtractionResult subtractIndexedCompacted(List<Polygon> blockers) {
+            return subtractIndexed(blockers, true);
+        }
+
+        private BulkSubtractionResult subtractIndexed(List<Polygon> blockers, boolean compactOutput) {
             Objects.requireNonNull(blockers, "blockers");
             List<Polygon> validBlockers = blockers;
             for (int blockerIndex = 0; blockerIndex < blockers.size(); blockerIndex++) {
@@ -653,6 +886,7 @@ final class CanonicalPolygonOps {
             List<Polygon> output = new ArrayList<>(cells.size() + validBlockers.size());
             ArrayList<Polygon> fragments = new ArrayList<>();
             ArrayList<Polygon> nextFragments = new ArrayList<>();
+            PolygonWorkspace polygonWorkspace = new PolygonWorkspace();
             boolean changed = false;
             long exactTests = 0L;
             long exactVertices = 0L;
@@ -674,14 +908,16 @@ final class CanonicalPolygonOps {
                         }
                         exactTests++;
                         exactVertices += fragment.vertices().size();
-                        List<Polygon> pieces = CanonicalPolygonOps.subtract(fragment, blocker);
-                        boolean fragmentChanged = pieces.size() != 1 || !pieces.get(0).equals(fragment);
+                        int outputStart = nextFragments.size();
+                        CanonicalPolygonOps.subtractInto(fragment, blocker, polygonWorkspace, nextFragments);
+                        int pieceCount = nextFragments.size() - outputStart;
+                        boolean fragmentChanged = pieceCount != 1
+                                || !nextFragments.get(outputStart).equals(fragment);
                         if (fragmentChanged) {
                             blockerChangedCell = true;
                             changed = true;
                             changedFragments++;
                         }
-                        nextFragments.addAll(pieces);
                     }
                     if (blockerChangedCell) {
                         blockerHits[blockerIndexValue] = true;
@@ -699,7 +935,22 @@ final class CanonicalPolygonOps {
                     hitCount++;
                 }
             }
-            Region result = changed ? ofCells(output) : this;
+            int compactionCellsBefore = changed ? output.size() : cells.size();
+            int compactionCellsAfter = compactionCellsBefore;
+            int compactionEdgeCandidates = 0;
+            int compactionMerges = 0;
+            long compactionNanos = 0L;
+            List<Polygon> resultCells = output;
+            if (compactOutput && output.size() >= 2) {
+                long compactionStartNanos = System.nanoTime();
+                MergePass pass = mergeConvexNeighborsIncremental(output);
+                compactionNanos = Math.max(0L, System.nanoTime() - compactionStartNanos);
+                resultCells = pass.cells();
+                compactionCellsAfter = resultCells.size();
+                compactionEdgeCandidates = pass.edgeCandidates();
+                compactionMerges = pass.merges();
+            }
+            Region result = changed || compactionMerges > 0 ? new Region(resultCells) : this;
             return new BulkSubtractionResult(
                     result,
                     changed,
@@ -721,7 +972,12 @@ final class CanonicalPolygonOps {
                     exactTests,
                     exactVertices,
                     changedFragments,
-                    subtractionNanos
+                    subtractionNanos,
+                    compactionCellsBefore,
+                    compactionCellsAfter,
+                    compactionEdgeCandidates,
+                    compactionMerges,
+                    compactionNanos
             );
         }
 
@@ -768,6 +1024,63 @@ final class CanonicalPolygonOps {
             }
             return index.query(cells, queryBounds, built, buildNanos);
         }
+
+        private CandidateSlice queryCandidatesReusable(Bounds queryBounds, CandidateWorkspace workspace) {
+            if (cells.size() < MIN_INDEXED_CELLS) {
+                workspace.ensureCapacity(cells.size());
+                int candidates = 0;
+                int boundsRejects = 0;
+                for (int cellIndex = 0; cellIndex < cells.size(); cellIndex++) {
+                    if (cells.get(cellIndex).bounds().intersects(queryBounds)) {
+                        workspace.indices[candidates++] = cellIndex;
+                    } else {
+                        boundsRejects++;
+                    }
+                }
+                return new CandidateSlice(
+                        workspace.indices,
+                        candidates,
+                        new QueryStats(false, false, 0L, 0, cells.size(), 0, boundsRejects, candidates)
+                );
+            }
+
+            CellIndex index = cellIndex;
+            boolean built = false;
+            long buildNanos = 0L;
+            if (index == null) {
+                long buildStartNanos = System.nanoTime();
+                synchronized (this) {
+                    index = cellIndex;
+                    if (index == null) {
+                        index = CellIndex.build(cells);
+                        cellIndex = index;
+                        built = true;
+                    }
+                }
+                if (built) {
+                    buildNanos = Math.max(0L, System.nanoTime() - buildStartNanos);
+                }
+            }
+            CandidateSlice slice = index.queryReusable(cells, queryBounds, workspace);
+            if (!built) {
+                return slice;
+            }
+            QueryStats stats = slice.stats();
+            return new CandidateSlice(
+                    slice.indices(),
+                    slice.count(),
+                    new QueryStats(
+                            true,
+                            true,
+                            buildNanos,
+                            stats.bucketVisits(),
+                            stats.bucketEntries(),
+                            stats.duplicateSkips(),
+                            stats.boundsRejects(),
+                            stats.candidates()
+                    )
+            );
+        }
     }
 
     record QueryStats(
@@ -793,6 +1106,46 @@ final class CanonicalPolygonOps {
     ) {
         IntersectionResult {
             polygons = polygons.isEmpty() ? List.of() : List.copyOf(polygons);
+        }
+    }
+
+    record RectangleIntersectionStats(QueryStats queryStats, int testedCells, int testedVertices) {
+    }
+
+    record BatchQueryStats(
+            int queries,
+            int indexedQueries,
+            int linearQueries,
+            int indexBuilds,
+            long indexBuildNanos,
+            long bucketVisits,
+            long bucketEntries,
+            long duplicateSkips,
+            long boundsRejects,
+            long candidates,
+            int maxCandidates
+    ) {
+    }
+
+    record BatchIntersectionResult(
+            List<List<Polygon>> polygonsByRectangle,
+            BatchQueryStats queryStats,
+            int testedCells,
+            int testedVertices,
+            int visiblePolygons
+    ) {
+        BatchIntersectionResult {
+            polygonsByRectangle = polygonsByRectangle.isEmpty() ? List.of() : List.copyOf(polygonsByRectangle);
+        }
+
+        private static BatchIntersectionResult empty() {
+            return new BatchIntersectionResult(
+                    List.of(),
+                    new BatchQueryStats(0, 0, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0),
+                    0,
+                    0,
+                    0
+            );
         }
     }
 
@@ -828,7 +1181,12 @@ final class CanonicalPolygonOps {
             long exactTests,
             long exactVertices,
             long changedFragments,
-            long subtractionNanos
+            long subtractionNanos,
+            int compactionCellsBefore,
+            int compactionCellsAfter,
+            int compactionEdgeCandidates,
+            int compactionMerges,
+            long compactionNanos
     ) {
         private static BulkSubtractionResult unchanged(Region region, int inputBlockers, int sourceCells) {
             return new BulkSubtractionResult(
@@ -852,6 +1210,11 @@ final class CanonicalPolygonOps {
                     0L,
                     0L,
                     0L,
+                    0L,
+                    sourceCells,
+                    sourceCells,
+                    0,
+                    0,
                     0L
             );
         }
@@ -867,6 +1230,25 @@ final class CanonicalPolygonOps {
     }
 
     private record CandidateQuery(int[] indices, QueryStats stats) {
+    }
+
+    private record CandidateSlice(int[] indices, int count, QueryStats stats) {
+    }
+
+    static final class QueryWorkspace {
+        private final CandidateWorkspace candidates = new CandidateWorkspace();
+        private final PolygonWorkspace polygons = new PolygonWorkspace();
+    }
+
+    private static final class CandidateWorkspace {
+        private int[] indices = new int[0];
+
+        private void ensureCapacity(int capacity) {
+            if (indices.length >= capacity) {
+                return;
+            }
+            indices = new int[Math.max(capacity, Math.max(16, indices.length * 2))];
+        }
     }
 
     private record MergePass(List<Polygon> cells, int edgeCandidates, int merges) {
@@ -1148,6 +1530,65 @@ final class CanonicalPolygonOps {
                             duplicateSkips,
                             boundsRejects,
                             candidates.length
+                    )
+            );
+        }
+
+        private CandidateSlice queryReusable(
+                List<Polygon> cells,
+                Bounds queryBounds,
+                CandidateWorkspace workspace
+        ) {
+            int minU = minBin(queryBounds.minU(), binCount);
+            int maxU = maxBin(queryBounds.maxU(), binCount);
+            int minV = minBin(queryBounds.minV(), binCount);
+            int maxV = maxBin(queryBounds.maxV(), binCount);
+            int bucketVisits = Math.max(0, maxU - minU + 1) * Math.max(0, maxV - minV + 1);
+            int bucketEntries = 0;
+            for (int v = minV; v <= maxV; v++) {
+                for (int u = minU; u <= maxU; u++) {
+                    bucketEntries += buckets[v * binCount + u].length;
+                }
+            }
+            workspace.ensureCapacity(bucketEntries);
+            int cursor = 0;
+            for (int v = minV; v <= maxV; v++) {
+                for (int u = minU; u <= maxU; u++) {
+                    int[] bucket = buckets[v * binCount + u];
+                    System.arraycopy(bucket, 0, workspace.indices, cursor, bucket.length);
+                    cursor += bucket.length;
+                }
+            }
+            Arrays.sort(workspace.indices, 0, cursor);
+            int unique = 0;
+            int duplicateSkips = 0;
+            int boundsRejects = 0;
+            int previous = -1;
+            for (int entry = 0; entry < cursor; entry++) {
+                int cellIndex = workspace.indices[entry];
+                if (cellIndex == previous) {
+                    duplicateSkips++;
+                    continue;
+                }
+                previous = cellIndex;
+                if (!cells.get(cellIndex).bounds().intersects(queryBounds)) {
+                    boundsRejects++;
+                    continue;
+                }
+                workspace.indices[unique++] = cellIndex;
+            }
+            return new CandidateSlice(
+                    workspace.indices,
+                    unique,
+                    new QueryStats(
+                            true,
+                            false,
+                            0L,
+                            bucketVisits,
+                            bucketEntries,
+                            duplicateSkips,
+                            boundsRejects,
+                            unique
                     )
             );
         }

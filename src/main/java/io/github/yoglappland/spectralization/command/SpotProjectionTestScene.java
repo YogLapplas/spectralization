@@ -66,7 +66,10 @@ final class SpotProjectionTestScene {
             boolean includeFixtures,
             int divergenceMilli
     ) {
-        return build(level, layout, seed, occupancy, includeFixtures, divergenceMilli, true);
+        return build(
+                level, layout, seed, occupancy, includeFixtures, divergenceMilli,
+                ObstacleProfile.PARTIAL_HEAVY, true
+        );
     }
 
     static BuildResult build(
@@ -78,9 +81,25 @@ final class SpotProjectionTestScene {
             int divergenceMilli,
             boolean computeSceneSignature
     ) {
+        return build(
+                level, layout, seed, occupancy, includeFixtures, divergenceMilli,
+                ObstacleProfile.PARTIAL_HEAVY, computeSceneSignature
+        );
+    }
+
+    static BuildResult build(
+            ServerLevel level,
+            SpotTestLayout layout,
+            long seed,
+            double occupancy,
+            boolean includeFixtures,
+            int divergenceMilli,
+            ObstacleProfile obstacleProfile,
+            boolean computeSceneSignature
+    ) {
         clear(level, layout);
         Random random = new Random(seed);
-        int randomObstacles = placeRandomObstacles(level, layout, random, occupancy);
+        int randomObstacles = placeRandomObstacles(level, layout, random, occupancy, obstacleProfile);
         int fixtures = includeFixtures ? placeRegressionFixtures(level, layout) : 0;
         int screenBlocks = placeScreen(level, layout);
         int sourceBlocks = placeSource(level, layout, divergenceMilli);
@@ -218,7 +237,8 @@ final class SpotProjectionTestScene {
             ServerLevel level,
             SpotTestLayout layout,
             Random random,
-            double occupancy
+            double occupancy,
+            ObstacleProfile obstacleProfile
     ) {
         int placed = 0;
         for (int along = FIRST_RANDOM_DEPTH; along <= LAST_RANDOM_DEPTH; along++) {
@@ -227,7 +247,11 @@ final class SpotProjectionTestScene {
                     if (random.nextDouble() >= occupancy) {
                         continue;
                     }
-                    level.setBlock(layout.at(along, side, vertical), randomProjectionState(random, layout), 3);
+                    level.setBlock(
+                            layout.at(along, side, vertical),
+                            randomProjectionState(random, layout, obstacleProfile),
+                            3
+                    );
                     placed++;
                 }
             }
@@ -312,7 +336,14 @@ final class SpotProjectionTestScene {
         return 1;
     }
 
-    private static BlockState randomProjectionState(Random random, SpotTestLayout layout) {
+    private static BlockState randomProjectionState(
+            Random random,
+            SpotTestLayout layout,
+            ObstacleProfile obstacleProfile
+    ) {
+        if (obstacleProfile == ObstacleProfile.FULL_BLOCKS_ONLY) {
+            return randomFullBlockState(random);
+        }
         int roll = random.nextInt(100);
         if (roll < 45) {
             return stairState(
@@ -328,11 +359,30 @@ final class SpotProjectionTestScene {
                     ? Blocks.OAK_FENCE.defaultBlockState()
                     : Blocks.NETHER_BRICK_FENCE.defaultBlockState();
         }
+        return randomFullBlockState(random);
+    }
+
+    private static BlockState randomFullBlockState(Random random) {
         return switch (random.nextInt(3)) {
             case 0 -> Blocks.STONE_BRICKS.defaultBlockState();
             case 1 -> Blocks.SMOOTH_QUARTZ.defaultBlockState();
             default -> Blocks.POLISHED_DEEPSLATE.defaultBlockState();
         };
+    }
+
+    enum ObstacleProfile {
+        PARTIAL_HEAVY("partial_heavy"),
+        FULL_BLOCKS_ONLY("full_blocks_only");
+
+        private final String serializedName;
+
+        ObstacleProfile(String serializedName) {
+            this.serializedName = serializedName;
+        }
+
+        String serializedName() {
+            return serializedName;
+        }
     }
 
     private static BlockState stairState(Direction facing, Half half) {

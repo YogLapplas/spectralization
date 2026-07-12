@@ -287,12 +287,24 @@ the same tile again. The runtime cache should be a dense array over the current
 side scan bounds, not a hash map, because side projection touches a compact
 integer tile rectangle.
 
-The front and side passes may share a unified depth scan over
-`frontBounds union sideBounds`. This scan records dependencies for all tiles that
-could affect front or side projection and fills the depth-local tile cache. Side
-projection should then enumerate exposed grid boundaries from that cached slice,
-not blindly revisit every projectable tile face. This is just a reordering of the
-side predicate:
+The front and side passes share a unified depth scan. Production conservatively
+maps the current `remaining` texture bounds through the maximum radius of the
+depth slice, expands to every touching block tile (including the existing safety
+border), and uses that rectangle for both front and side collection. Tiles outside
+that rectangle cannot intersect any unassigned texture and therefore cannot emit
+a receiver or change downstream `remaining`. The bound is broad phase only; exact
+polygon intersection remains authoritative. The formal proof brute-forces both
+axes over randomized canonical bounds and radii to ensure the rectangle never
+omits a reachable tile.
+
+This unified scan records dependencies for all tiles that can still affect front
+or side projection and fills the depth-local tile cache. A tile hidden entirely by
+an earlier depth is intentionally absent from the dependency set while it cannot
+affect the result. If the earlier blocker changes, its earlier dependency dirties
+the owner and suffix rebuilding discovers the downstream tile from the restored
+pre-depth snapshot. Side projection then enumerates exposed grid boundaries from
+the cached slice, rather than blindly revisiting every projectable tile face. This
+is a reordering of the side predicate:
 
 ```text
 sideVisible = inSideBounds && projectable && openFace && coneSweepsFace && remainingIntersects
@@ -748,8 +760,23 @@ workflows. Its value no longer changes production cuboid-sweep occlusion.
 
 The creative inventory also contains the operator-only `spot_test` instrument.
 Right-click starts its selected automatic suite or reports the current case;
-Shift-right-click cycles through quick, partial-geometry, performance,
-direction-matrix, and anonymous 1,000-scene random-stress modes. The selected mode is stored on the item,
+Shift-right-click cycles through smart, quick, partial-geometry, performance,
+direction-matrix, and anonymous 1,000-scene random-stress modes. Left-clicking
+empty space toggles a separate lightweight/stress load profile without changing
+the selected mode, case count, sample count, repeat count, or anonymous-seed rule.
+The client sends only the empty-click intent, while the server validates the held
+item, operator permission, and suite lease before changing item custom data.
+Lightweight is the default load: ordinary non-validation cases use full-block-only
+random obstacles and omit fixed partial-block fixtures. Stress load retains the
+partial-heavy stair/slab/fence distribution. Partial-geometry and verbose smart
+validation cases retain partial blocks under either load because their purpose is
+structural correctness. Smart mode runs an unreported
+warmup, a verbose structural-correctness gate, 12-sample sparse/mixed/dense
+benchmarks, and seven-sample power/color cache regressions. Its terminal summary
+reports core P50/P95, dense-stage hotspot and tail stability, structural evidence,
+cache P50, and an in-memory P50 comparison with the player's previous successful
+smart run under the same load. The same data is emitted as
+`event=smart_suite_complete`. The selected mode and load are stored on the item,
 while the active run is
 server-owned and keyed by player UUID. Only one automatic suite may hold the
 global debug-configuration lease at a time. Ordinary cases build a deterministic
@@ -1061,6 +1088,35 @@ The profile line also includes phase timings and hot-spot counters:
 - `same_depth_*_index_*` fields count indexed split/prefix queries, travel groups,
   spatial candidates, and accepted hits. The index preserves owner-cuboid
   exclusion and restores original window order before sequential clipping.
+- Side visibility uses a remaining-first joined prefix query: exact remaining cells
+  are intersected before the same-depth prefix lookup, and their polygon bounds are
+  the prefix query domain. Omitting a prefix whose bounds touch none of those cells
+  is exact because subtraction can only remove area; retained prefixes keep original
+  cuboid construction order. The polygon subtraction result remains authoritative.
+- Front groups advance the same-depth blocker state with disjoint travel segments.
+  For consecutive group travels `t0 < t1`, a cuboid contributes only its clipped
+  sweep over `[t0, t1]`; the union of these continuous segments is exactly the former
+  cumulative prefix. After side emission, the main remaining state takes ownership
+  of this front-prefix region and subtracts only the sweep tails after the final
+  front group. Side emission still observes the pre-depth remaining state, so the
+  handoff changes neither same-depth side visibility nor front ordering.
+  Verbose structural validation additionally rebuilds the same depth from the
+  pre-front remaining region plus full sweeps and compares bidirectional polygon
+  coverage with the handed-off prefix-plus-tail result.
+- All exposed front receivers in one travel group are intersected through one batch
+  API. The remaining cell index is built at most once, and a group-local candidate
+  workspace is reused across rectangle queries. Every candidate slice is still
+  sorted by original cell index, so scalar receiver order and polygon fragment order
+  remain unchanged.
+- Indexed bulk remaining subtraction integrates its convex compaction before the
+  final immutable Region is constructed. Subtraction order, exact polygon tests,
+  shared-edge merge gates, and area-conservation gates are unchanged; only the
+  intermediate un-compacted Region materialization is removed.
+- Exact half-plane clipping uses an operation-local reusable workspace. Split left
+  and right point buffers are cleared and reused, while every authoritative Polygon
+  still owns a fresh normalized vertex list. Subtraction appends fragments directly
+  into the caller's alternating fragment buffer, preserving blocker order and
+  fragment order without a per-test pieces list.
 - `remaining_subtract_validation_*`, `same_depth_split_validation_*`, and
   `same_depth_prefix_validation_*` are verbose-only comparisons against the former
   serial scans. Every mismatch is a correctness alarm; bounded details are written
@@ -1611,6 +1667,29 @@ any remaining texture. It must not replace the exact assignment step:
 ```text
 visibleSide = sideCandidate intersect remaining
 ```
+
+For a depth tile with exactly one optical cuboid, every cuboid side is already an
+exposed receiving region: there are no sibling boxes that can cover a contact
+rectangle or cover the source-facing part of that side. Production therefore
+feeds the cuboid's travel/cross extents directly into the analytic side interval
+solver and does not allocate an exposed-region list or a `ReceivingSideRegion`.
+Multi-box shapes keep the full union/exposure path. Allocation descriptions and
+side rejection keys/details are created only when allocation or verbose candidate
+validation is enabled; they are not part of the ordinary projection hot path.
+
+Side windows are produced incrementally inside travel subdivision, so production
+does not retain an entire depth's windows merely to force a batch API. Instead,
+one depth-local query session reuses the remaining-region candidate array and
+polygon clipping workspace for every window. Same-depth prefix subtraction uses
+two depth-local fragment lists plus one clipping workspace and returns an
+ephemeral result consumed before the next window. Every resulting `Polygon` still
+owns its immutable normalized vertices; only query and output containers are
+ephemeral. This preserves side candidate, polygon, patch, and publication order.
+
+Full cuboid sweep construction similarly reuses one eight-point extrema list per
+depth. The remaining-region sweep prefilter shares one reusable candidate/clipping
+workspace across cuboids. These workspaces are strictly depth-local, are never
+stored in a `CuboidSweep` or cache entry, and cannot become geometry authority.
 
 A boundary-based side candidate enumerator is the stable side candidate source.
 In verbose validation mode it can still be compared against the old projectable

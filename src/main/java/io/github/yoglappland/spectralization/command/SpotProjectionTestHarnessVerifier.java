@@ -13,10 +13,25 @@ public final class SpotProjectionTestHarnessVerifier {
     public static void main(String[] args) {
         SpotProjectionTestCommand.validateDirectionMatrixDefinition();
         SpotProjectionTestCommand.validateRandomStressDefinition();
+        SpotProjectionTestCommand.validateSmartSuiteDefinition();
+        SpotProjectionTestCommand.validateLoadVariants();
+        verifyDefaultModeSelection();
         SpotProjectionTestScene.validateControlledVolumeDefinition();
         verifyRelativeDirectionFrames();
         verifyCanonicalShapeSignature();
         verifyOutputFingerprintRotation();
+    }
+
+    private static void verifyDefaultModeSelection() {
+        if (SpotTestMode.byName("") != SpotTestMode.SMART
+                || SpotTestMode.byName("unknown") != SpotTestMode.SMART
+                || SpotTestMode.SMART.next() != SpotTestMode.QUICK
+                || SpotTestLoad.byName("") != SpotTestLoad.LIGHTWEIGHT
+                || SpotTestLoad.byName("unknown") != SpotTestLoad.LIGHTWEIGHT
+                || SpotTestLoad.LIGHTWEIGHT.toggle() != SpotTestLoad.STRESS
+                || SpotTestLoad.STRESS.toggle() != SpotTestLoad.LIGHTWEIGHT) {
+            throw new IllegalStateException("Spot-test mode or load defaults are not stable");
+        }
     }
 
     private static void verifyCanonicalShapeSignature() {

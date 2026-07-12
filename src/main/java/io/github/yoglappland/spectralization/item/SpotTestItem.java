@@ -1,6 +1,7 @@
 package io.github.yoglappland.spectralization.item;
 
 import io.github.yoglappland.spectralization.command.SpotProjectionTestCommand;
+import io.github.yoglappland.spectralization.command.SpotTestLoad;
 import io.github.yoglappland.spectralization.command.SpotTestMode;
 import java.util.List;
 import net.minecraft.ChatFormatting;
@@ -21,6 +22,7 @@ import net.minecraft.world.level.Level;
 
 public final class SpotTestItem extends Item {
     private static final String MODE_KEY = "spectralization_spot_test_mode";
+    private static final String LOAD_KEY = "spectralization_spot_test_load";
 
     public SpotTestItem(Properties properties) {
         super(properties);
@@ -56,8 +58,16 @@ public final class SpotTestItem extends Item {
                 "item.spectralization.spot_test.tooltip.mode",
                 Component.translatable(mode.translationKey())
         ).withStyle(ChatFormatting.AQUA));
+        SpotTestLoad load = load(stack);
+        tooltipComponents.add(Component.translatable(
+                "item.spectralization.spot_test.tooltip.load",
+                Component.translatable(load.translationKey())
+        ).withStyle(ChatFormatting.YELLOW));
         tooltipComponents.add(Component.translatable(
                 "item.spectralization.spot_test.tooltip.use"
+        ).withStyle(ChatFormatting.GRAY));
+        tooltipComponents.add(Component.translatable(
+                "item.spectralization.spot_test.tooltip.toggle"
         ).withStyle(ChatFormatting.GRAY));
         tooltipComponents.add(Component.translatable(
                 "item.spectralization.spot_test.tooltip.switch"
@@ -79,6 +89,48 @@ public final class SpotTestItem extends Item {
                 stack,
                 tag -> tag.putString(MODE_KEY, mode.serializedName())
         );
+    }
+
+    public static SpotTestLoad load(ItemStack stack) {
+        CustomData data = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY);
+        CompoundTag tag = data.copyTag();
+        return SpotTestLoad.byName(tag.getString(LOAD_KEY));
+    }
+
+    private static void setLoad(ItemStack stack, SpotTestLoad load) {
+        CustomData.update(
+                DataComponents.CUSTOM_DATA,
+                stack,
+                tag -> tag.putString(LOAD_KEY, load.serializedName())
+        );
+    }
+
+    public static void toggleLoad(ServerPlayer serverPlayer) {
+        ItemStack stack = serverPlayer.getMainHandItem();
+        if (!(stack.getItem() instanceof SpotTestItem)) {
+            return;
+        }
+        if (!serverPlayer.createCommandSourceStack().hasPermission(2)) {
+            serverPlayer.displayClientMessage(
+                    Component.translatable("item.spectralization.spot_test.message.permission"),
+                    true
+            );
+            return;
+        }
+        if (SpotProjectionTestCommand.isItemSuiteRunning(serverPlayer)) {
+            serverPlayer.displayClientMessage(
+                    Component.translatable("item.spectralization.spot_test.message.busy"),
+                    true
+            );
+            return;
+        }
+
+        SpotTestLoad next = load(stack).toggle();
+        setLoad(stack, next);
+        serverPlayer.displayClientMessage(Component.translatable(
+                "item.spectralization.spot_test.message.load",
+                Component.translatable(next.translationKey())
+        ), true);
     }
 
     private static InteractionResult use(Level level, Player player, ItemStack stack) {
@@ -118,7 +170,7 @@ public final class SpotTestItem extends Item {
             return InteractionResult.SUCCESS;
         }
 
-        return SpotProjectionTestCommand.startItemSuite(serverPlayer, mode(stack)) > 0
+        return SpotProjectionTestCommand.startItemSuite(serverPlayer, mode(stack), load(stack)) > 0
                 ? InteractionResult.SUCCESS
                 : InteractionResult.FAIL;
     }

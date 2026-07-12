@@ -3,6 +3,7 @@ package io.github.yoglappland.spectralization.command;
 import java.util.Locale;
 
 public enum SpotTestMode {
+    SMART,
     QUICK,
     PARTIAL_GEOMETRY,
     PERFORMANCE,
@@ -34,6 +35,6 @@ public enum SpotTestMode {
                 }
             }
         }
-        return QUICK;
+        return SMART;
     }
 }

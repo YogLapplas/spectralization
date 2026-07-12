@@ -2450,6 +2450,7 @@ tasks.register('verifyPassiveOptics') {
 tasks.register('verifySpotProjectionContinuity') {
     def spotRecordSourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/SpotRecord.java')
     def projectorSourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/projection/VoxelSpotProjector.java')
+    def polygonSourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/projection/CanonicalPolygonOps.java')
     def patchSourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/projection/SpotProjectionPatch.java')
     def formalProofSourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/projection/SpotProjectionFormalProof.java')
     def continuitySourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/projection/SpotProjectionContinuity.java')
@@ -2460,6 +2461,7 @@ tasks.register('verifySpotProjectionContinuity') {
     inputs.files(
             spotRecordSourceFile,
             projectorSourceFile,
+            polygonSourceFile,
             patchSourceFile,
             formalProofSourceFile,
             continuitySourceFile,
@@ -2472,6 +2474,7 @@ tasks.register('verifySpotProjectionContinuity') {
     doLast {
         def spotRecordSource = spotRecordSourceFile.text
         def projectorSource = projectorSourceFile.text
+        def polygonSource = polygonSourceFile.text
         def patchSource = patchSourceFile.text
         def formalProofSource = formalProofSourceFile.text
         def continuitySource = continuitySourceFile.text
@@ -2499,11 +2502,21 @@ tasks.register('verifySpotProjectionContinuity') {
                 'VoxelSpotProjector must normalize footprint quad winding through SpotProjectionPatch.oriented.'
         )
         expect(
-                projectorSource.contains('for (CanonicalRect visibleSideWindow : visibleSideWindows)')
+                projectorSource.contains('for (CanonicalPolygonOps.Polygon visibleSidePolygon : visibleSidePolygons)')
                         && !projectorSource.contains('sideBlockersAtDepth')
-                        && projectorSource.contains('clippedUSidePatch(')
-                        && projectorSource.contains('clippedVSidePatch('),
-                'VoxelSpotProjector must clip side visual geometry without treating side windows as downstream blockers.'
+                        && !projectorSource.contains('fullHull')
+                        && projectorSource.contains('CanonicalRect broadPhaseBounds')
+                        && projectorSource.contains('CanonicalPolygonOps.Polygon fullShape')
+                        && projectorSource.contains('private CanonicalPolygonOps.Polygon prefixShape(')
+                        && projectorSource.contains('addUSideChartPolygonSpots(')
+                        && projectorSource.contains('addVSideChartPolygonSpots(')
+                        && polygonSource.contains('static List<Polygon> subtract(')
+                        && polygonSource.contains('private static final class CellIndex')
+                        && polygonSource.contains('IntersectionResult intersectDetailed(')
+                        && polygonSource.contains('BulkSubtractionResult subtractIndexed(')
+                        && polygonSource.contains('CompactionResult compactConvexCells()')
+                        && projectorSource.contains('recordRemainingIndexQuery('),
+                'VoxelSpotProjector must clip side visual polygons without treating side patches as downstream blockers.'
         )
         expect(
                 patchSource.contains('faceNormalDot(')

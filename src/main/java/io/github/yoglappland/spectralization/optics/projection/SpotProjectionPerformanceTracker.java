@@ -39,6 +39,7 @@ public final class SpotProjectionPerformanceTracker {
                 result.stats(),
                 result.cacheMode(),
                 result.appearanceTimings(),
+                result.depthReuseStats(),
                 SpectralizationConfig.opticalCompilerDebugLog()
                         ? result.spots()
                         : List.of()
@@ -112,6 +113,7 @@ public final class SpotProjectionPerformanceTracker {
         int geometryTimedSamples = 0;
         int appearanceTimedSamples = 0;
         int fullRebuildSamples = 0;
+        int suffixRebuildSamples = 0;
         int appearanceOnlySamples = 0;
 
         for (int index = 0; index < samples.size(); index++) {
@@ -122,8 +124,11 @@ public final class SpotProjectionPerformanceTracker {
             SpotProjectionResult.OptimizationStats optimization = stats.optimization();
             SpotProjectionResult.StageTimings timings = stats.timings();
             SpotProjectionResult.AppearanceTimings appearance = sample.appearanceTimings();
+            SpotProjectionResult.DepthReuseStats depthReuse = sample.depthReuseStats();
             if (sample.cacheMode() == SpotProjectionResult.CacheMode.FULL_REBUILD) {
                 fullRebuildSamples++;
+            } else if (sample.cacheMode() == SpotProjectionResult.CacheMode.SUFFIX_REBUILD) {
+                suffixRebuildSamples++;
             } else if (sample.cacheMode() == SpotProjectionResult.CacheMode.APPEARANCE_ONLY) {
                 appearanceOnlySamples++;
             }
@@ -164,7 +169,10 @@ public final class SpotProjectionPerformanceTracker {
                         + timings.frontPassNanos()
                         + timings.sideScanNanos()
                         + timings.fullOccupancyNanos()
-                        + timings.occlusionAddNanos();
+                        + timings.occlusionAddNanos()
+                        + depthReuse.snapshotRestoreNanos()
+                        + depthReuse.snapshotBuildNanos()
+                        + depthReuse.finalizationNanos();
                 residualNanos += Math.max(0L, sample.elapsedNanos() - attributedNanos);
             }
             if (appearance.totalNanos() > 0L) {
@@ -232,6 +240,7 @@ public final class SpotProjectionPerformanceTracker {
                 appearanceTemplates / appearanceTimedDivisor,
                 appearanceUniqueSurfaces / appearanceTimedDivisor,
                 fullRebuildSamples,
+                suffixRebuildSamples,
                 appearanceOnlySamples
         );
     }
@@ -308,6 +317,7 @@ public final class SpotProjectionPerformanceTracker {
                 .field("geometry_timed_samples", report.geometryTimedSamples())
                 .field("appearance_timed_samples", report.appearanceTimedSamples())
                 .field("full_rebuild_samples", report.fullRebuildSamples())
+                .field("suffix_rebuild_samples", report.suffixRebuildSamples())
                 .field("appearance_only_samples", report.appearanceOnlySamples())
                 .field("elapsed_min_us", report.elapsedMinUs())
                 .field("elapsed_avg_us", report.elapsedAverageUs())
@@ -532,6 +542,7 @@ public final class SpotProjectionPerformanceTracker {
             SpotProjectionResult.Stats stats,
             SpotProjectionResult.CacheMode cacheMode,
             SpotProjectionResult.AppearanceTimings appearanceTimings,
+            SpotProjectionResult.DepthReuseStats depthReuseStats,
             List<SpotRecord> spotsSnapshot
     ) {
         private Sample {
@@ -729,6 +740,7 @@ public final class SpotProjectionPerformanceTracker {
             double appearanceTemplatesAverage,
             double appearanceUniqueSurfacesAverage,
             int fullRebuildSamples,
+            int suffixRebuildSamples,
             int appearanceOnlySamples
     ) {
         public static final Report EMPTY = new Report(
@@ -740,7 +752,7 @@ public final class SpotProjectionPerformanceTracker {
                 0.0D, 0.0D, 0.0D, 0.0D, 0.0D, 0.0D,
                 0.0D, 0.0D, 0.0D, 0.0D,
                 0.0D, 0.0D, 0.0D, 0.0D, 0.0D, 0.0D, 0.0D,
-                0, 0
+                0, 0, 0
         );
 
         public boolean empty() {
@@ -771,8 +783,8 @@ public final class SpotProjectionPerformanceTracker {
             ));
             lines.add(String.format(
                     Locale.ROOT,
-                    "Geometry cache: fullRebuild=%d appearanceOnly=%d",
-                    fullRebuildSamples, appearanceOnlySamples
+                    "Geometry cache: fullRebuild=%d suffixRebuild=%d appearanceOnly=%d",
+                    fullRebuildSamples, suffixRebuildSamples, appearanceOnlySamples
             ));
 
             if (geometryTimedSamples > 0) {

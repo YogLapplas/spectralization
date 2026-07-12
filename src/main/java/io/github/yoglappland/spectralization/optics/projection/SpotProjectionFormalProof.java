@@ -8,6 +8,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Random;
 import net.minecraft.core.Direction;
 
 public final class SpotProjectionFormalProof {
@@ -134,6 +135,8 @@ public final class SpotProjectionFormalProof {
         int canonicalRegionChecks = 0;
         int sameDepthIndexChecks = 0;
         int cuboidSweepChecks = 0;
+        int polygonSweepChecks = 0;
+        int analyticSideTravelChecks = 0;
         try {
             canonicalRegionChecks = VoxelSpotProjector.verifyCanonicalRegionSubtractSweep();
         } catch (RuntimeException exception) {
@@ -146,6 +149,16 @@ public final class SpotProjectionFormalProof {
         }
         try {
             cuboidSweepChecks = VoxelSpotProjector.verifyCuboidSweeps();
+        } catch (RuntimeException exception) {
+            failures.add(exception.getMessage());
+        }
+        try {
+            polygonSweepChecks = proveCanonicalPolygonSweep();
+        } catch (RuntimeException exception) {
+            failures.add(exception.getMessage());
+        }
+        try {
+            analyticSideTravelChecks = VoxelSpotProjector.verifyAnalyticSideTravelIntervals();
         } catch (RuntimeException exception) {
             failures.add(exception.getMessage());
         }
@@ -162,6 +175,10 @@ public final class SpotProjectionFormalProof {
             failures.add("formal proof did not exercise same-depth front event ordering.");
         }
 
+        if (analyticSideTravelChecks == 0) {
+            failures.add("formal proof did not exercise analytic side travel intervals.");
+        }
+
         return new ProofResult(
                 checkedPatches,
                 rawNegativePatches,
@@ -170,9 +187,247 @@ public final class SpotProjectionFormalProof {
                 canonicalRegionChecks,
                 sameDepthIndexChecks,
                 cuboidSweepChecks,
+                polygonSweepChecks,
+                analyticSideTravelChecks,
                 Map.copyOf(patchCounts),
                 failures
         );
+    }
+
+    private static int proveCanonicalPolygonSweep() {
+        List<CanonicalPolygonOps.Point> endpoints = new ArrayList<>();
+        addScaledRectangle(endpoints, 0.30D, 0.15D, 0.52D, 0.38D, 0.55D);
+        addScaledRectangle(endpoints, 0.30D, 0.15D, 0.52D, 0.38D, 1.35D);
+        CanonicalPolygonOps.Polygon sweep = CanonicalPolygonOps.convexHull(endpoints);
+        if (sweep == null || !sweep.hasDiagonalEdge()) {
+            throw new IllegalStateException("canonical polygon sweep failed to retain a diagonal boundary");
+        }
+        CanonicalPolygonOps.Bounds bounds = sweep.bounds();
+        double boundsArea = (bounds.maxU() - bounds.minU()) * (bounds.maxV() - bounds.minV());
+        if (boundsArea - sweep.area() <= 1.0E-6D) {
+            throw new IllegalStateException("canonical polygon sweep collapsed to its axis-aligned bounds");
+        }
+
+        int checked = 0;
+        for (int sample = 0; sample <= 128; sample++) {
+            double scale = 0.55D + (1.35D - 0.55D) * sample / 128.0D;
+            List<CanonicalPolygonOps.Point> crossSection = new ArrayList<>();
+            addScaledRectangle(crossSection, 0.30D, 0.15D, 0.52D, 0.38D, scale);
+            for (CanonicalPolygonOps.Point point : crossSection) {
+                if (!sweep.contains(point)) {
+                    throw new IllegalStateException("canonical polygon sweep omitted a continuous cross-section");
+                }
+                checked++;
+            }
+        }
+
+        CanonicalPolygonOps.Region remaining = CanonicalPolygonOps.Region.full().subtract(sweep);
+        CanonicalPolygonOps.Polygon clippedSweep = CanonicalPolygonOps.intersection(
+                sweep,
+                CanonicalPolygonOps.UNIT_SQUARE
+        );
+        double expectedArea = 1.0D - (clippedSweep == null ? 0.0D : clippedSweep.area());
+        if (Math.abs(remaining.area() - expectedArea) > 1.0E-8D) {
+            throw new IllegalStateException("canonical polygon subtraction failed area conservation");
+        }
+        checked += remaining.cellCount();
+
+        List<CanonicalPolygonOps.Polygon> indexedCells = new ArrayList<>();
+        for (int v = 0; v < 4; v++) {
+            for (int u = 0; u < 4; u++) {
+                indexedCells.add(CanonicalPolygonOps.rectangle(
+                        u * 0.25D,
+                        v * 0.25D,
+                        (u + 1) * 0.25D,
+                        (v + 1) * 0.25D
+                ));
+            }
+        }
+        CanonicalPolygonOps.Region indexedRegion = CanonicalPolygonOps.Region.ofCells(indexedCells);
+        CanonicalPolygonOps.Polygon indexQuery = CanonicalPolygonOps.rectangle(0.30D, 0.20D, 0.69D, 0.78D);
+        CanonicalPolygonOps.IntersectionResult indexedResult = indexedRegion.intersectDetailed(indexQuery);
+        List<CanonicalPolygonOps.Polygon> linearResult = new ArrayList<>();
+        for (CanonicalPolygonOps.Polygon cell : indexedRegion.cells()) {
+            CanonicalPolygonOps.Polygon clipped = CanonicalPolygonOps.intersection(cell, indexQuery);
+            if (clipped != null) {
+                linearResult.add(clipped);
+            }
+        }
+        if (!indexedResult.queryStats().indexed() || !indexedResult.polygons().equals(linearResult)) {
+            throw new IllegalStateException("canonical polygon cell index changed exact intersection output");
+        }
+        CanonicalPolygonOps.IntersectionResult rectangleResult = indexedRegion.intersectRectangleDetailed(
+                0.30D, 0.20D, 0.69D, 0.78D
+        );
+        if (!rectangleResult.polygons().equals(indexedResult.polygons())) {
+            throw new IllegalStateException("rectangle-specialized polygon intersection changed exact output");
+        }
+        checked += indexedResult.polygons().size();
+
+        Random bulkRandom = new Random(0xB10C5EEDL);
+        List<CanonicalPolygonOps.Polygon> bulkBlockers = new ArrayList<>();
+        for (int blockerIndex = 0; blockerIndex < 24; blockerIndex++) {
+            double minU = -0.1D + bulkRandom.nextDouble() * 0.95D;
+            double minV = -0.1D + bulkRandom.nextDouble() * 0.95D;
+            double maxU = minU + 0.08D + bulkRandom.nextDouble() * 0.24D;
+            double maxV = minV + 0.08D + bulkRandom.nextDouble() * 0.24D;
+            List<CanonicalPolygonOps.Point> blockerPoints = new ArrayList<>();
+            addScaledRectangle(blockerPoints, minU, minV, maxU, maxV, 0.75D);
+            addScaledRectangle(blockerPoints, minU, minV, maxU, maxV, 1.25D);
+            CanonicalPolygonOps.Polygon blocker = CanonicalPolygonOps.clippedConvexHull(blockerPoints);
+            if (blocker != null) {
+                bulkBlockers.add(blocker);
+            }
+        }
+        CanonicalPolygonOps.Region sequentialDifference = indexedRegion.subtractAll(bulkBlockers);
+        CanonicalPolygonOps.BulkSubtractionResult bulkDifference = indexedRegion.subtractIndexed(bulkBlockers);
+        if (!bulkDifference.indexed()
+                || Math.abs(sequentialDifference.area() - bulkDifference.region().area()) > 1.0E-8D) {
+            throw new IllegalStateException("indexed bulk polygon subtraction changed remaining area");
+        }
+        for (int probeIndex = 0; probeIndex < 64; probeIndex++) {
+            double minU = bulkRandom.nextDouble() * 0.8D;
+            double minV = bulkRandom.nextDouble() * 0.8D;
+            CanonicalPolygonOps.Polygon probe = CanonicalPolygonOps.rectangle(
+                    minU,
+                    minV,
+                    Math.min(1.0D, minU + 0.05D + bulkRandom.nextDouble() * 0.2D),
+                    Math.min(1.0D, minV + 0.05D + bulkRandom.nextDouble() * 0.2D)
+            );
+            double sequentialArea = intersectionArea(sequentialDifference, probe);
+            double bulkArea = intersectionArea(bulkDifference.region(), probe);
+            if (Math.abs(sequentialArea - bulkArea) > 1.0E-8D) {
+                throw new IllegalStateException("indexed bulk polygon subtraction changed probe coverage");
+            }
+            checked++;
+        }
+        assertDisjointCells(bulkDifference.region(), "indexed bulk polygon subtraction");
+
+        CanonicalPolygonOps.Region splitSquare = CanonicalPolygonOps.Region.ofCells(List.of(
+                CanonicalPolygonOps.polygon(List.of(
+                        new CanonicalPolygonOps.Point(0.0D, 0.0D),
+                        new CanonicalPolygonOps.Point(1.0D, 0.0D),
+                        new CanonicalPolygonOps.Point(1.0D, 1.0D)
+                )),
+                CanonicalPolygonOps.polygon(List.of(
+                        new CanonicalPolygonOps.Point(0.0D, 0.0D),
+                        new CanonicalPolygonOps.Point(1.0D, 1.0D),
+                        new CanonicalPolygonOps.Point(0.0D, 1.0D)
+                ))
+        ));
+        CanonicalPolygonOps.CompactionResult compactSquare = splitSquare.compactConvexCells();
+        if (compactSquare.merges() != 1
+                || compactSquare.region().cellCount() != 1
+                || Math.abs(compactSquare.region().area() - 1.0D) > 1.0E-8D) {
+            throw new IllegalStateException("canonical polygon convex-cell compaction changed square coverage");
+        }
+        checked++;
+
+        CanonicalPolygonOps.Region gridSquare = CanonicalPolygonOps.Region.ofCells(List.of(
+                CanonicalPolygonOps.rectangle(0.0D, 0.0D, 0.5D, 0.5D),
+                CanonicalPolygonOps.rectangle(0.5D, 0.0D, 1.0D, 0.5D),
+                CanonicalPolygonOps.rectangle(0.0D, 0.5D, 0.5D, 1.0D),
+                CanonicalPolygonOps.rectangle(0.5D, 0.5D, 1.0D, 1.0D)
+        ));
+        CanonicalPolygonOps.CompactionResult compactGridSquare = gridSquare.compactConvexCells();
+        if (compactGridSquare.merges() != 3
+                || compactGridSquare.region().cellCount() != 1
+                || Math.abs(compactGridSquare.region().area() - 1.0D) > 1.0E-8D) {
+            throw new IllegalStateException("incremental polygon compaction did not finish a merge cascade");
+        }
+        checked++;
+
+        Random random = new Random(0xD1A60A1L);
+        for (int iteration = 0; iteration < 256; iteration++) {
+            CanonicalPolygonOps.Region region = CanonicalPolygonOps.Region.full();
+            for (int blockerIndex = 0; blockerIndex < 4; blockerIndex++) {
+                double minU = -0.25D + random.nextDouble() * 1.0D;
+                double minV = -0.25D + random.nextDouble() * 1.0D;
+                double maxU = minU + 0.1D + random.nextDouble() * 0.45D;
+                double maxV = minV + 0.1D + random.nextDouble() * 0.45D;
+                double scale0 = 0.45D + random.nextDouble() * 0.5D;
+                double scale1 = scale0 + 0.1D + random.nextDouble() * 0.8D;
+                List<CanonicalPolygonOps.Point> blockerPoints = new ArrayList<>();
+                addScaledRectangle(blockerPoints, minU, minV, maxU, maxV, scale0);
+                addScaledRectangle(blockerPoints, minU, minV, maxU, maxV, scale1);
+                CanonicalPolygonOps.Polygon blocker = CanonicalPolygonOps.clippedConvexHull(blockerPoints);
+                if (blocker == null) {
+                    continue;
+                }
+
+                double overlapArea = 0.0D;
+                for (CanonicalPolygonOps.Polygon overlap : region.intersect(blocker)) {
+                    overlapArea += overlap.area();
+                }
+                double before = region.area();
+                CanonicalPolygonOps.Region after = region.subtract(blocker);
+                if (Math.abs((before - overlapArea) - after.area()) > 1.0E-8D) {
+                    throw new IllegalStateException("canonical polygon random subtraction lost area");
+                }
+                CanonicalPolygonOps.CompactionResult compaction = after.compactConvexCells();
+                if (compaction.cellsAfter() > compaction.cellsBefore()
+                        || Math.abs(compaction.region().area() - after.area()) > 1.0E-8D) {
+                    throw new IllegalStateException("canonical polygon random compaction changed area");
+                }
+                CanonicalPolygonOps.Polygon coverageProbe = CanonicalPolygonOps.rectangle(
+                        random.nextDouble() * 0.65D,
+                        random.nextDouble() * 0.65D,
+                        0.35D + random.nextDouble() * 0.65D,
+                        0.35D + random.nextDouble() * 0.65D
+                );
+                if (coverageProbe != null) {
+                    double beforeProbeArea = intersectionArea(after, coverageProbe);
+                    double afterProbeArea = intersectionArea(compaction.region(), coverageProbe);
+                    if (Math.abs(beforeProbeArea - afterProbeArea) > 1.0E-8D) {
+                        throw new IllegalStateException("canonical polygon random compaction changed query coverage");
+                    }
+                }
+                after = compaction.region();
+                assertDisjointCells(after, "canonical polygon subtraction");
+                region = after;
+                checked++;
+            }
+        }
+        return checked;
+    }
+
+    private static double intersectionArea(
+            CanonicalPolygonOps.Region region,
+            CanonicalPolygonOps.Polygon polygon
+    ) {
+        double area = 0.0D;
+        for (CanonicalPolygonOps.Polygon clipped : region.intersect(polygon)) {
+            area += clipped.area();
+        }
+        return area;
+    }
+
+    private static void assertDisjointCells(CanonicalPolygonOps.Region region, String label) {
+        List<CanonicalPolygonOps.Polygon> cells = region.cells();
+        for (int first = 0; first < cells.size(); first++) {
+            for (int second = first + 1; second < cells.size(); second++) {
+                CanonicalPolygonOps.Polygon overlap = CanonicalPolygonOps.intersection(
+                        cells.get(first), cells.get(second)
+                );
+                if (overlap != null && overlap.area() > 1.0E-8D) {
+                    throw new IllegalStateException(label + " produced overlapping cells");
+                }
+            }
+        }
+    }
+
+    private static void addScaledRectangle(
+            List<CanonicalPolygonOps.Point> output,
+            double minU,
+            double minV,
+            double maxU,
+            double maxV,
+            double scale
+    ) {
+        output.add(new CanonicalPolygonOps.Point(0.5D + (minU - 0.5D) * scale, 0.5D + (minV - 0.5D) * scale));
+        output.add(new CanonicalPolygonOps.Point(0.5D + (maxU - 0.5D) * scale, 0.5D + (minV - 0.5D) * scale));
+        output.add(new CanonicalPolygonOps.Point(0.5D + (maxU - 0.5D) * scale, 0.5D + (maxV - 0.5D) * scale));
+        output.add(new CanonicalPolygonOps.Point(0.5D + (minU - 0.5D) * scale, 0.5D + (maxV - 0.5D) * scale));
     }
 
     private static int proveFrontPlaneOrder(List<String> failures) {
@@ -730,6 +985,8 @@ public final class SpotProjectionFormalProof {
             int canonicalRegionChecks,
             int sameDepthIndexChecks,
             int cuboidSweepChecks,
+            int polygonSweepChecks,
+            int analyticSideTravelChecks,
             Map<Direction, Integer> patchCounts,
             List<String> failures
     ) {
@@ -741,7 +998,7 @@ public final class SpotProjectionFormalProof {
         String format() {
             return String.format(
                     Locale.ROOT,
-                    "spot_projection_formal_proof checked=%d negative_winding=%d clipped_geometry=%d front_order=%d canonical_region=%d same_depth_index=%d cuboid_sweep=%d counts=%s",
+                    "spot_projection_formal_proof checked=%d negative_winding=%d clipped_geometry=%d front_order=%d canonical_region=%d same_depth_index=%d cuboid_sweep=%d polygon_sweep=%d analytic_side_travel=%d counts=%s",
                     checkedPatches,
                     rawNegativePatches,
                     clippedGeometryChecks,
@@ -749,6 +1006,8 @@ public final class SpotProjectionFormalProof {
                     canonicalRegionChecks,
                     sameDepthIndexChecks,
                     cuboidSweepChecks,
+                    polygonSweepChecks,
+                    analyticSideTravelChecks,
                     patchCounts
             );
         }

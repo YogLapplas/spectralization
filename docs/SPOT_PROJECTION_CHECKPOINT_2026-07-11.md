@@ -225,16 +225,16 @@ subsystem=spot_projection event=geometry_cache_invalidated
 
 ## 9. 已知限制
 
-1. 任意六面模型的精确轮廓仍未解决；当前重点是轴对齐体素、楼梯和常见局部形状。
+1. 轴对齐 optical cuboid 的连续斜边轮廓已使用解析凸包表达；任意旋转或非体素模型的精确轮廓仍未解决。
 2. 侧面视觉片段不等价于完整遮挡体，不能把所有侧面补丁直接加入全局遮挡集合。
-3. 矩形区域减法在复杂轮廓下仍可能产生较多碎片。
+3. 凸多边形区域减法在复杂遮挡下仍可能产生较多 cell，新的性能基线必须同时记录 cell/vertex 数。
 4. 模型方块内部沿传播方向的纵向面仍有未解决的通用表达问题，详见算法文档 7.5。
 5. `missing_faces` 能定位到方块、面和期望区域，但它仍是结构预言机，不是任意模型的形式化证明。
-6. 几何缓存当前按 owner 整体失效，没有深度后缀重算。
+6. 几何缓存已能保留深度前缀并重算后缀，但 near/middle/far 自动基准和抽样强制完整对照仍待补齐。
 7. 性能测试为隔离样本会清理较大范围缓存，`response` 因而可能高于普通游戏更新。
 8. `response` 不是客户端端到端计时；网络分片和实际绘制仍需用 `latest.log`、帧分析或客户端专用计时判断。
 9. 进程首次创建日志文件或加载类时可能出现一次性尖峰，不应用单个冷样本评价稳态性能。
-10. 每个 optical cuboid 现在使用一个保守 sweep 作为遮挡 authority。形式验证已确认共棱 canonical 连通性，但原始同 world-z 实机场景仍需复测后才能关闭该限制。
+10. 每个 optical cuboid 现在使用一个解析 polygon sweep 作为遮挡 authority，矩形 bounds 仅用于 broad phase。形式验证已确认斜边保留与共棱 canonical 连通性，但原始实机场景仍需复测。
 
 ## 10. 已实现：单 cuboid 单 sweep
 
@@ -243,24 +243,70 @@ subsystem=spot_projection event=geometry_cache_invalidated
 ```text
 一个 OpticalCollisionBox
   -> 一个 CuboidSweep
-     -> fullHull()
-     -> prefixHull(travel)
+     -> broadPhaseBounds()
+     -> fullShape()
+     -> prefixShape(travel)
 ```
 
 已落实的实现约束：
 
 1. 每个 cuboid 只构造一次 sweep，不按 side/front candidate 重复扫描 cuboid。
-2. `fullHull()` 替代完整深度后的 sampled-plane blocker 集合。
-3. `prefixHull(travel)` 替代同深度接收面之前的离散 plane prefix，同时保留 receiving cuboid 自身排除与 front-before-activation 规则。
+2. `fullShape()` 是完整深度后的解析凸多边形 blocker；轴对齐 bounds 只用于空间索引。
+3. `prefixShape(travel)` 替代同深度接收面之前的离散 plane prefix，同时保留 receiving cuboid 自身排除与 front-before-activation 规则。
 4. 不使用中间平面作为生产遮挡 authority；配置中的 plane count 在迁移完成后应废弃或仅保留兼容诊断。
-5. sweep 是保守矩形域：允许有限额外阴影，不允许共棱体之间出现错误漏光。
+5. sweep 保存最小/最大半径截面矩形的凸包，既不允许共棱体之间错误漏光，也不允许 broad-phase bounds 吃掉真实斜边。
 6. 形式验证覆盖前缀单调性、连续截面包含、front-before-activation、自身排除、索引等价与共棱连通；实机场景仍是最终确认门。
 
 运行时代码已不再生成中间平面作为生产 authority。`spot_projection_occlusion_planes` 暂时保留为兼容配置，但不会改变 sweep 遮挡结果。性能基线仍来自旧平面版本，必须在新的 `partial_geometry` 与 `performance` 实机套件完成后更新。
 
-### 10.1 sweep 完成后的性能工作：深度切片与后缀失效
+### 10.1 解析 remaining region 的局部索引与凸 cell 合并
 
-完整重建按传播深度从近到远扫描，天然适合保存前缀检查点。计划引入 `DepthSliceSnapshot`：
+解析 sweep 修复斜边后，1000 场景压力测试暴露了新的明确热点：稳定一轮的 core
+平均为 23.82 ms、P50 为 22.82 ms、P95 为 34.02 ms，平均输出 1395.39 个光斑；
+代表性场景的 remaining 峰值达到 222 个 cell / 851 个顶点，828 次查询执行了
+134474 次 cell 与 511207 次顶点测试。客户端 1077–1699 个活动光斑仍约为
+0.57–0.69 ms/帧，因此优化目标是服务端 region 查询，不是渲染器。
+
+当前代码已加入两项保持精确语义的优化，等待新一轮实机日志确认：
+
+1. 一个 depth 内 front/side 共享 remaining immutable region 的惰性 canonical-grid
+   cell 索引；bucket 只筛选候选，精确 polygon 仍是 authority，输出恢复为原 cell 顺序。
+2. 一个 depth 的 blocker transaction 完成后，只合并共享边且 union 本身为凸集的
+   cell；以凸包面积等于 cell 面积和作为严格门槛，不允许填入空白区域。
+
+形式验证同时比较索引和线性裁剪的完整 polygon 输出，并检查合并前后面积、随机
+查询覆盖和 cell 不相交。新日志必须结合 `remaining_index_*`、
+`remaining_compaction_*` 与原有 workload/correctness 字段判断收益。
+
+查询索引先把代表性场景的精确 cell/vertex 检查从 134474/511207 降到
+1149/4411，但整体 core 只从 23.82 ms 降到 20.49 ms。随后加入的 depth-local
+blocker 空间 join 按原 cell 顺序处理大 blocker 集合，并在每个 cell 内恢复原
+blocker 顺序，避免 blocker-major 路径为每个 blocker 重建完整 region list。
+最新热态 1000 场景实测为 core 平均 14.98 ms、P50 14.58 ms、P95 18.92 ms，
+相对 20.49/19.72/28.95 ms 的 query-index 热态基线分别下降 26.9%、26.1% 和
+34.7%；平均 spots 为 1004.42。代表性完整重建的 blocker apply 为 2.86 ms，
+其中 index build/query、exact subtraction、compaction 分别约为
+0.06/0.11/1.53/0.89 ms。
+
+当前等待下一轮实机复测的代码继续保持同一语义，只缩短对象生命周期：普通 front
+渲染不构造 verbose-only 矩形与 debug 去重集合；单碰撞箱方块绕过空的兄弟面
+切割；side interval 不重复复制；compaction 按原候选发现顺序直接合并；blocker
+未改变 cell 时不创建 replacement list；凸包不再为每个 sweep/merge 创建 stream
+管线，常态 blocker 列表也不再重复复制。形式证明当前为 `polygon_sweep=1615`，
+并通过 canonical region、same-depth index、front order 与六方向对称验证。
+
+下一组两轮匿名压力测试全部通过，但第二轮热态为平均 16.22 ms、P95 23.76 ms，
+没有超过 14.98/18.92 ms 基线。固定代表场景仍下降 2.75%，且 side candidate
+下降 23.8%，说明 front/side 生命周期优化本身有效；回升集中在 blocker apply 与
+未归属 residual。当前代码已把每条 blocker half-plane 的 inside/outside 裁剪合并为
+一次顶点遍历，并让投影器内部新建的 depth snapshot 数组和最终依赖 accumulator
+安全转移所有权，避免重复复制。新增 `snapshot_build_us` 与
+`projection_finalize_us`，下一轮日志应将它们与 blocker subtraction 分开判断。
+
+### 10.2 sweep 完成后的性能工作：深度切片与后缀失效
+
+完整重建按传播深度从近到远扫描，天然适合保存前缀检查点。第一阶段已经引入
+`DepthSliceSnapshot`：
 
 ```text
 GeometryCacheEntry
@@ -274,9 +320,7 @@ DepthSliceSnapshot
   completed depth
   remaining texture region
   accumulated template end index
-  same-depth receiver/occluder facts
-  side canonical state required by later depths
-  dependency range for this prefix
+  dependency delta for this depth
 ```
 
 当深度 `k` 的方块改变时：
@@ -285,17 +329,49 @@ DepthSliceSnapshot
 2. 复用 `< k` 的模板和 `k - 1` 检查点。
 3. 恢复当时的剩余纹理区域及必要索引。
 4. 只重算 `k..maxDepth`。
-5. 完成验证后原子替换旧几何条目；中途失败则保留旧条目并退回完整重建。
+5. 原子替换旧几何条目；强制性能测试仍删除条目并保持完整重建语义。
+
+当前实现保存的是跨深度真正需要延续的最小状态：`remaining` 的不相交凸多边形
+证书、累计模板终点和逐深度依赖增量。同深度 sweep、front group 与 side index 都在
+该深度内完成事务，不跨切片保存。profile 会区分 `full_rebuild`、`suffix_rebuild` 和
+`appearance_only`，并报告恢复与后缀重建计时。
 
 实现顺序：
 
-1. 先为深度桶生成不可变的形状事实，禁止缓存对象持有可变世界引用。
-2. 保存足以继续扫描的最小检查点，不复制整个投影器工作集。
-3. 增加 near/middle/far 三种单方块变化基准，确认重算深度随位置缩短。
-4. 在测试模式中抽样执行“后缀结果 vs 强制完整重建”比较，要求片段、UV、顺序、依赖和缺面统计全部一致。
-5. 稳定后再考虑不同 owner/光源之间的并行。并行任务只能消费主线程构造的不可变世界快照，不能直接并发读取可变关卡状态。
+1. 已完成：保存足以继续扫描的最小不可变检查点，不复制整个投影器工作集。
+2. 已完成：依赖方块变化保留 `< k` 前缀并从 `k` 重建；强制基准仍完整重建。
+3. 下一项：增加 near/middle/far 三种单方块变化基准，确认重算深度随位置缩短。
+4. 下一项：在测试模式中抽样执行“后缀结果 vs 强制完整重建”比较，要求片段、UV、顺序和依赖全部一致。
+5. 稳定后再把世界形状事实提取成可共享的不可变 section snapshot，并考虑不同 owner/光源之间的并行。
 
 预期收益不是让冷启动消失，而是让普通搭建过程中一次较远方块变化不再支付整个 32 层锥体的扫描成本。
+
+### 10.3 解析 side travel 区间
+
+side candidate 的命中条件现已从固定采样改为解析半径阈值。固定侧坐标与横向
+collision-box 区间共同产生一个 required radius；`RadiusPropagation` 在腰点两侧直接
+求解半径平方二次式，每个单调段至多一个交点。生产路径因此不再执行每候选 16 点
+travel 采样、24 轮区间边界二分或 24 轮端点二分；端点只向已知有效内部移动至多
+`EDGE_TOUCH_EPSILON`。
+
+`SpotProjectionFormalProof` 新增 132995 次 membership 检查，将解析区间与原始
+`uSideCrossSection` / `vSideCrossSection` 谓词比较，覆盖 plane-wave、collimated、
+diverging、多个腰点位置、裁剪横向区间和两种 side axis。日志用
+`side_travel_solver=analytic_quadratic` 标记该实现。新的实机性能数字必须等下一组
+两轮测试后再写入基线。
+
+随后针对 `remaining_blocker_apply` 的实现把 cell-major subtraction 改为两块
+fragment list 交替复用，并把 compaction 从“每轮为全部 cell 重建 edge map”改为
+versioned incremental edge queue。每次成功合并仍必须同时满足共享边与凸包面积守恒，
+且 replacement 保留较小的原 cell index。形式证明新增 2×2 cell 的三级联合并，确认
+增量队列可以完成连续 merge；实机收益仍等待下一组相同测试确认。
+
+下一批把 side receiver 的矩形窗口接入 rectangle-specialized remaining intersection：
+窗口完全包含的 convex cell 直接复用，只有边界 cell 继续做 polygon clipping。
+same-depth prefix subtraction 改为两个 polygon fragment buffer 交替使用，且普通 profile
+不再物化 debug-only visible bounds。4096 个 canonical side visibility 随机场景同时比较
+该双缓冲路径与逐 blocker `Region` 参考；矩形专用 intersection 也与通用 polygon
+intersection 做 exact-output 比较。新增日志标识见 `LOGGING.md`，实机数字仍待复测。
 
 ## 11. 维护地图
 

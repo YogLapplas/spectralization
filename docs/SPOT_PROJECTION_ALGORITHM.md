@@ -69,15 +69,17 @@ K = [0, 1] x [0, 1]
 A light spot texture is not just an image. It is the common coordinate system used
 to decide which portion of the spot belongs to which world face.
 
-The current implementation mostly represents regions of `K` as axis-aligned
-rectangles:
+Front/side candidate charts still begin as axis-aligned rectangles, but production
+occlusion represents the remaining part of `K` as disjoint convex polygon cells:
 
 ```text
 CanonicalRect = [u0, u1] x [v0, v1]
+CanonicalPolygonRegion = disjoint convex cells in K
 ```
 
-This is why rectangular front-face projection is stable and cheap, and why exact
-diagonal side silhouettes are not currently represented exactly.
+Rectangles remain the cheap broad phase. Analytic cuboid sweeps and their prefix
+shapes retain correlated `u/v` motion as convex polygons, so diagonal shadow
+boundaries are not replaced by their axis-aligned bounds.
 
 ### 3.2 World frame
 
@@ -234,8 +236,7 @@ Do not treat it as proof that the world projection is correct.
 ## 5. Current stable algorithm
 
 The current stable implementation is in `VoxelSpotProjector.projectLightConeSpots`.
-It is a depth-first voxel projection pass with rectangular texture-domain
-occlusion.
+It is a depth-first voxel projection pass with convex texture-domain occlusion.
 
 ### 5.1 Main pass
 
@@ -261,13 +262,13 @@ For each integer depth from `1` to `MAX_PROJECTED_DEPTH`:
 6. If the block is projectable, collect its cuboid front candidates and construct
    exactly one `CuboidSweep` for each optical cuboid.
 7. Sort the front candidates by cuboid-local `minTravel`; index the sweeps by
-   start travel and their cached full canonical hull.
-8. For each coplanar front group, subtract `prefixHull(groupTravel)` for volumes
+   start travel and their cached axis-aligned broad-phase bounds.
+8. For each coplanar front group, subtract `prefixShape(groupTravel)` for volumes
    that started earlier, emit every face in the group from the same incoming
    region, then allow volumes starting at that travel to affect later groups.
 9. Emit side visual patches for open side faces.
-10. Union one cached `fullHull()` per cuboid and subtract those blockers from the
-    global remaining texture region.
+10. Subtract one cached analytic `fullShape()` per cuboid from the global
+    remaining texture region. The broad-phase bounds never drive subtraction.
 11. Stop if the remaining texture domain is empty.
 
 Projection geometry prepares one radius evaluator from the source envelope and
@@ -385,11 +386,11 @@ when its minimum-travel front rectangle did not. For a front group at travel
 remaining at integer depth d
 -> collect every cuboid front candidate in that depth
 -> construct one sweep for every cuboid in that depth
--> for front travel tau, subtract prefixHull(tau) for sweeps with start < tau
+-> for front travel tau, subtract prefixShape(tau) for sweeps with start < tau
 -> every coplanar face in group tau reads the same incoming region
 -> sweeps starting at tau become eligible for later groups
 -> continue with the next travel group
--> publish the union of fullHull() values as remaining at depth d + 1
+-> subtract the fullShape() values into remaining at depth d + 1
 ```
 
 The start-travel distinction is essential. A volume that started earlier is
@@ -413,17 +414,23 @@ its local travel interval and local `u/v` footprint:
 
 ```text
 CuboidSweep:
-  cached fullHull()
-  prefixHull(travel)
+  cached broadPhaseBounds()
+  cached fullShape()
+  prefixShape(travel)
 ```
 
-`fullHull()` is constructed once during the depth scan and is the downstream
-shadow authority. It conservatively bounds every continuous cross-section of the
-cuboid, including a beam waist inside the interval. `prefixHull(travel)` uses the
-same evaluator and supplies only the occupied prefix before a same-depth
-receiver.
+`fullShape()` is constructed once during the depth scan and is the downstream
+shadow authority. Canonical cuboid cross-sections are homothetic rectangles as
+radius changes, so their continuous union is the convex hull of the minimum- and
+maximum-radius cross-sections. This retains the diagonal edges created by
+correlated `u/v` motion without intermediate sampling planes. `prefixShape(travel)`
+uses the same construction for the occupied prefix before a same-depth receiver.
 
-The same-depth index bins each sweep by its cached full hull and sorts candidates
+`broadPhaseBounds()` is only an axis-aligned index key. Using it for texture
+subtraction is a correctness regression because it combines U and V extrema that
+never occurred at the same travel and fills real diagonal light boundaries.
+
+The same-depth index bins each sweep by its cached broad-phase bounds and sorts candidates
 by start travel. A side query visits only intersecting bins, excludes the
 receiving cuboid, and materializes prefix hulls for the surviving local set. The
 index also exposes start, end, and in-range waist boundaries for side travel
@@ -458,7 +465,7 @@ A side patch segment reads:
 
 ```text
 incoming = previous_depth_remaining
-incoming -= indexed_sweep_prefixes_before(segment_end)
+    incoming -= indexed analytic sweep prefixes before(segment_end)
 incoming excludes only the receiving cuboid itself
 visible = side_window intersect incoming
 ```
@@ -471,8 +478,10 @@ half of a changing prefix.
 In verbose mode, internal side allocation records include an `occlusion_audit`
 field. It compares the cuboid probes collected in the depth slice against the
 indexed sweep prefixes that reached the side clipper. Compatibility field names
-such as `sampled_hits` and `sample_gaps` are retained temporarily; under sweep
-authority a nonzero `sample_gaps` value is an index/query correctness alarm.
+such as `sampled_hits` and `sample_gaps` are retained temporarily; under analytic
+sweep authority a nonzero `sample_gaps` value is an index/query correctness alarm.
+`broad_phase_false_positives` is separate and may be nonzero because bounds are a
+deliberate superset of the exact polygon.
 
 When two boxes in the same block touch a side plane, that contact is resolved as
 a rectangle difference on the side face itself before the optical-order clipping
@@ -558,8 +567,9 @@ Client-side rendering in `SpotRenderEvents`:
 - if the budget is exceeded, culls by distance first and keeps the nearest spots,
 - culls by render distance,
 - renders core, halo, and ring textures through an additive light pass,
-- uses `FOOTPRINT_SLICE` for front rectangular slices,
-- uses `FOOTPRINT_QUAD` for side/patch quads,
+- uses `FOOTPRINT_SLICE` for legacy rectangular slices,
+- uses `FOOTPRINT_QUAD` for convex front/side cells, triangulating cells with more
+  than four vertices into non-overlapping degenerate quads,
 - uses one fixed surface offset per receiving face.
 
 The texture sampler uses linear filtering without mipmaps. Core, halo, and ring
@@ -602,15 +612,15 @@ some wide projection scans took hundreds of milliseconds to generate.
 
 ## 7. Known limitations
 
-### 7.1 Exact six-sided silhouettes are not solved
+### 7.1 Analytic axis-aligned cuboid silhouettes are implemented
 
-A real cube under oblique projection can create a five- or six-sided silhouette on
-a later screen. The current rectangle-window model does not represent exact
-diagonal polygon boundaries.
+A cuboid whose canonical cross-section changes scale can create a five-, six-, or
+eight-sided silhouette on a later screen. Production now retains this continuous
+homothetic sweep as a convex polygon and therefore preserves its diagonal edges.
 
-The current implementation uses a conservative axis-aligned sweep hull. It
-preserves cuboid connectivity but can add bounded extra shadow at correlated
-`u/v` corners; it still does not represent an exact diagonal polygon silhouette.
+This does not solve arbitrary rotated/non-axis-aligned meshes or physically exact
+non-voxel silhouettes. The implemented guarantee is for the axis-aligned optical
+cuboid primitive used by slabs, stairs, fences, and full blocks.
 
 ### 7.2 Side visual patches are not full occluders
 
@@ -686,17 +696,18 @@ Production now uses one continuous conservative sweep per optical cuboid:
 
 ```text
 CuboidSweep:
-  fullHull()
-  prefixHull(travel)
+  broadPhaseBounds()
+  fullShape()
+  prefixShape(travel)
 ```
 
-- `fullHull()` is the downstream blocker for the cuboid's complete travel range.
-- `prefixHull(travel)` supplies same-depth front/side ordering without activating
+- `fullShape()` is the downstream blocker for the cuboid's complete travel range.
+- `prefixShape(travel)` supplies same-depth front/side ordering without activating
   volume that lies after the receiver.
 - One cuboid produces one sweep object. Intermediate planes are not production
   occlusion authority and are not required for correctness.
-- The hull is conservative: false light gaps are forbidden, while bounded extra
-  shadow at correlated u/v corners is accepted for this voxel-native readout.
+- Axis-aligned bounds are accepted only for broad-phase indexing. Correlated U/V
+  corners must remain polygon edges; filling them is not an accepted approximation.
 - Sweep construction occurs once per cuboid and must be indexed/reused. The
   rejected July 10 experiment recomputed continuous prefixes per side candidate;
   that candidate-by-cuboid multiplication must not return.
@@ -893,9 +904,10 @@ Internal side records also include `occlusion_audit` with:
 - `probes`, `own`, `after`, and `prior` cuboid counts for the depth slice,
 - `cross_block_prior` and `nearby_cross_block_prior` for non-owner cuboids
   geometrically before the segment,
-- `conservative_hits` and compatibility field `sampled_hits` for candidate-window overlap,
-- `sample_gaps` for conservative-prefix hits absent from the indexed sweep result;
-  this must remain zero,
+- `conservative_hits` for broad-phase overlap and compatibility field
+  `sampled_hits` for exact polygon overlap,
+- `sample_gaps` for exact-prefix hits absent from the indexed sweep result; this
+  must remain zero. `broad_phase_false_positives` may be nonzero,
 - bounded per-cuboid entries containing block position, tile, box geometry,
   ownership relation, prefix endpoint, and indexed-hit result.
 
@@ -931,7 +943,7 @@ separate neighboring fragments:
 
 The profile line also includes phase timings and hot-spot counters:
 
-- `occlusion_authority=cuboid_sweep` identifies the production representation;
+- `occlusion_authority=analytic_cuboid_sweep` identifies the production representation;
   `plane_count` is the retained compatibility setting and
   `plane_count_effective=1` records one authoritative blocker object per cuboid.
 - `*_us` timing fields split projection generation into tile range setup,
@@ -941,10 +953,12 @@ The profile line also includes phase timings and hot-spot counters:
 - `subtract_*` fields measure rectangle subtraction work after candidate windows
   have been found. In the current stable path these mostly describe debug or
   same-depth clipping rather than the main historical occlusion authority.
-- `remaining_*` fields measure the recursive texture-domain state:
-  slab/interval counts, remaining area, query counts, blocker input count,
+- `remaining_*` fields measure the recursive texture-domain state. Compatibility
+  slab/interval fields now mirror polygon cell/vertex counts; explicit
+  `remaining_polygon_cells` and `remaining_polygon_vertices` carry the new names.
+  They also report remaining area, query counts, blocker input count,
   blocker hits after clipping to the current remaining region, and update work.
-  `remaining_slabs=0` is the exact early-stop condition.
+  zero polygon cells is the exact early-stop condition.
 - `depth_boundary_radius_*` verifies that adjacent depth slices evaluate their
   shared physical plane with bit-identical radii. Any mismatch is a correctness
   alarm because touching blocker windows can otherwise leave a false light seam.
@@ -953,9 +967,25 @@ The profile line also includes phase timings and hot-spot counters:
   `plane_windows_effective` now count cuboid sweep full hulls before/after the
   exact remaining-region prefilter. One accepted cuboid contributes one, not the
   configured historical plane count.
+- `analytic_sweep_shapes`, `analytic_sweep_diagonal_shapes`, and
+  `analytic_sweep_vertices` confirm how many exact cuboid shapes were constructed
+  and how many actually retained at least one non-axis-aligned edge.
 - `remaining_prefilter_*` fields measure the cheap boolean intersection tests
   used by the blocker-hull prefilter. They are separate from
   `remaining_intersection_*`, which measures visible fragment generation.
+- `remaining_index_*` fields measure the depth-local immutable polygon-cell
+  broad phase: lazy builds and build time, indexed versus small-region linear
+  queries, bucket visits/entries, duplicate and bounds rejection, and the exact
+  candidate count. `remaining_intersection_*` then counts only cells/vertices
+  that reached exact polygon clipping.
+- `remaining_compaction_*` fields measure exact shared-edge convex-cell merging
+  after a depth's blocker transaction. Cell count may fall; remaining area and
+  visible coverage must not change.
+- `remaining_blocker_bulk_runs`, `remaining_blocker_index_*`,
+  `remaining_blocker_exact_*`, `remaining_blocker_changed_fragments`, and the
+  separate blocker-index-build/query, exact-subtraction, and compaction timings
+  measure the depth-local cell/blocker join. Candidate reduction is valid only
+  while polygon coverage and validation mismatches remain unchanged/zero.
 - `side_*` fields measure side visual candidate enumeration. Side spots are still
   visual readout objects, but the counters show how many side tiles, open-face
   checks, travel intervals, and side texture windows were considered.
@@ -1044,9 +1074,12 @@ The profile line also includes phase timings and hot-spot counters:
   in that projection pass.
 - `front_pass_us` measures the complete depth-wide front event transaction,
   including ordering and prefix updates. `projection_attributed_us` sums mutually
-  exclusive top-level stages; `projection_residual_us` is the measured projection
-  time not covered by those stages. The performance report exposes corresponding
-  front-pass and residual averages.
+  exclusive top-level stages, including `snapshot_restore_us`, `snapshot_build_us`,
+  and `projection_finalize_us`; `projection_residual_us` is the measured projection
+  time not covered by those stages. Snapshot build includes immutable remaining-region
+  and dependency-delta encoding. Finalization includes immutable geometry/dependency,
+  appearance-plan, stats, and depth-cache construction. The performance report exposes
+  corresponding front-pass and residual averages.
 - `surface_appearance_builds` and `surface_appearance_cache_hits` show how many
   material/spectrum appearance records were built or reused before quad geometry
   was attached.
@@ -1270,15 +1303,16 @@ number of checked tiles for circular spots.
 
 ### 9.4 Keep sweep construction and prefix queries local
 
-One cuboid creates one cached full hull. Same-depth prefix hulls are evaluated
-only after the full-hull spatial bins and start-travel ordering have rejected
+One cuboid creates one cached analytic full shape plus one broad-phase rectangle.
+Same-depth prefix shapes are evaluated only after the spatial bins and
+start-travel ordering have rejected
 irrelevant sweeps. Do not trade the removed plane count for adaptive sweep
 segments or a candidate-by-all-cuboids scan.
 
 ### 9.5 Maintain the remaining region
 
-The runtime authority is the remaining texture region, represented as
-non-overlapping v-slabs containing non-overlapping u-intervals. Candidate faces
+The runtime authority is the remaining texture region, represented as disjoint
+convex polygon cells. Candidate faces
 receive:
 
 ```text
@@ -1302,19 +1336,17 @@ This is exact because repeated set difference is equivalent to subtracting the
 union. The important implementation rule is that the sequence must run after all
 same-depth visible patches have been emitted, not during face scanning.
 
-The optimized representation first constructs the exact canonical
-`blockerUnion`, then subtracts it from `remaining` with one synchronized V-slab
-sweep. At each common V band it subtracts the normalized U interval lists once.
-This is representation-level acceleration only and preserves the equation above.
-Verbose validation may also run the former blocker-slab loop and compare the
-normalized result, but the legacy result never drives production authority.
+Production subtracts each analytic convex blocker from the disjoint convex cells.
+Each subtraction partitions a cell by the blocker's half-planes, preserves
+monotone ownership, and never uses the blocker's axis-aligned bounds as authority.
+The implementation may split one cell against one blocker edge in a single vertex
+walk that produces both inside and outside polygons. Left/right epsilon membership
+must still be evaluated independently because a boundary point may belong to both
+closed half-planes; treating the two results as boolean complements changes coverage.
 
-After each update, adjacent slabs with identical interval sets are merged. This
-keeps the recursive certificate exact while avoiding historical occupied-window
-queries.
-
-This is safer than changing to polygon clipping because it preserves the current
-rectangle-domain semantics.
+The rectangle/slab implementation remains a legacy verifier for rectangle-only
+operations and same-block face exposure; it no longer drives downstream sweep
+occlusion.
 
 Before applying same-depth blockers, the runtime may discard blocker windows that
 do not intersect the current remaining region:
@@ -1330,11 +1362,48 @@ texture domain has already been consumed. The prefilter should be a cheap boolea
 query against the remaining slabs and intervals; it must not allocate visible
 rectangle fragments or modify `R_d`.
 
-The slab representation is ordered by `v`, and each slab's intervals are ordered
-by `u`. Boolean remaining queries may binary-search to the first potentially
-intersecting slab or interval and stop once the query range is passed. This
-preserves the same region invariant while making the query local to the relevant
-texture-domain stripe.
+Each convex cell and sweep keeps an axis-aligned bound for broad-phase rejection.
+Exact polygon intersection runs only after those bounds overlap.
+
+Within one depth transaction the remaining region is immutable while front and
+side receivers read it. Production may therefore lazily build one canonical-grid
+index for that region and share it across every query in the depth. Grid buckets
+return candidate cell indices in original deterministic order; each candidate is
+still checked against its exact bounds and then clipped as a polygon. Small regions
+may deliberately use the linear path. The index is discarded with the immutable
+region and never becomes occlusion authority.
+
+Front and side receiver windows are axis-aligned canonical rectangles. Their
+remaining-region query uses a rectangle-specialized exact path: if the rectangle
+bounds fully contain a candidate convex cell's bounds, that immutable cell is
+returned directly; only boundary-crossing cells execute polygon half-plane
+clipping. This is exact because a convex cell whose complete bounds lie inside the
+rectangle also lies inside the rectangle. Partial cells still use the ordinary
+polygon kernel, and the grid remains broad phase only.
+
+After all blockers for a depth have been subtracted, adjacent convex cells may be
+compacted. A merge is exact only when the cells share an edge and the convex hull's
+area equals the sum of the two cell areas within the canonical geometry tolerance.
+This preserves coverage and monotone ownership while reducing later query and
+render fragmentation. A hull that fills a positive-area gap must be rejected.
+Production compaction uses an incremental edge queue. It registers every initial
+cell edge once, and after a successful merge registers only the replacement cell's
+new boundary. Versioned edge owners invalidate queued pairs that mention an older
+cell shape. The surviving merged cell retains the lower original cell index, so
+output order stays deterministic. This replaces repeated full-region edge-map
+rebuilds without relaxing the shared-edge or area-conservation authority.
+
+When a depth contains enough blockers, production may build one immutable blocker
+grid and perform a cell-major spatial join. Source cells remain in their original
+order; the candidate blocker indices for each cell are restored to original
+blocker order before exact subtraction. This is set-equivalent to the sequential
+blocker-major recurrence because each source cell is disjoint and subtraction is
+applied in the same blocker order inside that cell. Small blocker sets retain the
+sequential path. Within the cell-major loop, two reusable fragment buffers alternate
+after a blocker changes the current fragments; they do not escape the source-cell
+transaction, and copying their polygon references into the final region preserves
+the same fragment order. In verbose validation, the sequential result is compared against
+the indexed result as a reference only and never replaces production output.
 
 Before subtracting same-depth blockers, the runtime may replace the raw blocker
 list by its exact texture-domain union:
@@ -1362,7 +1431,12 @@ For one side candidate, same-depth prefix occluders are now prefiltered by exact
 canonical-rectangle intersection before visible-window subtraction. Rejecting a
 non-intersecting occluder is an exact set identity, so this reduces allocation and
 split work without changing travel order, cuboid ownership, or the resulting
-visible region.
+visible region. The surviving polygon list is subtracted in original occluder order
+with two alternating fragment buffers; intermediate `Region` bounds/area snapshots
+are not constructed because they are not consumed inside this local transaction.
+Production also materializes visible-polygon bounds only for allocation/debug
+detail. Render emission consumes the polygon itself, so ordinary profiles must not
+pay for debug-only rectangle export.
 
 The exact full-occupancy test must not be implemented by recomputing
 `FULL_FOOTPRINT - occupiedHistory` at every depth. The stable invariant is the
@@ -1450,16 +1524,21 @@ prepare all unique surfaces, build all current surface appearances, then update
 all templates in original order. Per-template `System.nanoTime()` calls would be
 measurement overhead inside the hot path and are therefore forbidden.
 
-Projection dependency dirties remove matching geometry entries before a refresh.
-The invalidation event records `earliest_invalidated_depth`, but this first stage
-still removes the complete source-output entry. Reusing prefix depth snapshots
-and recomputing only the invalidated suffix remains the next cache stage. Verbose
-validation and debug face-center projection bypass the production cache. Cache
-storage is bounded both by entries and by total retained geometry templates.
+Projection dependency dirties retain matching geometry entries and mark their
+earliest invalidated depth. Each cached result stores one immutable end-of-depth
+snapshot containing the normalized remaining-region certificate, cumulative
+geometry-template end index, and that depth's dependency delta. A refresh restores
+the snapshot at `k - 1`, reuses templates and dependencies from depths `< k`, and
+recomputes only `k..end`. Same-depth sweep/front/side indexes remain ephemeral
+because their transaction ends inside one depth slice. Forced performance rebuilds,
+verbose validation, and debug face-center projection bypass suffix reuse. Cache
+storage remains bounded by entries and retained geometry templates.
 
 Useful cache fields and events are:
 
 - profile `cache_mode=full_rebuild|appearance_only`,
+- profile `cache_mode=suffix_rebuild` with earliest/reused/rebuilt depth counts and
+  snapshot/suffix timings,
 - budget `geometry_cache_hits`, `geometry_cache_misses`,
   `appearance_only_updates`, and `full_geometry_rebuilds`,
 - performance report `full_rebuild_samples` and `appearance_only_samples`,
@@ -1484,19 +1563,39 @@ This is a visual cutoff only.
 Side spots should remain a visualization aid. They should not force full polygon
 CSG or per-cell ray casting in production.
 
-Side travel sampling frequently needs only the propagated beam radius. Each source
-output prepares one `BeamGeometryOps.RadiusPropagation`; a depth slice receives a
+Side travel frequently needs only the propagated beam radius. Each source output
+prepares one `BeamGeometryOps.RadiusPropagation`; a depth slice receives a
 lightweight offset view of the same invariant `xx`, `xt`, and `tt` coefficients.
-Candidate enumeration, interval-boundary searches, endpoint nudging, adaptive
-subdivision and cuboid sweep hulls share that evaluator. Each lookup uses
-the same absolute-travel second-moment expression and clamps to the same radius
-range as `BeamGeometryOps.propagate(...).radius()`, without constructing a complete
-propagated envelope or rebuilding moments per depth. The formal beam-profile
-verifier compares the one-shot scalar path, the prepared evaluator, and adjacent
-offset views against full-envelope propagation across plane-wave, collimated,
-diverging, and focused envelopes. This is an exact representation optimization:
-it must not alter sample counts, interval boundary search, side candidate
-acceptance, or emitted geometry.
+Candidate enumeration, analytic interval boundaries, endpoint nudging, adaptive
+subdivision and cuboid sweep hulls share that evaluator. Each lookup uses the same
+absolute-travel second-moment expression and clamps to the same radius range as
+`BeamGeometryOps.propagate(...).radius()`, without constructing a complete
+propagated envelope or rebuilding moments per depth.
+
+Production side interval discovery is analytic. For a fixed side coordinate `b`,
+a cross interval `[a, c]`, and touch epsilon `e`, the existing cross-section
+predicate is equivalent to:
+
+```text
+c - a > e
+r >= abs(b) - e
+r > max(e / 2, a + e, e - c)
+```
+
+The conjunction is one radius threshold. Since propagated radius squared is the
+quadratic `xx + 2*z*xt + z*z*tt`, splitting once at the beam waist leaves at most
+one root per monotone segment. `RadiusPropagation.radiusThresholdCrossing(...)`
+solves that root directly; production no longer performs 16-point side interval
+sampling or 24-step boundary bisection. Endpoint nudging moves by at most the
+existing touch epsilon toward a known-valid interior point.
+
+The formal beam-profile verifier still compares the one-shot scalar path, the
+prepared evaluator, and adjacent offset views against full-envelope propagation.
+The spot formal proof additionally compares analytic interval membership against
+the original cross-section predicate across plane-wave, collimated, diverging,
+focused, clipped-cross-interval, and both side-axis cases. This representation
+change may recover a narrow valid interval that fixed sampling could miss, but it
+must not reject any positive-length interval accepted by the predicate.
 
 The side intersection and endpoint searches pass their sampling parameters
 directly rather than allocating capturing predicates. A receiving candidate also
@@ -1530,15 +1629,14 @@ superset only when later side-window filtering discards the extra candidates.
 If side shadows need improvement, prefer:
 
 ```text
-the existing full-hull spatial index
+the existing broad-phase spatial index
 -> tighter prefix candidate rejection
--> local rectangle-window merging
+-> local convex-cell merging
 ```
 
 over:
 
 ```text
-full side polygon clipping
 per-cell ray casts
 one render quad per texture cell
 ```

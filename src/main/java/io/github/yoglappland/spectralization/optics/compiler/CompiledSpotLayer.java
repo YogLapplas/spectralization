@@ -39,7 +39,7 @@ public final class CompiledSpotLayer {
     private static final int MAX_GEOMETRY_TEMPLATES_PER_ENTRY = MAX_SPOTS_PER_SAMPLE;
     private static final int MAX_GEOMETRY_TEMPLATES_PER_LEVEL = MAX_SPOTS_PER_SAMPLE * 4;
     private static final int UNCACHED_NETWORK_ID = Integer.MIN_VALUE;
-    private static final Map<ServerLevel, LinkedHashMap<ProjectionGeometryKey, SpotProjectionResult>>
+    private static final Map<ServerLevel, LinkedHashMap<ProjectionGeometryKey, ProjectionGeometryCacheEntry>>
             GEOMETRY_CACHE_BY_LEVEL = new WeakHashMap<>();
     public static final SpotLayer EMPTY = new SpotLayer(List.of(), new LongOpenHashSet(), List.of());
 
@@ -157,21 +157,61 @@ public final class CompiledSpotLayer {
                 node.side(),
                 profileTemplate.envelope()
         );
+        ProjectionAppearanceKey appearanceKey = new ProjectionAppearanceKey(
+                profileTemplate,
+                outgoingPower,
+                coherentOutgoingPower
+        );
 
         if (cacheEligible) {
-            SpotProjectionResult cached = geometryCache(level).get(key);
-            if (cached != null) {
+            ProjectionGeometryCacheEntry entry = geometryCache(level).get(key);
+            if (entry != null && entry.earliestInvalidatedDepth() > 0) {
+                budgetStats.geometryCacheHits++;
+                SpotProjectionResult resumeGeometry = entry.result();
+                if (!appearanceKey.equals(entry.appearanceKey())) {
+                    resumeGeometry = VoxelSpotProjector.reapplyCachedAppearance(
+                            level,
+                            node.pos(),
+                            node.side(),
+                            profileTemplate,
+                            outgoingPower,
+                            coherentOutgoingPower,
+                            resumeGeometry
+                    );
+                }
+                SpotProjectionResult rebuilt = VoxelSpotProjector.projectLightConeSpots(
+                        level,
+                        node.pos(),
+                        node.side(),
+                        node.side(),
+                        profileTemplate,
+                        outgoingPower,
+                        coherentOutgoingPower,
+                        resumeGeometry,
+                        entry.earliestInvalidatedDepth()
+                );
+                if (rebuilt.cacheMode() == SpotProjectionResult.CacheMode.SUFFIX_REBUILD) {
+                    budgetStats.suffixGeometryRebuilds++;
+                } else {
+                    budgetStats.fullGeometryRebuilds++;
+                }
+                putGeometryCache(level, key, rebuilt, appearanceKey);
+                return rebuilt;
+            }
+            if (entry != null) {
                 budgetStats.geometryCacheHits++;
                 budgetStats.appearanceOnlyUpdates++;
-                return VoxelSpotProjector.reapplyCachedAppearance(
+                SpotProjectionResult refreshed = VoxelSpotProjector.reapplyCachedAppearance(
                         level,
                         node.pos(),
                         node.side(),
                         profileTemplate,
                         outgoingPower,
                         coherentOutgoingPower,
-                        cached
+                        entry.result()
                 );
+                entry.replace(refreshed, appearanceKey);
+                return refreshed;
             }
             budgetStats.geometryCacheMisses++;
         }
@@ -187,25 +227,33 @@ public final class CompiledSpotLayer {
         );
         budgetStats.fullGeometryRebuilds++;
         if (cacheEligible && rebuilt.cacheMode() == SpotProjectionResult.CacheMode.FULL_REBUILD) {
-            putGeometryCache(level, key, rebuilt);
+            putGeometryCache(level, key, rebuilt, appearanceKey);
         }
         return rebuilt;
     }
 
-    private static LinkedHashMap<ProjectionGeometryKey, SpotProjectionResult> geometryCache(ServerLevel level) {
+    private static LinkedHashMap<ProjectionGeometryKey, ProjectionGeometryCacheEntry> geometryCache(
+            ServerLevel level
+    ) {
         return GEOMETRY_CACHE_BY_LEVEL.computeIfAbsent(level, ignored -> new LinkedHashMap<>(16, 0.75F, true));
     }
 
     private static void putGeometryCache(
             ServerLevel level,
             ProjectionGeometryKey key,
-            SpotProjectionResult result
+            SpotProjectionResult result,
+            ProjectionAppearanceKey appearanceKey
     ) {
         if (result.geometryTemplates().size() > MAX_GEOMETRY_TEMPLATES_PER_ENTRY) {
+            LinkedHashMap<ProjectionGeometryKey, ProjectionGeometryCacheEntry> cache =
+                    GEOMETRY_CACHE_BY_LEVEL.get(level);
+            if (cache != null) {
+                cache.remove(key);
+            }
             return;
         }
-        LinkedHashMap<ProjectionGeometryKey, SpotProjectionResult> cache = geometryCache(level);
-        cache.put(key, result);
+        LinkedHashMap<ProjectionGeometryKey, ProjectionGeometryCacheEntry> cache = geometryCache(level);
+        cache.put(key, new ProjectionGeometryCacheEntry(result, appearanceKey));
         while (cache.size() > MAX_GEOMETRY_CACHE_ENTRIES_PER_LEVEL
                 || geometryTemplateCount(cache) > MAX_GEOMETRY_TEMPLATES_PER_LEVEL) {
             ProjectionGeometryKey eldest = cache.keySet().iterator().next();
@@ -213,10 +261,10 @@ public final class CompiledSpotLayer {
         }
     }
 
-    private static int geometryTemplateCount(Map<ProjectionGeometryKey, SpotProjectionResult> cache) {
+    private static int geometryTemplateCount(Map<ProjectionGeometryKey, ProjectionGeometryCacheEntry> cache) {
         int count = 0;
-        for (SpotProjectionResult result : cache.values()) {
-            count += result.geometryTemplates().size();
+        for (ProjectionGeometryCacheEntry entry : cache.values()) {
+            count += entry.result().geometryTemplates().size();
         }
         return count;
     }
@@ -227,29 +275,35 @@ public final class CompiledSpotLayer {
             BlockPos changedPos,
             String reason
     ) {
-        LinkedHashMap<ProjectionGeometryKey, SpotProjectionResult> cache = GEOMETRY_CACHE_BY_LEVEL.get(level);
+        LinkedHashMap<ProjectionGeometryKey, ProjectionGeometryCacheEntry> cache = GEOMETRY_CACHE_BY_LEVEL.get(level);
         if (cache == null || cache.isEmpty()) {
             return;
         }
-        int removed = 0;
+        if (changedPos == null) {
+            int before = cache.size();
+            cache.entrySet().removeIf(entry -> entry.getKey().networkId() == networkId);
+            int removed = before - cache.size();
+            logGeometryInvalidation(level, networkId, null, reason, removed, removed, 0);
+            return;
+        }
+        int affected = 0;
         int earliestDepth = Integer.MAX_VALUE;
-        var iterator = cache.entrySet().iterator();
-        while (iterator.hasNext()) {
-            Map.Entry<ProjectionGeometryKey, SpotProjectionResult> entry = iterator.next();
+        for (Map.Entry<ProjectionGeometryKey, ProjectionGeometryCacheEntry> entry : cache.entrySet()) {
             ProjectionGeometryKey key = entry.getKey();
             if (key.networkId() != networkId) {
                 continue;
             }
-            if (changedPos != null && !entry.getValue().dependencies().contains(changedPos.asLong())) {
+            if (changedPos != null && !entry.getValue().result().dependencies().contains(changedPos.asLong())) {
                 continue;
             }
             if (changedPos != null) {
-                earliestDepth = Math.min(earliestDepth, projectionDepth(key.sourcePos(), changedPos, key.direction()));
+                int invalidatedDepth = projectionDepth(key.sourcePos(), changedPos, key.direction());
+                earliestDepth = Math.min(earliestDepth, invalidatedDepth);
+                entry.getValue().invalidateFrom(invalidatedDepth);
             }
-            iterator.remove();
-            removed++;
+            affected++;
         }
-        logGeometryInvalidation(level, networkId, changedPos, reason, removed, earliestDepth);
+        logGeometryInvalidation(level, networkId, changedPos, reason, affected, 0, earliestDepth);
     }
 
     public static void invalidateProjectionGeometry(
@@ -258,7 +312,7 @@ public final class CompiledSpotLayer {
             Direction direction,
             String reason
     ) {
-        LinkedHashMap<ProjectionGeometryKey, SpotProjectionResult> cache = GEOMETRY_CACHE_BY_LEVEL.get(level);
+        LinkedHashMap<ProjectionGeometryKey, ProjectionGeometryCacheEntry> cache = GEOMETRY_CACHE_BY_LEVEL.get(level);
         if (cache == null || cache.isEmpty()) {
             return;
         }
@@ -271,6 +325,7 @@ public final class CompiledSpotLayer {
                 sourcePos,
                 reason,
                 before - cache.size(),
+                before - cache.size(),
                 0
         );
     }
@@ -280,10 +335,11 @@ public final class CompiledSpotLayer {
             int networkId,
             BlockPos changedPos,
             String reason,
+            int invalidated,
             int removed,
             int earliestDepth
     ) {
-        if (removed <= 0 || !SpectralizationConfig.opticalCompilerDebugLog()) {
+        if (invalidated <= 0 || !SpectralizationConfig.opticalCompilerDebugLog()) {
             return;
         }
         SpectralDiagnostics.Event event = SpectralDiagnostics.event(
@@ -291,7 +347,9 @@ public final class CompiledSpotLayer {
         )
                 .field("network_id", networkId)
                 .field("reason", reason)
+                .field("invalidated_entries", invalidated)
                 .field("removed_entries", removed)
+                .field("suffix_entries_retained", Math.max(0, invalidated - removed))
                 .field("earliest_invalidated_depth", earliestDepth == Integer.MAX_VALUE ? -1 : earliestDepth);
         if (changedPos != null) {
             event.pos("changed", changedPos);
@@ -352,6 +410,7 @@ public final class CompiledSpotLayer {
         SpotProjectionResult.RemainingStats remaining = stats.remaining();
         SpotProjectionResult.OptimizationStats optimization = stats.optimization();
         SpotProjectionResult.HotDepth hotDepth = stats.hotDepth();
+        SpotProjectionResult.DepthReuseStats depthReuse = projectionResult.depthReuseStats();
         long attributedProjectionNanos = timings.tileRangeNanos()
                 + timings.projectionRectNanos()
                 + timings.blockLookupNanos()
@@ -360,7 +419,10 @@ public final class CompiledSpotLayer {
                 + timings.frontPassNanos()
                 + timings.sideScanNanos()
                 + timings.fullOccupancyNanos()
-                + timings.occlusionAddNanos();
+                + timings.occlusionAddNanos()
+                + depthReuse.snapshotRestoreNanos()
+                + depthReuse.snapshotBuildNanos()
+                + depthReuse.finalizationNanos();
         long projectionResidualNanos = Math.max(0L, projectionElapsedNanos - attributedProjectionNanos);
         SpectralDiagnostics.WriteStats logWriteStats = SpectralDiagnostics.writeStats();
         SpectralDiagnostics.event(level, "spot_projection", "profile")
@@ -369,7 +431,23 @@ public final class CompiledSpotLayer {
                 .field("power", outgoingPower)
                 .field("cache_mode", projectionResult.cacheMode().name().toLowerCase(java.util.Locale.ROOT))
                 .field("geometry_templates", projectionResult.geometryTemplates().size())
-                .field("occlusion_authority", "cuboid_sweep")
+                .field("depth_snapshot_count", projectionResult.depthCache().size())
+                .field("earliest_invalidated_depth", depthReuse.earliestInvalidatedDepth())
+                .field("reused_depth_slices", depthReuse.reusedDepthSlices())
+                .field("rebuilt_depth_slices", depthReuse.rebuiltDepthSlices())
+                .field("snapshot_restore_us", depthReuse.snapshotRestoreNanos() / 1_000.0D)
+                .field("snapshot_build_us", depthReuse.snapshotBuildNanos() / 1_000.0D)
+                .field("projection_finalize_us", depthReuse.finalizationNanos() / 1_000.0D)
+                .field("suffix_projection_us", depthReuse.suffixProjectionNanos() / 1_000.0D)
+                .field("forced_full_compare_checks", depthReuse.forcedFullCompareChecks())
+                .field("forced_full_compare_mismatches", depthReuse.forcedFullCompareMismatches())
+                .field("occlusion_authority", "analytic_cuboid_sweep")
+                .field("side_travel_solver", "analytic_quadratic")
+                .field("remaining_subtraction_buffers", "reused_pair")
+                .field("remaining_compaction_strategy", "incremental_edge_queue")
+                .field("remaining_intersection_strategy", "rectangle_full_cell_passthrough")
+                .field("side_prefix_subtraction_buffers", "reused_pair")
+                .field("side_debug_bounds", "on_demand")
                 .field("plane_count", VoxelSpotProjector.occlusionPlaneCount())
                 .field("plane_count_effective", 1)
                 .field("elapsed_us", projectionElapsedNanos / 1_000.0D)
@@ -449,6 +527,9 @@ public final class CompiledSpotLayer {
                 .field("side_candidate_tiles_visited", optimization.sideCandidateTilesVisited())
                 .field("side_visible_windows_before_merge", optimization.sideVisibleWindowsBeforeMerge())
                 .field("side_visible_windows_after_merge", optimization.sideVisibleWindowsAfterMerge())
+                .field("analytic_sweep_shapes", optimization.analyticSweepShapes())
+                .field("analytic_sweep_diagonal_shapes", optimization.analyticSweepDiagonalShapes())
+                .field("analytic_sweep_vertices", optimization.analyticSweepVertices())
                 .field("side_boundary_missing_examples", String.join(" | ", optimization.sideBoundaryMissingExamples()))
                 .field("remaining_subtract_validation_checks", optimization.remainingSubtractValidationChecks())
                 .field("remaining_subtract_validation_mismatches", optimization.remainingSubtractValidationMismatches())
@@ -508,6 +589,8 @@ public final class CompiledSpotLayer {
                 .field("remaining_max_slabs", remaining.maxSlabs())
                 .field("remaining_intervals", remaining.intervals())
                 .field("remaining_max_intervals", remaining.maxIntervals())
+                .field("remaining_polygon_cells", remaining.slabs())
+                .field("remaining_polygon_vertices", remaining.intervals())
                 .field("remaining_area", remaining.area())
                 .field("remaining_min_area", remaining.minArea())
                 .field("remaining_intersection_queries", remaining.intersectionQueries())
@@ -518,6 +601,37 @@ public final class CompiledSpotLayer {
                 .field("remaining_prefilter_hits", remaining.prefilterHits())
                 .field("remaining_prefilter_slab_tests", remaining.prefilterSlabTests())
                 .field("remaining_prefilter_interval_tests", remaining.prefilterIntervalTests())
+                .field("remaining_index_queries", remaining.indexQueries())
+                .field("remaining_index_linear_queries", remaining.indexLinearQueries())
+                .field("remaining_index_builds", remaining.indexBuilds())
+                .field("remaining_index_build_us", remaining.indexBuildNanos() / 1_000.0D)
+                .field("remaining_index_bucket_visits", remaining.indexBucketVisits())
+                .field("remaining_index_bucket_entries", remaining.indexBucketEntries())
+                .field("remaining_index_duplicate_skips", remaining.indexDuplicateSkips())
+                .field("remaining_index_bounds_rejects", remaining.indexBoundsRejects())
+                .field("remaining_index_candidates", remaining.indexCandidates())
+                .field("remaining_index_max_candidates", remaining.indexMaxCandidates())
+                .field("remaining_blocker_bulk_runs", remaining.blockerBulkRuns())
+                .field("remaining_blocker_index_build_us", remaining.blockerIndexBuildNanos() / 1_000.0D)
+                .field("remaining_blocker_index_query_us", remaining.blockerIndexQueryNanos() / 1_000.0D)
+                .field("remaining_blocker_subtract_us", remaining.blockerSubtractNanos() / 1_000.0D)
+                .field("remaining_blocker_index_queries", remaining.blockerIndexQueries())
+                .field("remaining_blocker_index_linear_queries", remaining.blockerIndexLinearQueries())
+                .field("remaining_blocker_index_bucket_visits", remaining.blockerIndexBucketVisits())
+                .field("remaining_blocker_index_bucket_entries", remaining.blockerIndexBucketEntries())
+                .field("remaining_blocker_index_duplicate_skips", remaining.blockerIndexDuplicateSkips())
+                .field("remaining_blocker_index_bounds_rejects", remaining.blockerIndexBoundsRejects())
+                .field("remaining_blocker_index_candidates", remaining.blockerIndexCandidates())
+                .field("remaining_blocker_index_max_candidates", remaining.blockerIndexMaxCandidates())
+                .field("remaining_blocker_exact_tests", remaining.blockerExactTests())
+                .field("remaining_blocker_exact_vertices", remaining.blockerExactVertices())
+                .field("remaining_blocker_changed_fragments", remaining.blockerChangedFragments())
+                .field("remaining_compaction_runs", remaining.compactionRuns())
+                .field("remaining_compaction_cells_before", remaining.compactionCellsBefore())
+                .field("remaining_compaction_cells_after", remaining.compactionCellsAfter())
+                .field("remaining_compaction_edge_candidates", remaining.compactionEdgeCandidates())
+                .field("remaining_compaction_merges", remaining.compactionMerges())
+                .field("remaining_compaction_us", remaining.compactionNanos() / 1_000.0D)
                 .field("remaining_union_input_rects", remaining.unionInputRects())
                 .field("remaining_union_merged_rects", remaining.unionMergedRects())
                 .field("remaining_blocker_tests", remaining.blockerTests())
@@ -678,6 +792,7 @@ public final class CompiledSpotLayer {
                 .field("geometry_cache_hits", budgetStats.geometryCacheHits)
                 .field("geometry_cache_misses", budgetStats.geometryCacheMisses)
                 .field("appearance_only_updates", budgetStats.appearanceOnlyUpdates)
+                .field("suffix_geometry_rebuilds", budgetStats.suffixGeometryRebuilds)
                 .field("full_geometry_rebuilds", budgetStats.fullGeometryRebuilds)
                 .field("dependencies", dependencyCount)
                 .write();
@@ -784,7 +899,54 @@ public final class CompiledSpotLayer {
         private int geometryCacheHits;
         private int geometryCacheMisses;
         private int appearanceOnlyUpdates;
+        private int suffixGeometryRebuilds;
         private int fullGeometryRebuilds;
+    }
+
+    private static final class ProjectionGeometryCacheEntry {
+        private SpotProjectionResult result;
+        private ProjectionAppearanceKey appearanceKey;
+        private int earliestInvalidatedDepth;
+
+        private ProjectionGeometryCacheEntry(
+                SpotProjectionResult result,
+                ProjectionAppearanceKey appearanceKey
+        ) {
+            this.result = java.util.Objects.requireNonNull(result, "result");
+            this.appearanceKey = java.util.Objects.requireNonNull(appearanceKey, "appearanceKey");
+        }
+
+        private SpotProjectionResult result() {
+            return result;
+        }
+
+        private ProjectionAppearanceKey appearanceKey() {
+            return appearanceKey;
+        }
+
+        private int earliestInvalidatedDepth() {
+            return earliestInvalidatedDepth;
+        }
+
+        private void invalidateFrom(int depth) {
+            int clamped = Math.max(1, depth);
+            earliestInvalidatedDepth = earliestInvalidatedDepth == 0
+                    ? clamped
+                    : Math.min(earliestInvalidatedDepth, clamped);
+        }
+
+        private void replace(SpotProjectionResult replacement, ProjectionAppearanceKey replacementAppearanceKey) {
+            result = java.util.Objects.requireNonNull(replacement, "replacement");
+            appearanceKey = java.util.Objects.requireNonNull(replacementAppearanceKey, "replacementAppearanceKey");
+            earliestInvalidatedDepth = 0;
+        }
+    }
+
+    private record ProjectionAppearanceKey(
+            BeamPacket profileTemplate,
+            double outgoingPower,
+            double coherentOutgoingPower
+    ) {
     }
 
     private record ProjectionGeometryKey(

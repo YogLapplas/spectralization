@@ -18,18 +18,22 @@ public record SpotProjectionResult(
         List<SpotRecord> geometryTemplates,
         AppearancePlan appearancePlan,
         CacheMode cacheMode,
-        AppearanceTimings appearanceTimings
+        AppearanceTimings appearanceTimings,
+        DepthCache depthCache,
+        DepthReuseStats depthReuseStats
 ) {
     public static final SpotProjectionResult EMPTY =
             new SpotProjectionResult(
                     List.of(), DependencySnapshot.EMPTY, List.of(), Stats.EMPTY, List.of(), AppearancePlan.EMPTY,
                     CacheMode.EMPTY,
-                    AppearanceTimings.EMPTY
+                    AppearanceTimings.EMPTY,
+                    DepthCache.EMPTY,
+                    DepthReuseStats.EMPTY
             );
 
     public SpotProjectionResult(List<SpotRecord> spots, LongSet dependencies) {
         this(spots, new DependencySnapshot(dependencies), List.of(), Stats.EMPTY, spots, AppearancePlan.EMPTY,
-                CacheMode.FULL_REBUILD, AppearanceTimings.EMPTY);
+                CacheMode.FULL_REBUILD, AppearanceTimings.EMPTY, DepthCache.EMPTY, DepthReuseStats.EMPTY);
     }
 
     public SpotProjectionResult(
@@ -38,7 +42,7 @@ public record SpotProjectionResult(
             List<SpotProjectionAllocation> allocations
     ) {
         this(spots, new DependencySnapshot(dependencies), allocations, Stats.EMPTY, spots, AppearancePlan.EMPTY,
-                CacheMode.FULL_REBUILD, AppearanceTimings.EMPTY);
+                CacheMode.FULL_REBUILD, AppearanceTimings.EMPTY, DepthCache.EMPTY, DepthReuseStats.EMPTY);
     }
 
     public SpotProjectionResult(
@@ -48,7 +52,7 @@ public record SpotProjectionResult(
             Stats stats
     ) {
         this(spots, new DependencySnapshot(dependencies), allocations, stats, spots, AppearancePlan.EMPTY,
-                CacheMode.FULL_REBUILD, AppearanceTimings.EMPTY);
+                CacheMode.FULL_REBUILD, AppearanceTimings.EMPTY, DepthCache.EMPTY, DepthReuseStats.EMPTY);
     }
 
     public SpotProjectionResult {
@@ -60,6 +64,8 @@ public record SpotProjectionResult(
         Objects.requireNonNull(appearancePlan, "appearancePlan");
         Objects.requireNonNull(cacheMode, "cacheMode");
         Objects.requireNonNull(appearanceTimings, "appearanceTimings");
+        Objects.requireNonNull(depthCache, "depthCache");
+        Objects.requireNonNull(depthReuseStats, "depthReuseStats");
         spots = List.copyOf(spots);
         allocations = List.copyOf(allocations);
         geometryTemplates = List.copyOf(geometryTemplates);
@@ -72,7 +78,126 @@ public record SpotProjectionResult(
     public enum CacheMode {
         EMPTY,
         FULL_REBUILD,
+        SUFFIX_REBUILD,
         APPEARANCE_ONLY
+    }
+
+    public static final class DepthCache {
+        public static final DepthCache EMPTY = new DepthCache(List.of());
+        private final List<DepthSliceSnapshot> slices;
+
+        public DepthCache(List<DepthSliceSnapshot> slices) {
+            this.slices = List.copyOf(Objects.requireNonNull(slices, "slices"));
+        }
+
+        public int size() {
+            return slices.size();
+        }
+
+        public boolean isEmpty() {
+            return slices.isEmpty();
+        }
+
+        public DepthSliceSnapshot sliceAtDepth(int depth) {
+            if (depth <= 0 || depth > slices.size()) {
+                return null;
+            }
+            DepthSliceSnapshot snapshot = slices.get(depth - 1);
+            return snapshot.depth() == depth ? snapshot : null;
+        }
+
+        public List<DepthSliceSnapshot> prefixThrough(int depth) {
+            int count = Math.max(0, Math.min(depth, slices.size()));
+            return count == 0 ? List.of() : List.copyOf(slices.subList(0, count));
+        }
+    }
+
+    public static final class DepthSliceSnapshot {
+        private final int depth;
+        private final int geometryTemplateEnd;
+        private final long[] dependencyDelta;
+        private final double[] remainingRegionData;
+
+        public DepthSliceSnapshot(
+                int depth,
+                int geometryTemplateEnd,
+                long[] dependencyDelta,
+                double[] remainingRegionData
+        ) {
+            this(depth, geometryTemplateEnd, dependencyDelta, remainingRegionData, false);
+        }
+
+        private DepthSliceSnapshot(
+                int depth,
+                int geometryTemplateEnd,
+                long[] dependencyDelta,
+                double[] remainingRegionData,
+                boolean takeOwnership
+        ) {
+            this.depth = Math.max(1, depth);
+            this.geometryTemplateEnd = Math.max(0, geometryTemplateEnd);
+            long[] checkedDependencies = Objects.requireNonNull(dependencyDelta, "dependencyDelta");
+            double[] checkedRegion = Objects.requireNonNull(remainingRegionData, "remainingRegionData");
+            this.dependencyDelta = takeOwnership ? checkedDependencies : checkedDependencies.clone();
+            this.remainingRegionData = takeOwnership ? checkedRegion : checkedRegion.clone();
+        }
+
+        static DepthSliceSnapshot owned(
+                int depth,
+                int geometryTemplateEnd,
+                long[] dependencyDelta,
+                double[] remainingRegionData
+        ) {
+            return new DepthSliceSnapshot(depth, geometryTemplateEnd, dependencyDelta, remainingRegionData, true);
+        }
+
+        public int depth() {
+            return depth;
+        }
+
+        public int geometryTemplateEnd() {
+            return geometryTemplateEnd;
+        }
+
+        public int dependencyCount() {
+            return dependencyDelta.length;
+        }
+
+        long[] dependencyDeltaInternal() {
+            return dependencyDelta;
+        }
+
+        double[] remainingRegionDataInternal() {
+            return remainingRegionData;
+        }
+    }
+
+    public record DepthReuseStats(
+            int earliestInvalidatedDepth,
+            int reusedDepthSlices,
+            int rebuiltDepthSlices,
+            long snapshotRestoreNanos,
+            long snapshotBuildNanos,
+            long finalizationNanos,
+            long suffixProjectionNanos,
+            long forcedFullCompareChecks,
+            long forcedFullCompareMismatches
+    ) {
+        public static final DepthReuseStats EMPTY = new DepthReuseStats(
+                0, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L
+        );
+
+        public DepthReuseStats {
+            earliestInvalidatedDepth = Math.max(0, earliestInvalidatedDepth);
+            reusedDepthSlices = Math.max(0, reusedDepthSlices);
+            rebuiltDepthSlices = Math.max(0, rebuiltDepthSlices);
+            snapshotRestoreNanos = Math.max(0L, snapshotRestoreNanos);
+            snapshotBuildNanos = Math.max(0L, snapshotBuildNanos);
+            finalizationNanos = Math.max(0L, finalizationNanos);
+            suffixProjectionNanos = Math.max(0L, suffixProjectionNanos);
+            forcedFullCompareChecks = Math.max(0L, forcedFullCompareChecks);
+            forcedFullCompareMismatches = Math.max(0L, forcedFullCompareMismatches);
+        }
     }
 
     public static final class DependencySnapshot {
@@ -80,8 +205,16 @@ public record SpotProjectionResult(
         private final LongSet positions;
 
         public DependencySnapshot(LongSet positions) {
-            Objects.requireNonNull(positions, "positions");
-            this.positions = LongSets.unmodifiable(new LongOpenHashSet(positions));
+            this(positions, false);
+        }
+
+        private DependencySnapshot(LongSet positions, boolean takeOwnership) {
+            LongSet checked = Objects.requireNonNull(positions, "positions");
+            this.positions = LongSets.unmodifiable(takeOwnership ? checked : new LongOpenHashSet(checked));
+        }
+
+        static DependencySnapshot owned(LongSet positions) {
+            return positions.isEmpty() ? EMPTY : new DependencySnapshot(positions, true);
         }
 
         public int size() {
@@ -226,7 +359,7 @@ public record SpotProjectionResult(
                 0L,
                 0L,
                 0L,
-                0L,
+                0,
                 0L,
                 0L,
                 0L,
@@ -329,6 +462,9 @@ public record SpotProjectionResult(
             long sideCandidateTilesVisited,
             long sideVisibleWindowsBeforeMerge,
             long sideVisibleWindowsAfterMerge,
+            long analyticSweepShapes,
+            long analyticSweepDiagonalShapes,
+            long analyticSweepVertices,
             List<String> sideBoundaryMissingExamples,
             List<BoundaryMissingFace> sideBoundaryMissingDetails,
             long remainingSubtractValidationChecks,
@@ -350,7 +486,7 @@ public record SpotProjectionResult(
             List<String> structuralValidationExamples
     ) {
         public static final OptimizationStats EMPTY = new OptimizationStats(
-                0L, 0L, 0L, 0L, 0L, 0L, List.of(), List.of(),
+                0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, List.of(), List.of(),
                 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
                 0L, 0L, 0.0D, List.of()
         );
@@ -362,6 +498,9 @@ public record SpotProjectionResult(
             sideCandidateTilesVisited = Math.max(0L, sideCandidateTilesVisited);
             sideVisibleWindowsBeforeMerge = Math.max(0L, sideVisibleWindowsBeforeMerge);
             sideVisibleWindowsAfterMerge = Math.max(0L, sideVisibleWindowsAfterMerge);
+            analyticSweepShapes = Math.max(0L, analyticSweepShapes);
+            analyticSweepDiagonalShapes = Math.max(0L, analyticSweepDiagonalShapes);
+            analyticSweepVertices = Math.max(0L, analyticSweepVertices);
             sideBoundaryMissingExamples = sideBoundaryMissingExamples == null
                     ? List.of()
                     : List.copyOf(sideBoundaryMissingExamples);
@@ -668,6 +807,37 @@ public record SpotProjectionResult(
             long prefilterHits,
             long prefilterSlabTests,
             long prefilterIntervalTests,
+            long indexQueries,
+            long indexLinearQueries,
+            long indexBuilds,
+            long indexBuildNanos,
+            long indexBucketVisits,
+            long indexBucketEntries,
+            long indexDuplicateSkips,
+            long indexBoundsRejects,
+            long indexCandidates,
+            int indexMaxCandidates,
+            long blockerBulkRuns,
+            long blockerIndexBuildNanos,
+            long blockerIndexQueryNanos,
+            long blockerSubtractNanos,
+            long blockerIndexQueries,
+            long blockerIndexLinearQueries,
+            long blockerIndexBucketVisits,
+            long blockerIndexBucketEntries,
+            long blockerIndexDuplicateSkips,
+            long blockerIndexBoundsRejects,
+            long blockerIndexCandidates,
+            int blockerIndexMaxCandidates,
+            long blockerExactTests,
+            long blockerExactVertices,
+            long blockerChangedFragments,
+            long compactionRuns,
+            long compactionCellsBefore,
+            long compactionCellsAfter,
+            long compactionEdgeCandidates,
+            long compactionMerges,
+            long compactionNanos,
             long unionInputRects,
             long unionMergedRects,
             long blockerTests,
@@ -680,30 +850,61 @@ public record SpotProjectionResult(
             long emptyResults
     ) {
         public static final RemainingStats EMPTY = new RemainingStats(
-                0,
-                0,
-                0,
-                0,
-                0.0D,
-                0.0D,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L
+                0, // slabs
+                0, // maxSlabs
+                0, // intervals
+                0, // maxIntervals
+                0.0D, // area
+                0.0D, // minArea
+                0L, // intersectionQueries
+                0L, // intersectionSlabTests
+                0L, // intersectionIntervalTests
+                0L, // visibleFragments
+                0L, // prefilterQueries
+                0L, // prefilterHits
+                0L, // prefilterSlabTests
+                0L, // prefilterIntervalTests
+                0L, // indexQueries
+                0L, // indexLinearQueries
+                0L, // indexBuilds
+                0L, // indexBuildNanos
+                0L, // indexBucketVisits
+                0L, // indexBucketEntries
+                0L, // indexDuplicateSkips
+                0L, // indexBoundsRejects
+                0L, // indexCandidates
+                0, // indexMaxCandidates
+                0L, // blockerBulkRuns
+                0L, // blockerIndexBuildNanos
+                0L, // blockerIndexQueryNanos
+                0L, // blockerSubtractNanos
+                0L, // blockerIndexQueries
+                0L, // blockerIndexLinearQueries
+                0L, // blockerIndexBucketVisits
+                0L, // blockerIndexBucketEntries
+                0L, // blockerIndexDuplicateSkips
+                0L, // blockerIndexBoundsRejects
+                0L, // blockerIndexCandidates
+                0, // blockerIndexMaxCandidates
+                0L, // blockerExactTests
+                0L, // blockerExactVertices
+                0L, // blockerChangedFragments
+                0L, // compactionRuns
+                0L, // compactionCellsBefore
+                0L, // compactionCellsAfter
+                0L, // compactionEdgeCandidates
+                0L, // compactionMerges
+                0L, // compactionNanos
+                0L, // unionInputRects
+                0L, // unionMergedRects
+                0L, // blockerTests
+                0L, // blockerHits
+                0L, // clippedBlockers
+                0L, // blockerSlabSteps
+                0L, // intervalClipTests
+                0L, // applySteps
+                0L, // splitSteps
+                0L // emptyResults
         );
 
         public RemainingStats {
@@ -721,6 +922,37 @@ public record SpotProjectionResult(
             prefilterHits = Math.max(0L, prefilterHits);
             prefilterSlabTests = Math.max(0L, prefilterSlabTests);
             prefilterIntervalTests = Math.max(0L, prefilterIntervalTests);
+            indexQueries = Math.max(0L, indexQueries);
+            indexLinearQueries = Math.max(0L, indexLinearQueries);
+            indexBuilds = Math.max(0L, indexBuilds);
+            indexBuildNanos = Math.max(0L, indexBuildNanos);
+            indexBucketVisits = Math.max(0L, indexBucketVisits);
+            indexBucketEntries = Math.max(0L, indexBucketEntries);
+            indexDuplicateSkips = Math.max(0L, indexDuplicateSkips);
+            indexBoundsRejects = Math.max(0L, indexBoundsRejects);
+            indexCandidates = Math.max(0L, indexCandidates);
+            indexMaxCandidates = Math.max(0, indexMaxCandidates);
+            blockerBulkRuns = Math.max(0L, blockerBulkRuns);
+            blockerIndexBuildNanos = Math.max(0L, blockerIndexBuildNanos);
+            blockerIndexQueryNanos = Math.max(0L, blockerIndexQueryNanos);
+            blockerSubtractNanos = Math.max(0L, blockerSubtractNanos);
+            blockerIndexQueries = Math.max(0L, blockerIndexQueries);
+            blockerIndexLinearQueries = Math.max(0L, blockerIndexLinearQueries);
+            blockerIndexBucketVisits = Math.max(0L, blockerIndexBucketVisits);
+            blockerIndexBucketEntries = Math.max(0L, blockerIndexBucketEntries);
+            blockerIndexDuplicateSkips = Math.max(0L, blockerIndexDuplicateSkips);
+            blockerIndexBoundsRejects = Math.max(0L, blockerIndexBoundsRejects);
+            blockerIndexCandidates = Math.max(0L, blockerIndexCandidates);
+            blockerIndexMaxCandidates = Math.max(0, blockerIndexMaxCandidates);
+            blockerExactTests = Math.max(0L, blockerExactTests);
+            blockerExactVertices = Math.max(0L, blockerExactVertices);
+            blockerChangedFragments = Math.max(0L, blockerChangedFragments);
+            compactionRuns = Math.max(0L, compactionRuns);
+            compactionCellsBefore = Math.max(0L, compactionCellsBefore);
+            compactionCellsAfter = Math.max(0L, compactionCellsAfter);
+            compactionEdgeCandidates = Math.max(0L, compactionEdgeCandidates);
+            compactionMerges = Math.max(0L, compactionMerges);
+            compactionNanos = Math.max(0L, compactionNanos);
             unionInputRects = Math.max(0L, unionInputRects);
             unionMergedRects = Math.max(0L, unionMergedRects);
             blockerTests = Math.max(0L, blockerTests);

@@ -392,6 +392,68 @@ public final class BeamGeometryOps {
         }
 
         /**
+         * Solves {@code radiusAt(distance) == requiredRadius} on one monotone
+         * propagation interval. Callers split at {@link #waistTravel()} before
+         * using this method. The common case is one quadratic root and performs
+         * no sampling or iterative boundary search.
+         */
+        public double radiusThresholdCrossing(
+                double requiredRadius,
+                double minDistance,
+                double maxDistance
+        ) {
+            if (!Double.isFinite(requiredRadius) || requiredRadius < 0.0D) {
+                throw new IllegalArgumentException("Required radius must be finite and non-negative");
+            }
+            if (!Double.isFinite(minDistance)
+                    || !Double.isFinite(maxDistance)
+                    || minDistance < 0.0D
+                    || maxDistance < minDistance) {
+                throw new IllegalArgumentException("Propagation interval must be finite, non-negative, and ordered");
+            }
+            if (maxDistance == minDistance || constant) {
+                return minDistance;
+            }
+
+            double absoluteMin = originDistance + minDistance;
+            double absoluteMax = originDistance + maxDistance;
+            double requiredSquared = requiredRadius * requiredRadius;
+            double absoluteCrossing;
+
+            if (tt > MOMENT_EPSILON) {
+                double discriminant = xt * xt - tt * (xx - requiredSquared);
+                double scale = Math.max(1.0D, Math.max(xt * xt, Math.abs(tt * (xx - requiredSquared))));
+                if (discriminant < 0.0D && discriminant >= -MOMENT_EPSILON * scale) {
+                    discriminant = 0.0D;
+                }
+
+                if (discriminant >= 0.0D) {
+                    double rootOffset = Math.sqrt(discriminant);
+                    double waist = -xt / tt;
+                    absoluteCrossing = (absoluteMin + absoluteMax) * 0.5D <= waist
+                            ? (-xt - rootOffset) / tt
+                            : (-xt + rootOffset) / tt;
+                    return Math.max(minDistance, Math.min(maxDistance, absoluteCrossing - originDistance));
+                }
+            } else if (Math.abs(xt) > MOMENT_EPSILON) {
+                absoluteCrossing = (requiredSquared - xx) / (2.0D * xt);
+                return Math.max(minDistance, Math.min(maxDistance, absoluteCrossing - originDistance));
+            }
+
+            // A transition cannot occur for a truly constant radius. This
+            // interpolation is a finite, allocation-free guard for coefficients
+            // that become numerically degenerate at the configured clamps.
+            double minRadius = radiusAt(minDistance);
+            double maxRadius = radiusAt(maxDistance);
+            double denominator = maxRadius - minRadius;
+            if (Math.abs(denominator) <= MOMENT_EPSILON) {
+                return (minDistance + maxDistance) * 0.5D;
+            }
+            double fraction = (requiredRadius - minRadius) / denominator;
+            return minDistance + (maxDistance - minDistance) * Math.max(0.0D, Math.min(1.0D, fraction));
+        }
+
+        /**
          * Returns a view whose local zero is shifted forward from this view's
          * current origin. Offset views retain the same moment coefficients, so
          * adjacent depth slices evaluate their shared boundary with the exact

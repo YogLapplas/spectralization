@@ -322,6 +322,16 @@ optical_compiler_*.log
 4. `cache_validation_passed=true`，外观计划和依赖快照均复用。
 5. 正确性通过后再比较 `core`、`response` 和分阶段计时。
 
+真实世界依赖变更可产生 `cache_mode=suffix_rebuild`。该 profile 额外记录
+`earliest_invalidated_depth`、`reused_depth_slices`、`rebuilt_depth_slices`、
+`snapshot_restore_us`、`snapshot_build_us`、`projection_finalize_us` 和
+`suffix_projection_us`。前两项分别测量后缀证书恢复与逐深度证书编码，finalize
+测量不可变模板、依赖、外观计划、统计和 depth cache 的收尾构造。
+`geometry_cache_invalidated` 同时区分
+`invalidated_entries`、真正删除的 `removed_entries` 与保留等待后缀重建的
+`suffix_entries_retained`。强制性能样本仍删除条目并报告 `full_rebuild`；
+`performance_report` 用 `suffix_rebuild_samples` 将两类几何工作分开。
+
 三种时间的含义不同：
 
 - `core`：投影器内部从输入到结果的算法耗时。
@@ -332,9 +342,52 @@ optical_compiler_*.log
 
 当前 profile 还包含两组边界诊断：
 
-- `occlusion_authority=cuboid_sweep` 表示生产遮挡由单 cuboid sweep 驱动；
+- `occlusion_authority=analytic_cuboid_sweep` 表示生产遮挡由单 cuboid 解析凸多边形 sweep 驱动；
   `plane_count` 只保留兼容配置值，`plane_count_effective=1` 表示每个 cuboid
-  只有一个权威遮挡对象。兼容的 `plane_window_*` 计数现在统计 sweep full hull。
+  只有一个权威遮挡对象。兼容的 `plane_window_*` 计数统计 analytic sweep；
+- `side_travel_solver=analytic_quadratic` 表示侧面有效 travel 区间由半径平方二次式
+  直接求根，不再使用固定 16 点采样或 24 轮边界二分；
+- `remaining_subtraction_buffers=reused_pair` 表示 cell-major blocker subtraction
+  在一个 source cell 内交替复用两块 fragment 缓冲区；
+- `remaining_compaction_strategy=incremental_edge_queue` 表示 convex-cell compaction
+  只在合并后登记 replacement cell 的新边，不再逐轮重建整个 region 的 edge map；
+- `remaining_intersection_strategy=rectangle_full_cell_passthrough` 表示矩形 receiver
+  查询会直接复用完全落在窗口内的 immutable convex cell，只裁剪边界 cell；
+- `side_prefix_subtraction_buffers=reused_pair` 表示 same-depth prefix polygon
+  subtraction 交替复用两个 fragment buffer，不构造中间 `Region`；
+- `side_debug_bounds=on_demand` 表示 visible polygon 的 bounds 只在 allocation/debug
+  明细需要时物化；
+  `remaining_polygon_cells` / `remaining_polygon_vertices` 是当前 remaining 复杂度，
+  旧 `remaining_slabs` / `remaining_intervals` 只作为字段兼容别名。
+  `analytic_sweep_diagonal_shapes` 应在含斜向轮廓的发散/聚焦测试中大于零；若为零，
+  先检查场景是否确实产生半径变化，再检查 shape 是否错误退化为 bounds。
+
+  remaining region 在一个 depth 事务内保持不变，因此查询会共享一个惰性构建的
+  canonical cell 网格索引。`remaining_index_builds` / `remaining_index_build_us`
+  记录实际构建次数和成本；`remaining_index_queries`、`remaining_index_linear_queries`、
+  `remaining_index_bucket_visits`、`remaining_index_bucket_entries`、
+  `remaining_index_duplicate_skips`、`remaining_index_bounds_rejects`、
+  `remaining_index_candidates` 与 `remaining_index_max_candidates` 说明 broad phase
+  将多少 cell 送入精确 polygon 裁剪。小 region 走线性路径是有意行为。
+
+  每个 depth 的全部 blocker 应用结束后，运行一次严格凸 cell 合并。
+  `remaining_compaction_runs`、`remaining_compaction_cells_before` /
+  `remaining_compaction_cells_after`、`remaining_compaction_edge_candidates` 与
+  `remaining_compaction_merges` 记录其效果。合并只接受共享边且凸包面积等于两 cell
+  面积和的 pair；bounds 和凸包都不能代替精确遮挡 authority。
+
+  blocker 数量达到 bulk 阈值时，remaining 更新会先建立一次 blocker 空间索引，
+  再按原 remaining-cell 顺序、每个 cell 内按原 blocker 顺序执行精确减法。
+  `remaining_blocker_bulk_runs` 记录启用次数；
+  `remaining_blocker_index_build_us` / `remaining_blocker_index_query_us`、
+  `remaining_blocker_subtract_us` 与 `remaining_compaction_us` 分离四段成本。
+  `remaining_blocker_index_*` 计数说明 cell 到 blocker 的 broad-phase join，
+  `remaining_blocker_exact_tests` / `remaining_blocker_exact_vertices` /
+  `remaining_blocker_changed_fragments` 说明进入精确 polygon subtraction 的工作量。
+  精确 subtraction 对每条 blocker 边只遍历一次当前 polygon，同时生成 inside/outside；
+  两侧仍分别使用原 epsilon 包含规则，不能把边界点强制归入单侧。
+  verbose validation 会用旧 blocker-major 顺序路径比较最终覆盖，差异进入现有
+  `remaining_subtract_validation_*` 告警；reference 路径永远不驱动生产结果。
 
 - `depth_boundary_radius_checks`、`depth_boundary_radius_mismatches`、
   `depth_boundary_radius_max_gap` 检查相邻 depth 是否从同一个全局半径求值器读取共享平面。
@@ -342,7 +395,9 @@ optical_compiler_*.log
 
 两个只共用一条棱的 cuboid 出现亮线时，即使上述半径 mismatch 为 0，也要检查
 `occlusion_authority`、`sample_gaps` 和同深度索引 validation。每 cuboid 一个连续
-conservative sweep 已替换离散平面 authority；原始同 world-z 场景仍需实机确认。
+analytic sweep 已替换离散平面 authority；`broad_phase_false_positives` 允许非零，
+因为 bounds 只负责候选筛选，`sample_gaps` 仍必须为零。原始同 world-z 场景和斜边
+场景都需实机确认。
 
 `missing_faces` 不是单纯计数。结构验证会记录期望方块、面、局部区域和实际覆盖结果。先从 `case_complete` 找失败 case，再在同一个 `run_id` / `case_id` 内查详细验证事件；不要直接打开 verbose 并重新生成一个不同随机场景。
 

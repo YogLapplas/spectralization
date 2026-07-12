@@ -20,7 +20,7 @@ optical_compiler_20260711_162114_UTC.log
 所有性能 case 均通过；完整套件结果为 6/6，没有 boundary missing、结构验证不一致或缓存路径错误。
 
 > 该日志组来自 sampled-plane authority 版本。生产代码现已切换为每 cuboid 一个
-> conservative sweep，因此这些数字只保留为迁移前基线；必须完成新的
+> analytic polygon sweep，因此这些数字只保留为迁移前基线；必须完成新的
 > `partial_geometry` 与 `performance` 实机套件后才能给出 sweep 版本结论。
 
 ## 2. 测试输入
@@ -131,7 +131,7 @@ dependencies = 14175
 ```text
 one OpticalCollisionBox
   -> one precomputed CuboidSweep
-  -> fullHull + prefixHull(travel)
+  -> broadPhaseBounds + fullShape + prefixShape(travel)
 ```
 
 性能约束与正确性约束同等重要：
@@ -143,7 +143,8 @@ one OpticalCollisionBox
 - 中间平面不再决定拓扑正确性；
 - 比较新旧实现时必须同时报告 blocker/sweep 对象数、remaining 碎片数、spots 和完整重建耗时。
 
-单 sweep 的矩形 hull 是保守近似，可能产生少量额外阴影，但不能产生错误漏光。
+单 sweep 的 axis-aligned bounds 仅用于 broad phase；解析凸多边形才是遮挡 authority。
+性能比较必须同时确认斜边仍存在，不能通过把 polygon 退化成 bounds 获得提速。
 当前基线仍属于 sampled-plane 实现；在 sweep 落地并建立新基线前，不能把两者的
 绝对窗口数或耗时直接视为同一种工作量。
 
@@ -159,13 +160,15 @@ one OpticalCollisionBox
 
 当前待实机复测的一批实现只缩短对象生命周期，不改变上述语义：
 
-- 半径采样直接计算与完整 envelope 传播相同的二阶矩结果，避免构造只为读取
+- 半径求值直接计算与完整 envelope 传播相同的二阶矩结果，避免构造只为读取
   `radius` 的临时 `BeamEnvelope`；
 - 每个 source output 只准备一次半径传播的 `xx / xt / tt` 系数；每个 depth slice
-  使用轻量 offset view，side candidate、endpoint 二分、travel subdivision 和 sampled
-  occlusion planes 共享该全局求值器；
-- side interval 与 endpoint 二分搜索直接传递参数，避免为每个候选创建捕获
-  lambda；
+  使用轻量 offset view，side candidate、解析 travel 区间、travel subdivision 和
+  analytic cuboid sweep 共享该全局求值器；
+- side interval 把原 cross-section 谓词化简为单一半径阈值，并在腰点两侧直接求解
+  `xx + 2*z*xt + z*z*tt = threshold²`。生产路径已移除固定 16 点采样和 24 轮
+  边界二分；形式证明完成 132995 次解析区间 membership 检查。该批次尚未取得
+  新的两轮实机日志，因此不能先写成确定性能收益；
 - 一个 side candidate 只有在产生首个 visible window 时才查找 surface
   appearance，并在该候选的后续窗口中复用结果。
 
@@ -174,7 +177,7 @@ one OpticalCollisionBox
 
 ### 7.3 按深度复用几何
 
-当前真实游戏更新会因为一个依赖位置变化而删除整个 owner 几何条目。`DepthSliceSnapshot` / 后缀失效可以让较远方块变化只重算后半段。现有 full-rebuild case 会故意强制全部失效，因此在实现前必须增加 near、middle、far 三组局部变更基准，并记录：
+当前真实游戏更新已经保留 owner 几何条目的深度前缀：依赖位置变化会标记最早受影响深度，`DepthSliceSnapshot` 恢复 `k - 1` 的 remaining-region 证书、模板前缀和依赖前缀，只重算 `k..end`。现有 full-rebuild case 仍故意删除完整条目，不与后缀样本混算。下一项验证工作是增加 near、middle、far 三组局部变更基准，并记录：
 
 ```text
 earliest_invalidated_depth
@@ -185,7 +188,93 @@ suffix_projection_us
 forced_full_compare_mismatches
 ```
 
-### 7.4 暂不优先
+### 7.4 解析多边形 remaining region 的查询基线
+
+解析 sweep 斜边版本在 `diagnostics_20260711_234522_UTC.log` 中连续完成两轮
+匿名 1000 场景压力测试，均为 1000/1000 通过：
+
+| 轮次 | core 平均 | P50 | P95 | response 平均 | 平均 spots |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 第一轮 | 25.45 ms | 22.72 ms | 43.47 ms | 84.33 ms | 1389.78 |
+| 第二轮（热态） | 23.82 ms | 22.82 ms | 34.02 ms | 37.34 ms | 1395.39 |
+
+第二轮之后的代表性完整重建为 47.59 ms，其中 `side_scan_us=23.73 ms`、
+`remaining_update_us=7.97 ms`、`front_pass_us=6.39 ms`；remaining 峰值为
+222 cells / 851 vertices，精确查询累计检查 134474 cells / 511207 vertices。
+这是 depth-local region index 与严格凸 cell compaction 之前的直接比较基线。
+
+新实现必须保持 spots、依赖、方向覆盖签名、斜边和所有 correctness gate；性能判断
+同时读取 `remaining_index_*` 与 `remaining_compaction_*`，确认提速来自候选减少，
+而不是少算 polygon 或填平斜边。
+
+第一轮 region query index 的热态结果为 core 20.49 ms、P95 28.95 ms；代表性
+完整重建中 cell/vertex 精确检查下降约 99.1%，但 `remaining_blocker_apply_us`
+仍为 5.73 ms。cell-major blocker spatial join 的随后热态 1000 场景结果为
+core 14.98 ms、P50 14.58 ms、P95 18.92 ms；相对 query-index 基线分别下降
+26.9%、26.1% 和 34.7%，平均 spots 保持在 1004.42。代表性完整重建中
+`remaining_blocker_apply_us=2.86 ms`，其中 index build/query、exact subtraction、
+compaction 分别约为 0.06/0.11/1.53/0.89 ms。新增字段为：
+
+```text
+remaining_blocker_index_build_us
+remaining_blocker_index_query_us
+remaining_blocker_subtract_us
+remaining_compaction_us
+remaining_blocker_index_candidates
+remaining_blocker_exact_tests
+```
+
+当前未实测的下一批仅收紧对象生命周期：生产 front 路径不再构造 verbose-only
+矩形与 debug 去重集合；单碰撞箱方块直接采用其完整 front/side 面；side interval
+不再重复复制；compaction 在保持原候选发现顺序的前提下即时执行贪心合并；blocker
+没有改变 cell 时不再分配 replacement list；sweep/compaction 共用的凸包入口改用
+预分配列表与静态排序器，且无空 blocker 的常态直接复用输入列表。下一次比较以 14.98 ms / 18.92 ms
+作为热态基线，并确认 spots 约 1000、覆盖签名和全部 validation gate 没有倒退。
+
+随后一次两轮匿名压力测试的热态结果为平均 16.22 ms、P50 15.08 ms、P95
+23.76 ms。固定代表场景却从 16.26 ms 降到 15.81 ms，其中 side candidate 下降
+23.8%、front pass 下降 6.6%；remaining blocker apply 上升 7.8%，未归属 residual
+上升 22.8%。因此下一批把精确 half-plane subtraction 的 inside/outside 双遍历合并
+为单遍历，并移除内部新建 snapshot 数组与最终 dependency accumulator 的重复复制；
+新增 snapshot build/finalize 计时，用来区分真实 polygon 成本与缓存证书收尾成本。
+
+### 7.4.1 blocker subtraction 缓冲与增量 compaction
+
+解析 side travel 后的热态 1000 场景结果为平均 15.01 ms、P50 14.12 ms、P95
+22.30 ms。代表场景中 `side_travel_split_us` 已降到 0.22 ms，而
+`remaining_blocker_apply_us` 为 6.44 ms，其中 exact subtraction 约 4.01 ms、
+compaction 约 1.66 ms，因此下一批实现集中在 remaining transaction：
+
+- cell-major subtraction 在所有 source cell 之间复用两块 fragment list，只交换
+  缓冲区引用，不改变 blocker 或 fragment 顺序；
+- convex compaction 使用 versioned incremental edge queue，只为 replacement cell
+  更新共享边候选，同时保留 shared-edge 与 hull-area exact gate；
+- profile 通过 `remaining_subtraction_buffers=reused_pair` 和
+  `remaining_compaction_strategy=incremental_edge_queue` 标识新路径。
+
+形式证明当前为 `polygon_sweep=1615`，其中包含 2×2 cell 的三级增量 merge cascade。
+在取得新的两轮实机压力测试前，这一实现不计为确定性能收益。
+
+### 7.4.2 矩形 remaining 查询与 side prefix 临时对象
+
+上一批实机热态结果为平均 14.33 ms、P50 13.52 ms、P95 19.97 ms。代表场景的
+`side_remaining_intersect_us=1.64 ms`、`side_patch_emit_us=1.06 ms`，因此下一批保持
+polygon authority 不变，只收紧 receiver 数据流：
+
+- remaining 与 axis-aligned receiver window 相交时，完全落在窗口 bounds 内的 convex
+  cell 直接复用，只有边界 cell 执行 half-plane clipping；
+- same-depth prefix subtraction 使用两块 polygon fragment buffer，避免为每个
+  occluder 重建中间 `Region` 的 bounds、area 和 immutable cell snapshot；
+- 非 allocation/debug 路径不再生成 visible polygon bounds list 或单 polygon bounds；
+- polygon patch 临时列表不再执行发送前的第二次 immutable copy。
+
+对应 profile 标识为 `remaining_intersection_strategy=rectangle_full_cell_passthrough`、
+`side_prefix_subtraction_buffers=reused_pair` 和 `side_debug_bounds=on_demand`。形式验证
+将矩形专用 intersection 与通用 polygon intersection 比较，并在 4096 个 canonical
+side visibility 随机场景中比较双缓冲 prefix subtraction 与逐 blocker `Region` 参考。
+实机结果出来前不预先记录收益。
+
+### 7.5 暂不优先
 
 - 冷启动和第一套件的 JVM 暖机。
 - 已降到 1–2 ms 的 appearance-only 路径。

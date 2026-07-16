@@ -15,6 +15,13 @@ import java.util.LinkedHashMap;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.neoforged.fml.loading.FMLPaths;
@@ -31,15 +38,23 @@ public final class SpectralDiagnostics {
     private static final String HEADER = "# If you are reading this log, read docs/LOGGING.md first.\n"
             + "# \u5982\u679c\u4f60\u6b63\u5728\u9605\u8bfb\u8fd9\u4e2a\u65e5\u5fd7\uff0c\u8bf7\u5148\u53c2\u9605 docs/LOGGING.md\u3002\n"
             + "# Logs are organized around Spectralization's geometry -> topology -> data pipeline.\n\n";
+    private static final int MAX_PENDING_LOG_WRITES = 1024;
+    private static final Object WRITE_STATS_LOCK = new Object();
     private static long writeCount;
     private static long writeBytes;
     private static long writeNanos;
     private static long maxWriteNanos;
+    private static final AtomicLong ENQUEUED_WRITES = new AtomicLong();
+    private static final AtomicLong DROPPED_WRITES = new AtomicLong();
+    private static final AtomicLong FAILED_WRITES = new AtomicLong();
+    private static final AtomicInteger PENDING_WRITES = new AtomicInteger();
+    private static final AtomicInteger MAX_PENDING_WRITES = new AtomicInteger();
     private static final Map<Path, OutputStream> OPEN_LOGS = new HashMap<>();
+    private static final ThreadPoolExecutor LOG_WRITER = createLogWriter();
 
     static {
         Runtime.getRuntime().addShutdownHook(new Thread(
-                SpectralDiagnostics::closeOpenLogs,
+                SpectralDiagnostics::shutdownLogWriter,
                 "spectralization-log-close"
         ));
     }
@@ -66,7 +81,32 @@ public final class SpectralDiagnostics {
         }
     }
 
-    public static synchronized WriteStats appendLog(String relativePath, String content, String failureLabel) {
+    public static WriteStats appendLog(String relativePath, String content, String failureLabel) {
+        int pending = PENDING_WRITES.incrementAndGet();
+        MAX_PENDING_WRITES.accumulateAndGet(pending, Math::max);
+        try {
+            LOG_WRITER.execute(() -> {
+                try {
+                    appendLogNow(relativePath, content, failureLabel);
+                } finally {
+                    PENDING_WRITES.decrementAndGet();
+                }
+            });
+            ENQUEUED_WRITES.incrementAndGet();
+        } catch (RejectedExecutionException rejected) {
+            PENDING_WRITES.decrementAndGet();
+            long dropped = DROPPED_WRITES.incrementAndGet();
+            if (!LOG_WRITER.isShutdown() && (dropped == 1L || (dropped & (dropped - 1L)) == 0L)) {
+                Spectralization.LOGGER.warn(
+                        "Dropped {} Spectralization log writes because the bounded diagnostics queue is full",
+                        dropped
+                );
+            }
+        }
+        return writeStats();
+    }
+
+    private static void appendLogNow(String relativePath, String content, String failureLabel) {
         Path logPath = FMLPaths.GAMEDIR.get().resolve(relativePath);
 
         try {
@@ -92,19 +132,52 @@ public final class SpectralDiagnostics {
             output.write(contentBytes);
             bytesWritten += contentBytes.length;
             long elapsedNanos = Math.max(0L, System.nanoTime() - startNanos);
-            writeCount++;
-            writeBytes += bytesWritten;
-            writeNanos += elapsedNanos;
-            maxWriteNanos = Math.max(maxWriteNanos, elapsedNanos);
-        } catch (IOException exception) {
+            synchronized (WRITE_STATS_LOCK) {
+                writeCount++;
+                writeBytes += bytesWritten;
+                writeNanos += elapsedNanos;
+                maxWriteNanos = Math.max(maxWriteNanos, elapsedNanos);
+            }
+        } catch (IOException | RuntimeException exception) {
+            FAILED_WRITES.incrementAndGet();
             closeLog(logPath);
             Spectralization.LOGGER.warn("Failed to write Spectralization {} log", failureLabel, exception);
         }
-
-        return writeStats();
     }
 
-    private static synchronized void closeOpenLogs() {
+    private static ThreadPoolExecutor createLogWriter() {
+        ThreadFactory factory = runnable -> {
+            Thread thread = new Thread(runnable, "spectralization-log-writer");
+            thread.setDaemon(true);
+            return thread;
+        };
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(
+                1,
+                1,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(MAX_PENDING_LOG_WRITES),
+                factory,
+                new ThreadPoolExecutor.AbortPolicy()
+        );
+        executor.prestartAllCoreThreads();
+        return executor;
+    }
+
+    private static void shutdownLogWriter() {
+        LOG_WRITER.shutdown();
+        boolean terminated = false;
+        try {
+            terminated = LOG_WRITER.awaitTermination(10L, TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
+        if (terminated) {
+            closeOpenLogs();
+        }
+    }
+
+    private static void closeOpenLogs() {
         for (OutputStream output : OPEN_LOGS.values()) {
             try {
                 output.close();
@@ -125,8 +198,20 @@ public final class SpectralDiagnostics {
         }
     }
 
-    public static synchronized WriteStats writeStats() {
-        return new WriteStats(writeCount, writeBytes, writeNanos, maxWriteNanos);
+    public static WriteStats writeStats() {
+        synchronized (WRITE_STATS_LOCK) {
+            return new WriteStats(
+                    writeCount,
+                    writeBytes,
+                    writeNanos,
+                    maxWriteNanos,
+                    ENQUEUED_WRITES.get(),
+                    DROPPED_WRITES.get(),
+                    FAILED_WRITES.get(),
+                    PENDING_WRITES.get(),
+                    MAX_PENDING_WRITES.get()
+            );
+        }
     }
 
     private static WriteStats write(Event event) {
@@ -236,13 +321,23 @@ public final class SpectralDiagnostics {
             long count,
             long bytes,
             long totalNanos,
-            long maxNanos
+            long maxNanos,
+            long enqueuedCount,
+            long droppedCount,
+            long failedCount,
+            int pendingWrites,
+            int maxPendingWrites
     ) {
         public WriteStats {
             count = Math.max(0L, count);
             bytes = Math.max(0L, bytes);
             totalNanos = Math.max(0L, totalNanos);
             maxNanos = Math.max(0L, maxNanos);
+            enqueuedCount = Math.max(0L, enqueuedCount);
+            droppedCount = Math.max(0L, droppedCount);
+            failedCount = Math.max(0L, failedCount);
+            pendingWrites = Math.max(0, pendingWrites);
+            maxPendingWrites = Math.max(0, maxPendingWrites);
         }
 
         public double averageNanos() {

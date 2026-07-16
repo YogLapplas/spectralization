@@ -41,6 +41,14 @@ final class SpotProjectionTestScene {
     private static final int FIRST_RANDOM_DEPTH = 3;
     private static final int LAST_RANDOM_DEPTH = 13;
     private static final int SCREEN_DEPTH = 16;
+    private static final int PARALLEL_MIN_SIDE = -14;
+    private static final int PARALLEL_MAX_SIDE = 14;
+    private static final int PARALLEL_MIN_VERTICAL = -14;
+    private static final int PARALLEL_MAX_VERTICAL = 14;
+    private static final int PARALLEL_RANDOM_MIN_SIDE = -11;
+    private static final int PARALLEL_RANDOM_MAX_SIDE = 11;
+    private static final int PARALLEL_RANDOM_MIN_VERTICAL = -11;
+    private static final int PARALLEL_RANDOM_MAX_VERTICAL = 11;
     private static final int SOURCE_POWER_CENTI = 30_000;
     private static final int SOURCE_RADIUS_MILLI = 500;
     private static final int[] CACHE_POWER_SEQUENCE_CENTI = {
@@ -97,13 +105,101 @@ final class SpotProjectionTestScene {
             ObstacleProfile obstacleProfile,
             boolean computeSceneSignature
     ) {
-        clear(level, layout);
+        return build(
+                level, List.of(layout), seed, occupancy, includeFixtures, divergenceMilli,
+                obstacleProfile, computeSceneSignature
+        );
+    }
+
+    static BuildResult build(
+            ServerLevel level,
+            List<SpotTestLayout> layouts,
+            long seed,
+            double occupancy,
+            boolean includeFixtures,
+            int divergenceMilli,
+            ObstacleProfile obstacleProfile,
+            boolean computeSceneSignature
+    ) {
+        if (layouts == null || layouts.isEmpty()) {
+            throw new IllegalArgumentException("Spot-test scene requires at least one source layout");
+        }
+        clear(level, layouts);
+        int randomObstacles = 0;
+        int fixtures = 0;
+        int screenBlocks = 0;
+        int sourceBlocks = 0;
+        for (SpotTestLayout layout : layouts) {
+            Random random = new Random(seed);
+            randomObstacles += placeRandomObstacles(level, layout, random, occupancy, obstacleProfile);
+            fixtures += includeFixtures ? placeRegressionFixtures(level, layout) : 0;
+            screenBlocks += placeScreen(level, layout);
+            sourceBlocks += placeSource(level, layout, divergenceMilli);
+        }
+        long sceneSignature = 0L;
+        if (computeSceneSignature) {
+            long oneSourceSignature = relativeSceneSignature(level, layouts.get(0));
+            sceneSignature = mixSignature(SIGNATURE_OFFSET_BASIS, layouts.size());
+            for (int index = 0; index < layouts.size(); index++) {
+                sceneSignature = mixSignature(sceneSignature, oneSourceSignature);
+            }
+        }
+        refreshProjection(level);
+        return new BuildResult(randomObstacles, fixtures, screenBlocks, sourceBlocks, sceneSignature);
+    }
+
+    static BuildResult buildParallelArena(
+            ServerLevel level,
+            SpotTestLayout arenaLayout,
+            List<SpotTestLayout> sourceLayouts,
+            long seed,
+            double occupancy,
+            boolean includeFixtures,
+            int divergenceMilli,
+            ObstacleProfile obstacleProfile,
+            boolean computeSceneSignature
+    ) {
+        if (sourceLayouts == null || sourceLayouts.isEmpty()) {
+            throw new IllegalArgumentException("Parallel spot-test arena requires at least one source");
+        }
+        clearParallelArena(level, arenaLayout);
         Random random = new Random(seed);
-        int randomObstacles = placeRandomObstacles(level, layout, random, occupancy, obstacleProfile);
-        int fixtures = includeFixtures ? placeRegressionFixtures(level, layout) : 0;
-        int screenBlocks = placeScreen(level, layout);
-        int sourceBlocks = placeSource(level, layout, divergenceMilli);
-        long sceneSignature = computeSceneSignature ? relativeSceneSignature(level, layout) : 0L;
+        int randomObstacles = placeRandomObstacles(
+                level,
+                arenaLayout,
+                random,
+                occupancy,
+                obstacleProfile,
+                PARALLEL_RANDOM_MIN_SIDE,
+                PARALLEL_RANDOM_MAX_SIDE,
+                PARALLEL_RANDOM_MIN_VERTICAL,
+                PARALLEL_RANDOM_MAX_VERTICAL
+        );
+        int fixtures = includeFixtures ? placeRegressionFixtures(level, arenaLayout) : 0;
+        int screenBlocks = placeScreen(
+                level,
+                arenaLayout,
+                PARALLEL_MIN_SIDE,
+                PARALLEL_MAX_SIDE,
+                PARALLEL_MIN_VERTICAL,
+                PARALLEL_MAX_VERTICAL
+        );
+        int sourceBlocks = 0;
+        for (SpotTestLayout sourceLayout : sourceLayouts) {
+            sourceBlocks += placeSource(level, sourceLayout, divergenceMilli);
+        }
+        long sceneSignature = computeSceneSignature
+                ? relativeSceneSignature(
+                        level,
+                        arenaLayout,
+                        MIN_ALONG,
+                        MAX_ALONG,
+                        PARALLEL_MIN_SIDE,
+                        PARALLEL_MAX_SIDE,
+                        PARALLEL_MIN_VERTICAL,
+                        PARALLEL_MAX_VERTICAL
+                )
+                : 0L;
         refreshProjection(level);
         return new BuildResult(randomObstacles, fixtures, screenBlocks, sourceBlocks, sceneSignature);
     }
@@ -131,12 +227,62 @@ final class SpotProjectionTestScene {
         return true;
     }
 
+    static boolean validateParallelArena(
+            CommandSourceStack source,
+            ServerLevel level,
+            SpotTestLayout layout
+    ) {
+        int minY = layout.source().getY() + PARALLEL_MIN_VERTICAL;
+        int maxY = layout.source().getY() + PARALLEL_MAX_VERTICAL;
+        if (minY < level.getMinBuildHeight() || maxY >= level.getMaxBuildHeight()) {
+            source.sendFailure(Component.literal(
+                    "Parallel spot-test arena would leave the world's build height."
+            ));
+            return false;
+        }
+        for (int along = MIN_ALONG; along <= MAX_ALONG; along++) {
+            for (int side = PARALLEL_MIN_SIDE; side <= PARALLEL_MAX_SIDE; side++) {
+                if (!level.isLoaded(layout.at(along, side, 0))) {
+                    source.sendFailure(Component.literal(
+                            "Parallel spot-test arena crosses unloaded chunks. Move closer to its center."
+                    ));
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
     static int clear(ServerLevel level, SpotTestLayout layout) {
         level.setBlock(layout.source(), Blocks.AIR.defaultBlockState(), 3);
         int cleared = 0;
         for (int along = MIN_ALONG; along <= MAX_ALONG; along++) {
             for (int side = MIN_SIDE; side <= MAX_SIDE; side++) {
                 for (int vertical = MIN_VERTICAL; vertical <= MAX_VERTICAL; vertical++) {
+                    BlockPos pos = layout.at(along, side, vertical);
+                    if (!level.getBlockState(pos).isAir()) {
+                        cleared++;
+                        level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
+                    }
+                }
+            }
+        }
+        return cleared;
+    }
+
+    static int clear(ServerLevel level, List<SpotTestLayout> layouts) {
+        int cleared = 0;
+        for (SpotTestLayout layout : layouts) {
+            cleared += clear(level, layout);
+        }
+        return cleared;
+    }
+
+    static int clearParallelArena(ServerLevel level, SpotTestLayout layout) {
+        int cleared = 0;
+        for (int along = MIN_ALONG; along <= MAX_ALONG; along++) {
+            for (int side = PARALLEL_MIN_SIDE; side <= PARALLEL_MAX_SIDE; side++) {
+                for (int vertical = PARALLEL_MIN_VERTICAL; vertical <= PARALLEL_MAX_VERTICAL; vertical++) {
                     BlockPos pos = layout.at(along, side, vertical);
                     if (!level.getBlockState(pos).isAir()) {
                         cleared++;
@@ -190,8 +336,31 @@ final class SpotProjectionTestScene {
         if (!(level.getBlockEntity(layout.source()) instanceof CreativeLightSourceBlockEntity source)) {
             return false;
         }
-        source.createDataAccess().set(CreativeLightSourceBlockEntity.DATA_POWER, powerCenti);
+        ContainerData data = source.createDataAccess();
+        if (data.get(CreativeLightSourceBlockEntity.DATA_POWER) != powerCenti) {
+            data.set(CreativeLightSourceBlockEntity.DATA_POWER, powerCenti);
+        }
         return true;
+    }
+
+    static boolean setActiveParallelSources(
+            ServerLevel level,
+            List<SpotTestLayout> allLayouts,
+            int activeSourceCount
+    ) {
+        if (allLayouts == null || allLayouts.size() != 9
+                || activeSourceCount < 1 || activeSourceCount > allLayouts.size()) {
+            return false;
+        }
+        boolean complete = true;
+        for (int index = 0; index < allLayouts.size(); index++) {
+            complete &= setSourcePower(
+                    level,
+                    allLayouts.get(index),
+                    index < activeSourceCount ? SOURCE_POWER_CENTI : 0
+            );
+        }
+        return complete;
     }
 
     static boolean setSourceColor(ServerLevel level, SpotTestLayout layout, int bin) {
@@ -233,6 +402,21 @@ final class SpotProjectionTestScene {
         }
     }
 
+    static void validateParallelArenaDefinition() {
+        double terminalRadius = SOURCE_RADIUS_MILLI / 1000.0D + 0.650D * SCREEN_DEPTH;
+        int maxSourceOffset = 2;
+        if (PARALLEL_MIN_SIDE > -Math.ceil(terminalRadius + maxSourceOffset)
+                || PARALLEL_MAX_SIDE < Math.ceil(terminalRadius + maxSourceOffset)
+                || PARALLEL_MIN_VERTICAL > -Math.ceil(terminalRadius + maxSourceOffset)
+                || PARALLEL_MAX_VERTICAL < Math.ceil(terminalRadius + maxSourceOffset)
+                || PARALLEL_RANDOM_MIN_SIDE < PARALLEL_MIN_SIDE
+                || PARALLEL_RANDOM_MAX_SIDE > PARALLEL_MAX_SIDE
+                || PARALLEL_RANDOM_MIN_VERTICAL < PARALLEL_MIN_VERTICAL
+                || PARALLEL_RANDOM_MAX_VERTICAL > PARALLEL_MAX_VERTICAL) {
+            throw new IllegalStateException("Parallel spot-test arena does not enclose every overlapping cone");
+        }
+    }
+
     private static int placeRandomObstacles(
             ServerLevel level,
             SpotTestLayout layout,
@@ -240,10 +424,26 @@ final class SpotProjectionTestScene {
             double occupancy,
             ObstacleProfile obstacleProfile
     ) {
+        return placeRandomObstacles(
+                level, layout, random, occupancy, obstacleProfile, -4, 4, -2, 3
+        );
+    }
+
+    private static int placeRandomObstacles(
+            ServerLevel level,
+            SpotTestLayout layout,
+            Random random,
+            double occupancy,
+            ObstacleProfile obstacleProfile,
+            int minSide,
+            int maxSide,
+            int minVertical,
+            int maxVertical
+    ) {
         int placed = 0;
         for (int along = FIRST_RANDOM_DEPTH; along <= LAST_RANDOM_DEPTH; along++) {
-            for (int side = -4; side <= 4; side++) {
-                for (int vertical = -2; vertical <= 3; vertical++) {
+            for (int side = minSide; side <= maxSide; side++) {
+                for (int vertical = minVertical; vertical <= maxVertical; vertical++) {
                     if (random.nextDouble() >= occupancy) {
                         continue;
                     }
@@ -292,9 +492,20 @@ final class SpotProjectionTestScene {
     }
 
     private static int placeScreen(ServerLevel level, SpotTestLayout layout) {
+        return placeScreen(level, layout, MIN_SIDE, MAX_SIDE, MIN_VERTICAL, MAX_VERTICAL);
+    }
+
+    private static int placeScreen(
+            ServerLevel level,
+            SpotTestLayout layout,
+            int minSide,
+            int maxSide,
+            int minVertical,
+            int maxVertical
+    ) {
         int placed = 0;
-        for (int side = MIN_SIDE; side <= MAX_SIDE; side++) {
-            for (int vertical = MIN_VERTICAL; vertical <= MAX_VERTICAL; vertical++) {
+        for (int side = minSide; side <= maxSide; side++) {
+            for (int vertical = minVertical; vertical <= maxVertical; vertical++) {
                 level.setBlock(
                         layout.at(SCREEN_DEPTH, side, vertical),
                         Blocks.WHITE_CONCRETE.defaultBlockState(),
@@ -402,10 +613,25 @@ final class SpotProjectionTestScene {
     }
 
     private static long relativeSceneSignature(ServerLevel level, SpotTestLayout layout) {
+        return relativeSceneSignature(
+                level, layout, MIN_ALONG, MAX_ALONG, MIN_SIDE, MAX_SIDE, MIN_VERTICAL, MAX_VERTICAL
+        );
+    }
+
+    private static long relativeSceneSignature(
+            ServerLevel level,
+            SpotTestLayout layout,
+            int minAlong,
+            int maxAlong,
+            int minSide,
+            int maxSide,
+            int minVertical,
+            int maxVertical
+    ) {
         long hash = SIGNATURE_OFFSET_BASIS;
-        for (int along = MIN_ALONG; along <= MAX_ALONG; along++) {
-            for (int side = MIN_SIDE; side <= MAX_SIDE; side++) {
-                for (int vertical = MIN_VERTICAL; vertical <= MAX_VERTICAL; vertical++) {
+        for (int along = minAlong; along <= maxAlong; along++) {
+            for (int side = minSide; side <= maxSide; side++) {
+                for (int vertical = minVertical; vertical <= maxVertical; vertical++) {
                     BlockPos pos = layout.at(along, side, vertical);
                     BlockState state = level.getBlockState(pos);
                     if (state.isAir()) {

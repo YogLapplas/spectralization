@@ -127,6 +127,25 @@ public final class OpticalSpotTracker {
             double coherentBeamPower
     ) {
         OpticalMaterialProfile profile = OpticalMaterialProfiles.profileFor(level, pos, state);
+        return createCompiledSurfaceSpot(
+                profile,
+                pos,
+                face,
+                profileTemplate,
+                beamPower,
+                coherentBeamPower
+        );
+    }
+
+    public static SpotRecord createCompiledSurfaceSpot(
+            OpticalMaterialProfile profile,
+            BlockPos pos,
+            Direction face,
+            BeamPacket profileTemplate,
+            double beamPower,
+            double coherentBeamPower
+    ) {
+        java.util.Objects.requireNonNull(profile, "profile");
         SpotPowerAccumulator spotPower = new SpotPowerAccumulator();
         double totalTemplatePower = Math.max(profileTemplate.totalPower(), 1.0E-9);
 
@@ -209,47 +228,96 @@ public final class OpticalSpotTracker {
         mark(level, pos, face, beam, spotPower);
     }
 
-    public static void publishCompiledSpots(
+    public static CompiledPublishResult publishCompiledSpots(
             ServerLevel level,
             int ownerId,
             List<SpotRecord> spots,
             List<SpotProjectionAllocation> allocations
     ) {
+        long startedNanos = System.nanoTime();
         if (!SpectralizationConfig.surfaceSpotsVisible()) {
             clear(level);
-            return;
+            return CompiledPublishResult.changed(
+                    Math.max(0L, System.nanoTime() - startedNanos), 0L, 0L, 0L, 0L
+            );
         }
 
         Map<Integer, SpotOwnerSnapshot> ownerSnapshots = SPOTS_BY_OWNER.computeIfAbsent(level, ignored -> new HashMap<>());
         long gameTime = level.getGameTime();
-        List<SpotRecord> visibleSpots = visibleSnapshot(spots);
         List<SpotProjectionAllocation> visibleAllocations = List.copyOf(allocations);
+        SpotOwnerSnapshot previous = ownerSnapshots.get(ownerId);
+        boolean sameCompiledInput = previous != null
+                && previous.sourceSpots().equals(spots)
+                && previous.allocations().equals(visibleAllocations);
+        long inputCompareNanos = Math.max(0L, System.nanoTime() - startedNanos);
+        if (sameCompiledInput) {
+            return CompiledPublishResult.reused(inputCompareNanos, 0L, 0L, 0L);
+        }
+
+        long snapshotStartNanos = System.nanoTime();
+        List<SpotRecord> sourceSpots = List.copyOf(spots);
+        List<SpotRecord> visibleSpots = visibleSnapshot(sourceSpots);
+        long snapshotBuildNanos = Math.max(0L, System.nanoTime() - snapshotStartNanos);
 
         if (visibleSpots.isEmpty()) {
             SpotOwnerSnapshot removed = ownerSnapshots.remove(ownerId);
+            long sendStartNanos = System.nanoTime();
             if (removed != null) {
                 sendClearSnapshot(level, ownerId);
             }
-            return;
+            return new CompiledPublishResult(
+                    removed == null,
+                    inputCompareNanos,
+                    snapshotBuildNanos,
+                    0L,
+                    0L,
+                    Math.max(0L, System.nanoTime() - sendStartNanos)
+            );
         }
 
+        long signatureStartNanos = System.nanoTime();
         long signature = 31L * spotSnapshotSignature(visibleSpots) + allocationSnapshotSignature(visibleAllocations);
-        SpotOwnerSnapshot previous = ownerSnapshots.get(ownerId);
+        long signatureNanos = Math.max(0L, System.nanoTime() - signatureStartNanos);
 
+        long equalityStartNanos = System.nanoTime();
         if (previous != null
                 && previous.signature() == signature
                 && previous.spots().equals(visibleSpots)
                 && previous.allocations().equals(visibleAllocations)) {
-            return;
+            ownerSnapshots.put(ownerId, new SpotOwnerSnapshot(
+                    ownerId,
+                    sourceSpots,
+                    previous.spots(),
+                    visibleAllocations,
+                    signature,
+                    previous.gameTime()
+            ));
+            return CompiledPublishResult.reused(
+                    inputCompareNanos,
+                    snapshotBuildNanos,
+                    signatureNanos,
+                    Math.max(0L, System.nanoTime() - equalityStartNanos)
+            );
         }
+        long equalityNanos = Math.max(0L, System.nanoTime() - equalityStartNanos);
 
-        SpotOwnerSnapshot snapshot = new SpotOwnerSnapshot(ownerId, visibleSpots, visibleAllocations, signature, gameTime);
+        SpotOwnerSnapshot snapshot = new SpotOwnerSnapshot(
+                ownerId, sourceSpots, visibleSpots, visibleAllocations, signature, gameTime
+        );
         ownerSnapshots.put(ownerId, snapshot);
+        long sendStartNanos = System.nanoTime();
         if (previous == null) {
             sendSnapshotToNearby(level, snapshot, true);
         } else {
             sendSnapshotToNearbyOrPrevious(level, snapshot, previous);
         }
+        return CompiledPublishResult.changed(
+                inputCompareNanos,
+                snapshotBuildNanos,
+                signatureNanos,
+                equalityNanos,
+                Math.max(0L, System.nanoTime() - sendStartNanos)
+        );
     }
 
     public static void clearCompiledSpots(ServerLevel level, int ownerId) {
@@ -342,6 +410,20 @@ public final class OpticalSpotTracker {
         SENT_SNAPSHOTS_BY_PLAYER.remove(serverLevel);
     }
 
+    /** Clears only legacy transient spot updates while preserving compiled owner snapshots. */
+    public static void clearLegacySpots(LevelAccessor levelAccessor) {
+        if (!(levelAccessor instanceof ServerLevel level)) {
+            return;
+        }
+        Map<SpotKey, ActiveSpot> legacy = LEGACY_ACTIVE_SPOTS.remove(level);
+        if (legacy == null || legacy.isEmpty()) {
+            return;
+        }
+        for (ActiveSpot active : legacy.values()) {
+            sendSpotToNearby(level, invisibleLike(active.spot()));
+        }
+    }
+
     public static void discardSpotsAt(LevelAccessor levelAccessor, BlockPos pos) {
         if (!(levelAccessor instanceof ServerLevel level)) {
             return;
@@ -394,8 +476,9 @@ public final class OpticalSpotTracker {
 
             long signature = 31L * spotSnapshotSignature(filteredSpots)
                     + allocationSnapshotSignature(filteredAllocations);
-            SpotOwnerSnapshot updated =
-                    new SpotOwnerSnapshot(ownerId, filteredSpots, filteredAllocations, signature, gameTime);
+            SpotOwnerSnapshot updated = new SpotOwnerSnapshot(
+                    ownerId, filteredSpots, filteredSpots, filteredAllocations, signature, gameTime
+            );
             ownerSnapshots.put(ownerId, updated);
             sendSnapshotToNearbyOrChangedPos(level, updated, removedPos);
         }
@@ -1032,14 +1115,52 @@ public final class OpticalSpotTracker {
 
     private record SpotOwnerSnapshot(
             int ownerId,
+            List<SpotRecord> sourceSpots,
             List<SpotRecord> spots,
             List<SpotProjectionAllocation> allocations,
             long signature,
             long gameTime
     ) {
         private SpotOwnerSnapshot {
+            sourceSpots = List.copyOf(sourceSpots);
             spots = List.copyOf(spots);
             allocations = List.copyOf(allocations);
+        }
+    }
+
+    public record CompiledPublishResult(
+            boolean reused,
+            long inputCompareNanos,
+            long snapshotBuildNanos,
+            long signatureNanos,
+            long equalityNanos,
+            long sendNanos
+    ) {
+        private static CompiledPublishResult reused(
+                long inputCompareNanos,
+                long snapshotBuildNanos,
+                long signatureNanos,
+                long equalityNanos
+        ) {
+            return new CompiledPublishResult(
+                    true, inputCompareNanos, snapshotBuildNanos, signatureNanos, equalityNanos, 0L
+            );
+        }
+
+        private static CompiledPublishResult changed(
+                long inputCompareNanos,
+                long snapshotBuildNanos,
+                long signatureNanos,
+                long equalityNanos,
+                long sendNanos
+        ) {
+            return new CompiledPublishResult(
+                    false, inputCompareNanos, snapshotBuildNanos, signatureNanos, equalityNanos, sendNanos
+            );
+        }
+
+        public static CompiledPublishResult noop() {
+            return new CompiledPublishResult(true, 0L, 0L, 0L, 0L, 0L);
         }
     }
 

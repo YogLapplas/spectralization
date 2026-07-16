@@ -289,7 +289,7 @@ debug_log_verbose = false
 3. `partial_geometry`：楼梯、台阶和局部方块的踏面/立面遮挡顺序。
 4. `performance`：固定 sparse、mixed、dense 完整重建，以及功率/颜色外观缓存。
 5. `direction_matrix`：四方向稳定化预热后，以 4 个固定 seed 和平衡顺序验证输入场景、最终输出覆盖、输出分片及内部 workload。输入/覆盖不一致为失败；只有分片/workload 不一致为黄色性能警告。
-6. `random_stress`：运行 1000 个不含固定夹具的匿名纯随机场景；每个场景测量一次完整重建，不记录 seed，只输出聚合进度和最终平均/P50/P95。
+6. `random_stress`：运行 1000 个不含固定夹具的匿名纯随机场景；每个场景测量一次完整重建，不记录 seed，只输出聚合进度和最终平均/P50/P95。它使用单光源专用的同步 tick 通道，每个服务器 tick 完成一个场景；多光源/parallel 路径不参与该调度。
 
 负载档位不改变模式、case 数、样本数、repeat 数或匿名 seed 规则：
 
@@ -305,6 +305,10 @@ debug_log_verbose = false
 日常修改先选择 `lightweight` 负载并运行所需模式；投影算法、局部方块语义或发布候选
 发生变化时选择 `stress` 负载。只有专项排查时才分别运行 `partial_geometry` 或 `performance`；
 `random_stress` 用于长尾压力测试，不代替固定场景回归基线。
+在 20 TPS 且单场景总工作量低于 50 ms 时，它应接近 20 case/s、1000 case 约 50 秒。
+最终事件必须包含 `projection_execution=server_tick_serial`、`target_cases_per_tick=1`、
+`cases_per_second`、`completion_tick_span` 与 `missed_completion_ticks`。这里的 response 是
+同步测试通道的 rebuild+commit，不可与 production async 的玩家响应直接比较。
 
 左键空气事件只在客户端产生，因此客户端仅发送切换意图。服务端必须重新验证主手物品、
 权限和套件忙碌状态，并由服务端修改物品 `CUSTOM_DATA` 中的负载字段；客户端不得直接决定负载状态。
@@ -341,7 +345,7 @@ debug_log_verbose = false
 性能报告必须区分：
 
 - `core`：算法本体。
-- `response`：服务器测试请求到结果，包含 tick 和测试清缓存成本。
+- `response`：服务器测试请求到实际 commit，包含真实 tick 调度和测试清缓存成本；完成状态在同一 tick 的 projection queue 处理后读取，不包含测试框架下一 tick 才轮询到结果的人工延迟。
 - 玩家可见延迟：另含网络和客户端绘制。
 
 提交性能结论前，只读取时间最新且属于同一次启动的一组 `diagnostics_*.log` 与 `optical_compiler_*.log`。完整流程和当前基线见
@@ -432,3 +436,61 @@ debug_log_verbose = true
 `random_stress` 的 seed 匿名且每场景只测一次，因此用于发现长尾和持续分配压力；固定
 smart case 才是提交间同工作量比较。`response` 包含 Minecraft tick、测试调度、compiler、
 网络与日志外围延迟，算法优化以 `elapsed/core` 及 profile 阶段字段为准。
+
+## 15. 光斑并行化验证
+
+启用 `spot_projection_parallel_enabled` 后，先用 targeted/verbose validation 比较 live
+与 eager snapshot 串行结果，再运行 worker 数 1、2、4 的同一固定场景。完成顺序可以不同，
+但 owner 最终快照、fragment/UV 顺序、dependency、geometry cache 与输出 fingerprint 必须一致。
+
+必须覆盖运行中修改功率、envelope、投影依赖方块、删除 source、清理 level cache、连续
+generation、队列满和服务器关闭。旧 generation 只能被丢弃，不能修改 cache 或发布 owner。
+性能报告同时记录 snapshot、queue wait、worker、commit、end-to-end 和最大 tick stall；
+1 到 9 个同时 dirty 的 stress source 分开报告，不能把 worker 时间算入服务器同步预算。
+
+`spot_test` 的 `parallel` 模式只建一次 `29 x 29` 固定 dense 场地，并把九个 source 按横向和
+竖向间隔都为 2 格的 `3 x 3` 网格放置。九个 source block 始终保留，测试只通过功率切换活动
+前缀，依次运行 `1 -> 9`，整套序列重复 10 次。不同 source 的 cone 共同照射同一批随机障碍和
+终端墙，允许 owner spot 大量重叠。测量轮不得清理 `OpticalTraceCache`：必须只强制 spot geometry
+full rebuild 并 enqueue projection refresh。
+
+全部投影工作 idle 后，source-count case 之间额外等待 5 个 quiet tick；完整 cycle 之间等待 20
+个 quiet tick。cycle 1 标记为 cold，2-3 为 warming，4-5 为 stabilizing，6-10 为 steady。正式
+P50/P95 只使用 cycle 6-10。每个 source count 同时比较 cycle 4-5 与 cycle 6-10 的 response
+median 和 worker median；只有两者漂移都超过 10% 时才记录 `warmup_unstable`，避免单个 tick
+边界异常快样本被误判为 JVM 预热。报告必须包含 job/worker 时间、整批
+response、最大 in-flight、最大 queue depth、submit/commit tick spread、聚合 cache mode 与稳定
+ordinal output fingerprint。所有测量 job 都必须为 `full_rebuild`，不得混入 suffix 或
+appearance-only。
+
+共享 section snapshot 启用后，额外检查：首轮允许 resolved block 较多，稳态相邻 source 应以
+reused block 为主；`resolved + reused == snapshot_blocks`；section cache 不得超过 256；同 section
+方块变化必须让旧 job stale，跨 section 邻接 shape 变化必须更新两侧 section。正式 parallel
+日志还要统计 dispatch width，四 worker 稳态应出现 width 4，不能再由大量 width 1/2 wave
+掩盖 snapshot 串行化。
+
+并行 suite 的每个 case 必须记录相对本次测量起点的 `projection_submit_rejected` 和
+`projection_commit_budget_deferred`。任何 submit rejection 都使 case 失败；executor 满只能
+保留 pending work 到后续 tick，不能由 server thread 执行。completed queue 允许跨 tick 保留，
+但 commit 必须遵守独立的 spot-projection main-thread deadline，并同时检查
+`projection_commit_tick_spread` 与最大 tick stall。snapshot preparation 与 commit 共用这个软预算，
+每 tick 最多发布一个执行器实际 worker-width；当 `max_in_flight < workers` 时必须使用夹紧后的
+实际 worker 数，不能等待一个永远无法同时运行的配置宽度。既不能因通用 solver budget 过小把
+worker 结果重新串行化，也不能
+在一个 tick 无界集中发布全部 source。
+
+warmup 漂移中的 median 使用通常定义：奇数样本取中项，偶数样本取两个中项平均。尤其 cycle
+4-5 的两个样本不能再用 nearest-rank P50 取较小值。正式 P50/P95 报告仍保留既有 percentile
+定义，median 只用于 stabilizing-vs-steady 预热判定。
+
+commit 优化后的 `async_batch_commit` 必须提供 `projection_commit_assembly_us`、
+`projection_commit_diagnostics_us`、`projection_commit_trace_update_us`、
+`projection_commit_dependency_index_us`、
+`projection_commit_owner_publish_us` 及 dependency/owner reuse 标志。稳定强制 full rebuild
+允许复用完全相同的 dependency reverse index 和已安装 owner wire snapshot，但仍必须产生新的
+source-bound performance sample；方块删除后的 partial owner 不得被相同输入快路径误认为完整结果。
+
+异步日志写入启用后，parallel 与 random-stress 验收还必须确认
+`diagnostic_writes_dropped=0`、`diagnostic_writes_failed=0`。`pending` 可以短暂非零，但测试结束后的
+最新完成事件必须实际出现在文件中；不能因为 writer queue 尚未落盘而读取前一轮尾部。比较 commit
+优化时同时报告 assembly 与 diagnostics，避免把文件系统尖峰算成 SpotLayer 组装回归。

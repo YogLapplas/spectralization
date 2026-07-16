@@ -456,3 +456,138 @@ average/P50/P95 at 452.5 average spots. Stress random is
 0.202/0.272 ms. Full tables, workload counts, stage timings, implementation scope,
 and the exact release protocol are recorded in `SPOT_PROJECTION_PERFORMANCE.md`
 and `TESTING_PLAN.md`.
+## 2026-07-12 outgoing-node parallel projection implementation
+
+The first parallel layer is implemented around the unchanged depth recurrence.
+Main-thread preparation resolves immutable block facts, local optical boxes and
+material profiles into a conservative eager cone snapshot. Full and suffix jobs
+run on a dedicated bounded executor; appearance-only and targeted/verbose
+validation remain on the server thread. Results return through a completion
+queue and are committed in the original graph-node order only after generation,
+cache-token and snapshot-revision validation.
+
+The synchronous configuration path still uses the accepted live serial
+projector, so commit `0aa46c1e4b645357fa6a4d6498ef9ee45c212e14` remains the
+comparison baseline. Validation mode additionally compares live and snapshot
+projection artifacts, including fragment order, UV, dependencies, allocations,
+appearance plan and depth snapshots.
+
+New diagnostics include async batch jobs, eager snapshot time and block count,
+queue wait, aggregate worker time, commit and end-to-end time, executor occupancy,
+stale discards, coalescing and submission rejection. Game-side lightweight/stress
+random suites, simultaneous-source benchmarks and stale lifecycle cases remain
+required before accepting new performance numbers.
+
+The `spot_test` instrument now includes a dedicated `parallel` mode for the
+simultaneous-source requirement. Its first shared-row 1/2/4/8 run exposed two
+test defects: every measured refresh cleared the complete trace cache, and the
+projection scheduler created at most one network preparation per tick. The
+current harness instead builds one `29 x 29` arena, places a two-block-spaced
+`3 x 3` source grid once, and runs `1 -> 9` for ten cycles. It changes only
+source power between cases, waits for all projection work plus five quiet ticks
+(twenty at cycle boundaries), then performs a projection-only forced geometry
+rebuild. The production scheduler can retain several network preparations,
+advance them fairly under the main-thread budget, and dispatch ready work in
+bounded worker-width waves.
+
+Cycle labels are cold (1), warming (2-3), stabilizing (4-5), and steady (6-10).
+Formal P50/P95 values use cycles 6-10; stabilizing and steady response medians
+are compared per source count and drift above ten percent is labelled
+`warmup_unstable`. Diagnostics include worker and wave response time, maximum
+in-flight/queue occupancy, submit/commit tick spread, cache mode, and stable
+aggregate output fingerprints. New 90-wave game-side results are pending.
+
+The first 3x3 run (`8f9d5024-fe06-4070-87c8-0c861ff88e85`) completed all 90
+cases and 450 full-rebuild jobs with zero stale, rejected, coalesced, cache-mode,
+or fingerprint failures. Steady individual worker P50/P95 was 28.21/42.37 ms,
+but snapshot P50/P95 was 7.25/10.43 ms and the 225 steady jobs were split into
+118 dispatches with average width 1.91. No steady dispatch reached width four.
+Response therefore rose from 150.3 ms at one source to 715.0 ms at nine sources.
+
+Both section-cache triggers were met: snapshot P95 exceeded 3 ms and the nine
+overlapping cones each recaptured roughly 25,216 mostly identical positions. The
+next implementation now stores projection facts in bounded immutable 16^3 pages,
+uses copy-on-write replacement by section version, and gives each job exact
+coverage bitsets over shared page references. Commit validation is section-level
+rather than scanning every captured block revision. The dispatch fallback is now
+four ticks instead of a 100 ms wall-clock timeout. Benchmark in-flight/queue peaks
+are reset when measured latency starts, so source activation during quiet time no
+longer contaminates the measured peak. New 90-wave results are pending.
+
+The next run (`a6716268-a09f-497b-b3fe-57df38cce6ca`) passed all 90 cases and
+450 full-rebuild jobs with no fingerprint, stale, or coalescing failures. Shared
+section snapshots reduced snapshot P50/P95 from 7.25/10.43 ms to 0.457/0.919 ms;
+98.806% of requested facts were reused and the section cache peaked at 53/256.
+Steady dispatch width rose to 3.082 average with a maximum of seven, and batch
+response P50/P95 fell to 248.95/361.28 ms.
+
+This run is not an acceptance result. It recorded 23 executor submission rejections
+and steady tick-stall P50/P95/max of 3.58/26.70/41.97 ms. Executor admission now
+uses one atomic in-flight bound, prestarted workers, and a queue large enough for
+every admitted task. Completion validation and atomic commit now drain under the
+server optical-solver deadline using a bounded EWMA estimate. The parallel harness
+records per-case rejection and deferred-commit deltas, fails immediately on any
+rejection, and uses the conventional average-of-two median for cycles 4-5. A new
+90-wave game run is required before accepting the scheduler changes.
+
+The following diagnostics file (`diagnostics_20260713_000547_UTC.log`) contains
+two complete 90-case runs. Both passed 450/450 full-rebuild jobs with zero
+submission rejection, fingerprint mismatch, stale result, structural mismatch,
+or worker failure. In the latest run, snapshot P50/P95 was 0.497/0.848 ms with
+99.286% fact reuse. Four prestarted workers, pool size four, and maximum
+in-flight/queue occupancy of eight were observed directly.
+
+Deadline-controlled commit reduced steady tick-stall P95/max from 26.70/41.97 ms
+to 13.37/20.77 ms, but only one owner committed in every tick. Nine-source commit
+spread reached nine ticks and response P50/P95 rose to 350.22/549.75 ms. Commit
+itself measured 5.28/8.33/30.62 ms P50/P95/max.
+
+The next candidate therefore preserves the deadline but removes confirmed repeat
+work: single-node batches avoid an intermediate dependency/allocation aggregate;
+set-equal dependency snapshots retain the reverse index; and an exactly equal
+ordered compiled owner input bypasses sorting, signature construction, and payload
+generation. Owner snapshots remember both compiled input order and sorted wire
+order, while block-removal pruning replaces both with the partial list so a future
+full result must publish. New phase fields isolate assembly, trace update,
+dependency index, and owner publication. Performance acceptance remains pending.
+
+The latest pair, `diagnostics_20260715_055008_UTC.log` and
+`optical_compiler_20260715_055008_UTC.log`, passed 1,000/1,000 stress random
+scenes and 90/90 parallel cases. Parallel fingerprints, missing faces, structural
+mismatches, stale results, submission rejections, and worker failures were all
+zero. Snapshot average/P95 was 0.554/1.127 ms with about 98% block-fact reuse.
+Steady worker P50/P95 was 26.125/36.280 ms, while response P50/P95 remained
+251.202/449.067 ms and commit-budget deferral reached 287 ticks.
+
+Commit P50/P95 was 0.890/2.450 ms, but a 31.708 ms maximum was almost entirely
+reported as assembly. The same session's maximum synchronous diagnostics write
+was 31.847 ms, identifying file I/O as measurement contamination and a real
+server-thread stall. The current candidate therefore sends every diagnostics,
+compiler-debug, and validator entry through one bounded ordered writer queue.
+It also separates `projection_commit_diagnostics_us` from deterministic assembly
+and pre-sizes the single-node primary/side deduplication maps from the actual
+visible-record counts. Total commit timing and its budget estimator still include
+main-thread event formatting and queue admission. A fresh stress random run plus
+the complete parallel suite is required before this candidate is accepted.
+
+The next lightweight random-stress run (`diagnostics_20260715_163328_UTC.log`)
+passed 1,000/1,000 with core average/P50/P95 6.295/5.698/9.775 ms, but required
+200.1 seconds. The server held 20 TPS and 997 of 999 request gaps were exactly
+four ticks; response averaged 101.251 ms. The delay was therefore the serial test
+state machine, not projection compute, compiler fallback, executor backlog, or
+diagnostics I/O.
+
+Random stress now has a dedicated single-source synchronous test lane. It builds,
+force-rebuilds, commits, and records exactly one scene per server tick through the
+same projector, geometry invalidation, dependency index, and owner publisher. It
+does not use the production async prepare/worker/commit boundaries, so its response
+field now describes same-tick test execution. Progress and completion report wall
+seconds, cases per second, completion tick span, and missed completion ticks. The
+parallel multi-source suite and production async scheduler are unchanged. A fresh
+1,000-scene in-game run must confirm approximately 20 case/s at 20 TPS and
+`missed_completion_ticks=0` before accepting this harness change.
+
+This checkpoint has been superseded by the completed round recorded in
+[SPOT_PROJECTION_CLOSEOUT_2026-07-16.md](SPOT_PROJECTION_CLOSEOUT_2026-07-16.md).
+Use the closeout document for accepted final measurements, deferred work, and the
+conditions for reopening projection optimization.

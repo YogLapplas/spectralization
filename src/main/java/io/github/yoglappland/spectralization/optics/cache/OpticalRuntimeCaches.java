@@ -2,6 +2,7 @@ package io.github.yoglappland.spectralization.optics.cache;
 
 import io.github.yoglappland.spectralization.block.HolographicStorageMultiblock;
 import io.github.yoglappland.spectralization.optics.OpticalSpotTracker;
+import io.github.yoglappland.spectralization.optics.compiler.CompiledSpotLayer;
 import io.github.yoglappland.spectralization.optics.field.OpticalFieldSources;
 import io.github.yoglappland.spectralization.optics.fiber.FiberNetworkIndex;
 import io.github.yoglappland.spectralization.optics.topology.OpticalNetworkIndex;
@@ -14,6 +15,7 @@ public final class OpticalRuntimeCaches {
 
     public static void clearAll() {
         OpticalTraceCache.clearAll();
+        CompiledSpotLayer.clearAllProjectionGeometry();
         OpticalWorldIndex.clearAll();
         OpticalNetworkIndex.clearAll();
         FiberNetworkIndex.clearAll();
@@ -24,6 +26,9 @@ public final class OpticalRuntimeCaches {
 
     public static void clear(LevelAccessor level) {
         OpticalTraceCache.clear(level);
+        if (level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+            CompiledSpotLayer.clearProjectionGeometry(serverLevel);
+        }
         OpticalWorldIndex.clear(level);
         OpticalNetworkIndex.clear(level);
         FiberNetworkIndex.clear(level);

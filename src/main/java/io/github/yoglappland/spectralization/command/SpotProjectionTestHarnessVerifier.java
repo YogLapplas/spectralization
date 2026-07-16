@@ -1,7 +1,9 @@
 package io.github.yoglappland.spectralization.command;
 
 import io.github.yoglappland.spectralization.optics.SpotRecord;
+import io.github.yoglappland.spectralization.optics.cache.OpticalDependencyIndex;
 import io.github.yoglappland.spectralization.optics.projection.SpotProjectionPerformanceTracker;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -14,18 +16,26 @@ public final class SpotProjectionTestHarnessVerifier {
         SpotProjectionTestCommand.validateDirectionMatrixDefinition();
         SpotProjectionTestCommand.validateRandomStressDefinition();
         SpotProjectionTestCommand.validateSmartSuiteDefinition();
+        SpotProjectionTestCommand.validateParallelSuiteDefinition();
         SpotProjectionTestCommand.validateLoadVariants();
         verifyDefaultModeSelection();
         SpotProjectionTestScene.validateControlledVolumeDefinition();
+        SpotProjectionTestScene.validateParallelArenaDefinition();
         verifyRelativeDirectionFrames();
+        verifyParallelSourceLayouts();
         verifyCanonicalShapeSignature();
         verifyOutputFingerprintRotation();
+        verifyMedianDefinition();
+        verifyWarmupDriftDefinition();
+        verifyDependencyIndexReuse();
     }
 
     private static void verifyDefaultModeSelection() {
         if (SpotTestMode.byName("") != SpotTestMode.SMART
                 || SpotTestMode.byName("unknown") != SpotTestMode.SMART
                 || SpotTestMode.SMART.next() != SpotTestMode.QUICK
+                || SpotTestMode.PERFORMANCE.next() != SpotTestMode.PARALLEL
+                || SpotTestMode.PARALLEL.next() != SpotTestMode.DIRECTION_MATRIX
                 || SpotTestLoad.byName("") != SpotTestLoad.LIGHTWEIGHT
                 || SpotTestLoad.byName("unknown") != SpotTestLoad.LIGHTWEIGHT
                 || SpotTestLoad.LIGHTWEIGHT.toggle() != SpotTestLoad.STRESS
@@ -109,6 +119,63 @@ public final class SpotProjectionTestHarnessVerifier {
             if (!point.equals(expected)) {
                 throw new IllegalStateException("Spot-test relative position frame is not rotation-equivalent");
             }
+        }
+    }
+
+    private static void verifyParallelSourceLayouts() {
+        SpotTestLayout base = new SpotTestLayout(BlockPos.ZERO, Direction.NORTH);
+        for (int sourceCount = 1; sourceCount <= 9; sourceCount++) {
+            List<SpotTestLayout> layouts = base.parallelSources(sourceCount);
+            if (layouts.size() != sourceCount
+                    || layouts.stream().map(SpotTestLayout::source).distinct().count() != sourceCount
+                    || layouts.stream().anyMatch(layout -> layout.direction() != base.direction())) {
+                throw new IllegalStateException("Parallel spot-test layouts lost source identity or direction");
+            }
+        }
+        Set<BlockPos> expectedGrid = new HashSet<>();
+        for (int side : new int[]{-2, 0, 2}) {
+            for (int vertical : new int[]{-2, 0, 2}) {
+                expectedGrid.add(BlockPos.ZERO.relative(base.lateral(), side).above(vertical));
+            }
+        }
+        Set<BlockPos> actualGrid = new HashSet<>(
+                base.parallelSources(9).stream().map(SpotTestLayout::source).toList()
+        );
+        if (!actualGrid.equals(expectedGrid)) {
+            throw new IllegalStateException("Parallel spot-test sources must form one 2-block-spaced 3x3 grid");
+        }
+    }
+
+    private static void verifyMedianDefinition() {
+        if (SpotProjectionTestCommand.verifyMedian(List.of(1.0D, 3.0D)) != 2.0D
+                || SpotProjectionTestCommand.verifyMedian(List.of(9.0D, 1.0D, 2.0D)) != 2.0D
+                || SpotProjectionTestCommand.verifyMedian(List.of()) != 0.0D) {
+            throw new IllegalStateException("Spot-test warmup median definition is not stable");
+        }
+    }
+
+    private static void verifyWarmupDriftDefinition() {
+        if (SpotProjectionTestCommand.warmupDriftUnstable(0.25D, 0.02D)
+                || SpotProjectionTestCommand.warmupDriftUnstable(0.02D, 0.25D)
+                || !SpotProjectionTestCommand.warmupDriftUnstable(0.25D, 0.20D)) {
+            throw new IllegalStateException("Spot-test warmup drift must require worker and response evidence");
+        }
+    }
+
+    private static void verifyDependencyIndexReuse() {
+        OpticalDependencyIndex index = new OpticalDependencyIndex();
+        int networkId = 7;
+        long firstPos = BlockPos.ZERO.asLong();
+        long secondPos = new BlockPos(1, 2, 3).asLong();
+        LongOpenHashSet first = new LongOpenHashSet(new long[]{firstPos, secondPos});
+        LongOpenHashSet equalCopy = new LongOpenHashSet(first);
+        if (!index.replaceDependencies(networkId, first)
+                || index.replaceDependencies(networkId, equalCopy)
+                || !index.markChanged(firstPos)
+                || !index.isDirty(networkId)
+                || index.replaceDependencies(networkId, equalCopy)
+                || index.isDirty(networkId)) {
+            throw new IllegalStateException("Equal dependency snapshots must retain and reuse the reverse index");
         }
     }
 

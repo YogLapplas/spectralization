@@ -6,6 +6,7 @@ import io.github.yoglappland.spectralization.block.CmosSensorBlock;
 import io.github.yoglappland.spectralization.block.PassThroughSensorBlock;
 import io.github.yoglappland.spectralization.block.SpectrometerBlock;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
+import io.github.yoglappland.spectralization.diagnostics.SpectralDiagnostics;
 import io.github.yoglappland.spectralization.heat.PhotothermalReceiverBlock;
 import io.github.yoglappland.spectralization.network.BeamPathOverlayPayload;
 import io.github.yoglappland.spectralization.optics.CompiledOpticalTrace;
@@ -34,6 +35,10 @@ import io.github.yoglappland.spectralization.optics.compiler.BeamProfileSource;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledPortGraph;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledReadoutLayer;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledSpotLayer;
+import io.github.yoglappland.spectralization.optics.projection.SpotProjectionExecutor;
+import io.github.yoglappland.spectralization.optics.projection.ProjectionSectionSnapshotCache;
+import io.github.yoglappland.spectralization.optics.projection.SpotProjectionJob;
+import io.github.yoglappland.spectralization.optics.projection.SpotProjectionJobResult;
 import io.github.yoglappland.spectralization.optics.compiler.OpticalCompilerDebugLogger;
 import io.github.yoglappland.spectralization.optics.compiler.PortGraphCompiler;
 import io.github.yoglappland.spectralization.optics.compiler.PortGraphEdge;
@@ -57,6 +62,7 @@ import io.github.yoglappland.spectralization.tag.SpectralBlockTags;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.ints.IntSet;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -73,18 +79,23 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
 import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicLong;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.SectionPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelAccessor;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 
 public final class OpticalTraceCache {
     private static final Map<Level, LevelTraceCache> CACHES = new WeakHashMap<>();
+    private static final AtomicLong NEXT_CACHE_INSTANCE_TOKEN = new AtomicLong();
     private static final int MAX_DISCOVERED_SYSTEM_SOURCES = 32;
     private static final int MIN_DIRECT_GEOMETRY_CACHE_ENTRIES = 512;
     private static final int MAX_DIRECT_GEOMETRY_CACHE_ENTRIES = 4096;
@@ -99,6 +110,10 @@ public final class OpticalTraceCache {
     private static final double POSITIVE_SOURCE_MIN_POWER = 1.0E-6D;
     private static final int SPECTRAL_LANE_PARALLEL_MIN_LANES = 2;
     private static final int SPECTRAL_LANE_PARALLEL_MIN_WORK = 32;
+    private static final long PROJECTION_PARTIAL_WAVE_MAX_WAIT_TICKS = 4L;
+    private static final long INITIAL_PROJECTION_COMMIT_ESTIMATE_NANOS = 5_000_000L;
+    private static final long MIN_PROJECTION_COMMIT_ESTIMATE_NANOS = 1_000_000L;
+    private static final long MAX_PROJECTION_COMMIT_ESTIMATE_NANOS = 25_000_000L;
     private static final List<Direction.Axis> GAIN_SOURCE_AXIS_ORDER =
             List.of(Direction.Axis.X, Direction.Axis.Y, Direction.Axis.Z);
     private static final Comparator<SourceTraceKey> SOURCE_TRACE_KEY_COMPARATOR = Comparator
@@ -173,7 +188,7 @@ public final class OpticalTraceCache {
         if (dirtyKind == OpticalDirtyKind.PARAMETER) {
             boolean changed = cache.markParameterChanged(serverLevel, pos);
             if (changed) {
-                OpticalSpotTracker.clear(serverLevel);
+                clearSpotsForDirtyProjection(serverLevel);
                 flushRetiredHudOwners(serverLevel, cache);
             }
             return changed;
@@ -181,7 +196,7 @@ public final class OpticalTraceCache {
 
         boolean changed = cache.markChanged(serverLevel, pos, dirtyKind, serverLevel.getGameTime());
         if (changed) {
-            OpticalSpotTracker.clear(serverLevel);
+            clearSpotsForDirtyProjection(serverLevel);
             flushRetiredHudOwners(serverLevel, cache);
         }
         return changed;
@@ -199,13 +214,363 @@ public final class OpticalTraceCache {
         }
 
         LevelTraceCache cache = cacheFor(serverLevel);
-        OpticalSpotTracker.clear(serverLevel);
+        clearSpotsForDirtyProjection(serverLevel);
         cache.applyKnownCachedOutputsAsInterrupted(serverLevel);
         cache.invalidateSurfaceParameterData();
         cache.markChanged(serverLevel, key.pos(), OpticalDirtyKind.PARAMETER, serverLevel.getGameTime());
         cache.markChanged(serverLevel, key.pos().relative(key.side()), OpticalDirtyKind.PARAMETER, serverLevel.getGameTime());
         OpticalWorldIndex.markDataChanged(serverLevel, key.pos());
         OpticalWorldIndex.markDataChanged(serverLevel, key.pos().relative(key.side()));
+    }
+
+    public static void markProjectionChunkChanged(LevelAccessor accessor, ChunkPos chunkPos) {
+        if (!(accessor instanceof ServerLevel level)) {
+            return;
+        }
+        LevelTraceCache cache = cacheFor(level);
+        cache.projectionChunkRevisions.put(chunkPos.toLong(), cache.nextProjectionSectionRevision++);
+        for (Map.Entry<Integer, CachedOpticalTrace> entry : cache.cachedTracesByNetwork.entrySet()) {
+            if (projectionDependsOnChunk(entry.getValue().projectionDependencies(), chunkPos)) {
+                CompiledSpotLayer.invalidateProjectionGeometry(
+                        level,
+                        entry.getKey(),
+                        null,
+                        "projection_chunk_changed"
+                );
+                cache.enqueueProjectionRefresh(entry.getKey());
+            }
+        }
+    }
+
+    /**
+     * Server-thread-only source identity used by projection-only refresh callers such as the
+     * deterministic spot benchmark. This deliberately does not expose network ids.
+     */
+    public record ProjectionSource(BlockPos sourcePos, Direction direction) {
+        public ProjectionSource {
+            Objects.requireNonNull(sourcePos, "sourcePos");
+            Objects.requireNonNull(direction, "direction");
+        }
+    }
+
+    public record ProjectionWorkState(
+            int pendingRefreshes,
+            int preparations,
+            int preparedBatches,
+            int completedResults,
+            int executorInFlight,
+            int executorQueueDepth,
+            long submitRejected,
+            long commitBudgetDeferred
+    ) {
+        public boolean idle() {
+            return pendingRefreshes == 0
+                    && preparations == 0
+                    && preparedBatches == 0
+                    && completedResults == 0
+                    && executorInFlight == 0
+                    && executorQueueDepth == 0;
+        }
+    }
+
+    public record ProjectionBatchObservation(
+            int sourceCount,
+            long firstSubmitTick,
+            long lastSubmitTick,
+            long firstCommitTick,
+            long lastCommitTick,
+            int maxInFlight,
+            int maxQueueDepth,
+            int dispatchWaves,
+            int maxDispatchWidth,
+            double totalWorkerUs,
+            double totalCommitUs,
+            double totalAssemblyUs,
+            double totalDiagnosticsUs,
+            double totalDependencyIndexUs,
+            double totalOwnerPublishUs,
+            int dependencyIndexReused,
+            int ownerPublishReused
+    ) {
+        public static final ProjectionBatchObservation EMPTY = new ProjectionBatchObservation(
+                0, -1L, -1L, -1L, -1L, 0, 0, 0, 0,
+                0.0D, 0.0D, 0.0D, 0.0D, 0.0D, 0.0D, 0, 0
+        );
+
+        public long submitTickSpread() {
+            return firstSubmitTick < 0L ? 0L : Math.max(0L, lastSubmitTick - firstSubmitTick);
+        }
+
+        public long commitTickSpread() {
+            return firstCommitTick < 0L ? 0L : Math.max(0L, lastCommitTick - firstCommitTick);
+        }
+
+        public double averageDispatchWidth() {
+            return dispatchWaves <= 0 ? 0.0D : sourceCount / (double) dispatchWaves;
+        }
+    }
+
+    public static ProjectionWorkState projectionWorkState(ServerLevel level) {
+        LevelTraceCache cache = cacheFor(level);
+        return new ProjectionWorkState(
+                cache.pendingProjectionRefreshes.size(),
+                cache.projectionPreparations.size(),
+                cache.inFlightProjectionBatches.size(),
+                cache.completedProjectionJobs.size(),
+                SpotProjectionExecutor.inFlight(level.getServer()),
+                SpotProjectionExecutor.queueDepth(level.getServer()),
+                cache.projectionSubmitRejected,
+                cache.projectionCommitBudgetDeferred
+        );
+    }
+
+    public static boolean projectionSourcesReady(ServerLevel level, List<ProjectionSource> sources) {
+        if (sources == null || sources.isEmpty()) {
+            return false;
+        }
+        LevelTraceCache cache = cacheFor(level);
+        for (ProjectionSource source : sources) {
+            SourceTraceKey sourceKey = new SourceTraceKey(source.sourcePos(), source.direction());
+            Integer networkId = cache.networkIdsBySource.get(sourceKey);
+            if (networkId == null
+                    || !cache.cachedTracesByNetwork.containsKey(networkId)
+                    || cache.dependencyIndex.isDirty(networkId)
+                    || cache.queuedNetworkIds.contains(networkId)
+                    || cache.queuedSystemRebuildNetworkIds.contains(networkId)) {
+                return false;
+            }
+            OutputBeam currentOutput = LevelTraceCache.currentSourceOutput(level, sourceKey);
+            CachedOpticalTrace cachedTrace = cache.cachedTracesByNetwork.get(networkId);
+            if (currentOutput == null || !cachedTrace.matches(currentOutput)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static ProjectionBatchObservation projectionBatchObservation(
+            ServerLevel level,
+            List<ProjectionSource> sources
+    ) {
+        if (sources == null || sources.isEmpty()) {
+            return ProjectionBatchObservation.EMPTY;
+        }
+        LevelTraceCache cache = cacheFor(level);
+        long firstSubmit = Long.MAX_VALUE;
+        long lastSubmit = Long.MIN_VALUE;
+        long firstCommit = Long.MAX_VALUE;
+        long lastCommit = Long.MIN_VALUE;
+        int maxInFlight = 0;
+        int maxQueue = 0;
+        long totalWorkerNanos = 0L;
+        long totalCommitNanos = 0L;
+        long totalAssemblyNanos = 0L;
+        long totalDiagnosticsNanos = 0L;
+        long totalDependencyIndexNanos = 0L;
+        long totalOwnerPublishNanos = 0L;
+        int dependencyIndexReused = 0;
+        int ownerPublishReused = 0;
+        Map<Long, Integer> submissionsByTick = new HashMap<>();
+        int found = 0;
+        for (ProjectionSource source : sources) {
+            Integer networkId = cache.networkIdsBySource.get(
+                    new SourceTraceKey(source.sourcePos(), source.direction())
+            );
+            ProjectionCommitTiming timing = networkId == null
+                    ? null : cache.lastProjectionCommitByNetwork.get(networkId);
+            if (timing == null) {
+                continue;
+            }
+            found++;
+            firstSubmit = Math.min(firstSubmit, timing.firstSubmitTick());
+            lastSubmit = Math.max(lastSubmit, timing.lastSubmitTick());
+            firstCommit = Math.min(firstCommit, timing.commitTick());
+            lastCommit = Math.max(lastCommit, timing.commitTick());
+            maxInFlight = Math.max(maxInFlight, timing.maxInFlight());
+            maxQueue = Math.max(maxQueue, timing.maxQueueDepth());
+            totalWorkerNanos += timing.workerNanos();
+            totalCommitNanos += timing.commitNanos();
+            totalAssemblyNanos += timing.assemblyNanos();
+            totalDiagnosticsNanos += timing.diagnosticsNanos();
+            totalDependencyIndexNanos += timing.dependencyIndexNanos();
+            totalOwnerPublishNanos += timing.ownerPublishNanos();
+            dependencyIndexReused += timing.dependencyIndexReused() ? 1 : 0;
+            ownerPublishReused += timing.ownerPublishReused() ? 1 : 0;
+            submissionsByTick.merge(timing.firstSubmitTick(), 1, Integer::sum);
+        }
+        if (found == 0) {
+            return ProjectionBatchObservation.EMPTY;
+        }
+        return new ProjectionBatchObservation(
+                found, firstSubmit, lastSubmit, firstCommit, lastCommit,
+                maxInFlight,
+                maxQueue,
+                submissionsByTick.size(),
+                submissionsByTick.values().stream().mapToInt(Integer::intValue).max().orElse(0),
+                totalWorkerNanos / 1_000.0D,
+                totalCommitNanos / 1_000.0D,
+                totalAssemblyNanos / 1_000.0D,
+                totalDiagnosticsNanos / 1_000.0D,
+                totalDependencyIndexNanos / 1_000.0D,
+                totalOwnerPublishNanos / 1_000.0D,
+                dependencyIndexReused,
+                ownerPublishReused
+        );
+    }
+
+    /**
+     * Forces only the compiled spot geometry for the supplied sources to rebuild. The graph,
+     * solved trace, readout and level cache remain intact, so all enqueues made by one call form
+     * a real multi-network projection wave.
+     */
+    public static boolean requestSpotProjectionRebuild(
+            ServerLevel level,
+            List<ProjectionSource> sources,
+            String reason
+    ) {
+        return requestSpotProjection(level, sources, true, reason);
+    }
+
+    public static boolean requestSpotProjectionRefresh(
+            ServerLevel level,
+            List<ProjectionSource> sources
+    ) {
+        return requestSpotProjection(level, sources, false, "projection_only_refresh");
+    }
+
+    /**
+     * Removes queued or prepared projection-only work for one source owned by the random-stress
+     * test runner. This is deliberately source-scoped: normal projection refreshes and the
+     * multi-source benchmark keep using the asynchronous executor path.
+     */
+    public static void cancelSingleSourceSpotProjectionTestWork(
+            ServerLevel level,
+            ProjectionSource source
+    ) {
+        if (level == null || source == null) {
+            return;
+        }
+        LevelTraceCache cache = cacheFor(level);
+        Integer networkId = cache.networkIdsBySource.get(
+                new SourceTraceKey(source.sourcePos(), source.direction())
+        );
+        if (networkId == null) {
+            return;
+        }
+        cancelProjectionWorkForNetwork(cache, networkId);
+    }
+
+    /**
+     * Executes one forced single-source spot rebuild synchronously for the 1,000-scene test.
+     * The method is test-only and intentionally does not accept a source collection, so it
+     * cannot replace or distort the production multi-source asynchronous path.
+     */
+    public static boolean runSingleSourceSpotProjectionTestNow(
+            ServerLevel level,
+            ProjectionSource source,
+            String reason
+    ) {
+        if (level == null || source == null || !projectionSourcesReady(level, List.of(source))) {
+            return false;
+        }
+        LevelTraceCache cache = cacheFor(level);
+        Integer networkId = cache.networkIdsBySource.get(
+                new SourceTraceKey(source.sourcePos(), source.direction())
+        );
+        if (networkId == null) {
+            return false;
+        }
+        CachedOpticalTrace cachedTrace = cache.cachedTracesByNetwork.get(networkId);
+        if (cachedTrace == null || !cachedTrace.scalarPowerSolution().reliableForReadout()) {
+            return false;
+        }
+
+        cancelProjectionWorkForNetwork(cache, networkId);
+        String invalidationReason = reason == null || reason.isBlank()
+                ? "single_source_projection_test"
+                : reason;
+        CompiledSpotLayer.invalidateProjectionGeometry(
+                level,
+                source.sourcePos(),
+                source.direction(),
+                invalidationReason
+        );
+        CompiledSpotLayer.SpotLayer spotLayer = CompiledSpotLayer.sample(
+                level,
+                networkId,
+                cachedTrace.portGraph(),
+                cachedTrace.scalarPowerSolution(),
+                cachedTrace.sourceOutput(),
+                cachedTrace.readoutLayer().beamProfileLayer()
+        );
+        commitSpotLayer(level, cache, cachedTrace, spotLayer);
+        OpticalWorldIndex.markDerivedCommitted(level);
+        return true;
+    }
+
+    private static void cancelProjectionWorkForNetwork(LevelTraceCache cache, int networkId) {
+        cache.projectionGenerationByNetwork.merge(networkId, 1L, Long::sum);
+        cache.queuedProjectionRefreshNetworkIds.remove(networkId);
+        cache.pendingProjectionRefreshes.removeIf(queuedNetworkId -> queuedNetworkId == networkId);
+
+        PendingProjectionPreparation preparation = cache.projectionPreparations.remove(networkId);
+        if (preparation != null) {
+            preparation.preparation().discard();
+        }
+        PendingProjectionBatch pending = cache.inFlightProjectionBatches.remove(networkId);
+        if (pending != null) {
+            pending.batch().discard();
+        }
+        cache.completedProjectionJobs.removeIf(
+                completion -> completion.pending().networkId() == networkId
+        );
+    }
+
+    private static boolean requestSpotProjection(
+            ServerLevel level,
+            List<ProjectionSource> sources,
+            boolean invalidateGeometry,
+            String reason
+    ) {
+        if (!projectionSourcesReady(level, sources)) {
+            return false;
+        }
+        LevelTraceCache cache = cacheFor(level);
+        String invalidationReason = reason == null || reason.isBlank()
+                ? "projection_only_rebuild"
+                : reason;
+        for (ProjectionSource source : sources) {
+            SourceTraceKey sourceKey = new SourceTraceKey(source.sourcePos(), source.direction());
+            int networkId = cache.networkIdsBySource.get(sourceKey);
+            if (invalidateGeometry) {
+                CompiledSpotLayer.invalidateProjectionGeometry(
+                        level,
+                        source.sourcePos(),
+                        source.direction(),
+                        invalidationReason
+                );
+            }
+            cache.enqueueProjectionRefresh(networkId);
+        }
+        return true;
+    }
+
+    private static boolean projectionDependsOnChunk(LongSet dependencies, ChunkPos chunkPos) {
+        for (long positionKey : dependencies) {
+            if ((BlockPos.getX(positionKey) >> 4) == chunkPos.x
+                    && (BlockPos.getZ(positionKey) >> 4) == chunkPos.z) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void clearSpotsForDirtyProjection(ServerLevel level) {
+        if (SpectralizationConfig.spotProjectionParallelEnabled()) {
+            OpticalSpotTracker.clearLegacySpots(level);
+        } else {
+            OpticalSpotTracker.clear(level);
+        }
     }
 
     public static void requestIntrinsicSourcesNear(LevelAccessor accessor, BlockPos center) {
@@ -323,11 +688,25 @@ public final class OpticalTraceCache {
             return;
         }
 
-        long deadlineNanos = System.nanoTime() + SpectralizationConfig.opticalSolverBudgetMicros() * 1_000L;
+        long queueStartedNanos = System.nanoTime();
+        long deadlineNanos = queueStartedNanos
+                + SpectralizationConfig.opticalSolverBudgetMicros() * 1_000L;
+        long projectionDeadlineNanos = queueStartedNanos
+                + SpectralizationConfig.spotProjectionMainThreadBudgetMicros() * 1_000L;
         int maxRequests = SpectralizationConfig.opticalSolverMaxRequestsPerTick();
         IntSet processedNetworkIds = new IntOpenHashSet();
         IntSet fastSystemRefreshNetworkIds = new IntOpenHashSet();
         IntSet projectionRefreshedNetworkIds = new IntOpenHashSet();
+        if (SpectralizationConfig.spotProjectionParallelEnabled()) {
+            cancelStaleProjectionPreparations(cache);
+            cancelStaleProjectionBatches(cache);
+            drainCompletedProjectionJobs(
+                    level, cache, projectionRefreshedNetworkIds, projectionDeadlineNanos
+            );
+            if (shouldDispatchPreparedProjectionWave(level, cache, level.getGameTime())) {
+                dispatchPreparedProjectionWave(level, cache);
+            }
+        }
         int initialRequestCount = cache.pendingRequests.size();
         boolean deferredDirectWork = false;
         int processed = 0;
@@ -453,6 +832,9 @@ public final class OpticalTraceCache {
             CachedOpticalTrace cachedTrace = buildCachedTrace(
                     level,
                     request,
+                    cache.committedSpotLayersByNetwork.getOrDefault(
+                            request.networkId(), CompiledSpotLayer.EMPTY
+                    ),
                     trace,
                     directGraph,
                     directReadoutLayer,
@@ -602,12 +984,29 @@ public final class OpticalTraceCache {
                 );
             }
             cache.cachedTracesByNetwork.put(request.networkId(), cachedTrace);
+            if (!SpectralizationConfig.spotProjectionParallelEnabled()) {
+                cache.committedSpotLayersByNetwork.put(
+                        request.networkId(),
+                        new CompiledSpotLayer.SpotLayer(
+                                cachedTrace.spotRecords(),
+                                cachedTrace.projectionDependencies(),
+                                cachedTrace.spotAllocations()
+                        )
+                );
+            } else if (!cachedTrace.scalarPowerSolution().reliableForReadout()) {
+                cache.committedSpotLayersByNetwork.remove(request.networkId());
+            }
             cache.dependencyIndex.replaceDependencies(request.networkId(), cachedTrace.dependencies());
             cache.dependencyIndex.clearDirty(request.networkId());
             cache.projectionDependencyIndex.replaceDependencies(request.networkId(), cachedTrace.projectionDependencies());
             cache.projectionDependencyIndex.clearDirty(request.networkId());
-            cache.queuedProjectionRefreshNetworkIds.remove(request.networkId());
-            cache.pendingProjectionRefreshes.removeIf(queuedNetworkId -> queuedNetworkId == request.networkId());
+            if (SpectralizationConfig.spotProjectionParallelEnabled()
+                    && cachedTrace.scalarPowerSolution().reliableForReadout()) {
+                cache.enqueueProjectionRefresh(request.networkId());
+            } else {
+                cache.queuedProjectionRefreshNetworkIds.remove(request.networkId());
+                cache.pendingProjectionRefreshes.removeIf(queuedNetworkId -> queuedNetworkId == request.networkId());
+            }
             if (cachedSystem != null && trace != null) {
                 OpticalTraceValidator.validate(level, request.sourcePos(), request.sourceOutput(), trace);
             }
@@ -628,7 +1027,9 @@ public final class OpticalTraceCache {
         }
 
         if (!deferredDirectWork && (processed == 0 || cache.pendingRequests.isEmpty())) {
-            projectionRefreshedNetworkIds.addAll(processPendingProjectionRefreshes(level, cache, deadlineNanos));
+            projectionRefreshedNetworkIds.addAll(processPendingProjectionRefreshes(
+                    level, cache, deadlineNanos, projectionDeadlineNanos
+            ));
         }
 
         for (int processedNetworkId : processedNetworkIds) {
@@ -706,44 +1107,528 @@ public final class OpticalTraceCache {
     private static IntSet processPendingProjectionRefreshes(
             ServerLevel level,
             LevelTraceCache cache,
-            long deadlineNanos
+            long deadlineNanos,
+            long projectionDeadlineNanos
     ) {
+        if (!SpectralizationConfig.spotProjectionParallelEnabled()) {
+            cancelAllAsyncProjection(cache);
+            return processPendingProjectionRefreshesSerial(level, cache, deadlineNanos);
+        }
         IntSet refreshedNetworkIds = new IntOpenHashSet();
-        int maxRefreshes = SpectralizationConfig.opticalSolverMaxRequestsPerTick();
+        cancelStaleProjectionPreparations(cache);
+        cancelStaleProjectionBatches(cache);
+        drainCompletedProjectionJobs(level, cache, refreshedNetworkIds, projectionDeadlineNanos);
+        seedProjectionPreparations(level, cache, projectionDeadlineNanos);
+        advanceProjectionPreparations(level, cache, projectionDeadlineNanos, refreshedNetworkIds);
 
-        while (cache.hasPendingProjectionRefreshes() && refreshedNetworkIds.size() < maxRefreshes) {
-            if (!refreshedNetworkIds.isEmpty() && System.nanoTime() >= deadlineNanos) {
-                break;
+        if (shouldDispatchPreparedProjectionWave(level, cache, level.getGameTime())) {
+            dispatchPreparedProjectionWave(level, cache);
+        }
+
+        return refreshedNetworkIds;
+    }
+
+    private static void seedProjectionPreparations(
+            ServerLevel level,
+            LevelTraceCache cache,
+            long projectionDeadlineNanos
+    ) {
+        int preparationLimit = Math.max(1, SpectralizationConfig.spotProjectionMaxInFlight());
+        while (cache.hasPendingProjectionRefreshes()
+                && cache.projectionPreparations.size() + cache.inFlightProjectionBatches.size()
+                < preparationLimit) {
+            if (System.nanoTime() >= projectionDeadlineNanos) {
+                return;
             }
-
             Integer networkId = cache.pollPendingProjectionRefreshNetworkId();
             if (networkId == null) {
-                break;
+                return;
             }
-
             if (cache.dependencyIndex.isDirty(networkId) || cache.queuedNetworkIds.contains(networkId)) {
                 continue;
             }
-
+            if (cache.inFlightProjectionBatches.containsKey(networkId)
+                    || cache.projectionPreparations.containsKey(networkId)) {
+                cache.requeueProjectionRefresh(networkId);
+                return;
+            }
             CachedOpticalTrace cachedTrace = cache.cachedTracesByNetwork.get(networkId);
             if (cachedTrace == null) {
                 cache.projectionDependencyIndex.removeNetwork(networkId);
                 continue;
             }
+            PendingProjectionPreparation pending = new PendingProjectionPreparation(
+                    cache.cacheInstanceToken,
+                    cache.projectionGeneration(networkId),
+                    networkId,
+                    System.nanoTime(),
+                    CompiledSpotLayer.beginBatch(
+                            level,
+                            networkId,
+                            cachedTrace.portGraph(),
+                            cachedTrace.scalarPowerSolution(),
+                            cachedTrace.sourceOutput(),
+                            cachedTrace.readoutLayer().beamProfileLayer(),
+                            cache::projectionSectionRevision,
+                            cache.projectionSectionSnapshots
+                    )
+            );
+            cache.projectionPreparations.put(networkId, pending);
+        }
+    }
 
+    private static boolean shouldDispatchPreparedProjectionWave(
+            ServerLevel level,
+            LevelTraceCache cache,
+            long gameTime
+    ) {
+        int readyBatches = 0;
+        long oldestReadyTick = Long.MAX_VALUE;
+        for (PendingProjectionBatch pending : cache.inFlightProjectionBatches.values()) {
+            if (pending.allSubmitted()) {
+                continue;
+            }
+            readyBatches++;
+            oldestReadyTick = Math.min(oldestReadyTick, pending.readyAtTick());
+        }
+        if (readyBatches == 0) {
+            return false;
+        }
+        int waveWidth = projectionWorkerWidth(level);
+        return readyBatches >= waveWidth
+                || (cache.projectionPreparations.isEmpty() && !cache.hasPendingProjectionRefreshes())
+                || gameTime - oldestReadyTick >= PROJECTION_PARTIAL_WAVE_MAX_WAIT_TICKS;
+    }
+
+    private static void cancelAllAsyncProjection(LevelTraceCache cache) {
+        for (PendingProjectionPreparation pending : cache.projectionPreparations.values()) {
+            pending.preparation().discard();
+            cache.requeueProjectionRefresh(pending.networkId());
+        }
+        cache.projectionPreparations.clear();
+        for (PendingProjectionBatch pending : cache.inFlightProjectionBatches.values()) {
+            pending.batch().discard();
+            cache.requeueProjectionRefresh(pending.networkId());
+        }
+        cache.inFlightProjectionBatches.clear();
+        cache.completedProjectionJobs.clear();
+    }
+
+    private static void cancelStaleProjectionPreparations(LevelTraceCache cache) {
+        for (PendingProjectionPreparation pending : new ArrayList<>(cache.projectionPreparations.values())) {
+            if (pending.cacheInstanceToken() == cache.cacheInstanceToken
+                    && pending.generation() == cache.projectionGeneration(pending.networkId())
+                    && cache.cachedTracesByNetwork.containsKey(pending.networkId())
+                    && !cache.dependencyIndex.isDirty(pending.networkId())
+                    && !cache.queuedNetworkIds.contains(pending.networkId())) {
+                continue;
+            }
+            if (cache.projectionPreparations.remove(pending.networkId(), pending)) {
+                pending.preparation().discard();
+                cache.projectionStaleDiscarded++;
+            }
+        }
+    }
+
+    private static void advanceProjectionPreparations(
+            ServerLevel level,
+            LevelTraceCache cache,
+            long deadlineNanos,
+            IntSet refreshedNetworkIds
+    ) {
+        if (System.nanoTime() >= deadlineNanos) {
+            return;
+        }
+        for (PendingProjectionPreparation pending : new ArrayList<>(cache.projectionPreparations.values())) {
+            pending.preparation().advanceOne();
+            if (!pending.preparation().complete()) {
+                if (System.nanoTime() >= deadlineNanos) {
+                    return;
+                }
+                continue;
+            }
+            cache.projectionPreparations.remove(pending.networkId(), pending);
+            CompiledSpotLayer.PreparedSpotBatch batch = pending.preparation().finish();
+            CachedOpticalTrace cachedTrace = cache.cachedTracesByNetwork.get(pending.networkId());
+            if (cachedTrace == null || cache.projectionGeneration(pending.networkId()) != pending.generation()) {
+                batch.discard();
+                cache.projectionStaleDiscarded++;
+                continue;
+            }
+            if (batch.work().isEmpty()) {
+                CompiledSpotLayer.SpotLayer spotLayer = batch.commit();
+                if (spotLayer == null) {
+                    cache.requeueProjectionRefresh(pending.networkId());
+                    continue;
+                }
+                commitSpotLayer(level, cache, cachedTrace, spotLayer);
+                refreshedNetworkIds.add(pending.networkId());
+                continue;
+            }
+            PendingProjectionBatch prepared = new PendingProjectionBatch(
+                    pending.cacheInstanceToken(),
+                    pending.generation(),
+                    pending.networkId(),
+                    pending.startedAtNanos(),
+                    System.nanoTime(),
+                    level.getGameTime(),
+                    batch
+            );
+            cache.inFlightProjectionBatches.put(pending.networkId(), prepared);
+            if (System.nanoTime() >= deadlineNanos) {
+                return;
+            }
+        }
+    }
+
+    private static void cancelStaleProjectionBatches(LevelTraceCache cache) {
+        List<PendingProjectionBatch> pendingBatches = new ArrayList<>(cache.inFlightProjectionBatches.values());
+        for (PendingProjectionBatch pending : pendingBatches) {
+            if (pending.cacheInstanceToken() == cache.cacheInstanceToken
+                    && pending.generation() == cache.projectionGeneration(pending.networkId())
+                    && cache.cachedTracesByNetwork.containsKey(pending.networkId())
+                    && !cache.dependencyIndex.isDirty(pending.networkId())
+                    && !cache.queuedNetworkIds.contains(pending.networkId())) {
+                continue;
+            }
+            if (cache.inFlightProjectionBatches.remove(pending.networkId(), pending)) {
+                pending.batch().discard();
+                cache.projectionStaleDiscarded++;
+            }
+        }
+    }
+
+    private static void dispatchPreparedProjectionWave(ServerLevel level, LevelTraceCache cache) {
+        int readyBatches = (int) cache.inFlightProjectionBatches.values().stream()
+                .filter(pending -> !pending.allSubmitted())
+                .count();
+        SpotProjectionExecutor.State before = SpotProjectionExecutor.state(level.getServer());
+        int submitted = submitPreparedProjectionWork(level, cache);
+        if (submitted > 0 && SpectralizationConfig.opticalCompilerDebugLog()) {
+            SpotProjectionExecutor.State after = SpotProjectionExecutor.state(level.getServer());
+            SpectralDiagnostics.event(level, "spot_projection", "async_wave_dispatch")
+                    .field("projection_wave_jobs", submitted)
+                    .field("projection_ready_batches", readyBatches)
+                    .field("projection_preparations", cache.projectionPreparations.size())
+                    .field("projection_pending_refreshes", cache.pendingProjectionRefreshes.size())
+                    .field("projection_executor_workers", after.workers())
+                    .field("projection_executor_pool_size", after.poolSize())
+                    .field("projection_executor_active_workers", after.activeWorkers())
+                    .field("projection_executor_max_in_flight", after.maxInFlight())
+                    .field("projection_executor_queue_capacity", after.queueCapacity())
+                    .field("projection_in_flight_before", before.inFlight())
+                    .field("projection_in_flight_after", after.inFlight())
+                    .field("projection_queue_before", before.queueDepth())
+                    .field("projection_queue_after", after.queueDepth())
+                    .field("projection_dispatch_tick", level.getGameTime())
+                    .write();
+        }
+    }
+
+    private static int submitPreparedProjectionWork(ServerLevel level, LevelTraceCache cache) {
+        int submitted = 0;
+        for (PendingProjectionBatch pending : new ArrayList<>(cache.inFlightProjectionBatches.values())) {
+            if (SpotProjectionExecutor.availableSlots(level.getServer()) <= 0) {
+                return submitted;
+            }
+            submitted += submitPreparedProjectionWork(level, cache, pending);
+        }
+        return submitted;
+    }
+
+    private static int submitPreparedProjectionWork(
+            ServerLevel level,
+            LevelTraceCache cache,
+            PendingProjectionBatch pending
+    ) {
+        int submitted = 0;
+        List<SpotProjectionJob> workItems = pending.batch().work();
+        ConcurrentLinkedQueue<AsyncProjectionCompletion> completionQueue = cache.completedProjectionJobs;
+        while (!pending.allSubmitted() && SpotProjectionExecutor.availableSlots(level.getServer()) > 0) {
+            SpotProjectionJob work = workItems.get(pending.submittedWork);
+            if (!SpotProjectionExecutor.submit(level.getServer(), () ->
+                    completionQueue.add(new AsyncProjectionCompletion(pending, work.compute())))) {
+                cache.projectionSubmitRejected++;
+                return submitted;
+            }
+            pending.recordSubmission(
+                    level.getGameTime(),
+                    SpotProjectionExecutor.inFlight(level.getServer()),
+                    SpotProjectionExecutor.queueDepth(level.getServer())
+            );
+            pending.submittedWork++;
+            submitted++;
+        }
+        return submitted;
+    }
+
+    private static void drainCompletedProjectionJobs(
+            ServerLevel level,
+            LevelTraceCache cache,
+            IntSet refreshedNetworkIds,
+            long deadlineNanos
+    ) {
+        cache.beginProjectionCommitTick(level.getGameTime());
+        int commitLimit = projectionWorkerWidth(level);
+        while (!cache.completedProjectionJobs.isEmpty()) {
+            if (!cache.projectionCommitFitsBudget(deadlineNanos, commitLimit)) {
+                cache.noteProjectionCommitBudgetDeferred(level.getGameTime());
+                return;
+            }
+            AsyncProjectionCompletion completion = cache.completedProjectionJobs.poll();
+            if (completion == null) {
+                return;
+            }
+            PendingProjectionBatch pending = completion.pending();
+            if (pending.cacheInstanceToken() != cache.cacheInstanceToken
+                    || cache.inFlightProjectionBatches.get(pending.networkId()) != pending) {
+                continue;
+            }
+            pending.batch().accept(completion.completed());
+            if (!pending.batch().complete()) {
+                continue;
+            }
+            cache.inFlightProjectionBatches.remove(pending.networkId(), pending);
+            int networkId = pending.networkId();
+            CachedOpticalTrace cachedTrace = cache.cachedTracesByNetwork.get(networkId);
+            boolean stale = cachedTrace == null
+                    || cache.projectionGeneration(networkId) != pending.generation()
+                    || !pending.batch().snapshotVersionsMatch(cache::projectionSectionRevision)
+                    || cache.dependencyIndex.isDirty(networkId)
+                    || cache.queuedNetworkIds.contains(networkId);
+            Throwable failure = pending.batch().failure();
+            if (stale || failure != null) {
+                pending.batch().discard();
+                if (stale) {
+                    cache.projectionStaleDiscarded++;
+                }
+                if (cachedTrace != null) {
+                    cache.requeueProjectionRefresh(networkId);
+                }
+                if (failure != null) {
+                    SpectralDiagnostics.event(level, "spot_projection", "async_job_failed")
+                            .field("network_id", networkId)
+                            .field("failure", failure.getClass().getName())
+                            .field("message", String.valueOf(failure.getMessage()))
+                            .write();
+                }
+                continue;
+            }
+            long commitStartNanos = System.nanoTime();
+            long batchCommitStartNanos = commitStartNanos;
+            CompiledSpotLayer.SpotLayer spotLayer = pending.batch().commit("async");
+            long batchCommitNanos = Math.max(0L, System.nanoTime() - batchCommitStartNanos);
+            long diagnosticsNanos = Math.min(batchCommitNanos, pending.batch().commitDiagnosticsNanos());
+            long assemblyNanos = Math.max(0L, batchCommitNanos - diagnosticsNanos);
+            if (spotLayer == null) {
+                cache.projectionStaleDiscarded++;
+                cache.requeueProjectionRefresh(networkId);
+                continue;
+            }
+            ProjectionCommitPhases commitPhases = commitSpotLayer(
+                    level, cache, cachedTrace, spotLayer, assemblyNanos, diagnosticsNanos
+            );
+            long commitNanos = Math.max(0L, System.nanoTime() - commitStartNanos);
+            cache.recordProjectionCommit(commitNanos);
+            cache.lastProjectionCommitByNetwork.put(networkId, new ProjectionCommitTiming(
+                    pending.firstSubmissionTick(),
+                    pending.lastSubmissionTick(),
+                    level.getGameTime(),
+                    pending.maxInFlightAtSubmit(),
+                    pending.maxQueueDepthAtSubmit(),
+                    pending.batch().totalWorkerNanos(),
+                    commitNanos,
+                    commitPhases.assemblyNanos(),
+                    commitPhases.diagnosticsNanos(),
+                    commitPhases.dependencyIndexNanos(),
+                    commitPhases.dependencyIndexReused(),
+                    commitPhases.ownerPublishNanos(),
+                    commitPhases.publishResult().reused()
+            ));
+            cache.projectionBatchesPublished++;
+            logAsyncProjectionBatch(level, cache, pending, commitNanos, commitPhases);
+            refreshedNetworkIds.add(networkId);
+        }
+    }
+
+    private static ProjectionCommitPhases commitSpotLayer(
+            ServerLevel level,
+            LevelTraceCache cache,
+            CachedOpticalTrace cachedTrace,
+            CompiledSpotLayer.SpotLayer spotLayer
+    ) {
+        return commitSpotLayer(level, cache, cachedTrace, spotLayer, 0L, 0L);
+    }
+
+    private static ProjectionCommitPhases commitSpotLayer(
+            ServerLevel level,
+            LevelTraceCache cache,
+            CachedOpticalTrace cachedTrace,
+            CompiledSpotLayer.SpotLayer spotLayer,
+            long assemblyNanos,
+            long diagnosticsNanos
+    ) {
+        int networkId = cachedTrace.networkId();
+        long traceUpdateStartNanos = System.nanoTime();
+        CachedOpticalTrace refreshedTrace = cachedTrace.withSpotLayer(
+                spotLayer.spots(), spotLayer.projectionDependencies(), spotLayer.allocations()
+        );
+        cache.committedSpotLayersByNetwork.put(networkId, spotLayer);
+        cache.cachedTracesByNetwork.put(networkId, refreshedTrace);
+        long traceUpdateNanos = Math.max(0L, System.nanoTime() - traceUpdateStartNanos);
+
+        long dependencyIndexStartNanos = System.nanoTime();
+        boolean dependencyIndexChanged = cache.projectionDependencyIndex.replaceDependencies(
+                networkId, refreshedTrace.projectionDependencies()
+        );
+        cache.projectionDependencyIndex.clearDirty(networkId);
+        long dependencyIndexNanos = Math.max(0L, System.nanoTime() - dependencyIndexStartNanos);
+
+        long ownerPublishStartNanos = System.nanoTime();
+        OpticalSpotTracker.CompiledPublishResult publishResult = publishCompiledSpotLayer(
+                level,
+                networkId,
+                refreshedTrace,
+                refreshedTrace.scalarPowerSolution().reliableForReadout()
+        );
+        long ownerPublishNanos = Math.max(0L, System.nanoTime() - ownerPublishStartNanos);
+        return new ProjectionCommitPhases(
+                assemblyNanos,
+                diagnosticsNanos,
+                traceUpdateNanos,
+                dependencyIndexNanos,
+                !dependencyIndexChanged,
+                ownerPublishNanos,
+                publishResult
+        );
+    }
+
+    private static void logAsyncProjectionBatch(
+            ServerLevel level,
+            LevelTraceCache cache,
+            PendingProjectionBatch pending,
+            long commitNanos,
+            ProjectionCommitPhases commitPhases
+    ) {
+        if (!SpectralizationConfig.opticalCompilerDebugLog()) {
+            return;
+        }
+        long now = System.nanoTime();
+        long firstWorkerStarted = pending.batch().firstWorkerStartedNanos();
+        long queueWaitNanos = firstWorkerStarted <= 0L
+                ? 0L
+                : Math.max(0L, firstWorkerStarted - pending.readyAtNanos());
+        SpotProjectionExecutor.State executorState = SpotProjectionExecutor.state(level.getServer());
+        SpectralDiagnostics.WriteStats logWriteStats = SpectralDiagnostics.writeStats();
+        SpectralDiagnostics.event(level, "spot_projection", "async_batch_commit")
+                .field("network_id", pending.networkId())
+                .field("projection_execution", "async")
+                .field("projection_workers", executorState.workers())
+                .field("projection_workers_configured", SpectralizationConfig.spotProjectionWorkers())
+                .field("projection_batch_jobs", pending.batch().work().size())
+                .field("projection_snapshot_us", pending.batch().snapshotNanos() / 1_000.0D)
+                .field("projection_queue_wait_us", queueWaitNanos / 1_000.0D)
+                .field("projection_worker_us", pending.batch().totalWorkerNanos() / 1_000.0D)
+                .field("projection_commit_us", commitNanos / 1_000.0D)
+                .field("projection_commit_assembly_us", commitPhases.assemblyNanos() / 1_000.0D)
+                .field("projection_commit_diagnostics_us", commitPhases.diagnosticsNanos() / 1_000.0D)
+                .field("projection_commit_trace_update_us", commitPhases.traceUpdateNanos() / 1_000.0D)
+                .field("projection_commit_dependency_index_us", commitPhases.dependencyIndexNanos() / 1_000.0D)
+                .field("projection_commit_dependency_index_reused", commitPhases.dependencyIndexReused())
+                .field("projection_commit_owner_publish_us", commitPhases.ownerPublishNanos() / 1_000.0D)
+                .field("projection_commit_owner_publish_reused", commitPhases.publishResult().reused())
+                .field("projection_publish_input_compare_us",
+                        commitPhases.publishResult().inputCompareNanos() / 1_000.0D)
+                .field("projection_publish_snapshot_build_us",
+                        commitPhases.publishResult().snapshotBuildNanos() / 1_000.0D)
+                .field("projection_publish_signature_us",
+                        commitPhases.publishResult().signatureNanos() / 1_000.0D)
+                .field("projection_publish_equality_us",
+                        commitPhases.publishResult().equalityNanos() / 1_000.0D)
+                .field("projection_publish_send_us", commitPhases.publishResult().sendNanos() / 1_000.0D)
+                .field("projection_commit_estimate_us", cache.projectionCommitEstimateNanos / 1_000.0D)
+                .field("projection_main_thread_budget_us",
+                        SpectralizationConfig.spotProjectionMainThreadBudgetMicros())
+                .field("projection_commit_limit_per_tick",
+                        Math.max(1, executorState.workers()))
+                .field("projection_commits_this_tick", cache.projectionCommitsThisTick)
+                .field("projection_end_to_end_us", Math.max(0L, now - pending.preparedAtNanos()) / 1_000.0D)
+                .field("projection_executor_workers", executorState.workers())
+                .field("projection_executor_active_workers", executorState.activeWorkers())
+                .field("projection_executor_max_in_flight", executorState.maxInFlight())
+                .field("projection_executor_queue_capacity", executorState.queueCapacity())
+                .field("projection_in_flight", executorState.inFlight())
+                .field("projection_queue_depth", executorState.queueDepth())
+                .field("projection_max_in_flight_at_submit", pending.maxInFlightAtSubmit())
+                .field("projection_max_queue_at_submit", pending.maxQueueDepthAtSubmit())
+                .field("projection_first_submit_tick", pending.firstSubmissionTick())
+                .field("projection_last_submit_tick", pending.lastSubmissionTick())
+                .field("projection_commit_tick", level.getGameTime())
+                .field("projection_submit_commit_tick_span", pending.firstSubmissionTick() < 0L
+                        ? 0L : Math.max(0L, level.getGameTime() - pending.firstSubmissionTick()))
+                .field("projection_stale_discarded", cache.projectionStaleDiscarded)
+                .field("projection_jobs_coalesced", cache.projectionJobsCoalesced)
+                .field("projection_submit_rejected", cache.projectionSubmitRejected)
+                .field("projection_commit_budget_deferred", cache.projectionCommitBudgetDeferred)
+                .field("projection_batches_published", cache.projectionBatchesPublished)
+                .field("projection_snapshot_blocks", pending.batch().snapshotBlocks())
+                .field("projection_snapshot_sections", pending.batch().snapshotSections())
+                .field("projection_snapshot_resolved_blocks", pending.batch().snapshotResolvedBlocks())
+                .field("projection_snapshot_reused_blocks", pending.batch().snapshotReusedBlocks())
+                .field("projection_snapshot_cache_sections", cache.projectionSectionSnapshots.size())
+                .field("diagnostic_writes_enqueued", logWriteStats.enqueuedCount())
+                .field("diagnostic_writes_completed", logWriteStats.count())
+                .field("diagnostic_writes_pending", logWriteStats.pendingWrites())
+                .field("diagnostic_writes_max_pending", logWriteStats.maxPendingWrites())
+                .field("diagnostic_writes_dropped", logWriteStats.droppedCount())
+                .field("diagnostic_writes_failed", logWriteStats.failedCount())
+                .write();
+    }
+
+    private static int projectionWorkerWidth(ServerLevel level) {
+        return Math.max(1, SpotProjectionExecutor.state(level.getServer()).workers());
+    }
+
+    private static IntSet processPendingProjectionRefreshesSerial(
+            ServerLevel level,
+            LevelTraceCache cache,
+            long deadlineNanos
+    ) {
+        IntSet refreshedNetworkIds = new IntOpenHashSet();
+        int maxRefreshes = SpectralizationConfig.opticalSolverMaxRequestsPerTick();
+        while (cache.hasPendingProjectionRefreshes() && refreshedNetworkIds.size() < maxRefreshes) {
+            if (!refreshedNetworkIds.isEmpty() && System.nanoTime() >= deadlineNanos) {
+                break;
+            }
+            Integer networkId = cache.pollPendingProjectionRefreshNetworkId();
+            if (networkId == null) {
+                break;
+            }
+            if (cache.dependencyIndex.isDirty(networkId) || cache.queuedNetworkIds.contains(networkId)) {
+                continue;
+            }
+            CachedOpticalTrace cachedTrace = cache.cachedTracesByNetwork.get(networkId);
+            if (cachedTrace == null) {
+                cache.projectionDependencyIndex.removeNetwork(networkId);
+                continue;
+            }
             CachedOpticalTrace refreshedTrace = refreshSpotProjection(level, cachedTrace);
             cache.cachedTracesByNetwork.put(networkId, refreshedTrace);
+            cache.committedSpotLayersByNetwork.put(
+                    networkId,
+                    new CompiledSpotLayer.SpotLayer(
+                            refreshedTrace.spotRecords(),
+                            refreshedTrace.projectionDependencies(),
+                            refreshedTrace.spotAllocations()
+                    )
+            );
             cache.projectionDependencyIndex.replaceDependencies(networkId, refreshedTrace.projectionDependencies());
             cache.projectionDependencyIndex.clearDirty(networkId);
             publishCompiledSpotLayer(
-                    level,
-                    networkId,
-                    refreshedTrace,
-                    refreshedTrace.scalarPowerSolution().reliableForReadout()
+                    level, networkId, refreshedTrace, refreshedTrace.scalarPowerSolution().reliableForReadout()
             );
             refreshedNetworkIds.add(networkId);
         }
-
         return refreshedNetworkIds;
     }
 
@@ -1163,17 +2048,17 @@ public final class OpticalTraceCache {
         return system != null && system.usableForGameplay() && system.solution().reliableForReadout();
     }
 
-    private static void publishCompiledSpotLayer(
+    private static OpticalSpotTracker.CompiledPublishResult publishCompiledSpotLayer(
             Level level,
             int networkId,
             CachedOpticalTrace cachedTrace,
             boolean reliable
     ) {
         if (!(level instanceof ServerLevel serverLevel) || cachedTrace == null) {
-            return;
+            return OpticalSpotTracker.CompiledPublishResult.noop();
         }
 
-        OpticalSpotTracker.publishCompiledSpots(
+        return OpticalSpotTracker.publishCompiledSpots(
                 serverLevel,
                 networkId,
                 reliable ? cachedTrace.spotRecords() : List.of(),
@@ -1525,6 +2410,7 @@ public final class OpticalTraceCache {
     private static CachedOpticalTrace buildCachedTrace(
             ServerLevel level,
             TraceRequest request,
+            CompiledSpotLayer.SpotLayer committedSpotLayer,
             CompiledOpticalTrace trace,
             CompiledPortGraph portGraph,
             CompiledReadoutLayer readoutLayer,
@@ -1550,16 +2436,21 @@ public final class OpticalTraceCache {
         }
 
         addGraphDependencies(portGraph, dependencies);
-        CompiledSpotLayer.SpotLayer spotLayer = scalarPowerSolution.reliableForReadout()
-                ? CompiledSpotLayer.sample(
-                        level,
-                        request.networkId(),
-                        portGraph,
-                        scalarPowerSolution,
-                        request.sourceOutput(),
-                        readoutLayer.beamProfileLayer()
-                )
-                : CompiledSpotLayer.EMPTY;
+        CompiledSpotLayer.SpotLayer spotLayer;
+        if (!scalarPowerSolution.reliableForReadout()) {
+            spotLayer = CompiledSpotLayer.EMPTY;
+        } else if (SpectralizationConfig.spotProjectionParallelEnabled()) {
+            spotLayer = committedSpotLayer;
+        } else {
+            spotLayer = CompiledSpotLayer.sample(
+                    level,
+                    request.networkId(),
+                    portGraph,
+                    scalarPowerSolution,
+                    request.sourceOutput(),
+                    readoutLayer.beamProfileLayer()
+            );
+        }
 
         return new CachedOpticalTrace(
                 request.networkId(),
@@ -3129,11 +4020,146 @@ public final class OpticalTraceCache {
         }
     }
 
+    private static final class PendingProjectionBatch {
+        private final long cacheInstanceToken;
+        private final long generation;
+        private final int networkId;
+        private final long preparedAtNanos;
+        private final long readyAtNanos;
+        private final long readyAtTick;
+        private final CompiledSpotLayer.PreparedSpotBatch batch;
+        private int submittedWork;
+        private long firstSubmissionTick = -1L;
+        private long lastSubmissionTick = -1L;
+        private int maxInFlightAtSubmit;
+        private int maxQueueDepthAtSubmit;
+
+        private PendingProjectionBatch(
+                long cacheInstanceToken,
+                long generation,
+                int networkId,
+                long preparedAtNanos,
+                long readyAtNanos,
+                long readyAtTick,
+                CompiledSpotLayer.PreparedSpotBatch batch
+        ) {
+            this.cacheInstanceToken = cacheInstanceToken;
+            this.generation = generation;
+            this.networkId = networkId;
+            this.preparedAtNanos = preparedAtNanos;
+            this.readyAtNanos = readyAtNanos;
+            this.readyAtTick = readyAtTick;
+            this.batch = batch;
+        }
+
+        private long cacheInstanceToken() {
+            return cacheInstanceToken;
+        }
+
+        private long generation() {
+            return generation;
+        }
+
+        private int networkId() {
+            return networkId;
+        }
+
+        private long preparedAtNanos() {
+            return preparedAtNanos;
+        }
+
+        private long readyAtNanos() {
+            return readyAtNanos;
+        }
+
+        private long readyAtTick() {
+            return readyAtTick;
+        }
+
+        private CompiledSpotLayer.PreparedSpotBatch batch() {
+            return batch;
+        }
+
+        private boolean allSubmitted() {
+            return submittedWork >= batch.work().size();
+        }
+
+        private void recordSubmission(long tick, int inFlight, int queueDepth) {
+            if (firstSubmissionTick < 0L) {
+                firstSubmissionTick = tick;
+            }
+            lastSubmissionTick = tick;
+            maxInFlightAtSubmit = Math.max(maxInFlightAtSubmit, inFlight);
+            maxQueueDepthAtSubmit = Math.max(maxQueueDepthAtSubmit, queueDepth);
+        }
+
+        private long firstSubmissionTick() {
+            return firstSubmissionTick;
+        }
+
+        private long lastSubmissionTick() {
+            return lastSubmissionTick;
+        }
+
+        private int maxInFlightAtSubmit() {
+            return maxInFlightAtSubmit;
+        }
+
+        private int maxQueueDepthAtSubmit() {
+            return maxQueueDepthAtSubmit;
+        }
+    }
+
+    private record AsyncProjectionCompletion(
+            PendingProjectionBatch pending,
+            SpotProjectionJobResult completed
+    ) {
+    }
+
+    private record PendingProjectionPreparation(
+            long cacheInstanceToken,
+            long generation,
+            int networkId,
+            long startedAtNanos,
+            CompiledSpotLayer.ProjectionBatchPreparation preparation
+    ) {
+    }
+
+    private record ProjectionCommitTiming(
+            long firstSubmitTick,
+            long lastSubmitTick,
+            long commitTick,
+            int maxInFlight,
+            int maxQueueDepth,
+            long workerNanos,
+            long commitNanos,
+            long assemblyNanos,
+            long diagnosticsNanos,
+            long dependencyIndexNanos,
+            boolean dependencyIndexReused,
+            long ownerPublishNanos,
+            boolean ownerPublishReused
+    ) {
+    }
+
+    private record ProjectionCommitPhases(
+            long assemblyNanos,
+            long diagnosticsNanos,
+            long traceUpdateNanos,
+            long dependencyIndexNanos,
+            boolean dependencyIndexReused,
+            long ownerPublishNanos,
+            OpticalSpotTracker.CompiledPublishResult publishResult
+    ) {
+    }
+
     private static final class LevelTraceCache {
+        private final long cacheInstanceToken = NEXT_CACHE_INSTANCE_TOKEN.incrementAndGet();
         private final OpticalDependencyIndex dependencyIndex = new OpticalDependencyIndex();
         private final OpticalDependencyIndex projectionDependencyIndex = new OpticalDependencyIndex();
         private final Map<SourceTraceKey, Integer> networkIdsBySource = new HashMap<>();
         private final Map<Integer, CachedOpticalTrace> cachedTracesByNetwork = new HashMap<>();
+        private final Map<Integer, CompiledSpotLayer.SpotLayer> committedSpotLayersByNetwork = new HashMap<>();
         private final Map<Integer, CachedOpticalSystem> cachedSystemsBySystem = new HashMap<>();
         private final Map<Integer, CachedOpticalSystem> lastUsableSystemsBySystem = new HashMap<>();
         private final Map<Integer, List<ReceiverOutput>> lastReliableReceiverOutputsBySystem = new HashMap<>();
@@ -3175,6 +4201,18 @@ public final class OpticalTraceCache {
         private final IntSet queuedSystemRebuildNetworkIds = new IntOpenHashSet();
         private final ArrayDeque<Integer> pendingProjectionRefreshes = new ArrayDeque<>();
         private final IntSet queuedProjectionRefreshNetworkIds = new IntOpenHashSet();
+        private final Map<Integer, Long> projectionGenerationByNetwork = new HashMap<>();
+        private final Long2LongOpenHashMap projectionSectionRevisions = new Long2LongOpenHashMap();
+        private final Long2LongOpenHashMap projectionChunkRevisionSeenBySection =
+                new Long2LongOpenHashMap();
+        private final Long2LongOpenHashMap projectionChunkRevisions = new Long2LongOpenHashMap();
+        private final Map<Integer, PendingProjectionBatch> inFlightProjectionBatches = new LinkedHashMap<>();
+        private final Map<Integer, PendingProjectionPreparation> projectionPreparations = new LinkedHashMap<>();
+        private final ProjectionSectionSnapshotCache projectionSectionSnapshots =
+                new ProjectionSectionSnapshotCache();
+        private final Map<Integer, ProjectionCommitTiming> lastProjectionCommitByNetwork = new HashMap<>();
+        private final ConcurrentLinkedQueue<AsyncProjectionCompletion> completedProjectionJobs =
+                new ConcurrentLinkedQueue<>();
         private final IntSet appliedSystemIdsThisTick = new IntOpenHashSet();
         private final Set<ReadoutSignature> appliedHeldReadoutsThisTick = new HashSet<>();
         private int nextNetworkId = 1;
@@ -3185,8 +4223,59 @@ public final class OpticalTraceCache {
         private long systemApplyTick = Long.MIN_VALUE;
         private long lastDirectWorkTick = Long.MIN_VALUE;
         private long nextReadoutStep = 1L;
+        private long nextProjectionSectionRevision = 1L;
         private int dormantSourceWakeCursor = 0;
         private boolean lastSystemRebuildCacheHit = false;
+        private long projectionStaleDiscarded;
+        private long projectionJobsCoalesced;
+        private long projectionSubmitRejected;
+        private long projectionBatchesPublished;
+        private long projectionCommitBudgetTick = Long.MIN_VALUE;
+        private int projectionCommitsThisTick;
+        private long projectionCommitEstimateNanos = INITIAL_PROJECTION_COMMIT_ESTIMATE_NANOS;
+        private long projectionCommitBudgetDeferred;
+        private long lastProjectionCommitBudgetDeferredTick = Long.MIN_VALUE;
+
+        void beginProjectionCommitTick(long gameTime) {
+            if (projectionCommitBudgetTick == gameTime) {
+                return;
+            }
+            projectionCommitBudgetTick = gameTime;
+            projectionCommitsThisTick = 0;
+        }
+
+        boolean projectionCommitFitsBudget(long deadlineNanos, int maxCommitsThisTick) {
+            if (projectionCommitsThisTick >= Math.max(1, maxCommitsThisTick)) {
+                return false;
+            }
+            long now = System.nanoTime();
+            if (projectionCommitsThisTick == 0) {
+                return now < deadlineNanos;
+            }
+            return projectionCommitEstimateNanos < deadlineNanos - now;
+        }
+
+        void recordProjectionCommit(long commitNanos) {
+            projectionCommitsThisTick++;
+            long clamped = Math.max(
+                    MIN_PROJECTION_COMMIT_ESTIMATE_NANOS,
+                    Math.min(MAX_PROJECTION_COMMIT_ESTIMATE_NANOS, commitNanos)
+            );
+            projectionCommitEstimateNanos = Math.max(
+                    MIN_PROJECTION_COMMIT_ESTIMATE_NANOS,
+                    Math.min(
+                            MAX_PROJECTION_COMMIT_ESTIMATE_NANOS,
+                            (projectionCommitEstimateNanos * 3L + clamped) / 4L
+                    )
+            );
+        }
+
+        void noteProjectionCommitBudgetDeferred(long gameTime) {
+            if (lastProjectionCommitBudgetDeferredTick != gameTime) {
+                projectionCommitBudgetDeferred++;
+                lastProjectionCommitBudgetDeferredTick = gameTime;
+            }
+        }
 
         int networkIdFor(SourceTraceKey key) {
             return networkIdsBySource.computeIfAbsent(key, ignored -> nextNetworkId++);
@@ -3228,9 +4317,33 @@ public final class OpticalTraceCache {
         }
 
         void enqueueProjectionRefresh(int networkId) {
+            projectionGenerationByNetwork.merge(networkId, 1L, Long::sum);
+            if (queuedProjectionRefreshNetworkIds.add(networkId)) {
+                pendingProjectionRefreshes.addLast(networkId);
+            } else {
+                projectionJobsCoalesced++;
+            }
+        }
+
+        void requeueProjectionRefresh(int networkId) {
             if (queuedProjectionRefreshNetworkIds.add(networkId)) {
                 pendingProjectionRefreshes.addLast(networkId);
             }
+        }
+
+        long projectionGeneration(int networkId) {
+            return projectionGenerationByNetwork.getOrDefault(networkId, 0L);
+        }
+
+        long projectionSectionRevision(long sectionKey) {
+            long chunkRevision = projectionChunkRevisions.get(
+                    ChunkPos.asLong(SectionPos.x(sectionKey), SectionPos.z(sectionKey))
+            );
+            if (projectionChunkRevisionSeenBySection.get(sectionKey) != chunkRevision) {
+                projectionChunkRevisionSeenBySection.put(sectionKey, chunkRevision);
+                projectionSectionRevisions.put(sectionKey, nextProjectionSectionRevision++);
+            }
+            return projectionSectionRevisions.get(sectionKey);
         }
 
         void enqueueKnownSourceRefresh(ServerLevel level, int networkId, long gameTime, boolean priority) {
@@ -3275,6 +4388,7 @@ public final class OpticalTraceCache {
         }
 
         void unregisterDirectSourceForNetwork(int networkId) {
+            projectionGenerationByNetwork.merge(networkId, 1L, Long::sum);
             directSourcesByKey.entrySet().removeIf(entry -> entry.getValue().networkId() == networkId);
             IntSet networkIds = new IntOpenHashSet();
             networkIds.add(networkId);
@@ -3282,11 +4396,20 @@ public final class OpticalTraceCache {
             queuedSystemRebuildNetworkIds.remove(networkId);
             pendingSystemRebuilds.removeIf(queuedNetworkId -> queuedNetworkId == networkId);
             cachedTracesByNetwork.remove(networkId);
+            committedSpotLayersByNetwork.remove(networkId);
             geometrySignaturePositionsByNetwork.remove(networkId);
             dependencyIndex.removeNetwork(networkId);
             projectionDependencyIndex.removeNetwork(networkId);
             queuedProjectionRefreshNetworkIds.remove(networkId);
             pendingProjectionRefreshes.removeIf(queuedNetworkId -> queuedNetworkId == networkId);
+            PendingProjectionBatch abandoned = inFlightProjectionBatches.remove(networkId);
+            if (abandoned != null) {
+                abandoned.batch().discard();
+            }
+            PendingProjectionPreparation abandonedPreparation = projectionPreparations.remove(networkId);
+            if (abandonedPreparation != null) {
+                abandonedPreparation.preparation().discard();
+            }
             retiredHudOwnerIds.add(networkId);
             retiredSpotOwnerIds.add(networkId);
             lastHudOverlaySentByNetwork.remove(networkId);
@@ -3657,6 +4780,7 @@ public final class OpticalTraceCache {
         }
 
         private boolean markProjectionChanged(ServerLevel level, BlockPos pos) {
+            markProjectionSectionRevision(pos);
             IntSet affectedNetworkIds = projectionDependencyIndex.markChangedAndGet(pos);
 
             if (affectedNetworkIds.isEmpty()) {
@@ -3680,6 +4804,17 @@ public final class OpticalTraceCache {
             }
 
             return true;
+        }
+
+        private void markProjectionSectionRevision(BlockPos pos) {
+            LongSet changedSections = new LongOpenHashSet();
+            changedSections.add(SectionPos.asLong(pos));
+            for (Direction direction : Direction.values()) {
+                changedSections.add(SectionPos.asLong(pos.relative(direction)));
+            }
+            for (long sectionKey : changedSections) {
+                projectionSectionRevisions.put(sectionKey, nextProjectionSectionRevision++);
+            }
         }
 
         void invalidateTopologyCompilationCaches() {

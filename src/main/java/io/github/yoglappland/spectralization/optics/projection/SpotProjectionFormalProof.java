@@ -138,6 +138,7 @@ public final class SpotProjectionFormalProof {
         int polygonSweepChecks = 0;
         int analyticSideTravelChecks = 0;
         int remainingBoundedScanChecks = 0;
+        int snapshotCaptureChecks = 0;
         try {
             canonicalRegionChecks = VoxelSpotProjector.verifyCanonicalRegionSubtractSweep();
         } catch (RuntimeException exception) {
@@ -168,6 +169,13 @@ public final class SpotProjectionFormalProof {
         } catch (RuntimeException exception) {
             failures.add(exception.getMessage());
         }
+        try {
+            snapshotCaptureChecks = VoxelSpotProjector.verifySnapshotCaptureBounds();
+            snapshotCaptureChecks += ProjectionSectionSnapshot.verifyAddressing();
+            snapshotCaptureChecks += ProjectionSectionSnapshotCache.verifyCopyOnWrite();
+        } catch (RuntimeException exception) {
+            failures.add(exception.getMessage());
+        }
 
         if (rawNegativePatches == 0) {
             failures.add("formal proof did not exercise any negative-winding side patch.");
@@ -189,6 +197,10 @@ public final class SpotProjectionFormalProof {
             failures.add("formal proof did not exercise remaining-bounded tile scans.");
         }
 
+        if (snapshotCaptureChecks == 0) {
+            failures.add("formal proof did not exercise eager snapshot capture bounds.");
+        }
+
         return new ProofResult(
                 checkedPatches,
                 rawNegativePatches,
@@ -200,6 +212,7 @@ public final class SpotProjectionFormalProof {
                 polygonSweepChecks,
                 analyticSideTravelChecks,
                 remainingBoundedScanChecks,
+                snapshotCaptureChecks,
                 Map.copyOf(patchCounts),
                 failures
         );
@@ -243,6 +256,34 @@ public final class SpotProjectionFormalProof {
         }
         checked += remaining.cellCount();
 
+        Random hullWorkspaceRandom = new Random(0xC0B01D5EEDL);
+        CanonicalPolygonOps.ConvexHullWorkspace reusedHullWorkspace =
+                new CanonicalPolygonOps.ConvexHullWorkspace();
+        for (int iteration = 0; iteration < 4096; iteration++) {
+            List<CanonicalPolygonOps.Point> hullPoints = reusedHullWorkspace.resetInput();
+            double minU = -0.8D + hullWorkspaceRandom.nextDouble() * 1.6D;
+            double minV = -0.8D + hullWorkspaceRandom.nextDouble() * 1.6D;
+            double maxU = minU + 0.02D + hullWorkspaceRandom.nextDouble() * 0.8D;
+            double maxV = minV + 0.02D + hullWorkspaceRandom.nextDouble() * 0.8D;
+            double scale0 = 0.25D + hullWorkspaceRandom.nextDouble() * 1.75D;
+            addScaledRectangle(hullPoints, minU, minV, maxU, maxV, scale0);
+            if (hullWorkspaceRandom.nextBoolean()) {
+                double scale1 = 0.25D + hullWorkspaceRandom.nextDouble() * 1.75D;
+                addScaledRectangle(hullPoints, minU, minV, maxU, maxV, scale1);
+            }
+            CanonicalPolygonOps.Polygon legacyHull = CanonicalPolygonOps.clippedConvexHull(hullPoints);
+            CanonicalPolygonOps.Polygon reusedHull = CanonicalPolygonOps.clippedConvexHull(
+                    hullPoints,
+                    reusedHullWorkspace
+            );
+            if (legacyHull == null ? reusedHull != null : !legacyHull.equals(reusedHull)) {
+                throw new IllegalStateException(
+                        "reused convex-hull workspace changed clipped sweep output at iteration " + iteration
+                );
+            }
+            checked++;
+        }
+
         List<CanonicalPolygonOps.Polygon> indexedCells = new ArrayList<>();
         for (int v = 0; v < 4; v++) {
             for (int u = 0; u < 4; u++) {
@@ -284,7 +325,9 @@ public final class SpotProjectionFormalProof {
             double maxU = Math.min(1.0D, minU + 0.03D + batchRandom.nextDouble() * 0.25D);
             double maxV = Math.min(1.0D, minV + 0.03D + batchRandom.nextDouble() * 0.25D);
             batchRectangles.add(new CanonicalPolygonOps.Bounds(minU, minV, maxU, maxV));
-            scalarBatchReference.add(indexedRegion.intersectRectangleDetailed(minU, minV, maxU, maxV).polygons());
+            CanonicalPolygonOps.Polygon rectanglePolygon =
+                    CanonicalPolygonOps.rectangle(minU, minV, maxU, maxV);
+            scalarBatchReference.add(indexedRegion.intersectDetailed(rectanglePolygon).polygons());
         }
         CanonicalPolygonOps.BatchIntersectionResult batchResult =
                 indexedRegion.intersectRectanglesDetailed(batchRectangles);
@@ -323,6 +366,61 @@ public final class SpotProjectionFormalProof {
                 throw new IllegalStateException("reused polygon query workspace changed intersection membership");
             }
             checked += 2;
+        }
+
+        Random rectangleWorkspaceRandom = new Random(0x5EC7A11EL);
+        CanonicalPolygonOps.PolygonWorkspace rectangleWorkspace =
+                new CanonicalPolygonOps.PolygonWorkspace();
+        for (int iteration = 0; iteration < 4096; iteration++) {
+            List<CanonicalPolygonOps.Point> subjectPoints = new ArrayList<>();
+            double subjectMinU = -0.25D + rectangleWorkspaceRandom.nextDouble() * 1.1D;
+            double subjectMinV = -0.25D + rectangleWorkspaceRandom.nextDouble() * 1.1D;
+            double subjectMaxU = subjectMinU + 0.08D + rectangleWorkspaceRandom.nextDouble() * 0.65D;
+            double subjectMaxV = subjectMinV + 0.08D + rectangleWorkspaceRandom.nextDouble() * 0.65D;
+            addScaledRectangle(
+                    subjectPoints,
+                    subjectMinU,
+                    subjectMinV,
+                    subjectMaxU,
+                    subjectMaxV,
+                    0.65D + rectangleWorkspaceRandom.nextDouble() * 0.35D
+            );
+            addScaledRectangle(
+                    subjectPoints,
+                    subjectMinU,
+                    subjectMinV,
+                    subjectMaxU,
+                    subjectMaxV,
+                    1.0D + rectangleWorkspaceRandom.nextDouble() * 0.45D
+            );
+            CanonicalPolygonOps.Polygon subject =
+                    CanonicalPolygonOps.clippedConvexHull(subjectPoints);
+            if (subject == null) {
+                continue;
+            }
+
+            double minU = rectangleWorkspaceRandom.nextDouble() * 0.9D;
+            double minV = rectangleWorkspaceRandom.nextDouble() * 0.9D;
+            double maxU = Math.min(1.0D, minU + 0.02D + rectangleWorkspaceRandom.nextDouble() * 0.4D);
+            double maxV = Math.min(1.0D, minV + 0.02D + rectangleWorkspaceRandom.nextDouble() * 0.4D);
+            CanonicalPolygonOps.Polygon clip =
+                    CanonicalPolygonOps.rectangle(minU, minV, maxU, maxV);
+            CanonicalPolygonOps.Polygon generic =
+                    CanonicalPolygonOps.intersection(subject, clip);
+            CanonicalPolygonOps.Polygon optimized = CanonicalPolygonOps.intersectionRectangle(
+                    subject,
+                    minU,
+                    minV,
+                    maxU,
+                    maxV,
+                    rectangleWorkspace
+            );
+            if (generic == null ? optimized != null : !generic.equals(optimized)) {
+                throw new IllegalStateException(
+                        "final-only rectangle clipping changed exact polygon output at iteration " + iteration
+                );
+            }
+            checked++;
         }
 
         Random workspaceRandom = new Random(0xA110CA7EL);
@@ -1120,6 +1218,7 @@ public final class SpotProjectionFormalProof {
             int polygonSweepChecks,
             int analyticSideTravelChecks,
             int remainingBoundedScanChecks,
+            int snapshotCaptureChecks,
             Map<Direction, Integer> patchCounts,
             List<String> failures
     ) {
@@ -1131,7 +1230,7 @@ public final class SpotProjectionFormalProof {
         String format() {
             return String.format(
                     Locale.ROOT,
-                    "spot_projection_formal_proof checked=%d negative_winding=%d clipped_geometry=%d front_order=%d canonical_region=%d same_depth_index=%d cuboid_sweep=%d polygon_sweep=%d analytic_side_travel=%d remaining_scan=%d counts=%s",
+                    "spot_projection_formal_proof checked=%d negative_winding=%d clipped_geometry=%d front_order=%d canonical_region=%d same_depth_index=%d cuboid_sweep=%d polygon_sweep=%d analytic_side_travel=%d remaining_scan=%d snapshot_capture=%d counts=%s",
                     checkedPatches,
                     rawNegativePatches,
                     clippedGeometryChecks,
@@ -1142,6 +1241,7 @@ public final class SpotProjectionFormalProof {
                     polygonSweepChecks,
                     analyticSideTravelChecks,
                     remainingBoundedScanChecks,
+                    snapshotCaptureChecks,
                     patchCounts
             );
         }

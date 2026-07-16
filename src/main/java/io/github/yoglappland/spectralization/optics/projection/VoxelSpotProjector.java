@@ -1,14 +1,9 @@
 package io.github.yoglappland.spectralization.optics.projection;
 
-import io.github.yoglappland.spectralization.block.LensHolderBlock;
-import io.github.yoglappland.spectralization.blockentity.LensHolderBlockEntity;
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
-import io.github.yoglappland.spectralization.optics.OpticalElement;
 import io.github.yoglappland.spectralization.optics.BeamEnvelope;
 import io.github.yoglappland.spectralization.optics.BeamModel;
 import io.github.yoglappland.spectralization.optics.BeamPacket;
-import io.github.yoglappland.spectralization.optics.OpticalMaterialProfiles;
-import io.github.yoglappland.spectralization.optics.OpticalSource;
 import io.github.yoglappland.spectralization.optics.OpticalSpotTracker;
 import io.github.yoglappland.spectralization.optics.SpotRecord;
 import io.github.yoglappland.spectralization.optics.geometry.BeamGeometryOps;
@@ -27,17 +22,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.FenceBlock;
-import net.minecraft.world.level.block.SlabBlock;
-import net.minecraft.world.level.block.StairBlock;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.shapes.VoxelShape;
 
 public final class VoxelSpotProjector {
     private static final double MIN_FRAGMENT_POWER = 0.0D;
@@ -51,15 +39,13 @@ public final class VoxelSpotProjector {
     private static final double CONE_SIDE_EPSILON = 1.0E-8D;
     private static final double VISUAL_DISTANCE_FADE_LINEAR = 0.08D;
     private static final double VISUAL_DISTANCE_FADE_QUADRATIC = 0.004D;
-    private static final int MAX_PROJECTED_DEPTH = 32;
+    static final int MAX_PROJECTED_DEPTH = 32;
+    static final int SNAPSHOT_HALO_TILES = 2;
     private static final int MAX_SIDE_BOUNDARY_MISSING_EXAMPLES = 8;
     private static final int MAX_STRUCTURAL_VALIDATION_EXAMPLES = 8;
     private static final int SIDE_OCCLUSION_INDEX_BINS = 8;
     private static final int MIN_BULK_REMAINING_BLOCKERS = 8;
     private static final CanonicalRect FULL_FOOTPRINT = new CanonicalRect(0.0D, 0.0D, 1.0D, 1.0D);
-    private static final List<OpticalCollisionBox> FULL_OPTICAL_BOXES = List.of(OpticalCollisionBox.full());
-    private static final Map<ModelShapeFrameKey, List<OpticalCollisionBox>> MODEL_SHAPE_BOX_CACHE =
-            new ConcurrentHashMap<>();
     private static volatile boolean debugFaceCentersEnabled = false;
     private static volatile ValidationTarget targetedValidation;
 
@@ -139,6 +125,58 @@ public final class VoxelSpotProjector {
             SpotProjectionResult cachedGeometry,
             int earliestInvalidatedDepth
     ) {
+        boolean validationEnabled = validationEnabledFor(level, sourcePos, travelDirection);
+        SpotProjectionResult liveResult = projectLightConeSpots(
+                new LiveProjectionWorldView(level),
+                sourcePos,
+                sourceFace,
+                travelDirection,
+                profileTemplate,
+                beamPower,
+                coherentBeamPower,
+                cachedGeometry,
+                earliestInvalidatedDepth,
+                validationEnabled
+        );
+        if (!validationEnabled) {
+            return liveResult;
+        }
+        ProjectionWorldSnapshot snapshot = ProjectionWorldSnapshot.capture(
+                level, sourcePos, travelDirection, profileTemplate.envelope()
+        );
+        SpotProjectionResult snapshotResult = projectLightConeSpots(
+                snapshot,
+                sourcePos,
+                sourceFace,
+                travelDirection,
+                profileTemplate,
+                beamPower,
+                coherentBeamPower,
+                cachedGeometry,
+                earliestInvalidatedDepth,
+                true
+        );
+        if (!liveResult.sameProjectionState(snapshotResult)) {
+            throw new IllegalStateException(
+                    "Live and immutable-snapshot spot projection results diverged at "
+                            + sourcePos.toShortString() + " direction=" + travelDirection
+            );
+        }
+        return liveResult;
+    }
+
+    public static SpotProjectionResult projectLightConeSpots(
+            ProjectionWorldView world,
+            BlockPos sourcePos,
+            Direction sourceFace,
+            Direction travelDirection,
+            BeamPacket profileTemplate,
+            double beamPower,
+            double coherentBeamPower,
+            SpotProjectionResult cachedGeometry,
+            int earliestInvalidatedDepth,
+            boolean collectAllocations
+    ) {
         if (travelDirection.getAxis() != sourceFace.getAxis()) {
             throw new IllegalArgumentException("Spot projection travel direction must be normal to the source face");
         }
@@ -178,7 +216,6 @@ public final class VoxelSpotProjector {
                 ? Math.max(0L, System.nanoTime() - snapshotRestoreStartNanos)
                 : 0L;
         BeamPacket projectionTemplate = profileTemplate;
-        boolean collectAllocations = validationEnabledFor(level, sourcePos, travelDirection);
         ProjectionStatsBuilder stats = new ProjectionStatsBuilder(collectAllocations);
         List<OcclusionWindow> occupiedDebugWindows = collectAllocations ? new ArrayList<>() : List.of();
         BeamGeometryOps.RadiusPropagation sourceRadiusPropagation =
@@ -249,9 +286,11 @@ public final class VoxelSpotProjector {
             List<CuboidSweep> cuboidSweepsAtDepth = new ArrayList<>();
             List<OcclusionWindow> frontBlockersAtDepth = new ArrayList<>();
             List<FrontFaceCandidate> frontCandidatesAtDepth = new ArrayList<>();
-            ArrayList<CanonicalPolygonOps.Point> sweepPointWorkspace = new ArrayList<>(8);
+            CanonicalPolygonOps.ConvexHullWorkspace sweepHullWorkspace =
+                    new CanonicalPolygonOps.ConvexHullWorkspace();
             CanonicalPolygonOps.QueryWorkspace sweepPrefilterWorkspace =
                     new CanonicalPolygonOps.QueryWorkspace();
+            CanonicalRect remainingBoundsAtDepth = remainingRayWindows.bounds();
             List<DepthCuboidProbe> cuboidProbesAtDepth = collectAllocations ? new ArrayList<>() : List.of();
             BlockPos depthOrigin = sourcePos.relative(travelDirection, depth);
             SideScanTileBounds sideTileBounds = remainingBoundedScanTileBounds(
@@ -302,12 +341,12 @@ public final class VoxelSpotProjector {
                     depthDependencies.add(targetPos.asLong());
 
                     long blockLookupStartNanos = stats.startTimer();
-                    boolean loaded = level.isLoaded(targetPos);
-                    BlockState targetState = loaded ? level.getBlockState(targetPos) : null;
+                    ProjectionBlockFacts targetFacts = world.blockFacts(targetPos);
+                    boolean loaded = targetFacts.loaded();
                     stats.addBlockLookupNanos(blockLookupStartNanos);
 
                     if (!loaded) {
-                        depthTileCache.put(new DepthTile(du, dv, targetPos, false, null, false, List.of()));
+                        depthTileCache.put(new DepthTile(du, dv, targetPos, targetFacts, List.of()));
                         continue;
                     }
 
@@ -315,11 +354,11 @@ public final class VoxelSpotProjector {
                         stats.loadedTiles++;
                     }
 
-                    if (OpticalMaterialProfiles.isAirLike(targetState)) {
+                    if (targetFacts.airLike()) {
                         if (frontCandidateTile) {
                             stats.airTiles++;
                         }
-                        depthTileCache.put(new DepthTile(du, dv, targetPos, true, targetState, true, List.of()));
+                        depthTileCache.put(new DepthTile(du, dv, targetPos, targetFacts, List.of()));
                         if (inSideBounds) {
                             stats.sideLoadedTiles++;
                         }
@@ -328,16 +367,14 @@ public final class VoxelSpotProjector {
 
                     long projectableStartNanos = stats.startTimer();
                     List<OpticalCollisionBox> opticalBoxes = opticalCollisionBoxes(
-                            level,
-                            targetPos,
-                            targetState,
+                            targetFacts,
                             travelDirection,
                             uDirection,
                             vDirection
                     );
                     boolean projectableSurface = !opticalBoxes.isEmpty();
                     stats.addProjectableCheckNanos(projectableStartNanos);
-                    DepthTile depthTile = new DepthTile(du, dv, targetPos, true, targetState, false, opticalBoxes);
+                    DepthTile depthTile = new DepthTile(du, dv, targetPos, targetFacts, opticalBoxes);
                     depthTileCache.put(depthTile);
 
                     if (inSideBounds) {
@@ -396,8 +433,9 @@ public final class VoxelSpotProjector {
                                 boxIndex,
                                 opticalBox,
                                 remainingRayWindows,
+                                remainingBoundsAtDepth,
                                 stats,
-                                sweepPointWorkspace,
+                                sweepHullWorkspace,
                                 sweepPrefilterWorkspace
                         );
                         stats.addPlaneWindowNanos(planeStartNanos);
@@ -443,7 +481,7 @@ public final class VoxelSpotProjector {
 
             long frontPassStartNanos = stats.startTimer();
             FrontSweepProgress frontSweepProgress = emitDepthFrontFaces(
-                    level,
+                    world,
                     depth,
                     displayFace,
                     travelDirection,
@@ -455,6 +493,7 @@ public final class VoxelSpotProjector {
                     remainingRayWindows,
                     occupiedDebugWindows,
                     cuboidSweepsAtDepth,
+                    sweepHullWorkspace,
                     frontCandidatesAtDepth,
                     collectAllocations,
                     stats,
@@ -468,7 +507,7 @@ public final class VoxelSpotProjector {
 
                 long sideStartNanos = stats.startTimer();
                 addIndependentSideQuads(
-                        level,
+                        world,
                         depthOrigin,
                         depth,
                         travelDirection,
@@ -519,7 +558,8 @@ public final class VoxelSpotProjector {
                         cuboidSweepsAtDepth,
                         frontSweepProgress.appliedThroughTravel(),
                         Double.POSITIVE_INFINITY,
-                        "sweep_remaining_tail"
+                        "sweep_remaining_tail",
+                        sweepHullWorkspace
                 );
                 remainingRayWindows = frontSweepProgress.remainingAfterFrontPrefixes();
                 remainingRayWindows.subtractUnion(trailingSweepSegments, stats, depth);
@@ -836,7 +876,7 @@ public final class VoxelSpotProjector {
     }
 
     private static FrontSweepProgress emitDepthFrontFaces(
-            Level level,
+            ProjectionWorldView world,
             int depth,
             Direction displayFace,
             Direction travelDirection,
@@ -848,6 +888,7 @@ public final class VoxelSpotProjector {
             ProjectionRegion previousDepthRemaining,
             List<OcclusionWindow> occupiedDebugWindows,
             List<CuboidSweep> sameDepthSweeps,
+            CanonicalPolygonOps.ConvexHullWorkspace sweepHullWorkspace,
             List<FrontFaceCandidate> candidates,
             boolean collectAllocations,
             ProjectionStatsBuilder stats,
@@ -887,14 +928,15 @@ public final class VoxelSpotProjector {
                     sameDepthSweeps,
                     appliedThroughTravel,
                     groupTravel,
-                    "sweep_front_segment"
+                    "sweep_front_segment",
+                    sweepHullWorkspace
             );
             if (!incrementalFrontSegments.isEmpty()) {
                 depthFrontRemaining.subtractUnion(incrementalFrontSegments, null);
             }
             appliedThroughTravel = groupTravel;
             List<OcclusionWindow> activeSameDepthFrontPrefix = collectAllocations
-                    ? sweepPrefixWindowsBeforeFront(sameDepthSweeps, groupTravel)
+                    ? sweepPrefixWindowsBeforeFront(sameDepthSweeps, groupTravel, sweepHullWorkspace)
                     : List.of();
             List<OcclusionWindow> frontDebugWindows;
             if (collectAllocations) {
@@ -1023,10 +1065,10 @@ public final class VoxelSpotProjector {
                     long frontEmitStartNanos = stats.startTimer();
                     SpotRecord surfaceSpot = cachedSurfaceSpot(
                             appearanceCache,
-                            level,
+                            world,
                             targetTile.pos(),
                             displayFace,
-                            targetTile.state(),
+                            targetTile.facts(),
                             targetTemplate,
                             visualFragmentPower,
                             visualCoherentPower,
@@ -1108,6 +1150,18 @@ public final class VoxelSpotProjector {
             List<CuboidSweep> sweeps,
             double frontTravel
     ) {
+        return sweepPrefixWindowsBeforeFront(
+                sweeps,
+                frontTravel,
+                new CanonicalPolygonOps.ConvexHullWorkspace()
+        );
+    }
+
+    private static List<OcclusionWindow> sweepPrefixWindowsBeforeFront(
+            List<CuboidSweep> sweeps,
+            double frontTravel,
+            CanonicalPolygonOps.ConvexHullWorkspace sweepHullWorkspace
+    ) {
         if (sweeps.isEmpty()) {
             return List.of();
         }
@@ -1116,7 +1170,7 @@ public final class VoxelSpotProjector {
             if (sweep.startTravel() >= frontTravel - EDGE_TOUCH_EPSILON) {
                 continue;
             }
-            OcclusionWindow prefix = sweep.prefixWindow(frontTravel);
+            OcclusionWindow prefix = sweep.prefixWindow(frontTravel, sweepHullWorkspace);
             if (prefix != null) {
                 prefixes.add(prefix);
             }
@@ -1130,12 +1184,33 @@ public final class VoxelSpotProjector {
             double toTravel,
             String phase
     ) {
+        return sweepSegmentWindows(
+                sweeps,
+                fromTravel,
+                toTravel,
+                phase,
+                new CanonicalPolygonOps.ConvexHullWorkspace()
+        );
+    }
+
+    private static List<OcclusionWindow> sweepSegmentWindows(
+            List<CuboidSweep> sweeps,
+            double fromTravel,
+            double toTravel,
+            String phase,
+            CanonicalPolygonOps.ConvexHullWorkspace sweepHullWorkspace
+    ) {
         if (sweeps.isEmpty() || toTravel <= fromTravel + EDGE_TOUCH_EPSILON) {
             return List.of();
         }
         List<OcclusionWindow> segments = new ArrayList<>();
         for (CuboidSweep sweep : sweeps) {
-            OcclusionWindow segment = sweep.segmentWindow(fromTravel, toTravel, phase);
+            OcclusionWindow segment = sweep.segmentWindow(
+                    fromTravel,
+                    toTravel,
+                    phase,
+                    sweepHullWorkspace
+            );
             if (segment != null) {
                 segments.add(segment);
             }
@@ -1268,6 +1343,7 @@ public final class VoxelSpotProjector {
             }
 
             SameDepthOcclusionIndex index = new SameDepthOcclusionIndex(sweeps);
+            SideVisibilityWorkspace visibilityWorkspace = new SideVisibilityWorkspace();
             for (int query = 0; query < 4; query++) {
                 int minStep = random.nextInt(8);
                 int maxStep = minStep + 1 + random.nextInt(8 - minStep);
@@ -1304,8 +1380,13 @@ public final class VoxelSpotProjector {
                 for (CanonicalRect rect : randomVerificationRects(random, 1 + random.nextInt(6))) {
                     surviving.add(polygon(rect));
                 }
-                List<OcclusionWindow> joinedPrefix = index.beforeVisible(
-                        ownerPos, ownerBoxIndex, surfaceTravel, surviving, null
+                List<OcclusionWindow> joinedPrefix = index.beforeVisibleInto(
+                        ownerPos,
+                        ownerBoxIndex,
+                        surfaceTravel,
+                        surviving,
+                        null,
+                        visibilityWorkspace
                 );
                 CanonicalRect survivingBounds = polygonBounds(surviving);
                 List<OcclusionWindow> broadPrefix = sameDepthOccludersBefore(
@@ -1396,6 +1477,11 @@ public final class VoxelSpotProjector {
         if (diagonalBoundsArea - diagonalSweep.fullShape().area() <= EDGE_TOUCH_EPSILON) {
             throw new IllegalStateException("analytic cuboid sweep still uses its broad-phase bounds as authority");
         }
+        CanonicalPolygonOps.ConvexHullWorkspace reusedSweepWorkspace =
+                new CanonicalPolygonOps.ConvexHullWorkspace();
+        checks += verifyCuboidSweepWorkspaceReuse(sweep, reusedSweepWorkspace, 0xC0B01D5EL);
+        checks += verifyCuboidSweepWorkspaceReuse(diagonalSweep, reusedSweepWorkspace, 0xD1A60A1L);
+        checks += verifyConservativeSweepBounds();
         for (int sample = 0; sample <= 32; sample++) {
             double travel = sample / 32.0D;
             ProjectionRect section = projectionRectForLocalFace(
@@ -1492,6 +1578,163 @@ public final class VoxelSpotProjector {
         }
         checks++;
         return checks;
+    }
+
+    private static int verifyConservativeSweepBounds() {
+        List<BeamGeometryOps.RadiusPropagation> propagations = List.of(
+                BeamGeometryOps.prepareRadiusPropagation(BeamEnvelope.collimated(1.6D)),
+                BeamGeometryOps.prepareRadiusPropagation(new BeamEnvelope(
+                        BeamModel.DIVERGING, 0.45D, 0.75D, 0.0D, 1.0D, 1.0D, 0.0D, 0, 0
+                )),
+                BeamGeometryOps.prepareRadiusPropagation(new BeamEnvelope(
+                        BeamModel.FOCUSED, 1.35D, 0.45D, 0.55D, 1.0D, 1.0D, 0.0D, 0, 0
+                ))
+        );
+        Random random = new Random(0xB0A4D5EEDL);
+        CanonicalPolygonOps.ConvexHullWorkspace workspace =
+                new CanonicalPolygonOps.ConvexHullWorkspace();
+        int checks = 0;
+        for (int iteration = 0; iteration < 2048; iteration++) {
+            BeamGeometryOps.RadiusPropagation propagation =
+                    propagations.get(random.nextInt(propagations.size()));
+            int startStep = random.nextInt(15);
+            int endStep = startStep + 1 + random.nextInt(16 - startStep);
+            int minUStep = random.nextInt(15);
+            int maxUStep = minUStep + 1 + random.nextInt(16 - minUStep);
+            int minVStep = random.nextInt(15);
+            int maxVStep = minVStep + 1 + random.nextInt(16 - minVStep);
+            OpticalCollisionBox box = new OpticalCollisionBox(
+                    startStep / 16.0D,
+                    endStep / 16.0D,
+                    minUStep / 16.0D,
+                    maxUStep / 16.0D,
+                    minVStep / 16.0D,
+                    maxVStep / 16.0D
+            );
+            int tileU = random.nextInt(9) - 4;
+            int tileV = random.nextInt(9) - 4;
+            CanonicalRect conservative = conservativeCuboidSweepRect(
+                    propagation,
+                    tileU,
+                    tileV,
+                    box,
+                    box.minTravel(),
+                    box.maxTravel()
+            );
+            CanonicalPolygonOps.Polygon exact = analyticCuboidSweepPolygon(
+                    propagation,
+                    tileU,
+                    tileV,
+                    box,
+                    box.minTravel(),
+                    box.maxTravel(),
+                    workspace
+            );
+            CanonicalRect exactBounds = bounds(exact);
+            if (exactBounds != null
+                    && (conservative == null || !containsPolygonBounds(conservative, exactBounds))) {
+                throw new IllegalStateException(
+                        "pre-hull conservative sweep bounds omitted exact polygon iteration=" + iteration
+                                + " conservative=" + conservative
+                                + " exact=" + exactBounds
+                );
+            }
+            checks++;
+        }
+        return checks;
+    }
+
+    private static int verifyCuboidSweepWorkspaceReuse(
+            CuboidSweep sweep,
+            CanonicalPolygonOps.ConvexHullWorkspace workspace,
+            long seed
+    ) {
+        Random random = new Random(seed);
+        int checks = 0;
+        for (int iteration = 0; iteration < 256; iteration++) {
+            double surfaceTravel = lerp(
+                    sweep.startTravel() - 0.125D,
+                    sweep.endTravel() + 0.125D,
+                    random.nextDouble()
+            );
+            CanonicalPolygonOps.Polygon freshPrefix = sweep.prefixShape(surfaceTravel);
+            CanonicalPolygonOps.Polygon reusedPrefix = sweep.prefixShape(surfaceTravel, workspace);
+            if (!sameExactPolygon(freshPrefix, reusedPrefix)) {
+                throw new IllegalStateException("cuboid sweep reused prefix workspace changed vertex order"
+                        + " iteration=" + iteration + " travel=" + surfaceTravel);
+            }
+
+            OcclusionWindow freshPrefixWindow = sweep.prefixWindow(surfaceTravel);
+            OcclusionWindow reusedPrefixWindow = sweep.prefixWindow(surfaceTravel, workspace);
+            if (!sameExactOcclusionWindow(freshPrefixWindow, reusedPrefixWindow)) {
+                throw new IllegalStateException("cuboid sweep reused prefix-window workspace changed geometry"
+                        + " iteration=" + iteration + " travel=" + surfaceTravel);
+            }
+
+            double first = lerp(
+                    sweep.startTravel() - 0.125D,
+                    sweep.endTravel() + 0.125D,
+                    random.nextDouble()
+            );
+            double second = lerp(
+                    sweep.startTravel() - 0.125D,
+                    sweep.endTravel() + 0.125D,
+                    random.nextDouble()
+            );
+            double fromTravel = Math.min(first, second);
+            double toTravel = Math.max(first, second);
+            if ((iteration & 31) == 0) {
+                fromTravel = Double.NEGATIVE_INFINITY;
+            }
+            if ((iteration & 31) == 1) {
+                toTravel = Double.POSITIVE_INFINITY;
+            }
+            OcclusionWindow freshSegment = sweep.segmentWindow(
+                    fromTravel,
+                    toTravel,
+                    "formal_workspace"
+            );
+            OcclusionWindow reusedSegment = sweep.segmentWindow(
+                    fromTravel,
+                    toTravel,
+                    "formal_workspace",
+                    workspace
+            );
+            if (!sameExactOcclusionWindow(freshSegment, reusedSegment)) {
+                throw new IllegalStateException("cuboid sweep reused segment workspace changed geometry"
+                        + " iteration=" + iteration
+                        + " travel=" + fromTravel + ".." + toTravel);
+            }
+            checks += 3;
+        }
+        return checks;
+    }
+
+    private static boolean sameExactOcclusionWindow(OcclusionWindow first, OcclusionWindow second) {
+        if (first == second) {
+            return true;
+        }
+        return first != null
+                && second != null
+                && sameExactPolygon(first.shape(), second.shape())
+                && Objects.equals(first.rect(), second.rect())
+                && Objects.equals(first.plane(), second.plane())
+                && Objects.equals(first.pos(), second.pos())
+                && first.depth() == second.depth()
+                && first.tileU() == second.tileU()
+                && first.tileV() == second.tileV()
+                && first.boxIndex() == second.boxIndex()
+                && Double.doubleToLongBits(first.travel()) == Double.doubleToLongBits(second.travel())
+                && Double.doubleToLongBits(first.volumeStartTravel())
+                == Double.doubleToLongBits(second.volumeStartTravel());
+    }
+
+    private static boolean sameExactPolygon(
+            CanonicalPolygonOps.Polygon first,
+            CanonicalPolygonOps.Polygon second
+    ) {
+        return first == second
+                || first != null && second != null && first.vertices().equals(second.vertices());
     }
 
     private static boolean segmentedSweepCoverageMatches(CuboidSweep sweep, int segmentCount) {
@@ -1666,7 +1909,7 @@ public final class VoxelSpotProjector {
     }
 
     private static void addIndependentSideQuads(
-            Level level,
+            ProjectionWorldView world,
             BlockPos depthOrigin,
             int depth,
             Direction travelDirection,
@@ -1708,7 +1951,7 @@ public final class VoxelSpotProjector {
         Map<SideCandidateKey, String> boundaryRejections = validateCandidates ? new HashMap<>() : null;
         long candidateStartNanos = stats.startTimer();
         List<SideFaceCandidate> sideCandidates = collectBoundarySideCandidates(
-                level,
+                world,
                 sideProjectableTiles,
                 uDirection,
                 vDirection,
@@ -1732,7 +1975,7 @@ public final class VoxelSpotProjector {
         long emitStartNanos = stats.startTimer();
         for (SideFaceCandidate candidate : sideCandidates) {
             addSideCandidateQuads(
-                    level,
+                    world,
                     candidate,
                     travelDirection,
                     uDirection,
@@ -1759,7 +2002,7 @@ public final class VoxelSpotProjector {
         if (boundarySideCandidates != null) {
             long validationStartNanos = stats.startTimer();
             Set<SideCandidateKey> legacySideCandidates = collectLegacySideCandidates(
-                    level,
+                    world,
                     sideProjectableTiles,
                     uDirection,
                     vDirection,
@@ -1767,7 +2010,7 @@ public final class VoxelSpotProjector {
             );
             stats.addSideBoundaryVerifyNanos(validationStartNanos);
             stats.recordSideCandidateComparison(
-                    level,
+                    world,
                     depth,
                     legacySideCandidates,
                     boundarySideCandidates,
@@ -1777,7 +2020,7 @@ public final class VoxelSpotProjector {
     }
 
     private static List<SideFaceCandidate> collectBoundarySideCandidates(
-            Level level,
+            ProjectionWorldView world,
             List<DepthTile> projectableTiles,
             Direction uDirection,
             Direction vDirection,
@@ -1798,7 +2041,7 @@ public final class VoxelSpotProjector {
             for (int boxIndex = 0; boxIndex < targetTile.opticalBoxes().size(); boxIndex++) {
                 OpticalCollisionBox box = targetTile.opticalBoxes().get(boxIndex);
                 maybeRecordBoxUSideCandidate(
-                            level,
+                            world,
                             targetTile,
                             boxIndex,
                             box,
@@ -1816,7 +2059,7 @@ public final class VoxelSpotProjector {
                             rejectionReasons
                     );
                 maybeRecordBoxUSideCandidate(
-                            level,
+                            world,
                             targetTile,
                             boxIndex,
                             box,
@@ -1834,7 +2077,7 @@ public final class VoxelSpotProjector {
                             rejectionReasons
                     );
                 maybeRecordBoxVSideCandidate(
-                            level,
+                            world,
                             targetTile,
                             boxIndex,
                             box,
@@ -1852,7 +2095,7 @@ public final class VoxelSpotProjector {
                             rejectionReasons
                     );
                 maybeRecordBoxVSideCandidate(
-                            level,
+                            world,
                             targetTile,
                             boxIndex,
                             box,
@@ -1876,7 +2119,7 @@ public final class VoxelSpotProjector {
     }
 
     private static void maybeRecordBoxUSideCandidate(
-            Level level,
+            ProjectionWorldView world,
             DepthTile targetTile,
             int boxIndex,
             OpticalCollisionBox box,
@@ -1898,7 +2141,7 @@ public final class VoxelSpotProjector {
         SideCandidateKey candidateKey = rejectionReasons == null
                 ? null
                 : new SideCandidateKey(targetTile.pos().asLong(), sideFace);
-        if (!isOpticalBoxSideReachable(level, depthTileCache, targetTile, sideFace, fixedULocal, stats, dependencies)) {
+        if (!isOpticalBoxSideReachable(world, depthTileCache, targetTile, sideFace, fixedULocal, stats, dependencies)) {
             if (rejectionReasons != null) {
                 recordBoundaryRejection(rejectionReasons, candidateKey, boundaryRejectionDetail(
                         "unreachable_or_closed", SideAxis.U, boxIndex, fixedULocal, positiveSide, 0
@@ -2033,7 +2276,7 @@ public final class VoxelSpotProjector {
     }
 
     private static void maybeRecordBoxVSideCandidate(
-            Level level,
+            ProjectionWorldView world,
             DepthTile targetTile,
             int boxIndex,
             OpticalCollisionBox box,
@@ -2055,7 +2298,7 @@ public final class VoxelSpotProjector {
         SideCandidateKey candidateKey = rejectionReasons == null
                 ? null
                 : new SideCandidateKey(targetTile.pos().asLong(), sideFace);
-        if (!isOpticalBoxSideReachable(level, depthTileCache, targetTile, sideFace, fixedVLocal, stats, dependencies)) {
+        if (!isOpticalBoxSideReachable(world, depthTileCache, targetTile, sideFace, fixedVLocal, stats, dependencies)) {
             if (rejectionReasons != null) {
                 recordBoundaryRejection(rejectionReasons, candidateKey, boundaryRejectionDetail(
                         "unreachable_or_closed", SideAxis.V, boxIndex, fixedVLocal, positiveSide, 0
@@ -2229,7 +2472,7 @@ public final class VoxelSpotProjector {
     }
 
     private static boolean isBoundarySideOpen(
-            Level level,
+            ProjectionWorldView world,
             DepthTileCache depthTileCache,
             DepthTile targetTile,
             Direction sideFace,
@@ -2241,7 +2484,7 @@ public final class VoxelSpotProjector {
         stats.sideOpenChecks++;
         BlockPos neighborPos = targetTile.pos().relative(sideFace);
         dependencies.add(neighborPos.asLong());
-        DepthTile neighborTile = loadDepthTile(level, depthTileCache, neighborU, neighborV, stats);
+        DepthTile neighborTile = loadDepthTile(world, depthTileCache, neighborU, neighborV, stats);
 
         if (!neighborTile.loaded()) {
             return false;
@@ -2255,7 +2498,7 @@ public final class VoxelSpotProjector {
     }
 
     private static boolean isOpticalBoxSideReachable(
-            Level level,
+            ProjectionWorldView world,
             DepthTileCache depthTileCache,
             DepthTile targetTile,
             Direction sideFace,
@@ -2279,7 +2522,7 @@ public final class VoxelSpotProjector {
             neighborV--;
         }
 
-        return isBoundarySideOpen(level, depthTileCache, targetTile, sideFace, neighborU, neighborV, stats, dependencies);
+        return isBoundarySideOpen(world, depthTileCache, targetTile, sideFace, neighborU, neighborV, stats, dependencies);
     }
 
     private static List<CanonicalRect> exposedFrontFaceRegions(DepthTile targetTile, OpticalCollisionBox box) {
@@ -2548,7 +2791,7 @@ public final class VoxelSpotProjector {
     }
 
     private static Set<SideCandidateKey> collectLegacySideCandidates(
-            Level level,
+            ProjectionWorldView world,
             List<DepthTile> sideProjectableTiles,
             Direction uDirection,
             Direction vDirection,
@@ -2559,7 +2802,7 @@ public final class VoxelSpotProjector {
         for (DepthTile targetTile : sideProjectableTiles) {
             for (OpticalCollisionBox box : targetTile.opticalBoxes()) {
                 recordLegacyUSideCandidate(
-                        level,
+                        world,
                         targetTile,
                         box,
                         uDirection.getOpposite(),
@@ -2571,7 +2814,7 @@ public final class VoxelSpotProjector {
                         candidates
                 );
                 recordLegacyUSideCandidate(
-                        level,
+                        world,
                         targetTile,
                         box,
                         uDirection,
@@ -2583,7 +2826,7 @@ public final class VoxelSpotProjector {
                         candidates
                 );
                 recordLegacyVSideCandidate(
-                        level,
+                        world,
                         targetTile,
                         box,
                         vDirection.getOpposite(),
@@ -2595,7 +2838,7 @@ public final class VoxelSpotProjector {
                         candidates
                 );
                 recordLegacyVSideCandidate(
-                        level,
+                        world,
                         targetTile,
                         box,
                         vDirection,
@@ -2613,7 +2856,7 @@ public final class VoxelSpotProjector {
     }
 
     private static void recordLegacyUSideCandidate(
-            Level level,
+            ProjectionWorldView world,
             DepthTile targetTile,
             OpticalCollisionBox box,
             Direction sideFace,
@@ -2624,7 +2867,7 @@ public final class VoxelSpotProjector {
             int tileV,
             Set<SideCandidateKey> candidates
     ) {
-        if (!isLegacyShapeSideReachable(level, targetTile, sideFace, fixedULocal)) {
+        if (!isLegacyShapeSideReachable(world, targetTile, sideFace, fixedULocal)) {
             return;
         }
 
@@ -2650,7 +2893,7 @@ public final class VoxelSpotProjector {
     }
 
     private static void recordLegacyVSideCandidate(
-            Level level,
+            ProjectionWorldView world,
             DepthTile targetTile,
             OpticalCollisionBox box,
             Direction sideFace,
@@ -2661,7 +2904,7 @@ public final class VoxelSpotProjector {
             int tileU,
             Set<SideCandidateKey> candidates
     ) {
-        if (!isLegacyShapeSideReachable(level, targetTile, sideFace, fixedVLocal)) {
+        if (!isLegacyShapeSideReachable(world, targetTile, sideFace, fixedVLocal)) {
             return;
         }
 
@@ -2687,13 +2930,13 @@ public final class VoxelSpotProjector {
     }
 
     private static boolean isLegacyShapeSideReachable(
-            Level level,
+            ProjectionWorldView world,
             DepthTile targetTile,
             Direction sideFace,
             double fixedLocal
     ) {
         return (fixedLocal > EDGE_TOUCH_EPSILON && fixedLocal < 1.0D - EDGE_TOUCH_EPSILON)
-                || isSideOpenForValidation(level, targetTile.pos(), sideFace);
+                || isSideOpenForValidation(world, targetTile.pos(), sideFace);
     }
 
     private static boolean uSideIntervalHasWindow(
@@ -2835,7 +3078,7 @@ public final class VoxelSpotProjector {
     }
 
     private static DepthTile loadDepthTile(
-            Level level,
+            ProjectionWorldView world,
             DepthTileCache cache,
             int tileU,
             int tileV,
@@ -2850,33 +3093,29 @@ public final class VoxelSpotProjector {
 
         stats.depthTileCacheMisses++;
         BlockPos targetPos = cache.pos(tileU, tileV);
-        boolean loaded = level.isLoaded(targetPos);
+        ProjectionBlockFacts facts = world.blockFacts(targetPos);
 
-        if (!loaded) {
-            DepthTile tile = new DepthTile(tileU, tileV, targetPos, false, null, false, List.of());
+        if (!facts.loaded()) {
+            DepthTile tile = new DepthTile(tileU, tileV, targetPos, facts, List.of());
             cache.put(tile);
             return tile;
         }
 
-        BlockState targetState = level.getBlockState(targetPos);
-        boolean airLike = OpticalMaterialProfiles.isAirLike(targetState);
-        List<OpticalCollisionBox> opticalBoxes = airLike
+        List<OpticalCollisionBox> opticalBoxes = facts.airLike()
                 ? List.of()
                 : opticalCollisionBoxes(
-                level,
-                targetPos,
-                targetState,
+                facts,
                 cache.travelDirection,
                 cache.uDirection,
                 cache.vDirection
         );
-        DepthTile tile = new DepthTile(tileU, tileV, targetPos, true, targetState, airLike, opticalBoxes);
+        DepthTile tile = new DepthTile(tileU, tileV, targetPos, facts, opticalBoxes);
         cache.put(tile);
         return tile;
     }
 
     private static void addSideCandidateQuads(
-            Level level,
+            ProjectionWorldView world,
             SideFaceCandidate candidate,
             Direction travelDirection,
             Direction uDirection,
@@ -2901,9 +3140,9 @@ public final class VoxelSpotProjector {
         stats.recordSideTravelIntervals(candidate.fixedLocal(), candidate.visibleTravels().size());
         if (candidate.axis() == SideAxis.U) {
             addUSideVolumeQuads(
-                    level,
+                    world,
                     candidate.tile().pos(),
-                    candidate.tile().state(),
+                    candidate.tile().facts(),
                     candidate.boxIndex(),
                     candidate.sideFace(),
                     candidate.positiveSide(),
@@ -2938,9 +3177,9 @@ public final class VoxelSpotProjector {
             );
         } else {
             addVSideVolumeQuads(
-                    level,
+                    world,
                     candidate.tile().pos(),
-                    candidate.tile().state(),
+                    candidate.tile().facts(),
                     candidate.boxIndex(),
                     candidate.sideFace(),
                     candidate.positiveSide(),
@@ -2976,55 +3215,20 @@ public final class VoxelSpotProjector {
         }
     }
 
-    private static boolean isProjectableSurface(Level level, BlockPos pos, BlockState state) {
-        return !opticalCollisionBoxes(level, pos, state, Direction.NORTH, Direction.EAST, Direction.UP).isEmpty();
-    }
-
     private static List<OpticalCollisionBox> opticalCollisionBoxes(
-            Level level,
-            BlockPos pos,
-            BlockState state,
+            ProjectionBlockFacts facts,
             Direction travelDirection,
             Direction uDirection,
             Direction vDirection
     ) {
-        if (OpticalMaterialProfiles.isAirLike(state)) {
+        if (!facts.projectable()) {
             return List.of();
         }
-
-        if (state.getBlock() instanceof LensHolderBlock) {
-            return level.getBlockEntity(pos) instanceof LensHolderBlockEntity lensHolder && lensHolder.hasLens()
-                    ? FULL_OPTICAL_BOXES
-                    : List.of();
-        }
-
-        if (state.isCollisionShapeFullBlock(level, pos)
-                || state.getBlock() instanceof OpticalElement
-                || state.getBlock() instanceof OpticalSource) {
-            return FULL_OPTICAL_BOXES;
-        }
-
-        if (!usesModelOpticalShape(state)) {
-            return List.of();
-        }
-
-        ModelShapeFrameKey cacheKey = new ModelShapeFrameKey(
-                state, travelDirection, uDirection, vDirection
-        );
-        List<OpticalCollisionBox> cached = MODEL_SHAPE_BOX_CACHE.get(cacheKey);
-        if (cached != null) {
-            return cached;
-        }
-
-        VoxelShape shape = state.getShape(level, pos);
-        if (shape.isEmpty()) {
-            MODEL_SHAPE_BOX_CACHE.putIfAbsent(cacheKey, List.of());
-            return List.of();
-        }
-
         List<OpticalCollisionBox> boxes = new ArrayList<>();
-        for (AABB aabb : shape.toAabbs()) {
-            OpticalCollisionBox box = OpticalCollisionBox.fromAabb(aabb, travelDirection, uDirection, vDirection);
+        for (ProjectionLocalBox localBox : facts.localOpticalBoxes()) {
+            OpticalCollisionBox box = OpticalCollisionBox.fromLocalBox(
+                    localBox, travelDirection, uDirection, vDirection
+            );
             if (box != null) {
                 boxes.add(box);
             }
@@ -3037,19 +3241,11 @@ public final class VoxelSpotProjector {
                 .thenComparingDouble(OpticalCollisionBox::maxTravel)
                 .thenComparingDouble(OpticalCollisionBox::maxU)
                 .thenComparingDouble(OpticalCollisionBox::maxV));
-        List<OpticalCollisionBox> immutable = boxes.isEmpty() ? List.of() : List.copyOf(boxes);
-        List<OpticalCollisionBox> existing = MODEL_SHAPE_BOX_CACHE.putIfAbsent(cacheKey, immutable);
-        return existing == null ? immutable : existing;
-    }
-
-    private static boolean usesModelOpticalShape(BlockState state) {
-        return state.getBlock() instanceof SlabBlock
-                || state.getBlock() instanceof StairBlock
-                || state.getBlock() instanceof FenceBlock;
+        return boxes.isEmpty() ? List.of() : List.copyOf(boxes);
     }
 
     private static boolean isSideOpen(
-            Level level,
+            ProjectionWorldView world,
             BlockPos pos,
             Direction sideFace,
             LongSet dependencies,
@@ -3059,25 +3255,25 @@ public final class VoxelSpotProjector {
         BlockPos neighborPos = pos.relative(sideFace);
         dependencies.add(neighborPos.asLong());
 
-        if (!level.isLoaded(neighborPos)) {
+        ProjectionBlockFacts neighbor = world.blockFacts(neighborPos);
+        if (!neighbor.loaded()) {
             return false;
         }
 
-        boolean open = OpticalMaterialProfiles.isAirLike(level.getBlockState(neighborPos));
+        boolean open = neighbor.airLike();
         if (open) {
             stats.sideOpenFaces++;
         }
         return open;
     }
 
-    private static boolean isSideOpenForValidation(Level level, BlockPos pos, Direction sideFace) {
+    private static boolean isSideOpenForValidation(ProjectionWorldView world, BlockPos pos, Direction sideFace) {
         BlockPos neighborPos = pos.relative(sideFace);
-
-        if (!level.isLoaded(neighborPos)) {
+        ProjectionBlockFacts neighbor = world.blockFacts(neighborPos);
+        if (!neighbor.loaded()) {
             return false;
         }
-
-        return OpticalMaterialProfiles.isAirLike(level.getBlockState(neighborPos));
+        return neighbor.airLike();
     }
 
     private static void addFrontChartSpot(
@@ -3211,9 +3407,9 @@ public final class VoxelSpotProjector {
     }
 
     private static void addUSideVolumeQuads(
-            Level level,
+            ProjectionWorldView world,
             BlockPos targetPos,
-            BlockState targetState,
+            ProjectionBlockFacts targetFacts,
             int ownerBoxIndex,
             Direction sideFace,
             boolean positiveSide,
@@ -3486,10 +3682,10 @@ public final class VoxelSpotProjector {
                         if (candidateSurfaceSpot == null) {
                             candidateSurfaceSpot = cachedSurfaceSpot(
                                     appearanceCache,
-                                    level,
+                                    world,
                                     targetPos,
                                     sideFace,
-                                    targetState,
+                                    targetFacts,
                                     targetTemplate,
                                     sidePower,
                                     sideCoherentPower,
@@ -3540,9 +3736,9 @@ public final class VoxelSpotProjector {
     }
 
     private static void addVSideVolumeQuads(
-            Level level,
+            ProjectionWorldView world,
             BlockPos targetPos,
-            BlockState targetState,
+            ProjectionBlockFacts targetFacts,
             int ownerBoxIndex,
             Direction sideFace,
             boolean positiveSide,
@@ -3815,10 +4011,10 @@ public final class VoxelSpotProjector {
                         if (candidateSurfaceSpot == null) {
                             candidateSurfaceSpot = cachedSurfaceSpot(
                                     appearanceCache,
-                                    level,
+                                    world,
                                     targetPos,
                                     sideFace,
-                                    targetState,
+                                    targetFacts,
                                     targetTemplate,
                                     sidePower,
                                     sideCoherentPower,
@@ -6148,9 +6344,9 @@ public final class VoxelSpotProjector {
     }
 
     private static boolean addSideSpot(
-            Level level,
+            ProjectionWorldView world,
             BlockPos targetPos,
-            BlockState targetState,
+            ProjectionBlockFacts targetFacts,
             Direction sideFace,
             BeamPacket targetTemplate,
             double sidePower,
@@ -6186,9 +6382,9 @@ public final class VoxelSpotProjector {
         }
 
         return addPatchSpot(
-                level,
+                world,
                 targetPos,
-                targetState,
+                targetFacts,
                 sideFace,
                 targetTemplate,
                 sidePower,
@@ -6199,9 +6395,9 @@ public final class VoxelSpotProjector {
     }
 
     private static PatchEmission addPatchSpot(
-            Level level,
+            ProjectionWorldView world,
             BlockPos targetPos,
-            BlockState targetState,
+            ProjectionBlockFacts targetFacts,
             Direction sideFace,
             BeamPacket targetTemplate,
             double sidePower,
@@ -6210,10 +6406,9 @@ public final class VoxelSpotProjector {
             List<SpotRecord> fragments
     ) {
         SpotRecord surfaceSpot = OpticalSpotTracker.createCompiledSurfaceSpot(
-                level,
+                targetFacts.materialProfile(),
                 targetPos,
                 sideFace,
-                targetState,
                 targetTemplate,
                 sidePower,
                 sideCoherentPower
@@ -6223,10 +6418,10 @@ public final class VoxelSpotProjector {
 
     private static SpotRecord cachedSurfaceSpot(
             Map<SurfaceSpotKey, SpotRecord> cache,
-            Level level,
+            ProjectionWorldView world,
             BlockPos targetPos,
             Direction face,
-            BlockState targetState,
+            ProjectionBlockFacts targetFacts,
             BeamPacket targetTemplate,
             double power,
             double coherentPower,
@@ -6242,10 +6437,9 @@ public final class VoxelSpotProjector {
 
         long appearanceBuildStartNanos = stats.startTimer();
         SpotRecord created = OpticalSpotTracker.createCompiledSurfaceSpot(
-                level,
+                targetFacts.materialProfile(),
                 targetPos,
                 face,
-                targetState,
                 targetTemplate,
                 power,
                 coherentPower
@@ -6308,7 +6502,7 @@ public final class VoxelSpotProjector {
         return BeamGeometryOps.propagate(sourceEnvelope, offset);
     }
 
-    private static double maxEnvelopeRadiusOverUnit(BeamGeometryOps.RadiusPropagation radiusPropagation) {
+    static double maxEnvelopeRadiusOverUnit(BeamGeometryOps.RadiusPropagation radiusPropagation) {
         double entryRadius = radiusPropagation.radiusAt(0.0D);
         double exitRadius = radiusPropagation.radiusAt(1.0D);
         double maxRadius = Math.max(
@@ -6318,7 +6512,7 @@ public final class VoxelSpotProjector {
         return Math.max(0.0D, maxRadius);
     }
 
-    private static int projectedMinTile(double radius) {
+    static int projectedMinTile(double radius) {
         if (!Double.isFinite(radius) || radius <= 0.0D) {
             return 0;
         }
@@ -6326,7 +6520,7 @@ public final class VoxelSpotProjector {
         return (int) Math.ceil(-radius - 0.5D + EDGE_TOUCH_EPSILON);
     }
 
-    private static int projectedMaxTile(double radius) {
+    static int projectedMaxTile(double radius) {
         if (!Double.isFinite(radius) || radius <= 0.0D) {
             return 0;
         }
@@ -6433,6 +6627,37 @@ public final class VoxelSpotProjector {
         }
 
         return checkedAxes;
+    }
+
+    static int verifySnapshotCaptureBounds() {
+        Random random = new Random(0x51A7C0DEL);
+        int checks = 0;
+        for (int iteration = 0; iteration < 4_096; iteration++) {
+            double maxRadius = 0.05D + random.nextDouble() * 15.95D;
+            double u0 = random.nextDouble();
+            double u1 = random.nextDouble();
+            double v0 = random.nextDouble();
+            double v1 = random.nextDouble();
+            CanonicalRect remainingBounds = new CanonicalRect(
+                    Math.min(u0, u1), Math.min(v0, v1), Math.max(u0, u1), Math.max(v0, v1)
+            );
+            int minTile = projectedMinTile(maxRadius);
+            int maxTile = projectedMaxTile(maxRadius);
+            SideScanTileBounds bounded = remainingBoundedScanTileBounds(
+                    minTile, maxTile, maxRadius, remainingBounds
+            );
+            int snapshotMin = minTile - SNAPSHOT_HALO_TILES;
+            int snapshotMax = maxTile + SNAPSHOT_HALO_TILES;
+            if (!bounded.empty()
+                    && (bounded.minU() - 1 < snapshotMin
+                    || bounded.maxU() + 1 > snapshotMax
+                    || bounded.minV() - 1 < snapshotMin
+                    || bounded.maxV() + 1 > snapshotMax)) {
+                throw new IllegalStateException("eager projection snapshot omitted a scan neighbor halo");
+            }
+            checks += 4;
+        }
+        return checks;
     }
 
     private static void verifyRemainingBoundedAxis(
@@ -6699,11 +6924,32 @@ public final class VoxelSpotProjector {
             int boxIndex,
             OpticalCollisionBox opticalBox,
             ProjectionRegion remainingRayWindows,
+            CanonicalRect remainingBounds,
             ProjectionStatsBuilder stats,
-            List<CanonicalPolygonOps.Point> sweepPointWorkspace,
+            CanonicalPolygonOps.ConvexHullWorkspace sweepHullWorkspace,
             CanonicalPolygonOps.QueryWorkspace sweepPrefilterWorkspace
     ) {
         stats.planeWindowTests++;
+        CanonicalRect conservativeBounds = conservativeCuboidSweepRect(
+                radiusPropagation,
+                tileU,
+                tileV,
+                opticalBox,
+                opticalBox.minTravel(),
+                opticalBox.maxTravel()
+        );
+        if (conservativeBounds == null) {
+            return null;
+        }
+        stats.planeWindowCandidates++;
+        if (remainingRayWindows != null
+                && remainingBounds != null
+                && !intersectsPolygonBounds(conservativeBounds, remainingBounds)) {
+            stats.planeWindowRemainingCulled++;
+            stats.recordRemainingPrefilter(0L, 0L, false);
+            return null;
+        }
+
         CuboidSweep sweep = CuboidSweep.create(
                 radiusPropagation,
                 tileU,
@@ -6712,13 +6958,12 @@ public final class VoxelSpotProjector {
                 depth,
                 boxIndex,
                 opticalBox,
-                sweepPointWorkspace
+                sweepHullWorkspace
         );
         if (sweep == null) {
             return null;
         }
 
-        stats.planeWindowCandidates++;
         stats.recordAnalyticSweep(sweep.fullShape());
         if (remainingRayWindows != null
                 && !remainingRayWindows.intersectsForSweepPrefilter(
@@ -7026,13 +7271,15 @@ public final class VoxelSpotProjector {
             return result;
         }
 
-        private List<OcclusionWindow> beforeVisible(
+        private List<OcclusionWindow> beforeVisibleInto(
                 BlockPos ownerPos,
                 int ownerBoxIndex,
                 double surfaceTravel,
                 List<CanonicalPolygonOps.Polygon> visible,
-                ProjectionStatsBuilder stats
+                ProjectionStatsBuilder stats,
+                SideVisibilityWorkspace workspace
         ) {
+            workspace.beginPrefixQuery(sweeps.size());
             if (sweeps.isEmpty() || visible.isEmpty()) {
                 return List.of();
             }
@@ -7049,7 +7296,6 @@ public final class VoxelSpotProjector {
             int maxU = maxOcclusionBin(candidateBounds.maxU());
             int minV = minOcclusionBin(candidateBounds.minV());
             int maxV = maxOcclusionBin(candidateBounds.maxV());
-            List<IndexedSweepHit> hits = new ArrayList<>();
 
             for (int binV = minV; binV <= maxV; binV++) {
                 for (int binU = minU; binU <= maxU; binU++) {
@@ -7070,24 +7316,23 @@ public final class VoxelSpotProjector {
                                 || !intersects(sweep.broadPhaseBounds(), candidateBounds)) {
                             continue;
                         }
-                        OcclusionWindow prefix = sweep.prefixWindow(surfaceTravel);
+                        OcclusionWindow prefix = sweep.prefixWindow(
+                                surfaceTravel,
+                                workspace.prefixHulls
+                        );
                         if (prefix != null && intersectsAnyBounds(prefix.shape().bounds(), visible)) {
-                            hits.add(new IndexedSweepHit(indexed.id(), prefix));
+                            workspace.addPrefixHit(indexed.id(), prefix);
                         }
                     }
                 }
             }
 
-            if (hits.isEmpty()) {
+            if (!workspace.hasPrefixHits()) {
                 return List.of();
             }
             // The joined query may discard blockers outside the surviving remaining cells,
             // but retained blockers keep construction order for deterministic subtraction.
-            hits.sort(Comparator.comparingInt(IndexedSweepHit::id));
-            List<OcclusionWindow> result = new ArrayList<>(hits.size());
-            for (IndexedSweepHit hit : hits) {
-                result.add(hit.window());
-            }
+            List<OcclusionWindow> result = workspace.finishPrefixQuery();
             if (stats != null) {
                 stats.sameDepthPrefixIndexHits += result.size();
             }
@@ -7276,7 +7521,7 @@ public final class VoxelSpotProjector {
                 box,
                 travel0,
                 travel1,
-                new ArrayList<>(8)
+                new CanonicalPolygonOps.ConvexHullWorkspace()
         );
     }
 
@@ -7287,7 +7532,7 @@ public final class VoxelSpotProjector {
             OpticalCollisionBox box,
             double travel0,
             double travel1,
-            List<CanonicalPolygonOps.Point> extrema
+            CanonicalPolygonOps.ConvexHullWorkspace workspace
     ) {
         if (travel1 < travel0 - EDGE_TOUCH_EPSILON) {
             return null;
@@ -7312,12 +7557,12 @@ public final class VoxelSpotProjector {
         double worldMaxU = tileU - 0.5D + box.maxU();
         double worldMinV = tileV - 0.5D + box.minV();
         double worldMaxV = tileV - 0.5D + box.maxV();
-        extrema.clear();
+        List<CanonicalPolygonOps.Point> extrema = workspace.resetInput();
         addCanonicalCrossSection(extrema, minRadius, worldMinU, worldMinV, worldMaxU, worldMaxV);
         if (Math.abs(maxRadius - minRadius) > EDGE_TOUCH_EPSILON) {
             addCanonicalCrossSection(extrema, maxRadius, worldMinU, worldMinV, worldMaxU, worldMaxV);
         }
-        return CanonicalPolygonOps.clippedConvexHull(extrema);
+        return CanonicalPolygonOps.clippedConvexHull(extrema, workspace);
     }
 
     private static void addCanonicalCrossSection(
@@ -7531,33 +7776,46 @@ public final class VoxelSpotProjector {
             int ownerBoxIndex,
             double surfaceTravel,
             List<CanonicalPolygonOps.Polygon> visible,
-            ProjectionStatsBuilder stats
+            ProjectionStatsBuilder stats,
+            SideVisibilityWorkspace workspace
     ) {
         if (visible.isEmpty()) {
+            workspace.beginPrefixQuery(sameDepthSweeps.size());
             return List.of();
         }
         if (index != null) {
-            return index.beforeVisible(
+            return index.beforeVisibleInto(
                     ownerPos,
                     ownerBoxIndex,
                     surfaceTravel,
                     visible,
-                    stats
+                    stats,
+                    workspace
             );
         }
 
+        workspace.beginPrefixQuery(sameDepthSweeps.size());
         CanonicalRect visibleBounds = polygonBounds(visible);
         if (visibleBounds == null) {
             return List.of();
         }
-        List<OcclusionWindow> legacy = sameDepthOccludersBefore(
-                sameDepthSweeps,
-                ownerPos,
-                ownerBoxIndex,
-                surfaceTravel,
-                visibleBounds
-        );
-        return filterOccludersByVisibleBounds(legacy, visible);
+        for (CuboidSweep sweep : sameDepthSweeps) {
+            if (isOwnCuboidSweep(sweep, ownerPos, ownerBoxIndex)
+                    || sweep.startTravel() >= surfaceTravel - EDGE_TOUCH_EPSILON
+                    || !intersects(sweep.broadPhaseBounds(), visibleBounds)) {
+                continue;
+            }
+            OcclusionWindow prefix = sweep.prefixWindow(
+                    surfaceTravel,
+                    workspace.prefixHulls
+            );
+            if (prefix != null
+                    && intersects(prefix.shape(), visibleBounds)
+                    && intersectsAnyBounds(prefix.shape().bounds(), visible)) {
+                workspace.prefixWindows.add(prefix);
+            }
+        }
+        return workspace.prefixWindows.isEmpty() ? List.of() : workspace.prefixWindows;
     }
 
     private static List<OcclusionWindow> filterOccludersByVisibleBounds(
@@ -7812,7 +8070,8 @@ public final class VoxelSpotProjector {
                 ownerBoxIndex,
                 surfaceTravel,
                 remainingVisible,
-                stats
+                stats,
+                workspace
         );
         if (stats != null) {
             stats.addSidePrefixQueryNanos(prefixQueryStartNanos);
@@ -8163,6 +8422,22 @@ public final class VoxelSpotProjector {
         double maxU = Math.min(first.maxU(), second.maxU());
         double maxV = Math.min(first.maxV(), second.maxV());
         return maxU - minU > EDGE_TOUCH_EPSILON && maxV - minV > EDGE_TOUCH_EPSILON;
+    }
+
+    private static boolean intersectsPolygonBounds(CanonicalRect first, CanonicalRect second) {
+        double minU = Math.max(first.minU(), second.minU());
+        double minV = Math.max(first.minV(), second.minV());
+        double maxU = Math.min(first.maxU(), second.maxU());
+        double maxV = Math.min(first.maxV(), second.maxV());
+        return maxU - minU > CanonicalPolygonOps.EPSILON
+                && maxV - minV > CanonicalPolygonOps.EPSILON;
+    }
+
+    private static boolean containsPolygonBounds(CanonicalRect outer, CanonicalRect inner) {
+        return outer.minU() <= inner.minU() + CanonicalPolygonOps.EPSILON
+                && outer.minV() <= inner.minV() + CanonicalPolygonOps.EPSILON
+                && outer.maxU() + CanonicalPolygonOps.EPSILON >= inner.maxU()
+                && outer.maxV() + CanonicalPolygonOps.EPSILON >= inner.maxV();
     }
 
     private static boolean intersects(CanonicalPolygonOps.Polygon shape, CanonicalRect rect) {
@@ -9501,14 +9776,6 @@ public final class VoxelSpotProjector {
         return Math.max(0.0D, Math.min(1.0D, value));
     }
 
-    private record ModelShapeFrameKey(
-            BlockState state,
-            Direction travelDirection,
-            Direction uDirection,
-            Direction vDirection
-    ) {
-    }
-
     private record OpticalCollisionBox(
             double minTravel,
             double maxTravel,
@@ -9545,18 +9812,18 @@ public final class VoxelSpotProjector {
                     && maxV >= 1.0D - EDGE_TOUCH_EPSILON;
         }
 
-        private static OpticalCollisionBox fromAabb(
-                AABB box,
+        private static OpticalCollisionBox fromLocalBox(
+                ProjectionLocalBox box,
                 Direction travelDirection,
                 Direction uDirection,
                 Direction vDirection
         ) {
-            double minX = clamp01(box.minX);
-            double minY = clamp01(box.minY);
-            double minZ = clamp01(box.minZ);
-            double maxX = clamp01(box.maxX);
-            double maxY = clamp01(box.maxY);
-            double maxZ = clamp01(box.maxZ);
+            double minX = clamp01(box.minX());
+            double minY = clamp01(box.minY());
+            double minZ = clamp01(box.minZ());
+            double maxX = clamp01(box.maxX());
+            double maxY = clamp01(box.maxY());
+            double maxZ = clamp01(box.maxZ());
 
             double minTravel = frameMin(travelDirection, minX, minY, minZ, maxX, maxY, maxZ);
             double maxTravel = frameMax(travelDirection, minX, minY, minZ, maxX, maxY, maxZ);
@@ -9722,11 +9989,17 @@ public final class VoxelSpotProjector {
             int tileU,
             int tileV,
             BlockPos pos,
-            boolean loaded,
-            BlockState state,
-            boolean airLike,
+            ProjectionBlockFacts facts,
             List<OpticalCollisionBox> opticalBoxes
     ) {
+        private boolean loaded() {
+            return facts.loaded();
+        }
+
+        private boolean airLike() {
+            return facts.airLike();
+        }
+
         private boolean projectable() {
             return !opticalBoxes.isEmpty();
         }
@@ -9811,6 +10084,52 @@ public final class VoxelSpotProjector {
         private final ArrayList<CanonicalPolygonOps.Polygon> subtractSecond = new ArrayList<>();
         private final CanonicalPolygonOps.PolygonWorkspace subtractPolygons =
                 new CanonicalPolygonOps.PolygonWorkspace();
+        private final CanonicalPolygonOps.ConvexHullWorkspace prefixHulls =
+                new CanonicalPolygonOps.ConvexHullWorkspace();
+        private final ArrayList<OcclusionWindow> prefixWindows = new ArrayList<>();
+        private int[] prefixHitIds = new int[16];
+        private OcclusionWindow[] prefixWindowsById = new OcclusionWindow[16];
+        private int prefixHitCount;
+
+        private void beginPrefixQuery(int sweepCount) {
+            for (int index = 0; index < prefixHitCount; index++) {
+                int id = prefixHitIds[index];
+                if (id >= 0 && id < prefixWindowsById.length) {
+                    prefixWindowsById[id] = null;
+                }
+            }
+            prefixHitCount = 0;
+            prefixWindows.clear();
+            if (sweepCount > prefixHitIds.length) {
+                int capacity = Math.max(sweepCount, prefixHitIds.length * 2);
+                prefixHitIds = java.util.Arrays.copyOf(prefixHitIds, capacity);
+            }
+            if (sweepCount > prefixWindowsById.length) {
+                int capacity = Math.max(sweepCount, prefixWindowsById.length * 2);
+                prefixWindowsById = java.util.Arrays.copyOf(prefixWindowsById, capacity);
+            }
+            prefixWindows.ensureCapacity(sweepCount);
+        }
+
+        private void addPrefixHit(int id, OcclusionWindow window) {
+            prefixHitIds[prefixHitCount++] = id;
+            prefixWindowsById[id] = window;
+        }
+
+        private boolean hasPrefixHits() {
+            return prefixHitCount > 0;
+        }
+
+        private List<OcclusionWindow> finishPrefixQuery() {
+            java.util.Arrays.sort(prefixHitIds, 0, prefixHitCount);
+            for (int index = 0; index < prefixHitCount; index++) {
+                int id = prefixHitIds[index];
+                prefixWindows.add(prefixWindowsById[id]);
+                prefixWindowsById[id] = null;
+            }
+            prefixHitCount = 0;
+            return prefixWindows;
+        }
     }
 
     private record SideCandidateKey(long pos, Direction face) {
@@ -10564,7 +10883,7 @@ public final class VoxelSpotProjector {
         }
 
         private void recordSideCandidateComparison(
-                Level level,
+                ProjectionWorldView world,
                 int depth,
                 Set<SideCandidateKey> legacyCandidates,
                 Set<SideCandidateKey> boundaryCandidates,
@@ -10578,7 +10897,7 @@ public final class VoxelSpotProjector {
                     if (sideBoundaryMissingExamples.size() < MAX_SIDE_BOUNDARY_MISSING_EXAMPLES) {
                         BlockPos pos = BlockPos.of(legacyCandidate.pos());
                         String reason = rejectionReasons.getOrDefault(legacyCandidate, "boundary_no_candidate");
-                        BlockState state = level.getBlockState(pos);
+                        String state = world.blockFacts(pos).diagnosticState();
                         sideBoundaryMissingExamples.add(String.format(
                                 Locale.ROOT,
                                 "depth=%d,pos=%s,face=%s,state=%s,reject=%s",
@@ -11123,7 +11442,7 @@ public final class VoxelSpotProjector {
                     depth,
                     boxIndex,
                     box,
-                    new ArrayList<>(8)
+                    new CanonicalPolygonOps.ConvexHullWorkspace()
             );
         }
 
@@ -11135,7 +11454,7 @@ public final class VoxelSpotProjector {
                 int depth,
                 int boxIndex,
                 OpticalCollisionBox box,
-                List<CanonicalPolygonOps.Point> sweepPointWorkspace
+                CanonicalPolygonOps.ConvexHullWorkspace sweepHullWorkspace
         ) {
             CanonicalPolygonOps.Polygon fullShape = analyticCuboidSweepPolygon(
                     radiusPropagation,
@@ -11144,7 +11463,7 @@ public final class VoxelSpotProjector {
                     box,
                     box.minTravel(),
                     box.maxTravel(),
-                    sweepPointWorkspace
+                    sweepHullWorkspace
             );
             CanonicalRect broadPhaseBounds = bounds(fullShape);
             return fullShape == null || broadPhaseBounds == null
@@ -11175,6 +11494,16 @@ public final class VoxelSpotProjector {
         }
 
         private CanonicalPolygonOps.Polygon prefixShape(double surfaceTravel) {
+            return prefixShape(
+                    surfaceTravel,
+                    new CanonicalPolygonOps.ConvexHullWorkspace()
+            );
+        }
+
+        private CanonicalPolygonOps.Polygon prefixShape(
+                double surfaceTravel,
+                CanonicalPolygonOps.ConvexHullWorkspace sweepHullWorkspace
+        ) {
             if (surfaceTravel <= startTravel() + EDGE_TOUCH_EPSILON) {
                 return null;
             }
@@ -11187,7 +11516,8 @@ public final class VoxelSpotProjector {
                     tileV,
                     box,
                     startTravel(),
-                    surfaceTravel
+                    surfaceTravel,
+                    sweepHullWorkspace
             );
         }
 
@@ -11196,7 +11526,17 @@ public final class VoxelSpotProjector {
         }
 
         private OcclusionWindow prefixWindow(double surfaceTravel) {
-            CanonicalPolygonOps.Polygon prefix = prefixShape(surfaceTravel);
+            return prefixWindow(
+                    surfaceTravel,
+                    new CanonicalPolygonOps.ConvexHullWorkspace()
+            );
+        }
+
+        private OcclusionWindow prefixWindow(
+                double surfaceTravel,
+                CanonicalPolygonOps.ConvexHullWorkspace sweepHullWorkspace
+        ) {
+            CanonicalPolygonOps.Polygon prefix = prefixShape(surfaceTravel, sweepHullWorkspace);
             return prefix == null
                     ? null
                     : window(prefix, Math.min(surfaceTravel, endTravel()), "sweep_prefix");
@@ -11206,6 +11546,20 @@ public final class VoxelSpotProjector {
                 double fromTravel,
                 double toTravel,
                 String phase
+        ) {
+            return segmentWindow(
+                    fromTravel,
+                    toTravel,
+                    phase,
+                    new CanonicalPolygonOps.ConvexHullWorkspace()
+            );
+        }
+
+        private OcclusionWindow segmentWindow(
+                double fromTravel,
+                double toTravel,
+                String phase,
+                CanonicalPolygonOps.ConvexHullWorkspace sweepHullWorkspace
         ) {
             double segmentStart = fromTravel <= startTravel() + EDGE_TOUCH_EPSILON
                     ? startTravel()
@@ -11225,7 +11579,8 @@ public final class VoxelSpotProjector {
                             tileV,
                             box,
                             segmentStart,
-                            segmentEnd
+                            segmentEnd,
+                            sweepHullWorkspace
                     );
             return segmentShape == null ? null : window(segmentShape, segmentEnd, phase);
         }

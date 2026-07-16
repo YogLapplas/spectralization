@@ -35,6 +35,10 @@ public final class SpectralizationConfig {
     private static final ModConfigSpec.BooleanValue OPTICAL_COMPILER_LEGACY_DEBUG_ORACLE;
     private static final ModConfigSpec.IntValue OPTICAL_COMPILER_SYSTEM_CACHE_MAX_ENTRIES;
     private static final ModConfigSpec.IntValue SPOT_PROJECTION_OCCLUSION_PLANES;
+    private static final ModConfigSpec.BooleanValue SPOT_PROJECTION_PARALLEL_ENABLED;
+    private static final ModConfigSpec.IntValue SPOT_PROJECTION_WORKERS;
+    private static final ModConfigSpec.IntValue SPOT_PROJECTION_MAX_IN_FLIGHT;
+    private static final ModConfigSpec.IntValue SPOT_PROJECTION_MAIN_THREAD_BUDGET_MICROS;
 
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
@@ -139,8 +143,30 @@ public final class SpectralizationConfig {
                 .comment("Maximum cached compiled optical systems keyed by repeated source geometry states.")
                 .defineInRange("system_cache_max_entries", 256, 0, 8192);
         SPOT_PROJECTION_OCCLUSION_PLANES = builder
-                .comment("Number of parallel planes used by projected spot occlusion. Default 5 means front, 25%, 50%, 75%, and back.")
+                .comment("Compatibility/debug plane count. Production projected-spot occlusion uses one analytic cuboid sweep regardless of this value.")
                 .defineInRange("spot_projection_occlusion_planes", 5, 2, 33);
+        SPOT_PROJECTION_PARALLEL_ENABLED = builder
+                .comment("Whether full and suffix spot projection jobs run asynchronously on dedicated workers.")
+                .define("spot_projection_parallel_enabled", true);
+        SPOT_PROJECTION_WORKERS = builder
+                .comment("Requested dedicated spot projection worker count. The running pool is clamped to max_in_flight; values above available processors may hurt performance.")
+                .defineInRange(
+                        "spot_projection_workers",
+                        Math.min(4, Math.max(1, Runtime.getRuntime().availableProcessors() - 2)),
+                        1,
+                        16
+                );
+        SPOT_PROJECTION_MAX_IN_FLIGHT = builder
+                .comment("Maximum submitted or running spot projection jobs across the server.")
+                .defineInRange(
+                        "spot_projection_max_in_flight",
+                        Math.min(32, Math.max(2, Math.min(4, Math.max(1, Runtime.getRuntime().availableProcessors() - 2)) * 2)),
+                        1,
+                        128
+                );
+        SPOT_PROJECTION_MAIN_THREAD_BUDGET_MICROS = builder
+                .comment("Soft per-tick budget for spot projection snapshot preparation and deterministic result publication, in microseconds. Worker projection time is not included.")
+                .defineInRange("spot_projection_main_thread_budget_micros", 4_000, 250, 50_000);
         builder.pop();
 
         SPEC = builder.build();
@@ -296,6 +322,22 @@ public final class SpectralizationConfig {
 
     public static int spotProjectionOcclusionPlanes() {
         return SPOT_PROJECTION_OCCLUSION_PLANES.get();
+    }
+
+    public static boolean spotProjectionParallelEnabled() {
+        return SPOT_PROJECTION_PARALLEL_ENABLED.get();
+    }
+
+    public static int spotProjectionWorkers() {
+        return SPOT_PROJECTION_WORKERS.get();
+    }
+
+    public static int spotProjectionMaxInFlight() {
+        return SPOT_PROJECTION_MAX_IN_FLIGHT.get();
+    }
+
+    public static int spotProjectionMainThreadBudgetMicros() {
+        return SPOT_PROJECTION_MAIN_THREAD_BUDGET_MICROS.get();
     }
 
     public static void setSpotProjectionOcclusionPlanes(int planes) {

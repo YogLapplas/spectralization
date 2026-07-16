@@ -7,6 +7,7 @@ public enum SpotTestMode {
     QUICK,
     PARTIAL_GEOMETRY,
     PERFORMANCE,
+    PARALLEL,
     DIRECTION_MATRIX,
     RANDOM_STRESS;
 

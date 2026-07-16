@@ -10,6 +10,16 @@ It records the test entry points, measured baseline, cache state, and the next
 single-cuboid sweep milestone followed by depth-suffix invalidation. This document
 remains the semantic authority.
 
+The completed optimization round, accepted measurements, deferred work, and
+reopen conditions are recorded in
+[SPOT_PROJECTION_CLOSEOUT_2026-07-16.md](SPOT_PROJECTION_CLOSEOUT_2026-07-16.md).
+
+The retained multi-source, moving-source, publication, and client-render
+architecture proposal is
+[SPOT_PROJECTION_ARCHITECTURE_V2.md](SPOT_PROJECTION_ARCHITECTURE_V2.md).
+It defines ownership and migration boundaries without replacing the projection
+semantics in this document.
+
 The projection layer is a visual/readout export layer. It helps the player infer
 where light would land. It does not drive the optical power solve, and it must not
 write power back into the port graph.
@@ -687,7 +697,7 @@ client render receives the patch
 This bug should stay documented until an in-game test confirms that internal
 x/z and y/z faces receive spots continuously and without floating patches.
 
-### 7.6 Implemented, awaiting in-game confirmation: edge-connected cuboids
+### 7.6 Resolved for the original edge-connected cuboid reproduction
 
 Two axis-aligned cuboids that share only one world edge can still produce a thin
 light seam when their occlusion is represented by independent parallel planes.
@@ -727,8 +737,10 @@ CuboidSweep:
 The formal verifier checks prefix monotonicity, containment of continuous sampled
 sections, front-before-activation, owner exclusion, indexed/serial equivalence,
 and canonical connectivity for a pair of edge-connected cuboids. The original
-in-game same-world-z reproduction must still be rerun before this limitation is
-marked fully closed.
+same-world-z in-game reproduction was rerun after the sweep migration and the
+diagonal blank seam was removed while the continuous slanted silhouette remained
+visible. This closes that reproduction for axis-aligned optical cuboids; it does
+not extend the guarantee to rotated meshes or arbitrary non-voxel silhouettes.
 
 ## 8. Debug and diagnostics
 
@@ -761,7 +773,8 @@ workflows. Its value no longer changes production cuboid-sweep occlusion.
 The creative inventory also contains the operator-only `spot_test` instrument.
 Right-click starts its selected automatic suite or reports the current case;
 Shift-right-click cycles through smart, quick, partial-geometry, performance,
-direction-matrix, and anonymous 1,000-scene random-stress modes. Left-clicking
+parallel multi-source, direction-matrix, and anonymous 1,000-scene random-stress
+modes. Left-clicking
 empty space toggles a separate lightweight/stress load profile without changing
 the selected mode, case count, sample count, repeat count, or anonymous-seed rule.
 The client sends only the empty-click intent, while the server validates the held
@@ -825,10 +838,18 @@ The random-stress mode replaces the former redundant full-suite mode. It builds
 1,000 independently randomized scenes at the standard occupancy, without fixed
 regression fixtures, and measures one forced full rebuild per scene. Seeds remain
 internal only: they are not written to chat, generated/case diagnostics, cleanup
-messages, or the final report. Detailed optical compiler logging and per-case chat
-are disabled for this mode. Chat and diagnostics receive aggregate progress every
-100 scenes and a final `event=random_stress_complete` summary with core and
-response percentiles.
+messages, or the final report. This suite has a dedicated single-source server-tick
+lane: after the source trace is ready, exactly one scene is built, force-rebuilt,
+committed, and recorded per server tick. It uses the same `VoxelSpotProjector`,
+geometry-cache invalidation, dependency-index replacement, and owner publication,
+but deliberately bypasses production async prepare/worker/commit tick boundaries.
+The parallel multi-source suite remains on the production asynchronous path.
+Detailed optical compiler logging and per-case chat are disabled for random stress.
+Chat and diagnostics receive aggregate progress every 100 scenes and a final
+`event=random_stress_complete` summary with core/response percentiles,
+`wall_elapsed_seconds`, `cases_per_second`, `completion_tick_span`, and
+`missed_completion_ticks`. In this mode `response` means synchronous test-lane
+rebuild plus commit, not normal player-facing async response latency.
 
 Automatic structural validation is source-scoped by dimension, source position,
 and travel direction. It must not turn global compiler verbose mode on for every
@@ -861,6 +882,27 @@ result distinguishes projection-core average/P95 from request-to-observation
 response average/P95; the latter includes the test runner's server-tick boundary
 and therefore better matches player-visible delay. Detailed stage timing remains
 in the structured diagnostics/performance log.
+
+The parallel suite uses one fixed `29 x 29` dense arena for a `3 x 3` grid of
+independent sources. Grid spacing is two blocks in both transverse axes, so all
+cones overlap heavily on the same random obstacles and terminal screen while
+each source remains a separate network/owner. All nine source blocks are placed
+once; the active prefix changes from `1` through `9` without rebuilding the
+arena. The complete `1 -> 9` sequence runs ten times. After projection work is
+idle, the runner waits five extra quiet ticks between source-count cases and
+twenty extra quiet ticks at cycle boundaries. A measured wave invalidates only
+spot geometry and enqueues projection refreshes; it does not clear the trace
+cache or recompile the graph. A wave completes only after every active source
+has published its next source-bound sample.
+
+Cycle 1 is labelled cold, cycles 2-3 warming, cycles 4-5 stabilizing, and cycles
+6-10 steady. Formal P50/P95 values use only cycles 6-10. For each source count,
+the stabilizing response median is compared with the steady response median;
+drift above ten percent is reported as `warmup_unstable`. Reports include
+per-job and aggregate worker time, whole-wave response, maximum executor
+in-flight and queue depth, submit/commit tick spread, cache modes, and a stable
+ordinal-folded output fingerprint. Every measured job must be a full rebuild;
+suffix and appearance-only samples are not accepted.
 
 `spottest random` builds a complete reproducible projection stress scene in the
 loaded area in front of and above the executing player. It contains a 300 SP
@@ -1435,7 +1477,11 @@ bounds fully contain a candidate convex cell's bounds, that immutable cell is
 returned directly; only boundary-crossing cells execute polygon half-plane
 clipping. This is exact because a convex cell whose complete bounds lie inside the
 rectangle also lies inside the rectangle. Partial cells still use the ordinary
-polygon kernel, and the grid remains broad phase only.
+polygon kernel, and the grid remains broad phase only. The four rectangle
+half-planes share two mutable point buffers through the complete clip and create
+only the final immutable `Polygon`; normalization still runs after every
+half-plane, so this is exactly equivalent to the generic polygon intersection
+order rather than a looser axis-aligned approximation.
 
 After all blockers for a depth have been subtracted, adjacent convex cells may be
 compacted. A merge is exact only when the cells share an edge and the convex hull's
@@ -1686,10 +1732,33 @@ ephemeral result consumed before the next window. Every resulting `Polygon` stil
 owns its immutable normalized vertices; only query and output containers are
 ephemeral. This preserves side candidate, polygon, patch, and publication order.
 
-Full cuboid sweep construction similarly reuses one eight-point extrema list per
-depth. The remaining-region sweep prefilter shares one reusable candidate/clipping
-workspace across cuboids. These workspaces are strictly depth-local, are never
-stored in a `CuboidSweep` or cache entry, and cannot become geometry authority.
+The same session also reuses the side prefix index's hit-id array, id-addressed
+window slots, and ordered result list. Spatial hits are restored to original cuboid
+construction order before subtraction, and the result list is consumed before the
+next side query clears it. Prefix `OcclusionWindow` values and their polygons remain
+fresh immutable geometry; only the query bookkeeping containers are reused.
+
+Full cuboid sweep construction similarly reuses one convex-hull workspace per
+depth. Before sorting any extrema, production computes a conservative canonical
+bound from the same endpoint/waist radius extrema. If that bound has no positive-area
+intersection with the current remaining bound, the cuboid cannot contribute and
+sorting, hull construction, and the exact remaining query are skipped. Every
+surviving candidate still constructs its exact polygon and passes the existing exact
+remaining-region prefilter; bounds never drive subtraction. The eight-point extrema
+input, sorted/unique points, lower/upper chains, and unit-square clipping buffers are
+cleared and reused across cuboids. Hulls already inside the unit square skip clipping;
+clipped hulls normalize mutable buffers after each half-plane and construct only the
+final immutable `Polygon`. Front prefix and segment shapes reuse the same caller-owned
+depth workspace after full-sweep construction; side same-depth prefix queries reuse
+the hull workspace owned by the depth-local side query session. `CuboidSweep` receives
+these workspaces only as method arguments and never retains them. The remaining-region
+sweep prefilter shares one reusable candidate/clipping workspace across cuboids. All
+reusable workspaces are strictly depth-local, are never stored in a `CuboidSweep` or
+cache entry, and cannot become geometry authority. Every resulting polygon still owns
+its normalized vertex list. Formal verification checks that the pre-hull conservative
+bound contains the exact polygon, compares fresh and caller-reused prefix/segment
+windows with exact vertex order, and compares the reusable hull path against the
+original generic hull/intersection path.
 
 A boundary-based side candidate enumerator is the stable side candidate source.
 In verbose validation mode it can still be compared against the old projectable
@@ -1778,6 +1847,91 @@ The first useful diagnostics for this phase are:
 
 These counters should be separate from `client_spot_render`; render time is not
 the current bottleneck.
+
+The asynchronous implementation follows this boundary. A
+`ProjectionBatchPreparation` advances under the server tick budget and prepares
+at most one outgoing node per step. `SpotProjectionJob` is the worker boundary:
+it contains no `Level`, cache, diagnostics, tracker, or network reference. A
+dedicated bounded executor may finish jobs in any order, but
+`PreparedSpotBatch.commit()` reads results in the original node ordinal order.
+After preparing one projected outgoing node, the preparation cursor may skip only
+the following non-outgoing graph tail. It must stop before the next outgoing node.
+This lets an ordinary one-output graph become ready in one step without capturing
+a second snapshot or weakening the one-projected-output-per-step bound.
+
+The snapshot captures the full conservative depth cone plus the side-neighbor
+halo. World facts are stored in immutable `16^3` section pages owned by the
+server-thread `LevelTraceCache`. A bounded 256-section LRU retains the newest page
+for reuse. Missing or changed facts produce a copy-on-write replacement page;
+pages already referenced by a worker are never mutated. Each job carries only
+immutable page references and exact per-section coverage bitsets. Coverage and
+dynamically produced projection dependencies are separate: extra eagerly
+captured blocks do not enlarge suffix invalidation dependencies. A position
+outside the job coverage remains a snapshot miss even if another job populated
+that position in the shared section.
+
+Section versions include projection-dirty changes and chunk revisions. Commit
+validation compares the captured versions before cache mutation or publication.
+A same-section unrelated change may conservatively stale a job, but it cannot let
+old facts commit. Shape-neighbor changes advance every touched neighbor section,
+including cross-section boundaries.
+
+Published owner state remains atomic. Cache instance tokens, network projection
+generations, per-geometry job tokens, and captured block revisions are validated
+on the server thread before cache mutation or publication. The old committed
+owner snapshot remains visible while a replacement batch is pending, except that
+a removed receiving block is still discarded immediately.
+
+Ready network batches dispatch when they fill the configured worker width or when
+the current preparation wave is complete. A partial batch may wait at most four
+server ticks, which prevents starvation without the old 100 ms wall-clock timeout
+splitting ordinary four-worker waves before their fourth snapshot was prepared.
+
+Executor admission has one authority: an atomic in-flight counter bounded by the
+configured maximum. Core worker threads are prestarted, and the executor queue is
+sized to the same maximum so an admitted task cannot be rejected during pool
+startup or a worker/queue handoff. `availableSlots()` is advisory only; a failed
+`submit()` remains observable and is a benchmark failure, never a reason to run
+projection on the server thread.
+
+Completion does not imply immediate publication. Snapshot preparation and completed
+batch publication share a dedicated soft main-thread projection deadline, measured
+from the same queue-entry time as the general optical-solver deadline. The two
+windows are therefore not additive: when projection work uses the longer window,
+ordinary solver work already sees its own earlier deadline as exhausted. After the
+first commit in a tick, another batch is committed only when an EWMA estimate of
+deterministic assembly, cache mutation, and owner publication fits the remaining
+projection budget. At most one effective executor worker-width of batches may commit
+in one tick. The executor clamps this width to `max_in_flight`, so a legal
+`max_in_flight < workers` configuration cannot wait for or publish an unreachable
+configured width. This prevents a large completion backlog from turning into an
+unbounded publish burst. Complete results may therefore remain queued across ticks;
+node order inside a batch and atomic owner replacement remain unchanged.
+
+Diagnostics file I/O is not part of projection authority. Formatted diagnostics and
+compiler-log entries enter one bounded, ordered writer queue; UTF-8 encoding and file
+writes run on its dedicated daemon thread. Queue saturation drops diagnostics rather
+than blocking the server thread and is observable through enqueued/completed/pending,
+maximum-pending, dropped, and failed counters. The queue must never carry world or
+compiler authority, and the single writer must preserve accepted entry order.
+
+Commit timing separates deterministic batch assembly from diagnostic event formatting
+and queue admission. `projection_commit_us` remains the complete main-thread cost used
+by the budget estimator, while `projection_commit_assembly_us` excludes
+`projection_commit_diagnostics_us`. This prevents a delayed filesystem write from
+being misclassified as a spot-layer data-structure regression without hiding the
+remaining main-thread formatting/enqueue cost.
+
+Commit may use equality fast paths without weakening freshness validation. A
+single-node batch may feed its immutable dependency/allocation snapshots directly
+into the final defensive `SpotLayer` copy instead of building an intermediate
+accumulator. The server-owned reverse dependency index may retain its existing
+mapping when the replacement dependency set is exactly equal. The compiled owner
+tracker also retains the original ordered compiled input beside its sorted wire
+snapshot; exact ordered input equality may skip filtering, sorting, signature
+construction, and payload generation. A block-removal prune replaces that retained
+input with the pruned list, so the next complete rebuild cannot incorrectly reuse
+the partial owner snapshot.
 
 ## 10. Change rules
 

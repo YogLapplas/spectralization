@@ -7,6 +7,7 @@ import io.github.yoglappland.spectralization.blockentity.CreativeLightSourceBloc
 import io.github.yoglappland.spectralization.config.SpectralizationConfig;
 import io.github.yoglappland.spectralization.diagnostics.SpectralDiagnostics;
 import io.github.yoglappland.spectralization.optics.SpectralRegion;
+import io.github.yoglappland.spectralization.optics.cache.OpticalTraceCache;
 import io.github.yoglappland.spectralization.optics.compiler.CompiledSpotLayer;
 import io.github.yoglappland.spectralization.optics.projection.SpotProjectionPerformanceTracker;
 import io.github.yoglappland.spectralization.optics.projection.SpotProjectionPerformanceTracker.OutputFingerprint;
@@ -42,11 +43,17 @@ public final class SpotProjectionTestCommand {
     private static final long BENCHMARK_TIMEOUT_TICKS = 400L;
     private static final double RANDOM_OCCUPANCY = 0.17D;
     private static final int RANDOM_STRESS_CASES = 1_000;
+    private static final int RANDOM_STRESS_CASES_PER_TICK = 1;
     private static final int RANDOM_STRESS_PROGRESS_INTERVAL = 100;
     private static final int SMART_WARMUP_SAMPLES = 8;
     private static final int SMART_VALIDATION_SAMPLES = 3;
     private static final int SMART_PERFORMANCE_SAMPLES = 12;
     private static final int SMART_CACHE_SAMPLES = 7;
+    private static final int PARALLEL_BENCHMARK_SAMPLES = 1;
+    private static final int PARALLEL_CYCLES = 10;
+    private static final int PARALLEL_CASE_QUIET_TICKS = 5;
+    private static final int PARALLEL_CYCLE_QUIET_TICKS = 20;
+    private static final int[] PARALLEL_SOURCE_COUNTS = {1, 2, 3, 4, 5, 6, 7, 8, 9};
     private static final long[] DIRECTION_MATRIX_WARMUP_SEEDS = {
             0x13579bdf2468aceL,
             0x2468ace13579bdfL,
@@ -154,16 +161,23 @@ public final class SpotProjectionTestCommand {
 
         SpotTestLayout layout = SpotTestLayout.inFrontOf(player);
         List<SuiteCase> cases = suiteCases(mode, load);
-        for (Direction direction : cases.stream()
-                .map(testCase -> testCase.directionOr(layout.direction()))
-                .distinct()
-                .toList()) {
-            if (!SpotProjectionTestScene.validateVolume(
-                    source,
-                    player.serverLevel(),
-                    layout.withDirection(direction)
-            )) {
-                return 0;
+        for (SuiteCase testCase : cases) {
+            SpotTestLayout caseLayout = layout.withDirection(testCase.directionOr(layout.direction()));
+            if (testCase.sharedParallelArena()) {
+                if (!SpotProjectionTestScene.validateParallelArena(
+                        source, player.serverLevel(), caseLayout
+                )) {
+                    return 0;
+                }
+            } else {
+                for (SpotTestLayout sourceLayout : caseLayout.parallelSources(testCase.sourceCount())) {
+                    if (!SpotProjectionTestScene.validateVolume(source, player.serverLevel(), sourceLayout)) {
+                        return 0;
+                    }
+                }
+            }
+            if (mode == SpotTestMode.PARALLEL) {
+                break;
             }
         }
 
@@ -189,11 +203,15 @@ public final class SpotProjectionTestCommand {
                 .field("suite", mode.serializedName())
                 .field("load", load.serializedName())
                 .field("cases", cases.size())
+                .field("max_sources", cases.stream().mapToInt(SuiteCase::sourceCount).max().orElse(1))
                 .field("repeats", switch (mode) {
                     case DIRECTION_MATRIX -> DIRECTION_MATRIX_SEEDS.length;
                     case RANDOM_STRESS -> RANDOM_STRESS_CASES;
+                    case PARALLEL -> PARALLEL_CYCLES;
                     default -> 1;
                 })
+                .field("projection_execution", mode == SpotTestMode.RANDOM_STRESS
+                        ? "server_tick_serial" : "production_async")
                 .pos("source", firstLayout.source())
                 .field("direction", firstLayout.direction())
                 .write();
@@ -214,29 +232,44 @@ public final class SpotProjectionTestCommand {
         GeneratedTest generatedTest = new GeneratedTest(
                 run.dimension,
                 caseLayout,
+                run.currentLayouts(),
                 testCase
         );
         GeneratedTest previous = LAST_TEST_BY_PLAYER.remove(player.getUUID());
-        if (previous != null && !previous.layout().equals(caseLayout)) {
+        if (previous != null && !previous.arenaLayout().equals(caseLayout)) {
             clearGeneratedTest(player.createCommandSourceStack(), previous);
         }
         if (run.mode == SpotTestMode.DIRECTION_MATRIX) {
             SpotProjectionTestScene.clearAllHorizontalDirections(player.serverLevel(), run.layout);
         }
-        SpotProjectionTestScene.BuildResult buildResult = build(
+        boolean reuseParallelArena = run.mode == SpotTestMode.PARALLEL && run.caseIndex > 0;
+        SpotProjectionTestScene.BuildResult buildResult = reuseParallelArena
+                ? new SpotProjectionTestScene.BuildResult(0, 0, 0, 0, run.currentSceneSignature)
+                : build(
+                        player.serverLevel(),
+                        generatedTest,
+                        run.mode != SpotTestMode.RANDOM_STRESS
+                );
+        if (run.mode == SpotTestMode.PARALLEL && !SpotProjectionTestScene.setActiveParallelSources(
                 player.serverLevel(),
-                generatedTest,
-                run.mode != SpotTestMode.RANDOM_STRESS
-        );
+                caseLayout.parallelSources(9),
+                testCase.sourceCount()
+        )) {
+            finishItemSuite(player, player.serverLevel(), false, "parallel_source_activation_failed");
+            return;
+        }
         int placed = buildResult.placed();
         run.currentSceneSignature = buildResult.sceneSignature();
         LAST_TEST_BY_PLAYER.put(player.getUUID(), generatedTest);
-        SpotProjectionPerformanceTracker.reset(
-                player.serverLevel(),
-                caseLayout.source(),
-                caseLayout.direction()
-        );
+        if (run.mode != SpotTestMode.PARALLEL) {
+            resetBenchmarkSamples(player.serverLevel(), generatedTest);
+        }
         long gameTime = player.serverLevel().getGameTime();
+        int quietTicks = run.mode != SpotTestMode.PARALLEL
+                ? 0
+                : (testCase.sourceCount() == 1
+                ? PARALLEL_CYCLE_QUIET_TICKS
+                : PARALLEL_CASE_QUIET_TICKS);
         BENCHMARKS_BY_PLAYER.put(player.getUUID(), new BenchmarkRun(
                 generatedTest,
                 testCase.samples(),
@@ -244,9 +277,16 @@ public final class SpotProjectionTestCommand {
                 gameTime + BENCHMARK_TIMEOUT_TICKS,
                 run.runId,
                 testCase.id(),
-                testCase.benchmarkMode()
+                testCase.benchmarkMode(),
+                quietTicks
         ));
         startBenchmarkProjection(player.serverLevel(), BENCHMARKS_BY_PLAYER.get(player.getUUID()));
+        if (run.mode == SpotTestMode.RANDOM_STRESS) {
+            OpticalTraceCache.cancelSingleSourceSpotProjectionTestWork(
+                    player.serverLevel(),
+                    projectionSources(generatedTest).getFirst()
+            );
+        }
         if (run.mode != SpotTestMode.RANDOM_STRESS) {
             player.sendSystemMessage(Component.translatable(
                     "item.spectralization.spot_test.message.case_started",
@@ -266,6 +306,10 @@ public final class SpotProjectionTestCommand {
                     .field("case_id", testCase.id())
                     .field("case_index", run.caseIndex)
                     .field("repeat", testCase.repeatIndex())
+                    .field("cycle_index", run.mode == SpotTestMode.PARALLEL
+                            ? testCase.repeatIndex() + 1 : testCase.repeatIndex())
+                    .field("warmup_phase", run.mode == SpotTestMode.PARALLEL
+                            ? parallelWarmupPhase(testCase.repeatIndex()) : "not_applicable")
                     .field("direction", caseLayout.direction());
             if (testCase.recordSeed()) {
                 startedEvent.field("seed", testCase.seed());
@@ -276,6 +320,9 @@ public final class SpotProjectionTestCommand {
                     .field("fixtures", testCase.fixtures())
                     .field("divergence", testCase.divergenceMilli() / 1000.0D)
                     .field("samples", testCase.samples())
+                    .field("source_count", testCase.sourceCount())
+                    .field("scene_layout", testCase.sharedParallelArena()
+                            ? "shared_overlap" : "standard")
                     .field("benchmark_mode", testCase.benchmarkMode().serializedName)
                     .field("appearance_mutation", testCase.appearanceMutation().serializedName)
                     .field("verbose_validation", testCase.verboseValidation())
@@ -355,7 +402,7 @@ public final class SpotProjectionTestCommand {
         }
 
         ServerLevel level = source.getServer().getLevel(generatedTest.dimension());
-        if (level == null || !SpotProjectionTestScene.validateVolume(source, level, generatedTest.layout())) {
+        if (level == null || !validateGeneratedTest(source, level, generatedTest)) {
             return 0;
         }
 
@@ -388,14 +435,27 @@ public final class SpotProjectionTestCommand {
             return 0;
         }
 
-        SpotProjectionPerformanceTracker.Report report = SpotProjectionPerformanceTracker.report(
-                level,
-                test.layout().source(),
-                test.layout().direction(),
-                count
-        );
-        sendReport(player, level, report);
-        return Math.max(1, report.samples());
+        List<SpotProjectionPerformanceTracker.Report> reports = test.layouts().stream()
+                .map(layout -> SpotProjectionPerformanceTracker.report(
+                        level, layout.source(), layout.direction(), count
+                ))
+                .toList();
+        if (reports.size() == 1) {
+            sendReport(player, level, reports.get(0));
+            return Math.max(1, reports.get(0).samples());
+        }
+        MultiSourceMetrics metrics = MultiSourceMetrics.from(reports);
+        player.sendSystemMessage(Component.literal(String.format(
+                Locale.ROOT,
+                "Multi-source spot report: sources=%d jobs=%d jobAvg=%.2f ms slowestP95=%.2f ms totalSpots=%.1f",
+                metrics.sourceCount(),
+                metrics.jobSamples(),
+                metrics.jobElapsedAverageUs() / 1_000.0D,
+                metrics.slowestSourceP95Us() / 1_000.0D,
+                metrics.totalSpotsAverage()
+        )));
+        logMultiSourceReport(level, metrics, count);
+        return Math.max(1, metrics.jobSamples());
     }
 
     private static int benchmark(CommandSourceStack source, int count) {
@@ -414,11 +474,11 @@ public final class SpotProjectionTestCommand {
         }
 
         ServerLevel level = source.getServer().getLevel(test.dimension());
-        if (level == null || !SpotProjectionTestScene.validateVolume(source, level, test.layout())) {
+        if (level == null || !validateGeneratedTest(source, level, test)) {
             return 0;
         }
 
-        SpotProjectionPerformanceTracker.reset(level, test.layout().source(), test.layout().direction());
+        resetBenchmarkSamples(level, test);
         BENCHMARKS_BY_PLAYER.put(player.getUUID(), new BenchmarkRun(
                 test,
                 count,
@@ -427,8 +487,9 @@ public final class SpotProjectionTestCommand {
         ));
         startBenchmarkProjection(level, BENCHMARKS_BY_PLAYER.get(player.getUUID()));
         source.sendSuccess(() -> Component.literal(String.format(
-                "Started source-bound spot benchmark: samples=%d source=%s direction=%s",
+                "Started source-bound spot benchmark: samples=%d sources=%d firstSource=%s direction=%s",
                 count,
+                test.layouts().size(),
                 test.layout().source().toShortString(),
                 test.layout().direction().getSerializedName()
         )), false);
@@ -458,19 +519,48 @@ public final class SpotProjectionTestCommand {
                 continue;
             }
 
-            SpotProjectionPerformanceTracker.Report report = SpotProjectionPerformanceTracker.report(
-                    level,
-                    run.test.layout().source(),
-                    run.test.layout().direction(),
-                    run.targetSamples
-            );
-            if (run.warmupPhase > 0 && report.samples() >= 1) {
+            run.observeTick(level);
+            if (run.awaitingProjectionStart) {
+                if (run.suiteRunId != null
+                        && run.test.testCase().id().equals("random_stress")) {
+                    SuiteBenchmarkCompletion completion = runRandomStressProjectionTick(
+                            entry.getKey(), level, run
+                    );
+                    if (completion == null) {
+                        continue;
+                    }
+                    suiteCompletions.add(completion);
+                    iterator.remove();
+                    continue;
+                }
+                List<OpticalTraceCache.ProjectionSource> projectionSources = projectionSources(run.test);
+                OpticalTraceCache.ProjectionWorkState workState = OpticalTraceCache.projectionWorkState(level);
+                if (workState.idle() && OpticalTraceCache.projectionSourcesReady(level, projectionSources)) {
+                    run.quietTicksObserved++;
+                } else {
+                    run.quietTicksObserved = 0;
+                }
+                if (run.quietTicksObserved < run.quietTicksRequired) {
+                    continue;
+                }
+                resetBenchmarkSamples(level, run.test);
+                if (!requestBenchmarkProjection(level, run)) {
+                    run.quietTicksObserved = 0;
+                    continue;
+                }
+                run.awaitingProjectionStart = false;
+                run.startLatency(level);
+                run.deadlineTick = level.getGameTime() + BENCHMARK_TIMEOUT_TICKS;
+                run.nextRetryTick = level.getGameTime() + BENCHMARK_RETRY_TICKS;
+                logProjectionWaveStarted(level, run, workState);
+                continue;
+            }
+            List<SpotProjectionPerformanceTracker.Report> sourceReports = benchmarkReports(level, run);
+            SpotProjectionPerformanceTracker.Report report = sourceReports.get(0);
+            int completedRounds = completedBenchmarkRounds(sourceReports);
+            if (run.warmupPhase > 0 && completedRounds >= 1) {
                 run.discardPendingLatency();
-                SpotProjectionPerformanceTracker.reset(
-                        level,
-                        run.test.layout().source(),
-                        run.test.layout().direction()
-                );
+                resetBenchmarkSamples(level, run.test);
                 run.observedSamples = 0;
                 if (run.warmupPhase == 2) {
                     run.warmupPhase = 1;
@@ -490,10 +580,25 @@ public final class SpotProjectionTestCommand {
                 run.nextRetryTick = level.getGameTime() + BENCHMARK_RETRY_TICKS;
                 continue;
             }
-            if (report.samples() >= run.targetSamples) {
+            if (completedRounds >= run.targetSamples) {
                 run.completePendingLatency();
+                run.captureProjectionBatchObservation(level);
                 if (run.suiteRunId == null) {
-                    sendReport(player, level, report);
+                    if (sourceReports.size() == 1) {
+                        sendReport(player, level, report);
+                    } else {
+                        MultiSourceMetrics metrics = MultiSourceMetrics.from(sourceReports);
+                        player.sendSystemMessage(Component.literal(String.format(
+                                Locale.ROOT,
+                                "Multi-source benchmark: sources=%d rounds=%d jobAvg=%.2f ms slowestP95=%.2f ms batchP95=%.2f ms",
+                                metrics.sourceCount(),
+                                run.targetSamples,
+                                metrics.jobElapsedAverageUs() / 1_000.0D,
+                                metrics.slowestSourceP95Us() / 1_000.0D,
+                                run.latencyReport().p95Us() / 1_000.0D
+                        )));
+                        logMultiSourceReport(level, metrics, run.targetSamples);
+                    }
                     player.sendSystemMessage(Component.literal("Spot benchmark complete."));
                 } else {
                     if (activeItemSuite == null
@@ -505,7 +610,9 @@ public final class SpotProjectionTestCommand {
                             entry.getKey(),
                             run.suiteRunId,
                             report,
+                            sourceReports,
                             run.latencyReport(),
+                            run.observation(),
                             true,
                             "samples_complete"
                     ));
@@ -519,7 +626,7 @@ public final class SpotProjectionTestCommand {
                 if (run.suiteRunId == null) {
                     player.sendSystemMessage(Component.literal(String.format(
                             "Spot benchmark timed out after collecting %d/%d source-bound samples.",
-                            report.samples(),
+                            completedRounds,
                             run.targetSamples
                     )));
                 } else {
@@ -536,9 +643,9 @@ public final class SpotProjectionTestCommand {
                 continue;
             }
 
-            if (report.samples() > run.observedSamples) {
+            if (completedRounds > run.observedSamples) {
                 run.completePendingLatency();
-                run.observedSamples = report.samples();
+                run.observedSamples = completedRounds;
                 if (!applyNextAppearance(level, run)) {
                     suiteCompletions.add(new SuiteBenchmarkCompletion(
                             entry.getKey(), run.suiteRunId, report, run.latencyReport(), false,
@@ -549,14 +656,94 @@ public final class SpotProjectionTestCommand {
                 }
                 startBenchmarkProjection(level, run);
                 run.nextRetryTick = gameTime + BENCHMARK_RETRY_TICKS;
-            } else if (gameTime >= run.nextRetryTick) {
-                requestBenchmarkProjection(level, run);
+            } else if (gameTime >= run.nextRetryTick
+                    && OpticalTraceCache.projectionWorkState(level).idle()
+                    && requestBenchmarkProjection(level, run)) {
                 run.nextRetryTick = gameTime + BENCHMARK_RETRY_TICKS;
             }
         }
 
         for (SuiteBenchmarkCompletion completion : suiteCompletions) {
             completeItemSuiteBenchmark(server, completion);
+        }
+    }
+
+    /**
+     * Runs exactly one anonymous single-source scene in the current server tick. Random stress is
+     * a core-throughput test, so it uses the synchronous single-source test lane instead of paying
+     * the production async prepare/worker/commit tick boundaries 1,000 times. All other suites,
+     * especially the multi-source suite, retain the ordinary asynchronous state machine.
+     */
+    private static SuiteBenchmarkCompletion runRandomStressProjectionTick(
+            UUID owner,
+            ServerLevel level,
+            BenchmarkRun run
+    ) {
+        List<OpticalTraceCache.ProjectionSource> sources = projectionSources(run.test);
+        if (sources.size() != 1 || run.targetSamples != 1) {
+            return new SuiteBenchmarkCompletion(
+                    owner,
+                    run.suiteRunId,
+                    SpotProjectionPerformanceTracker.Report.EMPTY,
+                    RequestLatencyReport.EMPTY,
+                    false,
+                    "random_stress_requires_one_source_one_sample"
+            );
+        }
+        OpticalTraceCache.ProjectionSource source = sources.getFirst();
+        if (!OpticalTraceCache.projectionSourcesReady(level, sources)) {
+            return null;
+        }
+
+        resetBenchmarkSamples(level, run.test);
+        run.awaitingProjectionStart = false;
+        run.startLatency(level);
+        if (!OpticalTraceCache.runSingleSourceSpotProjectionTestNow(
+                level, source, "random_stress_tick_full_rebuild"
+        )) {
+            run.discardPendingLatency();
+            run.awaitingProjectionStart = true;
+            return null;
+        }
+        run.completePendingLatency();
+
+        List<SpotProjectionPerformanceTracker.Report> sourceReports = benchmarkReports(level, run);
+        SpotProjectionPerformanceTracker.Report report = sourceReports.getFirst();
+        boolean complete = completedBenchmarkRounds(sourceReports) >= run.targetSamples;
+        return new SuiteBenchmarkCompletion(
+                owner,
+                run.suiteRunId,
+                report,
+                sourceReports,
+                run.latencyReport(),
+                run.observation(),
+                complete,
+                complete ? "tick_sample_complete" : "tick_sample_missing"
+        );
+    }
+
+    /**
+     * Samples benchmark response latency immediately after the projection queue has had its
+     * server-thread commit opportunity for this tick. The main benchmark state machine still
+     * advances only from {@link #tickBenchmarks(MinecraftServer)}, so this observation does not
+     * shorten quiet intervals or start another projection wave in the same tick.
+     */
+    public static void observeBenchmarkCompletions(MinecraftServer server) {
+        for (Map.Entry<UUID, BenchmarkRun> entry : BENCHMARKS_BY_PLAYER.entrySet()) {
+            BenchmarkRun run = entry.getValue();
+            ServerLevel level = server.getLevel(run.test.dimension());
+            if (level == null || run.requestStartNanos <= 0L) {
+                continue;
+            }
+            int completedRounds = completedBenchmarkRounds(benchmarkReports(level, run));
+            if (completedRounds <= run.observedSamples) {
+                continue;
+            }
+            if (run.warmupPhase > 0) {
+                run.discardPendingLatency();
+            } else {
+                run.completePendingLatency();
+            }
         }
     }
 
@@ -589,6 +776,8 @@ public final class SpotProjectionTestCommand {
 
         SuiteCase testCase = run.currentCase();
         SpotTestLayout caseLayout = run.currentLayout();
+        MultiSourceMetrics multiSource = MultiSourceMetrics.from(completion.sourceReports());
+        int expectedJobSamples = testCase.samples() * testCase.sourceCount();
         SpotProjectionResult.Stats stats = SpotProjectionPerformanceTracker.latestStats(
                 level,
                 caseLayout.source(),
@@ -599,6 +788,12 @@ public final class SpotProjectionTestCommand {
                 caseLayout.source(),
                 caseLayout.direction()
         );
+        List<OutputFingerprint> sourceFingerprints = run.currentLayouts().stream()
+                .map(layout -> SpotProjectionPerformanceTracker.latestOutputFingerprint(
+                        level, layout.source(), layout.direction()
+                ))
+                .toList();
+        MultiSourceFingerprint multiSourceFingerprint = MultiSourceFingerprint.from(sourceFingerprints);
         SpotProjectionResult.OptimizationStats optimization = stats.optimization();
         long structuralMismatches = optimization.remainingSubtractValidationMismatches()
                 + optimization.sameDepthSplitValidationMismatches()
@@ -616,15 +811,36 @@ public final class SpotProjectionTestCommand {
                 && structuralMismatches == 0L
                 && validationEvidencePresent);
         boolean cachePassed = testCase.benchmarkMode() != BenchmarkMode.CACHE_REUSE
-                || (completion.report().appearanceOnlySamples() == testCase.samples()
-                && completion.report().fullRebuildSamples() == 0);
-        boolean passed = validationPassed && cachePassed;
+                || (multiSource.appearanceOnlySamples() == expectedJobSamples
+                && multiSource.fullRebuildSamples() == 0);
+        boolean parallelRebuildPassed = run.mode != SpotTestMode.PARALLEL
+                || (multiSource.jobSamples() == expectedJobSamples
+                && multiSource.fullRebuildSamples() == expectedJobSamples
+                && multiSource.suffixRebuildSamples() == 0
+                && multiSource.appearanceOnlySamples() == 0
+                && multiSourceFingerprint.complete());
+        boolean parallelSubmissionPassed = run.mode != SpotTestMode.PARALLEL
+                || completion.benchmark().submitRejected() == 0L;
+        boolean parallelFingerprintPassed = run.recordParallelResult(
+                testCase,
+                multiSource,
+                completion.latency(),
+                completion.benchmark(),
+                multiSourceFingerprint
+        );
+        boolean passed = validationPassed
+                && cachePassed
+                && parallelRebuildPassed
+                && parallelSubmissionPassed
+                && parallelFingerprintPassed;
         String result = passed
                 ? (testCase.verboseValidation() ? "pass" : "complete")
                 : "fail";
 
         if (run.mode == SpotTestMode.RANDOM_STRESS) {
-            run.recordRandomStressResult(completion.report(), completion.latency());
+            run.recordRandomStressResult(
+                    completion.report(), completion.latency(), level.getGameTime()
+            );
         } else {
             SpectralDiagnostics.Event completedEvent = SpectralDiagnostics
                     .event(level, "spot_projection_test", "case_complete")
@@ -634,6 +850,10 @@ public final class SpotProjectionTestCommand {
                     .field("case_id", testCase.id())
                     .field("case_index", run.caseIndex)
                     .field("repeat", testCase.repeatIndex())
+                    .field("cycle_index", run.mode == SpotTestMode.PARALLEL
+                            ? testCase.repeatIndex() + 1 : testCase.repeatIndex())
+                    .field("warmup_phase", run.mode == SpotTestMode.PARALLEL
+                            ? parallelWarmupPhase(testCase.repeatIndex()) : "not_applicable")
                     .field("direction", caseLayout.direction());
             if (testCase.recordSeed()) {
                 completedEvent.field("seed", testCase.seed());
@@ -647,19 +867,55 @@ public final class SpotProjectionTestCommand {
                             outputFingerprint.fragmentationSignature(), 16
                     ))
                     .field("output_surfaces", outputFingerprint.surfaces().size())
+                    .field("output_fingerprint_scope", testCase.sourceCount() == 1
+                            ? "complete_case" : "primary_source")
                     .field("samples", completion.report().samples())
+                    .field("sample_rounds", testCase.samples())
+                    .field("source_count", testCase.sourceCount())
+                    .field("job_samples", multiSource.jobSamples())
                     .field("elapsed_avg_us", completion.report().elapsedAverageUs())
                     .field("elapsed_p50_us", completion.report().elapsedP50Us())
                     .field("elapsed_p95_us", completion.report().elapsedP95Us())
                     .field("response_samples", completion.latency().samples())
                     .field("response_avg_us", completion.latency().averageUs())
+                    .field("response_p50_us", completion.latency().p50Us())
                     .field("response_p95_us", completion.latency().p95Us())
                     .field("response_max_us", completion.latency().maxUs())
-                    .field("spots_avg", completion.report().spotsAverage())
+                    .field("max_tick_stall_us", completion.latency().maxTickStallUs())
+                    .field("job_elapsed_avg_us", multiSource.jobElapsedAverageUs())
+                    .field("slowest_source_p50_us", multiSource.slowestSourceP50Us())
+                    .field("slowest_source_p95_us", multiSource.slowestSourceP95Us())
+                    .field("source_completion_tick_spread", multiSource.completionTickSpread())
+                    .field("quiet_ticks_required", completion.benchmark().quietTicksRequired())
+                    .field("quiet_ticks_observed", completion.benchmark().quietTicksObserved())
+                    .field("projection_max_in_flight", completion.benchmark().maxProjectionInFlight())
+                    .field("projection_max_queue_depth", completion.benchmark().maxProjectionQueueDepth())
+                    .field("projection_submit_tick_spread", completion.benchmark().submitTickSpread())
+                    .field("projection_commit_tick_spread", completion.benchmark().commitTickSpread())
+                    .field("projection_dispatch_waves", completion.benchmark().dispatchWaves())
+                    .field("projection_dispatch_width_avg", completion.benchmark().averageDispatchWidth())
+                    .field("projection_dispatch_width_max", completion.benchmark().maxDispatchWidth())
+                    .field("projection_worker_total_us", completion.benchmark().totalWorkerUs())
+                    .field("projection_commit_total_us", completion.benchmark().totalCommitUs())
+                    .field("projection_commit_assembly_total_us", completion.benchmark().totalAssemblyUs())
+                    .field("projection_commit_diagnostics_total_us",
+                            completion.benchmark().totalDiagnosticsUs())
+                    .field("projection_commit_dependency_index_total_us",
+                            completion.benchmark().totalDependencyIndexUs())
+                    .field("projection_commit_owner_publish_total_us",
+                            completion.benchmark().totalOwnerPublishUs())
+                    .field("projection_commit_dependency_index_reused",
+                            completion.benchmark().dependencyIndexReused())
+                    .field("projection_commit_owner_publish_reused",
+                            completion.benchmark().ownerPublishReused())
+                    .field("projection_submit_rejected", completion.benchmark().submitRejected())
+                    .field("projection_commit_budget_deferred", completion.benchmark().commitBudgetDeferred())
+                    .field("spots_avg", multiSource.totalSpotsAverage())
                     .field("benchmark_mode", testCase.benchmarkMode().serializedName)
                     .field("appearance_mutation", testCase.appearanceMutation().serializedName)
-                    .field("full_rebuild_samples", completion.report().fullRebuildSamples())
-                    .field("appearance_only_samples", completion.report().appearanceOnlySamples())
+                    .field("full_rebuild_samples", multiSource.fullRebuildSamples())
+                    .field("suffix_rebuild_samples", multiSource.suffixRebuildSamples())
+                    .field("appearance_only_samples", multiSource.appearanceOnlySamples())
                     .field("validation_enabled", testCase.verboseValidation())
                     .field("boundary_missing", stats.sideBoundaryMissingFaces())
                     .field("boundary_missing_details", optimization.sideBoundaryMissingDetails().size())
@@ -671,12 +927,27 @@ public final class SpotProjectionTestCommand {
                     .field("validation_evidence_present", validationEvidencePresent)
                     .field("structural_mismatches", structuralMismatches)
                     .field("cache_expected_appearance_only", testCase.benchmarkMode() == BenchmarkMode.CACHE_REUSE
-                            ? testCase.samples() : 0)
+                            ? expectedJobSamples : 0)
                     .field("cache_validation_passed", cachePassed)
+                    .field("parallel_rebuild_validation_passed", parallelRebuildPassed)
+                    .field("parallel_submission_validation_passed", parallelSubmissionPassed)
+                    .field("parallel_cycle_fingerprint_passed", parallelFingerprintPassed)
+                    .field("source_output_fingerprints_complete", multiSourceFingerprint.complete())
+                    .field("aggregate_output_coverage_signature", Long.toUnsignedString(
+                            multiSourceFingerprint.coverageSignature(), 16
+                    ))
+                    .field("aggregate_output_fragmentation_signature", Long.toUnsignedString(
+                            multiSourceFingerprint.fragmentationSignature(), 16
+                    ))
                     .field("result", result)
                     .write();
+            if (run.mode == SpotTestMode.PARALLEL) {
+                logMultiSourceReport(level, multiSource, testCase.samples());
+            }
             if (run.mode != SpotTestMode.SMART || !"smart_warmup".equals(testCase.id())) {
-                sendItemSuiteCaseSummary(player, run, testCase, completion.report(), completion.latency(), passed);
+                sendItemSuiteCaseSummary(
+                        player, run, testCase, completion.report(), completion.latency(), multiSource, passed
+                );
             }
         }
         run.recordSmartResult(testCase, completion.report(), completion.latency(), structuralChecks);
@@ -685,9 +956,24 @@ public final class SpotProjectionTestCommand {
             if (!cachePassed) {
                 player.sendSystemMessage(Component.translatable(
                         "item.spectralization.spot_test.message.case_failed_cache",
-                        completion.report().appearanceOnlySamples(),
-                        testCase.samples(),
-                        completion.report().fullRebuildSamples()
+                        multiSource.appearanceOnlySamples(),
+                        expectedJobSamples,
+                        multiSource.fullRebuildSamples()
+                ).withStyle(ChatFormatting.RED));
+            } else if (!parallelSubmissionPassed) {
+                player.sendSystemMessage(Component.literal(String.format(
+                        Locale.ROOT,
+                        "Parallel projection rejected %d executor submission(s); the case is invalid.",
+                        completion.benchmark().submitRejected()
+                )).withStyle(ChatFormatting.RED));
+            } else if (!parallelRebuildPassed) {
+                player.sendSystemMessage(Component.translatable(
+                        "item.spectralization.spot_test.message.case_failed_parallel",
+                        multiSource.fullRebuildSamples(),
+                        expectedJobSamples,
+                        multiSource.suffixRebuildSamples(),
+                        multiSource.appearanceOnlySamples(),
+                        multiSourceFingerprint.complete()
                 ).withStyle(ChatFormatting.RED));
             } else {
                 player.sendSystemMessage(Component.translatable(
@@ -697,7 +983,19 @@ public final class SpotProjectionTestCommand {
                         structuralChecks
                 ).withStyle(ChatFormatting.RED));
             }
-            finishItemSuite(player, level, false, cachePassed ? "validation_failed" : "cache_validation_failed");
+            finishItemSuite(
+                    player,
+                    level,
+                    false,
+                    !cachePassed
+                            ? "cache_validation_failed"
+                            : (!parallelRebuildPassed
+                            ? "parallel_rebuild_validation_failed"
+                            : (!parallelSubmissionPassed
+                            ? "parallel_submit_rejected"
+                            : (!parallelFingerprintPassed
+                            ? "parallel_fingerprint_mismatch" : "validation_failed")))
+            );
             return;
         }
 
@@ -711,7 +1009,8 @@ public final class SpotProjectionTestCommand {
                     run.passedCases,
                     run.cases.size(),
                     formatMillis(summary.elapsedAverageUs()),
-                    Math.round(summary.spotsAverage())
+                    Math.round(summary.spotsAverage()),
+                    String.format(Locale.ROOT, "%.2f", summary.casesPerSecond())
             ).withStyle(ChatFormatting.AQUA));
             writeRandomStressProgress(level, run, summary);
         }
@@ -727,13 +1026,17 @@ public final class SpotProjectionTestCommand {
         if (run.caseIndex + 1 >= run.cases.size()) {
             boolean matrixPassed = run.directionMatrixPassed();
             boolean matrixAsymmetric = run.directionMatrixHasAsymmetry();
+            ParallelSuiteSummary parallelSummary = run.mode == SpotTestMode.PARALLEL
+                    ? run.parallelSummary() : null;
             finishItemSuite(
                     player,
                     level,
                     matrixPassed,
-                    matrixPassed
+                    parallelSummary != null && parallelSummary.warmupUnstable()
+                            ? "warmup_unstable"
+                            : (matrixPassed
                             ? (matrixAsymmetric ? "direction_matrix_asymmetry" : "complete")
-                            : "direction_matrix_correctness_mismatch"
+                            : "direction_matrix_correctness_mismatch")
             );
             return;
         }
@@ -748,8 +1051,26 @@ public final class SpotProjectionTestCommand {
             SuiteCase testCase,
             SpotProjectionPerformanceTracker.Report report,
             RequestLatencyReport latency,
+            MultiSourceMetrics multiSource,
             boolean passed
     ) {
+        if (run.mode == SpotTestMode.PARALLEL) {
+            player.sendSystemMessage(Component.translatable(
+                    "item.spectralization.spot_test.message.case_summary_parallel",
+                    passed ? "PASS" : "FAIL",
+                    run.caseIndex + 1,
+                    run.cases.size(),
+                    testCase.sourceCount(),
+                    formatMillis(multiSource.jobElapsedAverageUs()),
+                    formatMillis(multiSource.slowestSourceP95Us()),
+                    formatMillis(latency.p50Us()),
+                    formatMillis(latency.p95Us()),
+                    formatMillis(latency.maxTickStallUs()),
+                    multiSource.fullRebuildSamples(),
+                    testCase.samples() * testCase.sourceCount()
+            ).withStyle(passed ? ChatFormatting.GREEN : ChatFormatting.RED));
+            return;
+        }
         String key = testCase.benchmarkMode() == BenchmarkMode.CACHE_REUSE
                 ? "item.spectralization.spot_test.message.case_summary_cache"
                 : "item.spectralization.spot_test.message.case_summary_rebuild";
@@ -836,6 +1157,63 @@ public final class SpotProjectionTestCommand {
         event.write();
     }
 
+    private static void writeParallelSummary(
+            ServerLevel level,
+            ItemSuiteRun run,
+            ParallelSuiteSummary summary
+    ) {
+        for (ParallelCountSummary count : summary.bySourceCount()) {
+            SpectralDiagnostics.event(level, "spot_projection_test", "parallel_source_summary")
+                    .field("run_id", run.runId)
+                    .field("source_count", count.sourceCount())
+                    .field("steady_cycles", count.steadyCycles())
+                    .field("worker_p50_us", count.workerP50Us())
+                    .field("worker_p95_us", count.workerP95Us())
+                    .field("response_p50_us", count.responseP50Us())
+                    .field("response_p95_us", count.responseP95Us())
+                    .field("stabilizing_worker_median_us", count.stabilizingWorkerMedianUs())
+                    .field("steady_worker_median_us", count.steadyWorkerMedianUs())
+                    .field("warmup_worker_drift_ratio", count.warmupWorkerDriftRatio())
+                    .field("stabilizing_response_median_us", count.stabilizingResponseMedianUs())
+                    .field("steady_response_median_us", count.steadyResponseMedianUs())
+                    .field("warmup_drift_ratio", count.warmupDriftRatio())
+                    .field("warmup_unstable", count.warmupUnstable())
+                    .field("max_in_flight", count.maxInFlight())
+                    .field("max_queue_depth", count.maxQueueDepth())
+                    .field("dispatch_width_avg", count.averageDispatchWidth())
+                    .field("dispatch_width_max", count.maxDispatchWidth())
+                    .field("max_commit_tick_spread", count.maxCommitTickSpread())
+                    .field("projection_submit_rejected", count.submitRejected())
+                    .field("projection_commit_budget_deferred", count.commitBudgetDeferred())
+                    .write();
+        }
+        SpectralDiagnostics.event(level, "spot_projection_test", "parallel_suite_summary")
+                .field("run_id", run.runId)
+                .field("cycles", PARALLEL_CYCLES)
+                .field("source_counts", PARALLEL_SOURCE_COUNTS.length)
+                .field("steady_cases", summary.steadyCases())
+                .field("formal_cycles", "6-10")
+                .field("worker_p50_us", summary.workerP50Us())
+                .field("worker_p95_us", summary.workerP95Us())
+                .field("response_p50_us", summary.responseP50Us())
+                .field("response_p95_us", summary.responseP95Us())
+                .field("max_in_flight", summary.maxInFlight())
+                .field("max_queue_depth", summary.maxQueueDepth())
+                .field("dispatch_width_avg", summary.averageDispatchWidth())
+                .field("dispatch_width_max", summary.maxDispatchWidth())
+                .field("warmup_unstable", summary.warmupUnstable())
+                .field("fingerprint_mismatches", summary.fingerprintMismatches())
+                .field("projection_submit_rejected", summary.submitRejected())
+                .field("projection_commit_budget_deferred", summary.commitBudgetDeferred())
+                .field("aggregate_output_coverage_signature", Long.toUnsignedString(
+                        summary.aggregateCoverageSignature(), 16
+                ))
+                .field("aggregate_output_fragmentation_signature", Long.toUnsignedString(
+                        summary.aggregateFragmentationSignature(), 16
+                ))
+                .write();
+    }
+
     private static void finishItemSuite(
             ServerPlayer player,
             ServerLevel level,
@@ -861,6 +1239,8 @@ public final class SpotProjectionTestCommand {
                 writeDirectionMatrixSummary(level, run);
             } else if (run.mode == SpotTestMode.RANDOM_STRESS) {
                 writeRandomStressSummary(level, run, passed);
+            } else if (run.mode == SpotTestMode.PARALLEL) {
+                writeParallelSummary(level, run, run.parallelSummary());
             }
             SpectralDiagnostics.event(level, "spot_projection_test", "suite_complete")
                     .field("run_id", run.runId)
@@ -900,8 +1280,26 @@ public final class SpotProjectionTestCommand {
                         formatMillis(summary.elapsedP50Us()),
                         formatMillis(summary.elapsedP95Us()),
                         formatMillis(summary.responseAverageUs()),
-                        Math.round(summary.spotsAverage())
+                        Math.round(summary.spotsAverage()),
+                        String.format(Locale.ROOT, "%.2f", summary.casesPerSecond()),
+                        String.format(Locale.ROOT, "%.2f", summary.wallElapsedSeconds())
                 ).withStyle(passed ? ChatFormatting.GREEN : ChatFormatting.RED));
+            } else if (run.mode == SpotTestMode.PARALLEL) {
+                ParallelSuiteSummary summary = run.parallelSummary();
+                player.sendSystemMessage(Component.literal(String.format(
+                        Locale.ROOT,
+                        "Parallel steady-state (cycles 6-10): cases=%d, response P50/P95=%.2f/%.2f ms, worker P50/P95=%.2f/%.2f ms, dispatch avg/max=%.2f/%d, max in-flight=%d, max queue=%d, warmup=%s",
+                        summary.steadyCases(),
+                        summary.responseP50Us() / 1_000.0D,
+                        summary.responseP95Us() / 1_000.0D,
+                        summary.workerP50Us() / 1_000.0D,
+                        summary.workerP95Us() / 1_000.0D,
+                        summary.averageDispatchWidth(),
+                        summary.maxDispatchWidth(),
+                        summary.maxInFlight(),
+                        summary.maxQueueDepth(),
+                        summary.warmupUnstable() ? "UNSTABLE" : "stable"
+                )).withStyle(summary.warmupUnstable() ? ChatFormatting.YELLOW : ChatFormatting.GREEN));
             }
             player.sendSystemMessage(Component.translatable(
                     run.mode == SpotTestMode.DIRECTION_MATRIX
@@ -1075,6 +1473,12 @@ public final class SpotProjectionTestCommand {
                 .field("elapsed_p95_us", summary.elapsedP95Us())
                 .field("response_avg_us", summary.responseAverageUs())
                 .field("spots_avg", summary.spotsAverage())
+                .field("projection_execution", "server_tick_serial")
+                .field("target_cases_per_tick", RANDOM_STRESS_CASES_PER_TICK)
+                .field("wall_elapsed_seconds", summary.wallElapsedSeconds())
+                .field("cases_per_second", summary.casesPerSecond())
+                .field("completion_tick_span", summary.completionTickSpan())
+                .field("missed_completion_ticks", summary.missedCompletionTicks())
                 .write();
     }
 
@@ -1090,6 +1494,12 @@ public final class SpotProjectionTestCommand {
                 .field("response_avg_us", summary.responseAverageUs())
                 .field("response_p95_us", summary.responseP95Us())
                 .field("spots_avg", summary.spotsAverage())
+                .field("projection_execution", "server_tick_serial")
+                .field("target_cases_per_tick", RANDOM_STRESS_CASES_PER_TICK)
+                .field("wall_elapsed_seconds", summary.wallElapsedSeconds())
+                .field("cases_per_second", summary.casesPerSecond())
+                .field("completion_tick_span", summary.completionTickSpan())
+                .field("missed_completion_ticks", summary.missedCompletionTicks())
                 .field("result", passed ? "pass" : "fail")
                 .write();
     }
@@ -1103,6 +1513,26 @@ public final class SpotProjectionTestCommand {
             player.sendSystemMessage(Component.literal(line));
         }
         SpotProjectionPerformanceTracker.log(level, report);
+    }
+
+    private static void logMultiSourceReport(
+            ServerLevel level,
+            MultiSourceMetrics metrics,
+            int requestedSamplesPerSource
+    ) {
+        SpectralDiagnostics.event(level, "spot_projection_test", "multi_source_report")
+                .field("source_count", metrics.sourceCount())
+                .field("requested_samples_per_source", requestedSamplesPerSource)
+                .field("job_samples", metrics.jobSamples())
+                .field("full_rebuild_samples", metrics.fullRebuildSamples())
+                .field("suffix_rebuild_samples", metrics.suffixRebuildSamples())
+                .field("appearance_only_samples", metrics.appearanceOnlySamples())
+                .field("job_elapsed_avg_us", metrics.jobElapsedAverageUs())
+                .field("slowest_source_p50_us", metrics.slowestSourceP50Us())
+                .field("slowest_source_p95_us", metrics.slowestSourceP95Us())
+                .field("total_spots_avg", metrics.totalSpotsAverage())
+                .field("source_completion_tick_spread", metrics.completionTickSpread())
+                .write();
     }
 
     private static int clear(CommandSourceStack source) {
@@ -1140,21 +1570,36 @@ public final class SpotProjectionTestCommand {
             GeneratedTest generatedTest,
             boolean logDetails
     ) {
-        SpotProjectionTestScene.BuildResult result = SpotProjectionTestScene.build(
-                level,
-                generatedTest.layout(),
-                generatedTest.seed(),
-                generatedTest.testCase().occupancy(),
-                generatedTest.testCase().fixtures(),
-                generatedTest.testCase().divergenceMilli(),
-                generatedTest.testCase().obstacleProfile(),
-                logDetails
-        );
+        SpotProjectionTestScene.BuildResult result = generatedTest.testCase().sharedParallelArena()
+                ? SpotProjectionTestScene.buildParallelArena(
+                        level,
+                        generatedTest.arenaLayout(),
+                        generatedTest.arenaLayout().parallelSources(9),
+                        generatedTest.seed(),
+                        generatedTest.testCase().occupancy(),
+                        generatedTest.testCase().fixtures(),
+                        generatedTest.testCase().divergenceMilli(),
+                        generatedTest.testCase().obstacleProfile(),
+                        logDetails
+                )
+                : SpotProjectionTestScene.build(
+                        level,
+                        generatedTest.layouts(),
+                        generatedTest.seed(),
+                        generatedTest.testCase().occupancy(),
+                        generatedTest.testCase().fixtures(),
+                        generatedTest.testCase().divergenceMilli(),
+                        generatedTest.testCase().obstacleProfile(),
+                        logDetails
+                );
         if (logDetails) {
             SpectralDiagnostics.Event event = SpectralDiagnostics
                     .event(level, "spot_projection_test", "generated")
                     .pos("source", generatedTest.layout().source())
                     .field("direction", generatedTest.layout().direction())
+                    .field("source_count", generatedTest.layouts().size())
+                    .field("scene_layout", generatedTest.testCase().sharedParallelArena()
+                            ? "shared_overlap" : "standard")
                     .field("case_id", generatedTest.testCase().id())
                     .field("repeat", generatedTest.testCase().repeatIndex());
             if (generatedTest.testCase().recordSeed()) {
@@ -1182,11 +1627,16 @@ public final class SpotProjectionTestCommand {
             return 0;
         }
 
-        int cleared = SpotProjectionTestScene.clear(level, generatedTest.layout());
+        int cleared = generatedTest.testCase().sharedParallelArena()
+                ? SpotProjectionTestScene.clearParallelArena(level, generatedTest.arenaLayout())
+                : SpotProjectionTestScene.clear(level, generatedTest.layouts());
         SpotProjectionTestScene.refreshProjection(level);
         SpectralDiagnostics.Event event = SpectralDiagnostics.event(level, "spot_projection_test", "cleared")
                 .pos("source", generatedTest.layout().source())
-                .field("direction", generatedTest.layout().direction());
+                .field("direction", generatedTest.layout().direction())
+                .field("source_count", generatedTest.layouts().size())
+                .field("scene_layout", generatedTest.testCase().sharedParallelArena()
+                        ? "shared_overlap" : "standard");
         if (generatedTest.testCase().recordSeed()) {
             event.field("seed", generatedTest.seed());
         }
@@ -1204,19 +1654,43 @@ public final class SpotProjectionTestCommand {
         return true;
     }
 
-    private static void requestBenchmarkProjection(ServerLevel level, BenchmarkRun run) {
-        if (run == null) {
-            return;
+    private static void resetBenchmarkSamples(ServerLevel level, GeneratedTest test) {
+        for (SpotTestLayout layout : test.layouts()) {
+            SpotProjectionPerformanceTracker.reset(level, layout.source(), layout.direction());
         }
+    }
+
+    private static List<SpotProjectionPerformanceTracker.Report> benchmarkReports(
+            ServerLevel level,
+            BenchmarkRun run
+    ) {
+        List<SpotProjectionPerformanceTracker.Report> reports = new ArrayList<>(run.test.layouts().size());
+        for (SpotTestLayout layout : run.test.layouts()) {
+            reports.add(SpotProjectionPerformanceTracker.report(
+                    level, layout.source(), layout.direction(), run.targetSamples
+            ));
+        }
+        return List.copyOf(reports);
+    }
+
+    private static int completedBenchmarkRounds(List<SpotProjectionPerformanceTracker.Report> reports) {
+        return reports.stream()
+                .mapToInt(SpotProjectionPerformanceTracker.Report::samples)
+                .min()
+                .orElse(0);
+    }
+
+    private static boolean requestBenchmarkProjection(ServerLevel level, BenchmarkRun run) {
+        if (run == null) {
+            return false;
+        }
+        List<OpticalTraceCache.ProjectionSource> sources = projectionSources(run.test);
         if (run.benchmarkMode == BenchmarkMode.FULL_REBUILD) {
-            CompiledSpotLayer.invalidateProjectionGeometry(
-                    level,
-                    run.test.layout().source(),
-                    run.test.layout().direction(),
-                    "benchmark_forced_rebuild"
+            return OpticalTraceCache.requestSpotProjectionRebuild(
+                    level, sources, "benchmark_forced_rebuild"
             );
         }
-        SpotProjectionTestScene.refreshProjection(level);
+        return OpticalTraceCache.requestSpotProjectionRefresh(level, sources);
     }
 
     private static void startBenchmarkProjection(ServerLevel level, BenchmarkRun run) {
@@ -1224,16 +1698,63 @@ public final class SpotProjectionTestCommand {
             return;
         }
         if (run.forceInitialGeometryWarmup) {
-            CompiledSpotLayer.invalidateProjectionGeometry(
-                    level,
-                    run.test.layout().source(),
-                    run.test.layout().direction(),
-                    "benchmark_cache_geometry_warmup"
-            );
+            for (SpotTestLayout layout : run.test.layouts()) {
+                CompiledSpotLayer.invalidateProjectionGeometry(
+                        level,
+                        layout.source(),
+                        layout.direction(),
+                        "benchmark_cache_geometry_warmup"
+                );
+            }
             run.forceInitialGeometryWarmup = false;
         }
-        run.startLatency();
-        requestBenchmarkProjection(level, run);
+        run.awaitingProjectionStart = true;
+        run.quietTicksObserved = 0;
+    }
+
+    private static List<OpticalTraceCache.ProjectionSource> projectionSources(GeneratedTest test) {
+        return test.layouts().stream()
+                .map(layout -> new OpticalTraceCache.ProjectionSource(layout.source(), layout.direction()))
+                .toList();
+    }
+
+    private static void logProjectionWaveStarted(
+            ServerLevel level,
+            BenchmarkRun run,
+            OpticalTraceCache.ProjectionWorkState workState
+    ) {
+        if (run.suiteRunId == null) {
+            return;
+        }
+        SuiteCase testCase = run.test.testCase();
+        SpectralDiagnostics.event(level, "spot_projection_test", "projection_wave_started")
+                .field("run_id", run.suiteRunId)
+                .field("case_id", run.suiteCaseId)
+                .field("cycle_index", testCase.sharedParallelArena()
+                        ? testCase.repeatIndex() + 1 : testCase.repeatIndex())
+                .field("source_count", testCase.sourceCount())
+                .field("warmup_phase", testCase.sharedParallelArena()
+                        ? parallelWarmupPhase(testCase.repeatIndex()) : "not_applicable")
+                .field("quiet_ticks_required", run.quietTicksRequired)
+                .field("quiet_ticks_observed", run.quietTicksObserved)
+                .field("projection_in_flight_before_submit", workState.executorInFlight())
+                .field("projection_queue_before_submit", workState.executorQueueDepth())
+                .field("request_tick", level.getGameTime())
+                .write();
+    }
+
+    private static String parallelWarmupPhase(int zeroBasedCycleIndex) {
+        int cycle = zeroBasedCycleIndex + 1;
+        if (cycle <= 1) {
+            return "cold";
+        }
+        if (cycle <= 3) {
+            return "warming";
+        }
+        if (cycle <= 5) {
+            return "stabilizing";
+        }
+        return "steady";
     }
 
     private static boolean applyNextAppearance(ServerLevel level, BenchmarkRun run) {
@@ -1254,16 +1775,20 @@ public final class SpotProjectionTestCommand {
         switch (mutation) {
             case POWER_SEQUENCE -> {
                 int powerCenti = SpotProjectionTestScene.cachePowerCenti(step);
-                if (!SpotProjectionTestScene.setSourcePower(level, run.test.layout(), powerCenti)) {
-                    return false;
+                for (SpotTestLayout layout : run.test.layouts()) {
+                    if (!SpotProjectionTestScene.setSourcePower(level, layout, powerCenti)) {
+                        return false;
+                    }
                 }
                 event.field("power_centi", powerCenti)
                         .field("power", powerCenti / (double) CreativeLightSourceBlockEntity.POWER_SCALE);
             }
             case COLOR_SEQUENCE -> {
                 int bin = SpotProjectionTestScene.cacheColorBin(step);
-                if (!SpotProjectionTestScene.setSourceColor(level, run.test.layout(), bin)) {
-                    return false;
+                for (SpotTestLayout layout : run.test.layouts()) {
+                    if (!SpotProjectionTestScene.setSourceColor(level, layout, bin)) {
+                        return false;
+                    }
                 }
                 event.field("region", SpectralRegion.VISIBLE.id())
                         .field("bin", bin);
@@ -1284,6 +1809,22 @@ public final class SpotProjectionTestCommand {
             source.sendFailure(Component.literal("Spot test commands can only be run by a player."));
             return null;
         }
+    }
+
+    private static boolean validateGeneratedTest(
+            CommandSourceStack source,
+            ServerLevel level,
+            GeneratedTest test
+    ) {
+        if (test.testCase().sharedParallelArena()) {
+            return SpotProjectionTestScene.validateParallelArena(source, level, test.arenaLayout());
+        }
+        for (SpotTestLayout layout : test.layouts()) {
+            if (!SpotProjectionTestScene.validateVolume(source, level, layout)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static List<SuiteCase> suiteCases(SpotTestMode mode, SpotTestLoad load) {
@@ -1309,6 +1850,7 @@ public final class SpotProjectionTestCommand {
             case QUICK -> List.of(quick);
             case PARTIAL_GEOMETRY -> List.of(partial);
             case PERFORMANCE -> performance;
+            case PARALLEL -> parallelCases();
             case DIRECTION_MATRIX -> directionMatrixCases();
             case RANDOM_STRESS -> randomStressCases();
         };
@@ -1316,6 +1858,26 @@ public final class SpotProjectionTestCommand {
             return cases;
         }
         return cases.stream().map(SuiteCase::lightweightVariant).toList();
+    }
+
+    private static List<SuiteCase> parallelCases() {
+        List<SuiteCase> cases = new ArrayList<>(PARALLEL_SOURCE_COUNTS.length * PARALLEL_CYCLES);
+        for (int cycleIndex = 0; cycleIndex < PARALLEL_CYCLES; cycleIndex++) {
+            for (int sourceCount : PARALLEL_SOURCE_COUNTS) {
+                cases.add(new SuiteCase(
+                        "parallel_sources_" + sourceCount,
+                        -6_495_254_288_592_929_499L,
+                        0.30D,
+                        true,
+                        650,
+                        PARALLEL_BENCHMARK_SAMPLES,
+                        false,
+                        BenchmarkMode.FULL_REBUILD,
+                        AppearanceMutation.NONE
+                ).withSourceCountAndRepeat(sourceCount, cycleIndex));
+            }
+        }
+        return List.copyOf(cases);
     }
 
     private static List<SuiteCase> smartCases() {
@@ -1363,6 +1925,26 @@ public final class SpotProjectionTestCommand {
         }
     }
 
+    static void validateParallelSuiteDefinition() {
+        List<SuiteCase> cases = parallelCases();
+        if (cases.size() != PARALLEL_SOURCE_COUNTS.length * PARALLEL_CYCLES) {
+            throw new IllegalStateException("Parallel spot-test suite lost a source-count case");
+        }
+        for (int index = 0; index < cases.size(); index++) {
+            SuiteCase testCase = cases.get(index);
+            int expectedSources = PARALLEL_SOURCE_COUNTS[index % PARALLEL_SOURCE_COUNTS.length];
+            int expectedCycle = index / PARALLEL_SOURCE_COUNTS.length;
+            if (testCase.sourceCount() != expectedSources
+                    || testCase.repeatIndex() != expectedCycle
+                    || testCase.samples() != PARALLEL_BENCHMARK_SAMPLES
+                    || testCase.benchmarkMode() != BenchmarkMode.FULL_REBUILD
+                    || testCase.appearanceMutation() != AppearanceMutation.NONE
+                    || !testCase.sharedParallelArena()) {
+                throw new IllegalStateException("Parallel spot-test cases must be ten 1..9 full-rebuild cycles");
+            }
+        }
+    }
+
     static void validateLoadVariants() {
         for (SpotTestMode mode : SpotTestMode.values()) {
             List<SuiteCase> stressCases = suiteCases(mode, SpotTestLoad.STRESS);
@@ -1376,7 +1958,8 @@ public final class SpotProjectionTestCommand {
                 if (!stress.id().equals(lightweight.id())
                         || stress.samples() != lightweight.samples()
                         || stress.repeatIndex() != lightweight.repeatIndex()
-                        || stress.recordSeed() != lightweight.recordSeed()) {
+                        || stress.recordSeed() != lightweight.recordSeed()
+                        || stress.sourceCount() != lightweight.sourceCount()) {
                     throw new IllegalStateException("Spot-test load changed mode identity, samples, or repeats");
                 }
                 boolean keepsPartialGeometry = lightweight.verboseValidation()
@@ -1506,10 +2089,14 @@ public final class SpotProjectionTestCommand {
             SuiteCase testCase = cases.get(index);
             if (testCase.recordSeed()
                     || testCase.samples() != 1
+                    || testCase.sourceCount() != 1
                     || testCase.fixtures()
                     || testCase.repeatIndex() != index) {
                 throw new IllegalStateException("Random stress cases must be anonymous, pure-random single samples");
             }
+        }
+        if (RANDOM_STRESS_CASES_PER_TICK != 1) {
+            throw new IllegalStateException("Random stress must advance exactly one case per server tick");
         }
     }
 
@@ -1526,7 +2113,8 @@ public final class SpotProjectionTestCommand {
             Direction direction,
             int repeatIndex,
             boolean recordSeed,
-            SpotProjectionTestScene.ObstacleProfile obstacleProfile
+            SpotProjectionTestScene.ObstacleProfile obstacleProfile,
+            int sourceCount
     ) {
         private SuiteCase(
                 String id,
@@ -1552,7 +2140,8 @@ public final class SpotProjectionTestCommand {
                     null,
                     -1,
                     true,
-                    SpotProjectionTestScene.ObstacleProfile.PARTIAL_HEAVY
+                    SpotProjectionTestScene.ObstacleProfile.PARTIAL_HEAVY,
+                    1
             );
         }
 
@@ -1571,7 +2160,7 @@ public final class SpotProjectionTestCommand {
             this(
                     id, seed, occupancy, fixtures, divergenceMilli, samples,
                     verboseValidation, benchmarkMode, appearanceMutation,
-                    null, -1, true, obstacleProfile
+                    null, -1, true, obstacleProfile, 1
             );
         }
 
@@ -1593,7 +2182,8 @@ public final class SpotProjectionTestCommand {
                     id, seed, occupancy, fixtures, divergenceMilli, samples,
                     verboseValidation, benchmarkMode, appearanceMutation,
                     direction, repeatIndex, recordSeed,
-                    SpotProjectionTestScene.ObstacleProfile.PARTIAL_HEAVY
+                    SpotProjectionTestScene.ObstacleProfile.PARTIAL_HEAVY,
+                    1
             );
         }
 
@@ -1606,6 +2196,7 @@ public final class SpotProjectionTestCommand {
             obstacleProfile = obstacleProfile == null
                     ? SpotProjectionTestScene.ObstacleProfile.PARTIAL_HEAVY
                     : obstacleProfile;
+            sourceCount = Math.max(1, Math.min(9, sourceCount));
             if (direction != null && !direction.getAxis().isHorizontal()) {
                 throw new IllegalArgumentException("Spot test direction must be horizontal");
             }
@@ -1628,8 +2219,51 @@ public final class SpotProjectionTestCommand {
                     direction,
                     repeatIndex,
                     recordSeed,
-                    SpotProjectionTestScene.ObstacleProfile.FULL_BLOCKS_ONLY
+                    SpotProjectionTestScene.ObstacleProfile.FULL_BLOCKS_ONLY,
+                    sourceCount
             );
+        }
+
+        private SuiteCase withSourceCount(int count) {
+            return new SuiteCase(
+                    id,
+                    seed,
+                    occupancy,
+                    fixtures,
+                    divergenceMilli,
+                    samples,
+                    verboseValidation,
+                    benchmarkMode,
+                    appearanceMutation,
+                    direction,
+                    repeatIndex,
+                    recordSeed,
+                    obstacleProfile,
+                    count
+            );
+        }
+
+        private SuiteCase withSourceCountAndRepeat(int count, int cycleIndex) {
+            return new SuiteCase(
+                    id,
+                    seed,
+                    occupancy,
+                    fixtures,
+                    divergenceMilli,
+                    samples,
+                    verboseValidation,
+                    benchmarkMode,
+                    appearanceMutation,
+                    direction,
+                    cycleIndex,
+                    recordSeed,
+                    obstacleProfile,
+                    count
+            );
+        }
+
+        private boolean sharedParallelArena() {
+            return id.startsWith("parallel_sources_");
         }
 
         private static SuiteCase manual(long seed) {
@@ -1701,9 +2335,28 @@ public final class SpotProjectionTestCommand {
         }
     }
 
-    private record GeneratedTest(ResourceKey<Level> dimension, SpotTestLayout layout, SuiteCase testCase) {
+    private record GeneratedTest(
+            ResourceKey<Level> dimension,
+            SpotTestLayout arenaLayout,
+            List<SpotTestLayout> layouts,
+            SuiteCase testCase
+    ) {
         private GeneratedTest(ResourceKey<Level> dimension, SpotTestLayout layout, long seed) {
-            this(dimension, layout, SuiteCase.manual(seed));
+            this(dimension, layout, List.of(layout), SuiteCase.manual(seed));
+        }
+
+        private GeneratedTest {
+            if (arenaLayout == null) {
+                throw new IllegalArgumentException("Generated spot test requires an arena layout");
+            }
+            layouts = List.copyOf(layouts);
+            if (layouts.isEmpty()) {
+                throw new IllegalArgumentException("Generated spot test requires at least one source");
+            }
+        }
+
+        private SpotTestLayout layout() {
+            return layouts.get(0);
         }
 
         private long seed() {
@@ -1809,6 +2462,157 @@ public final class SpotProjectionTestCommand {
     ) {
     }
 
+    private record MultiSourceFingerprint(
+            int sourceCount,
+            boolean complete,
+            long coverageSignature,
+            long fragmentationSignature
+    ) {
+        private static final long OFFSET_BASIS = 0xcbf29ce484222325L;
+        private static final long PRIME = 0x100000001b3L;
+
+        private static MultiSourceFingerprint from(List<OutputFingerprint> fingerprints) {
+            boolean complete = !fingerprints.isEmpty();
+            long coverage = mix(OFFSET_BASIS, fingerprints.size());
+            long fragmentation = mix(OFFSET_BASIS, fingerprints.size());
+            for (int index = 0; index < fingerprints.size(); index++) {
+                OutputFingerprint fingerprint = fingerprints.get(index);
+                complete &= !fingerprint.surfaces().isEmpty();
+                coverage = mix(mix(coverage, index), fingerprint.coverageSignature());
+                fragmentation = mix(
+                        mix(fragmentation, index), fingerprint.fragmentationSignature()
+                );
+            }
+            return new MultiSourceFingerprint(
+                    fingerprints.size(), complete, coverage, fragmentation
+            );
+        }
+
+        private static long mix(long hash, long value) {
+            for (int shift = 0; shift < Long.SIZE; shift += Byte.SIZE) {
+                hash ^= (value >>> shift) & 0xffL;
+                hash *= PRIME;
+            }
+            return hash;
+        }
+    }
+
+    private record MultiSourceMetrics(
+            int sourceCount,
+            int jobSamples,
+            int fullRebuildSamples,
+            int suffixRebuildSamples,
+            int appearanceOnlySamples,
+            double jobElapsedAverageUs,
+            double slowestSourceP50Us,
+            double slowestSourceP95Us,
+            double totalSpotsAverage,
+            long completionTickSpread
+    ) {
+        private static MultiSourceMetrics from(List<SpotProjectionPerformanceTracker.Report> reports) {
+            int jobs = 0;
+            int fullRebuilds = 0;
+            int suffixRebuilds = 0;
+            int appearanceOnly = 0;
+            double weightedElapsedUs = 0.0D;
+            double slowestP50Us = 0.0D;
+            double slowestP95Us = 0.0D;
+            double totalSpots = 0.0D;
+            long minTick = Long.MAX_VALUE;
+            long maxTick = Long.MIN_VALUE;
+            for (SpotProjectionPerformanceTracker.Report report : reports) {
+                jobs += report.samples();
+                fullRebuilds += report.fullRebuildSamples();
+                suffixRebuilds += report.suffixRebuildSamples();
+                appearanceOnly += report.appearanceOnlySamples();
+                weightedElapsedUs += report.elapsedAverageUs() * report.samples();
+                slowestP50Us = Math.max(slowestP50Us, report.elapsedP50Us());
+                slowestP95Us = Math.max(slowestP95Us, report.elapsedP95Us());
+                totalSpots += report.spotsAverage();
+                if (!report.empty()) {
+                    minTick = Math.min(minTick, report.latestTick());
+                    maxTick = Math.max(maxTick, report.latestTick());
+                }
+            }
+            return new MultiSourceMetrics(
+                    reports.size(),
+                    jobs,
+                    fullRebuilds,
+                    suffixRebuilds,
+                    appearanceOnly,
+                    jobs == 0 ? 0.0D : weightedElapsedUs / jobs,
+                    slowestP50Us,
+                    slowestP95Us,
+                    totalSpots,
+                    minTick == Long.MAX_VALUE ? 0L : Math.max(0L, maxTick - minTick)
+            );
+        }
+    }
+
+    private record ParallelCaseResult(
+            int cycleIndex,
+            int sourceCount,
+            double workerAverageUs,
+            double responseUs,
+            int maxInFlight,
+            int maxQueueDepth,
+            int dispatchWaves,
+            int maxDispatchWidth,
+            long commitTickSpread,
+            long submitRejected,
+            long commitBudgetDeferred,
+            long coverageSignature,
+            long fragmentationSignature
+    ) {
+    }
+
+    private record ParallelCountSummary(
+            int sourceCount,
+            int steadyCycles,
+            double workerP50Us,
+            double workerP95Us,
+            double responseP50Us,
+            double responseP95Us,
+            double stabilizingWorkerMedianUs,
+            double steadyWorkerMedianUs,
+            double warmupWorkerDriftRatio,
+            double stabilizingResponseMedianUs,
+            double steadyResponseMedianUs,
+            double warmupDriftRatio,
+            boolean warmupUnstable,
+            int maxInFlight,
+            int maxQueueDepth,
+            double averageDispatchWidth,
+            int maxDispatchWidth,
+            long maxCommitTickSpread,
+            long submitRejected,
+            long commitBudgetDeferred
+    ) {
+    }
+
+    private record ParallelSuiteSummary(
+            int steadyCases,
+            double workerP50Us,
+            double workerP95Us,
+            double responseP50Us,
+            double responseP95Us,
+            int maxInFlight,
+            int maxQueueDepth,
+            double averageDispatchWidth,
+            int maxDispatchWidth,
+            boolean warmupUnstable,
+            int fingerprintMismatches,
+            long submitRejected,
+            long commitBudgetDeferred,
+            long aggregateCoverageSignature,
+            long aggregateFragmentationSignature,
+            List<ParallelCountSummary> bySourceCount
+    ) {
+        private ParallelSuiteSummary {
+            bySourceCount = List.copyOf(bySourceCount);
+        }
+    }
+
     private record SmartCaseResult(
             SpotProjectionPerformanceTracker.Report report,
             RequestLatencyReport latency,
@@ -1899,7 +2703,11 @@ public final class SpotProjectionTestCommand {
             double elapsedP95Us,
             double responseAverageUs,
             double responseP95Us,
-            double spotsAverage
+            double spotsAverage,
+            double wallElapsedSeconds,
+            double casesPerSecond,
+            long completionTickSpan,
+            long missedCompletionTicks
     ) {
     }
 
@@ -1939,7 +2747,9 @@ public final class SpotProjectionTestCommand {
         private final List<Double> randomStressElapsedUs = new ArrayList<>();
         private final List<Double> randomStressResponseUs = new ArrayList<>();
         private final List<Double> randomStressSpots = new ArrayList<>();
+        private final List<ParallelCaseResult> parallelResults = new ArrayList<>();
         private final Map<String, SmartCaseResult> smartResults = new HashMap<>();
+        private final long startedAtNanos = System.nanoTime();
         private int caseIndex;
         private int passedCases;
         private int sceneSignatureMismatches;
@@ -1947,6 +2757,9 @@ public final class SpotProjectionTestCommand {
         private int outputFragmentationMismatches;
         private int workloadMismatches;
         private long currentSceneSignature;
+        private long randomStressFirstCompletionTick = Long.MIN_VALUE;
+        private long randomStressLastCompletionTick = Long.MIN_VALUE;
+        private long randomStressLastCompletionNanos;
 
         private ItemSuiteRun(
                 UUID runId,
@@ -1974,6 +2787,10 @@ public final class SpotProjectionTestCommand {
 
         private SpotTestLayout currentLayout() {
             return layout.withDirection(currentCase().directionOr(layout.direction()));
+        }
+
+        private List<SpotTestLayout> currentLayouts() {
+            return currentLayout().parallelSources(currentCase().sourceCount());
         }
 
         private DirectionMatrixComparison recordDirectionMatrixResult(
@@ -2055,7 +2872,8 @@ public final class SpotProjectionTestCommand {
 
         private void recordRandomStressResult(
                 SpotProjectionPerformanceTracker.Report report,
-                RequestLatencyReport latency
+                RequestLatencyReport latency,
+                long completionTick
         ) {
             if (mode != SpotTestMode.RANDOM_STRESS) {
                 return;
@@ -2063,6 +2881,176 @@ public final class SpotProjectionTestCommand {
             randomStressElapsedUs.add(report.elapsedAverageUs());
             randomStressResponseUs.add(latency.averageUs());
             randomStressSpots.add(report.spotsAverage());
+            if (randomStressFirstCompletionTick == Long.MIN_VALUE) {
+                randomStressFirstCompletionTick = completionTick;
+            }
+            randomStressLastCompletionTick = completionTick;
+            randomStressLastCompletionNanos = System.nanoTime();
+        }
+
+        private boolean recordParallelResult(
+                SuiteCase testCase,
+                MultiSourceMetrics metrics,
+                RequestLatencyReport latency,
+                BenchmarkObservation observation,
+                MultiSourceFingerprint fingerprint
+        ) {
+            if (mode != SpotTestMode.PARALLEL) {
+                return true;
+            }
+            ParallelCaseResult baseline = parallelResults.stream()
+                    .filter(result -> result.sourceCount() == testCase.sourceCount())
+                    .findFirst()
+                    .orElse(null);
+            boolean fingerprintMatches = baseline == null
+                    || (baseline.coverageSignature() == fingerprint.coverageSignature()
+                    && baseline.fragmentationSignature() == fingerprint.fragmentationSignature());
+            parallelResults.add(new ParallelCaseResult(
+                    testCase.repeatIndex() + 1,
+                    testCase.sourceCount(),
+                    metrics.jobElapsedAverageUs(),
+                    latency.averageUs(),
+                    observation.maxProjectionInFlight(),
+                    observation.maxProjectionQueueDepth(),
+                    observation.dispatchWaves(),
+                    observation.maxDispatchWidth(),
+                    observation.commitTickSpread(),
+                    observation.submitRejected(),
+                    observation.commitBudgetDeferred(),
+                    fingerprint.coverageSignature(),
+                    fingerprint.fragmentationSignature()
+            ));
+            return fingerprintMatches;
+        }
+
+        private ParallelSuiteSummary parallelSummary() {
+            List<ParallelCountSummary> counts = new ArrayList<>(PARALLEL_SOURCE_COUNTS.length);
+            List<Double> steadyWorker = new ArrayList<>();
+            List<Double> steadyResponse = new ArrayList<>();
+            boolean warmupUnstable = false;
+            int maxInFlight = 0;
+            int maxQueue = 0;
+            int steadyDispatchWaves = 0;
+            int steadyJobs = 0;
+            int maxDispatchWidth = 0;
+            int fingerprintMismatches = 0;
+            long submitRejected = 0L;
+            long commitBudgetDeferred = 0L;
+            long coverageSignature = 0xcbf29ce484222325L;
+            long fragmentationSignature = 0xcbf29ce484222325L;
+            for (int sourceCount : PARALLEL_SOURCE_COUNTS) {
+                List<ParallelCaseResult> sourceResults = parallelResults.stream()
+                        .filter(result -> result.sourceCount() == sourceCount)
+                        .toList();
+                List<Double> stabilizingResponse = sourceResults.stream()
+                        .filter(result -> result.cycleIndex() >= 4 && result.cycleIndex() <= 5)
+                        .map(ParallelCaseResult::responseUs)
+                        .toList();
+                List<Double> stabilizingWorker = sourceResults.stream()
+                        .filter(result -> result.cycleIndex() >= 4 && result.cycleIndex() <= 5)
+                        .map(ParallelCaseResult::workerAverageUs)
+                        .toList();
+                List<ParallelCaseResult> steady = sourceResults.stream()
+                        .filter(result -> result.cycleIndex() >= 6)
+                        .toList();
+                List<Double> workerValues = steady.stream().map(ParallelCaseResult::workerAverageUs).toList();
+                List<Double> responseValues = steady.stream().map(ParallelCaseResult::responseUs).toList();
+                steadyWorker.addAll(workerValues);
+                steadyResponse.addAll(responseValues);
+                double stabilizingMedian = median(stabilizingResponse);
+                double steadyMedian = median(responseValues);
+                double stabilizingWorkerMedian = median(stabilizingWorker);
+                double steadyWorkerMedian = median(workerValues);
+                double drift = steadyMedian <= 0.0D
+                        ? 0.0D
+                        : Math.abs(stabilizingMedian - steadyMedian) / steadyMedian;
+                double workerDrift = steadyWorkerMedian <= 0.0D
+                        ? 0.0D
+                        : Math.abs(stabilizingWorkerMedian - steadyWorkerMedian) / steadyWorkerMedian;
+                boolean sourceWarmupUnstable = stabilizingResponse.size() == 2
+                        && stabilizingWorker.size() == 2
+                        && responseValues.size() == 5
+                        && workerValues.size() == 5
+                        && warmupDriftUnstable(drift, workerDrift);
+                warmupUnstable |= sourceWarmupUnstable;
+                int sourceMaxInFlight = sourceResults.stream()
+                        .mapToInt(ParallelCaseResult::maxInFlight).max().orElse(0);
+                int sourceMaxQueue = sourceResults.stream()
+                        .mapToInt(ParallelCaseResult::maxQueueDepth).max().orElse(0);
+                long sourceMaxCommitSpread = sourceResults.stream()
+                        .mapToLong(ParallelCaseResult::commitTickSpread).max().orElse(0L);
+                int sourceDispatchWaves = steady.stream()
+                        .mapToInt(ParallelCaseResult::dispatchWaves).sum();
+                long sourceSubmitRejected = sourceResults.stream()
+                        .mapToLong(ParallelCaseResult::submitRejected).sum();
+                long sourceCommitBudgetDeferred = sourceResults.stream()
+                        .mapToLong(ParallelCaseResult::commitBudgetDeferred).sum();
+                int sourceMaxDispatchWidth = steady.stream()
+                        .mapToInt(ParallelCaseResult::maxDispatchWidth).max().orElse(0);
+                steadyDispatchWaves += sourceDispatchWaves;
+                steadyJobs += sourceCount * steady.size();
+                maxDispatchWidth = Math.max(maxDispatchWidth, sourceMaxDispatchWidth);
+                maxInFlight = Math.max(maxInFlight, sourceMaxInFlight);
+                maxQueue = Math.max(maxQueue, sourceMaxQueue);
+                long baselineCoverage = sourceResults.isEmpty() ? 0L : sourceResults.getFirst().coverageSignature();
+                long baselineFragmentation = sourceResults.isEmpty()
+                        ? 0L : sourceResults.getFirst().fragmentationSignature();
+                fingerprintMismatches += (int) sourceResults.stream()
+                        .filter(result -> result.coverageSignature() != baselineCoverage
+                                || result.fragmentationSignature() != baselineFragmentation)
+                        .count();
+                submitRejected += sourceResults.stream()
+                        .mapToLong(ParallelCaseResult::submitRejected).sum();
+                commitBudgetDeferred += sourceResults.stream()
+                        .mapToLong(ParallelCaseResult::commitBudgetDeferred).sum();
+                for (ParallelCaseResult result : sourceResults) {
+                    coverageSignature = Long.rotateLeft(coverageSignature, 7) ^ result.coverageSignature();
+                    fragmentationSignature = Long.rotateLeft(fragmentationSignature, 7)
+                            ^ result.fragmentationSignature();
+                }
+                counts.add(new ParallelCountSummary(
+                        sourceCount,
+                        steady.size(),
+                        percentile(workerValues, 0.50D),
+                        percentile(workerValues, 0.95D),
+                        percentile(responseValues, 0.50D),
+                        percentile(responseValues, 0.95D),
+                        stabilizingWorkerMedian,
+                        steadyWorkerMedian,
+                        workerDrift,
+                        stabilizingMedian,
+                        steadyMedian,
+                        drift,
+                        sourceWarmupUnstable,
+                        sourceMaxInFlight,
+                        sourceMaxQueue,
+                        sourceDispatchWaves == 0
+                                ? 0.0D : sourceCount * steady.size() / (double) sourceDispatchWaves,
+                        sourceMaxDispatchWidth,
+                        sourceMaxCommitSpread,
+                        sourceSubmitRejected,
+                        sourceCommitBudgetDeferred
+                ));
+            }
+            return new ParallelSuiteSummary(
+                    steadyResponse.size(),
+                    percentile(steadyWorker, 0.50D),
+                    percentile(steadyWorker, 0.95D),
+                    percentile(steadyResponse, 0.50D),
+                    percentile(steadyResponse, 0.95D),
+                    maxInFlight,
+                    maxQueue,
+                    steadyDispatchWaves == 0
+                            ? 0.0D : steadyJobs / (double) steadyDispatchWaves,
+                    maxDispatchWidth,
+                    warmupUnstable,
+                    fingerprintMismatches,
+                    submitRejected,
+                    commitBudgetDeferred,
+                    coverageSignature,
+                    fragmentationSignature,
+                    counts
+            );
         }
 
         private void recordSmartResult(
@@ -2082,14 +3070,26 @@ public final class SpotProjectionTestCommand {
         }
 
         private RandomStressSummary randomStressSummary() {
+            int completedCases = randomStressElapsedUs.size();
+            long completionTickSpan = completedCases <= 1
+                    ? 0L
+                    : Math.max(0L, randomStressLastCompletionTick - randomStressFirstCompletionTick);
+            long expectedTickSpan = Math.max(0, completedCases - 1);
+            double wallElapsedSeconds = randomStressLastCompletionNanos <= startedAtNanos
+                    ? 0.0D
+                    : (randomStressLastCompletionNanos - startedAtNanos) / 1_000_000_000.0D;
             return new RandomStressSummary(
-                    randomStressElapsedUs.size(),
+                    completedCases,
                     average(randomStressElapsedUs),
                     percentile(randomStressElapsedUs, 0.50D),
                     percentile(randomStressElapsedUs, 0.95D),
                     average(randomStressResponseUs),
                     percentile(randomStressResponseUs, 0.95D),
-                    average(randomStressSpots)
+                    average(randomStressSpots),
+                    wallElapsedSeconds,
+                    wallElapsedSeconds <= 0.0D ? 0.0D : completedCases / wallElapsedSeconds,
+                    completionTickSpan,
+                    Math.max(0L, completionTickSpan - expectedTickSpan)
             );
         }
 
@@ -2109,6 +3109,27 @@ public final class SpotProjectionTestCommand {
             ));
             return sorted.get(index);
         }
+
+        private static double median(List<Double> values) {
+            if (values.isEmpty()) {
+                return 0.0D;
+            }
+            List<Double> sorted = new ArrayList<>(values);
+            sorted.sort(Double::compareTo);
+            int middle = sorted.size() / 2;
+            if ((sorted.size() & 1) != 0) {
+                return sorted.get(middle);
+            }
+            return (sorted.get(middle - 1) + sorted.get(middle)) / 2.0D;
+        }
+    }
+
+    static double verifyMedian(List<Double> values) {
+        return ItemSuiteRun.median(values);
+    }
+
+    static boolean warmupDriftUnstable(double responseDrift, double workerDrift) {
+        return responseDrift > 0.10D && workerDrift > 0.10D;
     }
 
     private static final class BenchmarkRun {
@@ -2116,18 +3137,45 @@ public final class SpotProjectionTestCommand {
         private final int targetSamples;
         private int observedSamples;
         private long nextRetryTick;
-        private final long deadlineTick;
+        private long deadlineTick;
         private final UUID suiteRunId;
         private final String suiteCaseId;
         private final BenchmarkMode benchmarkMode;
         private int warmupPhase;
         private boolean forceInitialGeometryWarmup;
         private int appearanceStep;
+        private final int quietTicksRequired;
+        private int quietTicksObserved;
+        private boolean awaitingProjectionStart;
+        private int maxProjectionInFlight;
+        private int maxProjectionQueueDepth;
+        private long submitTickSpread;
+        private long commitTickSpread;
+        private int dispatchWaves;
+        private int maxDispatchWidth;
+        private double averageDispatchWidth;
+        private double totalWorkerUs;
+        private double totalCommitUs;
+        private double totalAssemblyUs;
+        private double totalDiagnosticsUs;
+        private double totalDependencyIndexUs;
+        private double totalOwnerPublishUs;
+        private int dependencyIndexReused;
+        private int ownerPublishReused;
+        private long submitRejectedBaseline;
+        private long commitBudgetDeferredBaseline;
+        private long submitRejected;
+        private long commitBudgetDeferred;
         private final List<Long> responseLatenciesNanos = new ArrayList<>();
         private long requestStartNanos;
+        private long lastTickObservationNanos;
+        private long maxTickIntervalNanos;
 
         private BenchmarkRun(GeneratedTest test, int targetSamples, long nextRetryTick, long deadlineTick) {
-            this(test, targetSamples, nextRetryTick, deadlineTick, null, "manual", BenchmarkMode.FULL_REBUILD);
+            this(
+                    test, targetSamples, nextRetryTick, deadlineTick,
+                    null, "manual", BenchmarkMode.FULL_REBUILD, 0
+            );
         }
 
         private BenchmarkRun(
@@ -2137,7 +3185,8 @@ public final class SpotProjectionTestCommand {
                 long deadlineTick,
                 UUID suiteRunId,
                 String suiteCaseId,
-                BenchmarkMode benchmarkMode
+                BenchmarkMode benchmarkMode,
+                int quietTicksRequired
         ) {
             this.test = test;
             this.targetSamples = targetSamples;
@@ -2146,12 +3195,46 @@ public final class SpotProjectionTestCommand {
             this.suiteRunId = suiteRunId;
             this.suiteCaseId = suiteCaseId;
             this.benchmarkMode = benchmarkMode == null ? BenchmarkMode.FULL_REBUILD : benchmarkMode;
+            this.quietTicksRequired = Math.max(0, quietTicksRequired);
             this.warmupPhase = this.benchmarkMode == BenchmarkMode.CACHE_REUSE ? 2 : 0;
             this.forceInitialGeometryWarmup = this.benchmarkMode == BenchmarkMode.CACHE_REUSE;
         }
 
-        private void startLatency() {
+        private void startLatency(ServerLevel level) {
             requestStartNanos = System.nanoTime();
+            lastTickObservationNanos = requestStartNanos;
+            maxTickIntervalNanos = 0L;
+            maxProjectionInFlight = 0;
+            maxProjectionQueueDepth = 0;
+            submitTickSpread = 0L;
+            commitTickSpread = 0L;
+            dispatchWaves = 0;
+            maxDispatchWidth = 0;
+            averageDispatchWidth = 0.0D;
+            totalWorkerUs = 0.0D;
+            totalCommitUs = 0.0D;
+            totalAssemblyUs = 0.0D;
+            totalDiagnosticsUs = 0.0D;
+            totalDependencyIndexUs = 0.0D;
+            totalOwnerPublishUs = 0.0D;
+            dependencyIndexReused = 0;
+            ownerPublishReused = 0;
+            OpticalTraceCache.ProjectionWorkState workState = OpticalTraceCache.projectionWorkState(level);
+            submitRejectedBaseline = workState.submitRejected();
+            commitBudgetDeferredBaseline = workState.commitBudgetDeferred();
+            submitRejected = 0L;
+            commitBudgetDeferred = 0L;
+        }
+
+        private void observeTick(ServerLevel level) {
+            long now = System.nanoTime();
+            if (lastTickObservationNanos > 0L) {
+                maxTickIntervalNanos = Math.max(maxTickIntervalNanos, now - lastTickObservationNanos);
+            }
+            lastTickObservationNanos = now;
+            OpticalTraceCache.ProjectionWorkState workState = OpticalTraceCache.projectionWorkState(level);
+            maxProjectionInFlight = Math.max(maxProjectionInFlight, workState.executorInFlight());
+            maxProjectionQueueDepth = Math.max(maxProjectionQueueDepth, workState.executorQueueDepth());
         }
 
         private void completePendingLatency() {
@@ -2166,6 +3249,31 @@ public final class SpotProjectionTestCommand {
             requestStartNanos = 0L;
         }
 
+        private void captureProjectionBatchObservation(ServerLevel level) {
+            OpticalTraceCache.ProjectionBatchObservation observation =
+                    OpticalTraceCache.projectionBatchObservation(level, projectionSources(test));
+            maxProjectionInFlight = Math.max(maxProjectionInFlight, observation.maxInFlight());
+            maxProjectionQueueDepth = Math.max(maxProjectionQueueDepth, observation.maxQueueDepth());
+            submitTickSpread = observation.submitTickSpread();
+            commitTickSpread = observation.commitTickSpread();
+            dispatchWaves = observation.dispatchWaves();
+            maxDispatchWidth = observation.maxDispatchWidth();
+            averageDispatchWidth = observation.averageDispatchWidth();
+            totalWorkerUs = observation.totalWorkerUs();
+            totalCommitUs = observation.totalCommitUs();
+            totalAssemblyUs = observation.totalAssemblyUs();
+            totalDiagnosticsUs = observation.totalDiagnosticsUs();
+            totalDependencyIndexUs = observation.totalDependencyIndexUs();
+            totalOwnerPublishUs = observation.totalOwnerPublishUs();
+            dependencyIndexReused = observation.dependencyIndexReused();
+            ownerPublishReused = observation.ownerPublishReused();
+            OpticalTraceCache.ProjectionWorkState workState = OpticalTraceCache.projectionWorkState(level);
+            submitRejected = Math.max(0L, workState.submitRejected() - submitRejectedBaseline);
+            commitBudgetDeferred = Math.max(
+                    0L, workState.commitBudgetDeferred() - commitBudgetDeferredBaseline
+            );
+        }
+
         private RequestLatencyReport latencyReport() {
             if (responseLatenciesNanos.isEmpty()) {
                 return RequestLatencyReport.EMPTY;
@@ -2175,28 +3283,121 @@ public final class SpotProjectionTestCommand {
             for (long value : sorted) {
                 sum += value;
             }
+            int p50Index = Math.max(0, Math.min(sorted.length - 1, (int) Math.ceil(sorted.length * 0.50D) - 1));
             int p95Index = Math.max(0, Math.min(sorted.length - 1, (int) Math.ceil(sorted.length * 0.95D) - 1));
             return new RequestLatencyReport(
                     sorted.length,
                     (sum / (double) sorted.length) / 1_000.0D,
+                    sorted[p50Index] / 1_000.0D,
                     sorted[p95Index] / 1_000.0D,
-                    sorted[sorted.length - 1] / 1_000.0D
+                    sorted[sorted.length - 1] / 1_000.0D,
+                    Math.max(0L, maxTickIntervalNanos - 50_000_000L) / 1_000.0D
+            );
+        }
+
+        private BenchmarkObservation observation() {
+            return new BenchmarkObservation(
+                    quietTicksRequired,
+                    quietTicksObserved,
+                    maxProjectionInFlight,
+                    maxProjectionQueueDepth,
+                    submitTickSpread,
+                    commitTickSpread,
+                    dispatchWaves,
+                    maxDispatchWidth,
+                    averageDispatchWidth,
+                    totalWorkerUs,
+                    totalCommitUs,
+                    totalAssemblyUs,
+                    totalDiagnosticsUs,
+                    totalDependencyIndexUs,
+                    totalOwnerPublishUs,
+                    dependencyIndexReused,
+                    ownerPublishReused,
+                    submitRejected,
+                    commitBudgetDeferred
             );
         }
     }
 
-    private record RequestLatencyReport(int samples, double averageUs, double p95Us, double maxUs) {
-        private static final RequestLatencyReport EMPTY = new RequestLatencyReport(0, 0.0D, 0.0D, 0.0D);
+    private record BenchmarkObservation(
+            int quietTicksRequired,
+            int quietTicksObserved,
+            int maxProjectionInFlight,
+            int maxProjectionQueueDepth,
+            long submitTickSpread,
+            long commitTickSpread,
+            int dispatchWaves,
+            int maxDispatchWidth,
+            double averageDispatchWidth,
+            double totalWorkerUs,
+            double totalCommitUs,
+            double totalAssemblyUs,
+            double totalDiagnosticsUs,
+            double totalDependencyIndexUs,
+            double totalOwnerPublishUs,
+            int dependencyIndexReused,
+            int ownerPublishReused,
+            long submitRejected,
+            long commitBudgetDeferred
+    ) {
+        private static final BenchmarkObservation EMPTY = new BenchmarkObservation(
+                0, 0, 0, 0, 0L, 0L, 0, 0,
+                0.0D, 0.0D, 0.0D, 0.0D, 0.0D, 0.0D, 0.0D, 0, 0, 0L, 0L
+        );
+    }
+
+    private record RequestLatencyReport(
+            int samples,
+            double averageUs,
+            double p50Us,
+            double p95Us,
+            double maxUs,
+            double maxTickStallUs
+    ) {
+        private static final RequestLatencyReport EMPTY = new RequestLatencyReport(
+                0, 0.0D, 0.0D, 0.0D, 0.0D, 0.0D
+        );
     }
 
     private record SuiteBenchmarkCompletion(
             UUID owner,
             UUID runId,
             SpotProjectionPerformanceTracker.Report report,
+            List<SpotProjectionPerformanceTracker.Report> sourceReports,
             RequestLatencyReport latency,
+            BenchmarkObservation benchmark,
             boolean completed,
             String reason
     ) {
+        private SuiteBenchmarkCompletion(
+                UUID owner,
+                UUID runId,
+                SpotProjectionPerformanceTracker.Report report,
+                List<SpotProjectionPerformanceTracker.Report> sourceReports,
+                RequestLatencyReport latency,
+                boolean completed,
+                String reason
+        ) {
+            this(
+                    owner, runId, report, sourceReports, latency,
+                    BenchmarkObservation.EMPTY, completed, reason
+            );
+        }
+
+        private SuiteBenchmarkCompletion(
+                UUID owner,
+                UUID runId,
+                SpotProjectionPerformanceTracker.Report report,
+                RequestLatencyReport latency,
+                boolean completed,
+                String reason
+        ) {
+            this(
+                    owner, runId, report, List.of(report), latency,
+                    BenchmarkObservation.EMPTY, completed, reason
+            );
+        }
     }
 
     private SpotProjectionTestCommand() {

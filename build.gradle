@@ -2458,6 +2458,9 @@ tasks.register('verifySpotProjectionContinuity') {
     def overlayPayloadSourceFile = file('src/main/java/io/github/yoglappland/spectralization/network/SpotOverlayPayload.java')
     def updatePayloadSourceFile = file('src/main/java/io/github/yoglappland/spectralization/network/SpotUpdatePayload.java')
     def spotRenderSourceFile = file('src/main/java/io/github/yoglappland/spectralization/client/spot/SpotRenderEvents.java')
+    def projectionJobSourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/projection/SpotProjectionJob.java')
+    def projectionExecutorSourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/projection/SpotProjectionExecutor.java')
+    def opticalTraceCacheSourceFile = file('src/main/java/io/github/yoglappland/spectralization/optics/cache/OpticalTraceCache.java')
     inputs.files(
             spotRecordSourceFile,
             projectorSourceFile,
@@ -2468,7 +2471,10 @@ tasks.register('verifySpotProjectionContinuity') {
             compiledSpotLayerSourceFile,
             overlayPayloadSourceFile,
             updatePayloadSourceFile,
-            spotRenderSourceFile
+            spotRenderSourceFile,
+            projectionJobSourceFile,
+            projectionExecutorSourceFile,
+            opticalTraceCacheSourceFile
     )
 
     doLast {
@@ -2482,6 +2488,9 @@ tasks.register('verifySpotProjectionContinuity') {
         def overlayPayloadSource = overlayPayloadSourceFile.text
         def updatePayloadSource = updatePayloadSourceFile.text
         def spotRenderSource = spotRenderSourceFile.text
+        def projectionJobSource = projectionJobSourceFile.text
+        def projectionExecutorSource = projectionExecutorSourceFile.text
+        def opticalTraceCacheSource = opticalTraceCacheSourceFile.text
         def expect = { boolean condition, String message ->
             if (!condition) {
                 throw new GradleException(message)
@@ -2555,6 +2564,40 @@ tasks.register('verifySpotProjectionContinuity') {
                 spotRenderSource.contains('normalizedQuadUnit(')
                         && spotRenderSource.contains('normalizedQuadUnitFloat('),
                 'SpotRenderEvents must decode footprint quad geometry and UVs using the 16-bit quad scale.'
+        )
+        expect(
+                projectionJobSource.contains('ProjectionWorldSnapshot')
+                        && projectionJobSource.contains('VoxelSpotProjector.projectLightConeSpots(')
+                        && !projectionJobSource.contains('world.level.Level')
+                        && !projectionJobSource.contains('ServerLevel')
+                        && !projectionJobSource.contains('OpticalTraceCache')
+                        && !projectionJobSource.contains('SpectralDiagnostics')
+                        && !projectionJobSource.contains('OpticalSpotTracker'),
+                'SpotProjectionJob must remain a Level-free immutable worker boundary.'
+        )
+        expect(
+                projectionExecutorSource.contains('new ArrayBlockingQueue<>(')
+                        && projectionExecutorSource.contains('new ThreadPoolExecutor.AbortPolicy()')
+                        && !projectionExecutorSource.contains('CallerRunsPolicy')
+                        && !projectionExecutorSource.contains('parallelStream')
+                        && !projectionExecutorSource.contains('commonPool')
+                        && !projectionExecutorSource.contains('.join(')
+                        && !projectionExecutorSource.contains('CompletableFuture')
+                        && !projectionExecutorSource.contains('Future<'),
+                'SpotProjectionExecutor must keep a dedicated bounded queue without server-thread fallback.'
+        )
+        expect(
+                opticalTraceCacheSource.contains('int waveWidth = projectionWorkerWidth(level);')
+                        && opticalTraceCacheSource.contains('int commitLimit = projectionWorkerWidth(level);')
+                        && opticalTraceCacheSource.contains('.field("projection_workers", executorState.workers())')
+                        && opticalTraceCacheSource.contains('Math.max(1, executorState.workers())'),
+                'Projection scheduling and commit limits must use the executor effective worker count.'
+        )
+        expect(
+                opticalTraceCacheSource.contains('"projection_chunk_changed"')
+                        && opticalTraceCacheSource.contains('CompiledSpotLayer.invalidateProjectionGeometry(')
+                        && opticalTraceCacheSource.contains('cache.enqueueProjectionRefresh(entry.getKey());'),
+                'Projection chunk changes must invalidate cached geometry before scheduling a refresh.'
         )
     }
 }

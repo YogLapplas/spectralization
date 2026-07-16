@@ -7,6 +7,7 @@ import it.unimi.dsi.fastutil.longs.LongSet;
 import it.unimi.dsi.fastutil.longs.LongSets;
 import java.util.List;
 import java.util.Objects;
+import java.util.Arrays;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 
@@ -73,6 +74,35 @@ public record SpotProjectionResult(
 
     public LongSet dependencies() {
         return dependencySnapshot.positions();
+    }
+
+    /** Compares every deterministic projection artifact while intentionally ignoring timings and counters. */
+    public boolean sameProjectionState(SpotProjectionResult other) {
+        if (other == null
+                || !spots.equals(other.spots)
+                || !allocations.equals(other.allocations)
+                || !geometryTemplates.equals(other.geometryTemplates)
+                || cacheMode != other.cacheMode
+                || !dependencySnapshot.positions.equals(other.dependencySnapshot.positions)
+                || !appearancePlan.surfaces.equals(other.appearancePlan.surfaces)
+                || !Arrays.equals(
+                        appearancePlan.surfaceIndexByTemplate,
+                        other.appearancePlan.surfaceIndexByTemplate
+                )
+                || depthCache.slices.size() != other.depthCache.slices.size()) {
+            return false;
+        }
+        for (int index = 0; index < depthCache.slices.size(); index++) {
+            DepthSliceSnapshot left = depthCache.slices.get(index);
+            DepthSliceSnapshot right = other.depthCache.slices.get(index);
+            if (left.depth != right.depth
+                    || left.geometryTemplateEnd != right.geometryTemplateEnd
+                    || !Arrays.equals(left.dependencyDelta, right.dependencyDelta)
+                    || !Arrays.equals(left.remainingRegionData, right.remainingRegionData)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public enum CacheMode {

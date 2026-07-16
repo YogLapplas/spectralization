@@ -14,7 +14,18 @@ public final class OpticalDependencyIndex {
     private final Int2ObjectMap<LongSet> dependencyPositionsByNetwork = new Int2ObjectOpenHashMap<>();
     private final IntSet dirtyNetworks = new IntOpenHashSet();
 
-    public void replaceDependencies(int networkId, LongSet dependencies) {
+    /**
+     * Replaces one network's immutable dependency snapshot.
+     *
+     * @return true when the reverse index changed, false when the new snapshot was set-equal
+     */
+    public boolean replaceDependencies(int networkId, LongSet dependencies) {
+        LongSet oldDependencies = dependencyPositionsByNetwork.get(networkId);
+        if (oldDependencies == dependencies
+                || (oldDependencies != null && oldDependencies.equals(dependencies))) {
+            dirtyNetworks.remove(networkId);
+            return false;
+        }
         removeNetwork(networkId);
         dependencyPositionsByNetwork.put(networkId, dependencies);
 
@@ -23,6 +34,7 @@ public final class OpticalDependencyIndex {
                     .computeIfAbsent(dependencyPos, ignored -> new IntOpenHashSet())
                     .add(networkId);
         }
+        return true;
     }
 
     public void removeNetwork(int networkId) {

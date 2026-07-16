@@ -15,6 +15,10 @@ import io.github.yoglappland.spectralization.optics.geometry.BeamGeometryOps;
 import io.github.yoglappland.spectralization.optics.projection.SpotProjectionAllocation;
 import io.github.yoglappland.spectralization.optics.projection.SpotProjectionPerformanceTracker;
 import io.github.yoglappland.spectralization.optics.projection.SpotProjectionResult;
+import io.github.yoglappland.spectralization.optics.projection.SpotProjectionJob;
+import io.github.yoglappland.spectralization.optics.projection.SpotProjectionJobResult;
+import io.github.yoglappland.spectralization.optics.projection.ProjectionWorldSnapshot;
+import io.github.yoglappland.spectralization.optics.projection.ProjectionSectionSnapshotCache;
 import io.github.yoglappland.spectralization.optics.projection.VoxelSpotProjector;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
@@ -26,6 +30,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.WeakHashMap;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongUnaryOperator;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
@@ -41,6 +48,9 @@ public final class CompiledSpotLayer {
     private static final int UNCACHED_NETWORK_ID = Integer.MIN_VALUE;
     private static final Map<ServerLevel, LinkedHashMap<ProjectionGeometryKey, ProjectionGeometryCacheEntry>>
             GEOMETRY_CACHE_BY_LEVEL = new WeakHashMap<>();
+    private static final Map<ServerLevel, Map<ProjectionGeometryKey, Long>> ACTIVE_JOB_TOKENS_BY_LEVEL =
+            new WeakHashMap<>();
+    private static final AtomicLong NEXT_JOB_TOKEN = new AtomicLong();
     public static final SpotLayer EMPTY = new SpotLayer(List.of(), new LongOpenHashSet(), List.of());
 
     public static SpotLayer sample(
@@ -64,7 +74,6 @@ public final class CompiledSpotLayer {
         if (!solution.reliableForReadout() || graph.nodes().isEmpty()) {
             return EMPTY;
         }
-
         Map<PortGraphNode, Integer> distanceByNode = propagationDistanceByNode(graph);
         Map<GeometryKey, SpotRecord> primarySpots = new LinkedHashMap<>();
         Map<GeometryKey, SpotRecord> sideSpots = new LinkedHashMap<>();
@@ -77,21 +86,12 @@ public final class CompiledSpotLayer {
                 continue;
             }
             budgetStats.outgoingNodes++;
-
             double outgoingPower = solution.powerAt(node);
-
-            if (outgoingPower <= MIN_SPOT_POWER) {
+            if (outgoingPower <= MIN_SPOT_POWER
+                    || !level.isLoaded(node.pos())
+                    || isTransparentProjectionPassThrough(level, node)) {
                 continue;
             }
-
-            if (!level.isLoaded(node.pos())) {
-                continue;
-            }
-
-            if (isTransparentProjectionPassThrough(level, node)) {
-                continue;
-            }
-
             double coherentOutgoingPower = Math.min(outgoingPower, solution.coherentPowerAt(node));
             BeamPacket profileTemplate = templateAt(
                     level,
@@ -100,8 +100,7 @@ public final class CompiledSpotLayer {
                     solution,
                     beamProfileLayer,
                     node
-            )
-                    .withDirection(node.side());
+            ).withDirection(node.side());
             long projectionStartNanos = System.nanoTime();
             budgetStats.projectedNodes++;
             SpotProjectionResult projectionResult = projectWithGeometryCache(
@@ -115,14 +114,9 @@ public final class CompiledSpotLayer {
             );
             long projectionElapsedNanos = Math.max(0L, System.nanoTime() - projectionStartNanos);
             SpotProjectionPerformanceTracker.record(
-                    level,
-                    node.pos(),
-                    node.side(),
-                    projectionElapsedNanos,
-                    projectionResult
+                    level, node.pos(), node.side(), projectionElapsedNanos, projectionResult
             );
-            logProjectionProfile(level, node, outgoingPower, projectionResult, projectionElapsedNanos);
-
+            logProjectionProfile(level, node, outgoingPower, projectionResult, projectionElapsedNanos, "serial");
             addVisibleSpots(
                     primarySpots,
                     sideSpots,
@@ -137,6 +131,255 @@ public final class CompiledSpotLayer {
         List<SpotRecord> spots = cappedSpots(primarySpots, sideSpots);
         logSpotBudget(level, spots.size(), projectionDependencies.size(), budgetStats);
         return new SpotLayer(spots, projectionDependencies, allocations);
+    }
+
+    /** Main-thread prepare phase for deterministic asynchronous projection. */
+    public static PreparedSpotBatch prepareBatch(
+            ServerLevel level,
+            int networkId,
+            CompiledPortGraph graph,
+            ScalarPowerSolution solution,
+            OutputBeam sourceOutput,
+            CompiledBeamProfileLayer beamProfileLayer
+    ) {
+        return prepareBatch(
+                level, networkId, graph, solution, sourceOutput, beamProfileLayer, ignored -> 0L
+        );
+    }
+
+    public static PreparedSpotBatch prepareBatch(
+            ServerLevel level,
+            int networkId,
+            CompiledPortGraph graph,
+            ScalarPowerSolution solution,
+            OutputBeam sourceOutput,
+            CompiledBeamProfileLayer beamProfileLayer,
+            LongUnaryOperator sectionRevisionAtKey
+    ) {
+        ProjectionBatchPreparation preparation = beginBatch(
+                level,
+                networkId,
+                graph,
+                solution,
+                sourceOutput,
+                beamProfileLayer,
+                sectionRevisionAtKey
+        );
+        while (!preparation.complete()) {
+            preparation.advanceOne();
+        }
+        return preparation.finish();
+    }
+
+    public static ProjectionBatchPreparation beginBatch(
+            ServerLevel level,
+            int networkId,
+            CompiledPortGraph graph,
+            ScalarPowerSolution solution,
+            OutputBeam sourceOutput,
+            CompiledBeamProfileLayer beamProfileLayer,
+            LongUnaryOperator sectionRevisionAtKey
+    ) {
+        return beginBatch(
+                level,
+                networkId,
+                graph,
+                solution,
+                sourceOutput,
+                beamProfileLayer,
+                sectionRevisionAtKey,
+                null
+        );
+    }
+
+    public static ProjectionBatchPreparation beginBatch(
+            ServerLevel level,
+            int networkId,
+            CompiledPortGraph graph,
+            ScalarPowerSolution solution,
+            OutputBeam sourceOutput,
+            CompiledBeamProfileLayer beamProfileLayer,
+            LongUnaryOperator sectionRevisionAtKey,
+            ProjectionSectionSnapshotCache sectionSnapshotCache
+    ) {
+        return new ProjectionBatchPreparation(
+                level,
+                networkId,
+                graph,
+                solution,
+                sourceOutput,
+                beamProfileLayer,
+                sectionRevisionAtKey,
+                sectionSnapshotCache
+        );
+    }
+
+    private static PreparedNodeProjection prepareNodeProjection(
+            ServerLevel level,
+            int networkId,
+            int nodeOrdinal,
+            PortGraphNode node,
+            BeamPacket profileTemplate,
+            double outgoingPower,
+            double coherentOutgoingPower,
+            LongUnaryOperator sectionRevisionAtKey,
+            ProjectionSectionSnapshotCache sectionSnapshotCache
+    ) {
+        boolean cacheEligible = networkId != UNCACHED_NETWORK_ID
+                && !VoxelSpotProjector.debugFaceCentersEnabled()
+                && !VoxelSpotProjector.validationEnabledFor(level, node.pos(), node.side());
+        ProjectionGeometryKey geometryKey = new ProjectionGeometryKey(
+                networkId, node.pos().immutable(), node.side(), profileTemplate.envelope()
+        );
+        ProjectionAppearanceKey appearanceKey = new ProjectionAppearanceKey(
+                profileTemplate, outgoingPower, coherentOutgoingPower
+        );
+        long prepareStartNanos = System.nanoTime();
+
+        if (!cacheEligible) {
+            SpotBudgetStats ignored = new SpotBudgetStats();
+            SpotProjectionResult result = projectWithGeometryCache(
+                    level, networkId, node, profileTemplate, outgoingPower, coherentOutgoingPower, ignored
+            );
+            return PreparedNodeProjection.immediate(
+                    nodeOrdinal, node, outgoingPower, geometryKey, appearanceKey, false, CacheDisposition.UNCACHED,
+                    0L, result, Math.max(0L, System.nanoTime() - prepareStartNanos)
+            );
+        }
+
+        ProjectionGeometryCacheEntry entry = geometryCache(level).get(geometryKey);
+        long jobToken = reserveJobToken(level, geometryKey);
+        if (entry != null && entry.earliestInvalidatedDepth() == 0) {
+            SpotProjectionResult refreshed = VoxelSpotProjector.reapplyCachedAppearance(
+                    level,
+                    node.pos(),
+                    node.side(),
+                    profileTemplate,
+                    outgoingPower,
+                    coherentOutgoingPower,
+                    entry.result()
+            );
+            return PreparedNodeProjection.immediate(
+                    nodeOrdinal, node, outgoingPower, geometryKey, appearanceKey, true,
+                    CacheDisposition.APPEARANCE_ONLY, jobToken, refreshed,
+                    Math.max(0L, System.nanoTime() - prepareStartNanos)
+            );
+        }
+
+        SpotProjectionResult cachedGeometry = null;
+        int earliestInvalidatedDepth = 1;
+        CacheDisposition disposition = CacheDisposition.FULL_REBUILD;
+        if (entry != null) {
+            cachedGeometry = entry.result();
+            earliestInvalidatedDepth = entry.earliestInvalidatedDepth();
+            disposition = CacheDisposition.SUFFIX_REBUILD;
+            if (!appearanceKey.equals(entry.appearanceKey())) {
+                cachedGeometry = VoxelSpotProjector.reapplyCachedAppearance(
+                        level,
+                        node.pos(),
+                        node.side(),
+                        profileTemplate,
+                        outgoingPower,
+                        coherentOutgoingPower,
+                        cachedGeometry
+                );
+            }
+        }
+        long snapshotStartNanos = System.nanoTime();
+        ProjectionWorldSnapshot snapshot = ProjectionWorldSnapshot.capture(
+                level,
+                node.pos(),
+                node.side(),
+                profileTemplate.envelope(),
+                sectionRevisionAtKey,
+                sectionSnapshotCache
+        );
+        long snapshotNanos = Math.max(0L, System.nanoTime() - snapshotStartNanos);
+        SpotProjectionJob work = new SpotProjectionJob(
+                nodeOrdinal,
+                node.pos(),
+                node.side(),
+                node.side(),
+                snapshot,
+                profileTemplate,
+                outgoingPower,
+                coherentOutgoingPower,
+                cachedGeometry,
+                earliestInvalidatedDepth,
+                snapshotNanos,
+                snapshot.blockCount(),
+                snapshot.sectionCount(),
+                snapshot.resolvedBlocks(),
+                snapshot.reusedBlocks()
+        );
+        return PreparedNodeProjection.worker(
+                work, node, outgoingPower, geometryKey, appearanceKey, jobToken, disposition
+        );
+    }
+
+    private static long reserveJobToken(ServerLevel level, ProjectionGeometryKey key) {
+        long token = NEXT_JOB_TOKEN.incrementAndGet();
+        ACTIVE_JOB_TOKENS_BY_LEVEL.computeIfAbsent(level, ignored -> new HashMap<>()).put(key, token);
+        return token;
+    }
+
+    private static boolean jobTokenCurrent(ServerLevel level, ProjectionGeometryKey key, long token) {
+        Map<ProjectionGeometryKey, Long> tokens = ACTIVE_JOB_TOKENS_BY_LEVEL.get(level);
+        return tokens != null && tokens.getOrDefault(key, Long.MIN_VALUE) == token;
+    }
+
+    private static void releaseJobToken(ServerLevel level, ProjectionGeometryKey key, long token) {
+        Map<ProjectionGeometryKey, Long> tokens = ACTIVE_JOB_TOKENS_BY_LEVEL.get(level);
+        if (tokens != null && tokens.getOrDefault(key, Long.MIN_VALUE) == token) {
+            tokens.remove(key);
+            if (tokens.isEmpty()) {
+                ACTIVE_JOB_TOKENS_BY_LEVEL.remove(level);
+            }
+        }
+    }
+
+    private static void revokeAnyJobToken(ServerLevel level, ProjectionGeometryKey key) {
+        Map<ProjectionGeometryKey, Long> tokens = ACTIVE_JOB_TOKENS_BY_LEVEL.get(level);
+        if (tokens != null) {
+            tokens.remove(key);
+            if (tokens.isEmpty()) {
+                ACTIVE_JOB_TOKENS_BY_LEVEL.remove(level);
+            }
+        }
+    }
+
+    private static void revokeJobTokensForNetwork(ServerLevel level, int networkId) {
+        Map<ProjectionGeometryKey, Long> tokens = ACTIVE_JOB_TOKENS_BY_LEVEL.get(level);
+        if (tokens != null) {
+            tokens.keySet().removeIf(key -> key.networkId() == networkId);
+            if (tokens.isEmpty()) {
+                ACTIVE_JOB_TOKENS_BY_LEVEL.remove(level);
+            }
+        }
+    }
+
+    private static void revokeJobTokensForSource(
+            ServerLevel level,
+            BlockPos sourcePos,
+            Direction direction
+    ) {
+        Map<ProjectionGeometryKey, Long> tokens = ACTIVE_JOB_TOKENS_BY_LEVEL.get(level);
+        if (tokens != null) {
+            tokens.keySet().removeIf(key -> key.sourcePos().equals(sourcePos) && key.direction() == direction);
+            if (tokens.isEmpty()) {
+                ACTIVE_JOB_TOKENS_BY_LEVEL.remove(level);
+            }
+        }
+    }
+
+    public static void clearProjectionGeometry(ServerLevel level) {
+        GEOMETRY_CACHE_BY_LEVEL.remove(level);
+        ACTIVE_JOB_TOKENS_BY_LEVEL.remove(level);
+    }
+
+    public static void clearAllProjectionGeometry() {
+        GEOMETRY_CACHE_BY_LEVEL.clear();
+        ACTIVE_JOB_TOKENS_BY_LEVEL.clear();
     }
 
     private static SpotProjectionResult projectWithGeometryCache(
@@ -258,6 +501,7 @@ public final class CompiledSpotLayer {
                 || geometryTemplateCount(cache) > MAX_GEOMETRY_TEMPLATES_PER_LEVEL) {
             ProjectionGeometryKey eldest = cache.keySet().iterator().next();
             cache.remove(eldest);
+            revokeAnyJobToken(level, eldest);
         }
     }
 
@@ -276,12 +520,19 @@ public final class CompiledSpotLayer {
             String reason
     ) {
         LinkedHashMap<ProjectionGeometryKey, ProjectionGeometryCacheEntry> cache = GEOMETRY_CACHE_BY_LEVEL.get(level);
+        if (changedPos == null) {
+            revokeJobTokensForNetwork(level, networkId);
+        }
         if (cache == null || cache.isEmpty()) {
             return;
         }
         if (changedPos == null) {
+            List<ProjectionGeometryKey> removedKeys = cache.keySet().stream()
+                    .filter(key -> key.networkId() == networkId)
+                    .toList();
             int before = cache.size();
             cache.entrySet().removeIf(entry -> entry.getKey().networkId() == networkId);
+            removedKeys.forEach(key -> revokeAnyJobToken(level, key));
             int removed = before - cache.size();
             logGeometryInvalidation(level, networkId, null, reason, removed, removed, 0);
             return;
@@ -300,6 +551,7 @@ public final class CompiledSpotLayer {
                 int invalidatedDepth = projectionDepth(key.sourcePos(), changedPos, key.direction());
                 earliestDepth = Math.min(earliestDepth, invalidatedDepth);
                 entry.getValue().invalidateFrom(invalidatedDepth);
+                revokeAnyJobToken(level, key);
             }
             affected++;
         }
@@ -313,12 +565,17 @@ public final class CompiledSpotLayer {
             String reason
     ) {
         LinkedHashMap<ProjectionGeometryKey, ProjectionGeometryCacheEntry> cache = GEOMETRY_CACHE_BY_LEVEL.get(level);
+        revokeJobTokensForSource(level, sourcePos, direction);
         if (cache == null || cache.isEmpty()) {
             return;
         }
         int before = cache.size();
+        List<ProjectionGeometryKey> removedKeys = cache.keySet().stream()
+                .filter(key -> key.sourcePos().equals(sourcePos) && key.direction() == direction)
+                .toList();
         cache.entrySet().removeIf(entry -> entry.getKey().sourcePos().equals(sourcePos)
                 && entry.getKey().direction() == direction);
+        removedKeys.forEach(key -> revokeAnyJobToken(level, key));
         logGeometryInvalidation(
                 level,
                 UNCACHED_NETWORK_ID,
@@ -369,7 +626,8 @@ public final class CompiledSpotLayer {
             PortGraphNode node,
             double outgoingPower,
             SpotProjectionResult projectionResult,
-            long projectionElapsedNanos
+            long projectionElapsedNanos,
+            String execution
     ) {
         if (!SpectralizationConfig.opticalCompilerDebugLog()) {
             return;
@@ -383,6 +641,7 @@ public final class CompiledSpotLayer {
                     .field("direction", node.side())
                     .field("power", outgoingPower)
                     .field("cache_mode", "appearance_only")
+                    .field("projection_execution", execution)
                     .field("log_detail", "compact_appearance")
                     .field("geometry_templates", projectionResult.geometryTemplates().size())
                     .field("elapsed_us", projectionElapsedNanos / 1_000.0D)
@@ -430,6 +689,7 @@ public final class CompiledSpotLayer {
                 .field("direction", node.side())
                 .field("power", outgoingPower)
                 .field("cache_mode", projectionResult.cacheMode().name().toLowerCase(java.util.Locale.ROOT))
+                .field("projection_execution", execution)
                 .field("geometry_templates", projectionResult.geometryTemplates().size())
                 .field("depth_snapshot_count", projectionResult.depthCache().size())
                 .field("earliest_invalidated_depth", depthReuse.earliestInvalidatedDepth())
@@ -454,12 +714,15 @@ public final class CompiledSpotLayer {
                 .field("side_remaining_query_workspace", "reused_per_depth")
                 .field("side_prefix_subtraction_workspace", "reused_per_depth")
                 .field("sweep_construction_workspace", "reused_per_depth")
+                .field("sweep_prefix_segment_workspace", "caller_owned_reused_per_depth")
+                .field("sweep_bounds_prefilter", "before_hull")
                 .field("sweep_prefilter_query_workspace", "reused_per_depth")
                 .field("front_sweep_update_strategy", "incremental_travel_segments")
                 .field("remaining_handoff_strategy", "front_prefix_region_plus_tail")
                 .field("front_receiver_query_strategy", "travel_group_batch_reusable_workspace")
                 .field("remaining_bulk_finalize_strategy", "integrated_compaction_before_region")
                 .field("polygon_clip_workspace", "reused_per_operation")
+                .field("rectangle_clip_materialization", "final_polygon_only")
                 .field("polygon_subtract_output", "append_into_reused_buffers")
                 .field("polygon_vertex_storage", "owned_normalized_list")
                 .field("side_debug_bounds", "on_demand")
@@ -666,10 +929,16 @@ public final class CompiledSpotLayer {
                 .field("hot_depth_front_visible_queries", hotDepth.frontSubtractions())
                 .field("hot_depth_side_visible_queries", hotDepth.sideSubtractions())
                 .field("hot_depth_spots", hotDepth.spots())
+                .field("log_write_async", true)
+                .field("log_write_enqueued_before", logWriteStats.enqueuedCount())
                 .field("log_write_count_before", logWriteStats.count())
                 .field("log_write_bytes_before", logWriteStats.bytes())
                 .field("log_write_avg_us_before", logWriteStats.averageNanos() / 1_000.0D)
                 .field("log_write_max_us_before", logWriteStats.maxNanos() / 1_000.0D)
+                .field("log_write_pending_before", logWriteStats.pendingWrites())
+                .field("log_write_max_pending_before", logWriteStats.maxPendingWrites())
+                .field("log_write_dropped_before", logWriteStats.droppedCount())
+                .field("log_write_failed_before", logWriteStats.failedCount())
                 .write();
 
         for (SpotProjectionResult.BoundaryMissingFace missing : optimization.sideBoundaryMissingDetails()) {
@@ -754,11 +1023,16 @@ public final class CompiledSpotLayer {
             SpotBudgetStats budgetStats
     ) {
         GeometryKey geometryKey = spot.geometryKey();
-        if (spots.containsKey(geometryKey)) {
+        if (spots.size() >= MAX_SPOTS_PER_SAMPLE) {
+            if (spots.replace(geometryKey, spot) != null) {
+                budgetStats.deduplicated++;
+            }
+            return;
+        }
+        SpotRecord previous = spots.putIfAbsent(geometryKey, spot);
+        if (previous != null) {
             spots.put(geometryKey, spot);
             budgetStats.deduplicated++;
-        } else if (spots.size() < MAX_SPOTS_PER_SAMPLE) {
-            spots.put(geometryKey, spot);
         }
     }
 
@@ -903,6 +1177,465 @@ public final class CompiledSpotLayer {
     }
 
     private record DebugFaceKey(BlockPos pos, net.minecraft.core.Direction face) {
+    }
+
+    private enum CacheDisposition {
+        UNCACHED,
+        APPEARANCE_ONLY,
+        SUFFIX_REBUILD,
+        FULL_REBUILD
+    }
+
+    private static final class PreparedNodeProjection {
+        private final int nodeOrdinal;
+        private final PortGraphNode node;
+        private final double outgoingPower;
+        private final ProjectionGeometryKey geometryKey;
+        private final ProjectionAppearanceKey appearanceKey;
+        private final boolean cacheEligible;
+        private final CacheDisposition disposition;
+        private final long jobToken;
+        private final SpotProjectionJob work;
+        private SpotProjectionResult result;
+        private long elapsedNanos;
+        private long workerStartedNanos;
+        private Throwable failure;
+
+        private PreparedNodeProjection(
+                int nodeOrdinal,
+                PortGraphNode node,
+                double outgoingPower,
+                ProjectionGeometryKey geometryKey,
+                ProjectionAppearanceKey appearanceKey,
+                boolean cacheEligible,
+                CacheDisposition disposition,
+                long jobToken,
+                SpotProjectionJob work,
+                SpotProjectionResult result,
+                long elapsedNanos
+        ) {
+            this.nodeOrdinal = nodeOrdinal;
+            this.node = node;
+            this.outgoingPower = outgoingPower;
+            this.geometryKey = geometryKey;
+            this.appearanceKey = appearanceKey;
+            this.cacheEligible = cacheEligible;
+            this.disposition = disposition;
+            this.jobToken = jobToken;
+            this.work = work;
+            this.result = result;
+            this.elapsedNanos = elapsedNanos;
+        }
+
+        private static PreparedNodeProjection immediate(
+                int nodeOrdinal,
+                PortGraphNode node,
+                double outgoingPower,
+                ProjectionGeometryKey geometryKey,
+                ProjectionAppearanceKey appearanceKey,
+                boolean cacheEligible,
+                CacheDisposition disposition,
+                long jobToken,
+                SpotProjectionResult result,
+                long elapsedNanos
+        ) {
+            return new PreparedNodeProjection(
+                    nodeOrdinal, node, outgoingPower, geometryKey, appearanceKey, cacheEligible, disposition,
+                    jobToken, null, Objects.requireNonNull(result, "result"), elapsedNanos
+            );
+        }
+
+        private static PreparedNodeProjection worker(
+                SpotProjectionJob work,
+                PortGraphNode node,
+                double outgoingPower,
+                ProjectionGeometryKey geometryKey,
+                ProjectionAppearanceKey appearanceKey,
+                long jobToken,
+                CacheDisposition disposition
+        ) {
+            return new PreparedNodeProjection(
+                    work.nodeOrdinal(), node, outgoingPower, geometryKey, appearanceKey,
+                    true, disposition, jobToken, work, null, 0L
+            );
+        }
+    }
+
+    public static final class ProjectionBatchPreparation {
+        private final ServerLevel level;
+        private final int networkId;
+        private final List<PortGraphNode> graphNodes;
+        private final ScalarPowerSolution solution;
+        private final OutputBeam sourceOutput;
+        private final CompiledBeamProfileLayer beamProfileLayer;
+        private final LongUnaryOperator sectionRevisionAtKey;
+        private final ProjectionSectionSnapshotCache sectionSnapshotCache;
+        private final Map<PortGraphNode, Integer> distanceByNode;
+        private final List<PreparedNodeProjection> preparedNodes = new ArrayList<>();
+        private int nextGraphNode;
+        private int outgoingNodes;
+        private boolean finished;
+
+        private ProjectionBatchPreparation(
+                ServerLevel level,
+                int networkId,
+                CompiledPortGraph graph,
+                ScalarPowerSolution solution,
+                OutputBeam sourceOutput,
+                CompiledBeamProfileLayer beamProfileLayer,
+                LongUnaryOperator sectionRevisionAtKey,
+                ProjectionSectionSnapshotCache sectionSnapshotCache
+        ) {
+            this.level = Objects.requireNonNull(level, "level");
+            this.networkId = networkId;
+            this.solution = Objects.requireNonNull(solution, "solution");
+            this.sourceOutput = Objects.requireNonNull(sourceOutput, "sourceOutput");
+            this.beamProfileLayer = beamProfileLayer;
+            this.sectionRevisionAtKey = Objects.requireNonNull(
+                    sectionRevisionAtKey, "sectionRevisionAtKey"
+            );
+            this.sectionSnapshotCache = sectionSnapshotCache == null
+                    ? new ProjectionSectionSnapshotCache()
+                    : sectionSnapshotCache;
+            if (!solution.reliableForReadout() || graph.nodes().isEmpty()) {
+                graphNodes = List.of();
+                distanceByNode = Map.of();
+            } else {
+                graphNodes = List.copyOf(graph.nodes());
+                distanceByNode = propagationDistanceByNode(graph);
+            }
+        }
+
+        /** Prepares at most one projected outgoing node and may capture one eager world snapshot. */
+        public void advanceOne() {
+            if (complete()) {
+                return;
+            }
+            while (nextGraphNode < graphNodes.size()) {
+                PortGraphNode node = graphNodes.get(nextGraphNode++);
+                if (node.waveKind() != PortWaveKind.OUTGOING) {
+                    continue;
+                }
+                outgoingNodes++;
+                double outgoingPower = solution.powerAt(node);
+                if (outgoingPower <= MIN_SPOT_POWER
+                        || !level.isLoaded(node.pos())
+                        || isTransparentProjectionPassThrough(level, node)) {
+                    continue;
+                }
+                double coherentOutgoingPower = Math.min(outgoingPower, solution.coherentPowerAt(node));
+                BeamPacket profileTemplate = templateAt(
+                        level,
+                        sourceOutput,
+                        distanceByNode.getOrDefault(node, 0),
+                        solution,
+                        beamProfileLayer,
+                        node
+                ).withDirection(node.side());
+                preparedNodes.add(prepareNodeProjection(
+                        level,
+                        networkId,
+                        preparedNodes.size(),
+                        node,
+                        profileTemplate,
+                        outgoingPower,
+                        coherentOutgoingPower,
+                        sectionRevisionAtKey,
+                        sectionSnapshotCache
+                ));
+                skipNonOutgoingTail();
+                return;
+            }
+        }
+
+        /**
+         * Finishing the non-output tail does not capture another world snapshot. Keeping the
+         * cursor on the next outgoing node preserves the one-projected-output-per-step bound,
+         * while an ordinary one-output graph can become ready in the same preparation tick.
+         */
+        private void skipNonOutgoingTail() {
+            while (nextGraphNode < graphNodes.size()
+                    && graphNodes.get(nextGraphNode).waveKind() != PortWaveKind.OUTGOING) {
+                nextGraphNode++;
+            }
+        }
+
+        public boolean complete() {
+            return nextGraphNode >= graphNodes.size();
+        }
+
+        public PreparedSpotBatch finish() {
+            if (!complete()) {
+                throw new IllegalStateException("Projection batch preparation is not complete");
+            }
+            if (finished) {
+                throw new IllegalStateException("Projection batch preparation was already finished");
+            }
+            finished = true;
+            return new PreparedSpotBatch(level, networkId, outgoingNodes, preparedNodes);
+        }
+
+        public void discard() {
+            if (finished) {
+                return;
+            }
+            finished = true;
+            for (PreparedNodeProjection node : preparedNodes) {
+                if (node.cacheEligible) {
+                    releaseJobToken(level, node.geometryKey, node.jobToken);
+                }
+            }
+        }
+    }
+
+    public static final class PreparedSpotBatch {
+        private final ServerLevel level;
+        private final int networkId;
+        private final int outgoingNodes;
+        private final List<PreparedNodeProjection> nodes;
+        private final List<SpotProjectionJob> work;
+        private int completedWork;
+        private long commitDiagnosticsNanos;
+
+        private PreparedSpotBatch(
+                ServerLevel level,
+                int networkId,
+                int outgoingNodes,
+                List<PreparedNodeProjection> nodes
+        ) {
+            this.level = Objects.requireNonNull(level, "level");
+            this.networkId = networkId;
+            this.outgoingNodes = Math.max(0, outgoingNodes);
+            this.nodes = List.copyOf(nodes);
+            this.work = this.nodes.stream()
+                    .map(node -> node.work)
+                    .filter(Objects::nonNull)
+                    .toList();
+        }
+
+        private static PreparedSpotBatch empty(ServerLevel level, int networkId) {
+            return new PreparedSpotBatch(level, networkId, 0, List.of());
+        }
+
+        public List<SpotProjectionJob> work() {
+            return work;
+        }
+
+        public int networkId() {
+            return networkId;
+        }
+
+        public int nodeCount() {
+            return nodes.size();
+        }
+
+        public int completedWorkCount() {
+            return completedWork;
+        }
+
+        public long snapshotNanos() {
+            return work.stream().mapToLong(SpotProjectionJob::snapshotNanos).sum();
+        }
+
+        public int snapshotBlocks() {
+            return work.stream().mapToInt(SpotProjectionJob::snapshotBlocks).sum();
+        }
+
+        public int snapshotSections() {
+            return work.stream().mapToInt(SpotProjectionJob::snapshotSections).sum();
+        }
+
+        public int snapshotResolvedBlocks() {
+            return work.stream().mapToInt(SpotProjectionJob::snapshotResolvedBlocks).sum();
+        }
+
+        public int snapshotReusedBlocks() {
+            return work.stream().mapToInt(SpotProjectionJob::snapshotReusedBlocks).sum();
+        }
+
+        public long totalWorkerNanos() {
+            return nodes.stream().mapToLong(node -> node.elapsedNanos).sum();
+        }
+
+        public long firstWorkerStartedNanos() {
+            long earliest = Long.MAX_VALUE;
+            for (PreparedNodeProjection node : nodes) {
+                if (node.workerStartedNanos > 0L) {
+                    earliest = Math.min(earliest, node.workerStartedNanos);
+                }
+            }
+            return earliest == Long.MAX_VALUE ? 0L : earliest;
+        }
+
+        public boolean snapshotVersionsMatch(LongUnaryOperator sectionRevisionAtKey) {
+            for (SpotProjectionJob projectionWork : work) {
+                if (!projectionWork.snapshotVersionMatches(sectionRevisionAtKey)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        public void accept(SpotProjectionJobResult completed) {
+            SpotProjectionJob completedWorkItem = completed.job();
+            int ordinal = completedWorkItem.nodeOrdinal();
+            if (ordinal < 0 || ordinal >= nodes.size()) {
+                throw new IllegalArgumentException("Completed projection has an invalid node ordinal");
+            }
+            PreparedNodeProjection node = nodes.get(ordinal);
+            if (node.work != completedWorkItem || node.result != null || node.failure != null) {
+                throw new IllegalStateException("Completed projection does not belong to this pending batch");
+            }
+            node.result = completed.result();
+            node.failure = completed.failure();
+            node.workerStartedNanos = completed.workerStartedNanos();
+            node.elapsedNanos = completed.workerNanos();
+            completedWork++;
+        }
+
+        public boolean complete() {
+            return completedWork == work.size();
+        }
+
+        public void discard() {
+            releaseTokens();
+        }
+
+        public Throwable failure() {
+            for (PreparedNodeProjection node : nodes) {
+                if (node.failure != null) {
+                    return node.failure;
+                }
+            }
+            return null;
+        }
+
+        public long commitDiagnosticsNanos() {
+            return commitDiagnosticsNanos;
+        }
+
+        /** Main-thread deterministic cache commit and node-order assembly. Null means stale or failed. */
+        public SpotLayer commit() {
+            return commit(work.isEmpty() ? "serial" : "async");
+        }
+
+        public SpotLayer commit(String execution) {
+            commitDiagnosticsNanos = 0L;
+            if (!complete() || failure() != null) {
+                return null;
+            }
+            for (PreparedNodeProjection node : nodes) {
+                if (node.cacheEligible && !jobTokenCurrent(level, node.geometryKey, node.jobToken)) {
+                    releaseTokens();
+                    return null;
+                }
+            }
+
+            int expectedPrimarySpots = 0;
+            int expectedSideSpots = 0;
+            for (PreparedNodeProjection node : nodes) {
+                SpotProjectionResult result = Objects.requireNonNull(node.result, "prepared result");
+                Direction frontFace = node.node.side().getOpposite();
+                for (SpotRecord spot : result.spots()) {
+                    if (!spot.visible()) {
+                        continue;
+                    }
+                    if (spot.face() == frontFace) {
+                        expectedPrimarySpots++;
+                    } else {
+                        expectedSideSpots++;
+                    }
+                }
+            }
+            Map<GeometryKey, SpotRecord> primarySpots = new LinkedHashMap<>(
+                    geometryMapCapacity(expectedPrimarySpots)
+            );
+            Map<GeometryKey, SpotRecord> sideSpots = new LinkedHashMap<>(
+                    geometryMapCapacity(expectedSideSpots)
+            );
+            boolean singleNodeBatch = nodes.size() == 1;
+            SpotProjectionResult singleNodeResult = singleNodeBatch ? nodes.getFirst().result : null;
+            List<SpotProjectionAllocation> allocations = singleNodeBatch
+                    ? Objects.requireNonNull(singleNodeResult, "single-node result").allocations()
+                    : new ArrayList<>();
+            LongSet projectionDependencies = singleNodeBatch
+                    ? singleNodeResult.dependencies()
+                    : new LongOpenHashSet();
+            SpotBudgetStats budgetStats = new SpotBudgetStats();
+            budgetStats.outgoingNodes = outgoingNodes;
+            budgetStats.projectedNodes = nodes.size();
+
+            for (PreparedNodeProjection node : nodes) {
+                SpotProjectionResult result = Objects.requireNonNull(node.result, "prepared result");
+                if (node.cacheEligible) {
+                    putGeometryCache(level, node.geometryKey, result, node.appearanceKey);
+                }
+                switch (node.disposition) {
+                    case APPEARANCE_ONLY -> {
+                        budgetStats.geometryCacheHits++;
+                        budgetStats.appearanceOnlyUpdates++;
+                    }
+                    case SUFFIX_REBUILD -> {
+                        budgetStats.geometryCacheHits++;
+                        if (result.cacheMode() == SpotProjectionResult.CacheMode.SUFFIX_REBUILD) {
+                            budgetStats.suffixGeometryRebuilds++;
+                        } else {
+                            budgetStats.fullGeometryRebuilds++;
+                        }
+                    }
+                    case FULL_REBUILD -> {
+                        budgetStats.geometryCacheMisses++;
+                        budgetStats.fullGeometryRebuilds++;
+                    }
+                    case UNCACHED -> budgetStats.fullGeometryRebuilds++;
+                }
+                SpotProjectionPerformanceTracker.record(
+                        level, node.node.pos(), node.node.side(), node.elapsedNanos, result
+                );
+                long diagnosticsStartNanos = System.nanoTime();
+                logProjectionProfile(level, node.node, node.outgoingPower, result, node.elapsedNanos, execution);
+                commitDiagnosticsNanos += Math.max(0L, System.nanoTime() - diagnosticsStartNanos);
+                if (singleNodeBatch) {
+                    for (SpotRecord spot : result.spots()) {
+                        addVisibleSpot(
+                                primarySpots, sideSpots, spot, budgetStats, node.node.side()
+                        );
+                    }
+                } else {
+                    addVisibleSpots(
+                            primarySpots,
+                            sideSpots,
+                            allocations,
+                            result,
+                            projectionDependencies,
+                            budgetStats,
+                            node.node.side()
+                    );
+                }
+            }
+            releaseTokens();
+            List<SpotRecord> spots = cappedSpots(primarySpots, sideSpots);
+            long diagnosticsStartNanos = System.nanoTime();
+            logSpotBudget(level, spots.size(), projectionDependencies.size(), budgetStats);
+            commitDiagnosticsNanos += Math.max(0L, System.nanoTime() - diagnosticsStartNanos);
+            return new SpotLayer(spots, projectionDependencies, allocations);
+        }
+
+        private static int geometryMapCapacity(int expectedSpots) {
+            int bounded = Math.min(MAX_SPOTS_PER_SAMPLE, Math.max(0, expectedSpots));
+            if (bounded < 3) {
+                return Math.max(1, bounded + 1);
+            }
+            return Math.min(1 << 30, (int) Math.ceil(bounded / 0.75D));
+        }
+
+        private void releaseTokens() {
+            for (PreparedNodeProjection node : nodes) {
+                if (node.cacheEligible) {
+                    releaseJobToken(level, node.geometryKey, node.jobToken);
+                }
+            }
+        }
     }
 
     private static final class SpotBudgetStats {

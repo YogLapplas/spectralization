@@ -16,6 +16,7 @@ public final class SpectralServerTickTasks {
         SpectralBlockChangeHandlers.processPendingPistonRescans(server);
         SpotProjectionTestCommand.tickBenchmarks(server);
         OpticalTraceCache.processQueues(server);
+        SpotProjectionTestCommand.observeBenchmarkCompletions(server);
         HolographicStorageMultiblock.processPendingRefreshes(server);
         MicrolizerNetworkData.processPendingRefreshes(server);
         FiberOverlayPublisher.publishToPlayers(server);

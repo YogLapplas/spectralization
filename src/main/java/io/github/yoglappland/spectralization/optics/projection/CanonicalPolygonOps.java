@@ -44,6 +44,102 @@ final class CanonicalPolygonOps {
         return hull == null ? null : intersection(hull, UNIT_SQUARE);
     }
 
+    static Polygon clippedConvexHull(List<Point> points, ConvexHullWorkspace workspace) {
+        Objects.requireNonNull(points, "points");
+        Objects.requireNonNull(workspace, "workspace");
+
+        ArrayList<Point> sorted = workspace.sorted;
+        sorted.clear();
+        sorted.ensureCapacity(points.size());
+        for (Point point : points) {
+            if (point != null && Double.isFinite(point.u()) && Double.isFinite(point.v())) {
+                sorted.add(point);
+            }
+        }
+        sorted.sort(POINT_ORDER);
+        if (sorted.size() < 3) {
+            return null;
+        }
+
+        ArrayList<Point> unique = workspace.unique;
+        unique.clear();
+        unique.ensureCapacity(sorted.size());
+        for (Point point : sorted) {
+            if (unique.isEmpty() || !samePoint(unique.get(unique.size() - 1), point)) {
+                unique.add(point);
+            }
+        }
+        if (unique.size() < 3) {
+            return null;
+        }
+
+        ArrayList<Point> lower = workspace.lower;
+        lower.clear();
+        lower.ensureCapacity(unique.size());
+        for (Point point : unique) {
+            while (lower.size() >= 2
+                    && cross(lower.get(lower.size() - 2), lower.get(lower.size() - 1), point) <= EPSILON) {
+                lower.remove(lower.size() - 1);
+            }
+            lower.add(point);
+        }
+
+        ArrayList<Point> upper = workspace.upper;
+        upper.clear();
+        upper.ensureCapacity(unique.size());
+        for (int index = unique.size() - 1; index >= 0; index--) {
+            Point point = unique.get(index);
+            while (upper.size() >= 2
+                    && cross(upper.get(upper.size() - 2), upper.get(upper.size() - 1), point) <= EPSILON) {
+                upper.remove(upper.size() - 1);
+            }
+            upper.add(point);
+        }
+
+        lower.remove(lower.size() - 1);
+        upper.remove(upper.size() - 1);
+        ArrayList<Point> hull = workspace.hull;
+        hull.clear();
+        hull.ensureCapacity(lower.size() + upper.size());
+        hull.addAll(lower);
+        hull.addAll(upper);
+        if (!normalizeMutablePolygon(hull)) {
+            return null;
+        }
+
+        double minU = Double.POSITIVE_INFINITY;
+        double minV = Double.POSITIVE_INFINITY;
+        double maxU = Double.NEGATIVE_INFINITY;
+        double maxV = Double.NEGATIVE_INFINITY;
+        for (Point point : hull) {
+            minU = Math.min(minU, point.u());
+            minV = Math.min(minV, point.v());
+            maxU = Math.max(maxU, point.u());
+            maxV = Math.max(maxV, point.v());
+        }
+        if (Math.min(maxU, 1.0D) - Math.max(minU, 0.0D) <= EPSILON
+                || Math.min(maxV, 1.0D) - Math.max(minV, 0.0D) <= EPSILON) {
+            return null;
+        }
+        if (minU >= 0.0D && minV >= 0.0D && maxU <= 1.0D && maxV <= 1.0D) {
+            return Polygon.create(hull);
+        }
+
+        ArrayList<Point> current = hull;
+        ArrayList<Point> next = workspace.clipFirst;
+        List<Point> unitSquare = UNIT_SQUARE.vertices();
+        for (int index = 0; index < unitSquare.size(); index++) {
+            Point a = unitSquare.get(index);
+            Point b = unitSquare.get((index + 1) % unitSquare.size());
+            if (!clipHalfPlaneInto(current, a, b, next)) {
+                return null;
+            }
+            current = next;
+            next = next == workspace.clipFirst ? workspace.clipSecond : workspace.clipFirst;
+        }
+        return Polygon.create(current);
+    }
+
     static Polygon polygon(List<Point> points) {
         return Polygon.create(points);
     }
@@ -113,6 +209,26 @@ final class CanonicalPolygonOps {
             current = workspace.clipHalfPlane(current, a, b, true);
         }
         return current;
+    }
+
+    static Polygon intersectionRectangle(
+            Polygon subject,
+            double minU,
+            double minV,
+            double maxU,
+            double maxV,
+            PolygonWorkspace workspace
+    ) {
+        Objects.requireNonNull(workspace, "workspace");
+        Bounds rectangleBounds = new Bounds(minU, minV, maxU, maxV);
+        if (subject == null || !subject.bounds().intersects(rectangleBounds)) {
+            return null;
+        }
+        if (rectangleBounds.contains(subject.bounds())) {
+            return subject;
+        }
+        workspace.prepareRectangle(minU, minV, maxU, maxV);
+        return workspace.intersectPreparedRectangle(subject);
     }
 
     static List<Polygon> subtract(Polygon subject, Polygon clip) {
@@ -196,11 +312,101 @@ final class CanonicalPolygonOps {
         return true;
     }
 
+    private static boolean clipHalfPlaneInto(
+            List<Point> input,
+            Point a,
+            Point b,
+            ArrayList<Point> output
+    ) {
+        output.clear();
+        output.ensureCapacity(input.size() + 2);
+        Point previous = input.get(input.size() - 1);
+        double previousSide = cross(a, b, previous);
+        boolean previousInside = halfPlaneContains(previousSide, true);
+
+        for (Point current : input) {
+            double currentSide = cross(a, b, current);
+            boolean currentInside = halfPlaneContains(currentSide, true);
+            if (currentInside != previousInside) {
+                Point crossing = lineIntersection(previous, current, previousSide, currentSide);
+                if (crossing != null) {
+                    appendDistinct(output, crossing);
+                }
+            }
+            if (currentInside) {
+                appendDistinct(output, current);
+            }
+            previous = current;
+            previousSide = currentSide;
+            previousInside = currentInside;
+        }
+        trimClosingDuplicate(output);
+        return normalizeMutablePolygon(output);
+    }
+
+    private static boolean normalizeMutablePolygon(ArrayList<Point> vertices) {
+        if (vertices.size() < 3) {
+            return false;
+        }
+
+        boolean removed;
+        do {
+            removed = false;
+            for (int index = 0; index < vertices.size() && vertices.size() >= 3; index++) {
+                Point before = vertices.get((index + vertices.size() - 1) % vertices.size());
+                Point current = vertices.get(index);
+                Point after = vertices.get((index + 1) % vertices.size());
+                if (Math.abs(cross(before, current, after)) <= EPSILON) {
+                    vertices.remove(index);
+                    removed = true;
+                    break;
+                }
+            }
+        } while (removed);
+        if (vertices.size() < 3) {
+            return false;
+        }
+
+        double twiceArea = 0.0D;
+        for (int index = 0; index < vertices.size(); index++) {
+            Point current = vertices.get(index);
+            Point next = vertices.get((index + 1) % vertices.size());
+            twiceArea += current.u() * next.v() - next.u() * current.v();
+        }
+        if (Math.abs(twiceArea * 0.5D) <= EPSILON) {
+            return false;
+        }
+        if (twiceArea < 0.0D) {
+            Collections.reverse(vertices);
+        }
+        return true;
+    }
+
+    static final class ConvexHullWorkspace {
+        private final ArrayList<Point> input = new ArrayList<>(8);
+        private final ArrayList<Point> sorted = new ArrayList<>(8);
+        private final ArrayList<Point> unique = new ArrayList<>(8);
+        private final ArrayList<Point> lower = new ArrayList<>(8);
+        private final ArrayList<Point> upper = new ArrayList<>(8);
+        private final ArrayList<Point> hull = new ArrayList<>(8);
+        private final ArrayList<Point> clipFirst = new ArrayList<>(12);
+        private final ArrayList<Point> clipSecond = new ArrayList<>(12);
+
+        ArrayList<Point> resetInput() {
+            input.clear();
+            return input;
+        }
+    }
+
     static final class PolygonWorkspace {
         private final ArrayList<Point> leftPoints = new ArrayList<>();
         private final ArrayList<Point> rightPoints = new ArrayList<>();
         private Polygon leftPolygon;
         private Polygon rightPolygon;
+        private Point rectangleBottomLeft;
+        private Point rectangleBottomRight;
+        private Point rectangleTopRight;
+        private Point rectangleTopLeft;
 
         private void splitHalfPlane(Polygon polygon, Point a, Point b) {
             leftPoints.clear();
@@ -269,6 +475,49 @@ final class CanonicalPolygonOps {
             }
             trimClosingDuplicate(leftPoints);
             return Polygon.create(leftPoints);
+        }
+
+        private void prepareRectangle(double minU, double minV, double maxU, double maxV) {
+            rectangleBottomLeft = new Point(minU, minV);
+            rectangleBottomRight = new Point(maxU, minV);
+            rectangleTopRight = new Point(maxU, maxV);
+            rectangleTopLeft = new Point(minU, maxV);
+        }
+
+        private Polygon intersectPreparedRectangle(Polygon polygon) {
+            if (!clipHalfPlaneInto(
+                    polygon.vertices(),
+                    rectangleBottomLeft,
+                    rectangleBottomRight,
+                    leftPoints
+            )) {
+                return null;
+            }
+            if (!clipHalfPlaneInto(
+                    leftPoints,
+                    rectangleBottomRight,
+                    rectangleTopRight,
+                    rightPoints
+            )) {
+                return null;
+            }
+            if (!clipHalfPlaneInto(
+                    rightPoints,
+                    rectangleTopRight,
+                    rectangleTopLeft,
+                    leftPoints
+            )) {
+                return null;
+            }
+            if (!clipHalfPlaneInto(
+                    leftPoints,
+                    rectangleTopLeft,
+                    rectangleBottomLeft,
+                    rightPoints
+            )) {
+                return null;
+            }
+            return Polygon.create(rightPoints);
         }
 
         private void ensurePointCapacity(int capacity) {
@@ -545,8 +794,8 @@ final class CanonicalPolygonOps {
             }
             CandidateQuery candidates = queryCandidates(rectangleBounds);
             List<Polygon> output = new ArrayList<>(candidates.indices().length);
-            Polygon clip = null;
             PolygonWorkspace polygonWorkspace = new PolygonWorkspace();
+            boolean rectanglePrepared = false;
             int testedCells = 0;
             int testedVertices = 0;
             for (int candidateIndex : candidates.indices()) {
@@ -557,10 +806,11 @@ final class CanonicalPolygonOps {
                     output.add(cell);
                     continue;
                 }
-                if (clip == null) {
-                    clip = rectangle(minU, minV, maxU, maxV);
+                if (!rectanglePrepared) {
+                    polygonWorkspace.prepareRectangle(minU, minV, maxU, maxV);
+                    rectanglePrepared = true;
                 }
-                Polygon clipped = intersection(cell, clip, polygonWorkspace);
+                Polygon clipped = polygonWorkspace.intersectPreparedRectangle(cell);
                 if (clipped != null) {
                     output.add(clipped);
                 }
@@ -590,7 +840,7 @@ final class CanonicalPolygonOps {
             }
 
             CandidateSlice candidates = queryCandidatesReusable(rectangleBounds, workspace.candidates);
-            Polygon clip = null;
+            boolean rectanglePrepared = false;
             int testedCells = 0;
             int testedVertices = 0;
             for (int candidate = 0; candidate < candidates.count(); candidate++) {
@@ -601,10 +851,11 @@ final class CanonicalPolygonOps {
                     output.add(cell);
                     continue;
                 }
-                if (clip == null) {
-                    clip = rectangle(minU, minV, maxU, maxV);
+                if (!rectanglePrepared) {
+                    workspace.polygons.prepareRectangle(minU, minV, maxU, maxV);
+                    rectanglePrepared = true;
                 }
-                Polygon clipped = intersection(cell, clip, workspace.polygons);
+                Polygon clipped = workspace.polygons.intersectPreparedRectangle(cell);
                 if (clipped != null) {
                     output.add(clipped);
                 }
@@ -692,7 +943,7 @@ final class CanonicalPolygonOps {
                 maxCandidates = Math.max(maxCandidates, candidates);
 
                 List<Polygon> queryOutput = new ArrayList<>(candidates);
-                Polygon clip = null;
+                boolean rectanglePrepared = false;
                 for (int candidate = 0; candidate < candidates; candidate++) {
                     Polygon cell = cells.get(candidateIndices[candidate]);
                     testedCells++;
@@ -701,15 +952,16 @@ final class CanonicalPolygonOps {
                         queryOutput.add(cell);
                         continue;
                     }
-                    if (clip == null) {
-                        clip = rectangle(
+                    if (!rectanglePrepared) {
+                        polygonWorkspace.prepareRectangle(
                                 rectangleBounds.minU(),
                                 rectangleBounds.minV(),
                                 rectangleBounds.maxU(),
                                 rectangleBounds.maxV()
                         );
+                        rectanglePrepared = true;
                     }
-                    Polygon clipped = intersection(cell, clip, polygonWorkspace);
+                    Polygon clipped = polygonWorkspace.intersectPreparedRectangle(cell);
                     if (clipped != null) {
                         queryOutput.add(clipped);
                     }
